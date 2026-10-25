@@ -71,7 +71,23 @@ impl Browser {
                 if self.tab().title() != "Counter clicked: 1" {
                     return;
                 }
+                let address = self.tab().url();
+                self.navigate("about:blank");
+                self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+                assert_eq!(self.tab().url(), address);
+                assert_eq!(self.chrome.address, address);
+                assert_eq!(self.tab().title(), "Counter clicked: 1");
                 self.coverage_click(&["Engine: Wega (experimental)", "Servo"], |b, ui| b.ui(ui));
+                assert!(self.is_wega(), "Switch waits for explicit consent");
+                self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+                assert!(self.is_wega());
+                assert_eq!(
+                    self.tab().title(),
+                    "Counter clicked: 1",
+                    "Cancellation preserves live JavaScript state"
+                );
+                self.switch_engine(EngineKind::Servo);
+                self.coverage_click(&["Switch engine"], |b, ui| b.ui(ui));
                 assert_eq!(self.tab().engine, EngineKind::Servo);
                 assert!(self.servo.initialized());
                 self.harness.engine_test.as_mut().unwrap().stage = 3;
@@ -81,6 +97,7 @@ impl Browser {
                     return;
                 }
                 self.coverage_click(&["Engine: Servo", "Wega (experimental)"], |b, ui| b.ui(ui));
+                self.coverage_click(&["Switch engine"], |b, ui| b.ui(ui));
                 assert!(self.is_wega());
                 self.harness.engine_test.as_mut().unwrap().stage = 4;
             }
@@ -102,7 +119,20 @@ impl Browser {
                         .is_none(),
                     "Hidden Wega tabs release frontend textures"
                 );
-                assert!(self.discard_tab(0));
+                assert!(!self.discard_tab(0));
+                assert!(self.session().tabs()[0].loaded());
+                self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+                assert!(self.session().tabs()[0].loaded());
+                let protected_key = self.session().tabs()[0].key;
+                self.discard_tab(0);
+                self.move_tab(0, 1);
+                self.coverage_click(&["Unload tab"], |b, ui| b.ui(ui));
+                assert_eq!(self.session().tabs()[1].key, protected_key);
+                assert!(
+                    !self.session().tabs()[1].loaded(),
+                    "Consent follows tab identity after reordering"
+                );
+                self.move_tab(1, 0);
                 assert!(!self.session().tabs()[0].loaded());
                 self.select_tab(0);
                 assert!(self.is_wega());
@@ -114,6 +144,14 @@ impl Browser {
                     return;
                 }
                 self.close_tab(0);
+                assert_eq!(self.session().tabs().len(), 2);
+                self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+                assert_eq!(self.session().tabs().len(), 2);
+                self.request_quit();
+                self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+                assert!(!self.quit_requested);
+                self.close_tab(0);
+                self.coverage_click(&["Close tab"], |b, ui| b.ui(ui));
                 assert_eq!(self.tab().engine, EngineKind::Servo);
                 self.save();
                 assert_eq!(self.profile().engines, vec![EngineKind::Servo]);

@@ -314,6 +314,12 @@ impl Browser {
         self.chrome.modifiers = command.into();
         assert!(!self.shortcut_key(&Key::Character("z".into()), ElementState::Pressed));
         key(self, "q", command);
+        if self.destructive_action.is_some() {
+            assert!(!self.quit_requested);
+            self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+            key(self, "q", command);
+            self.coverage_click(&["Quit browser"], |b, ui| b.ui(ui));
+        }
         assert!(self.quit_requested);
         self.quit_requested = false;
         self.chrome.modifiers = ModifiersState::empty().into();

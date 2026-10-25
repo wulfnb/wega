@@ -128,6 +128,13 @@ jobs:
         run: python scripts/desktop-coverage.py
       - name: Native integration suite verification
         run: python scripts/native-tests.py --suite all
+      - name: Two-engine compatibility and process-tree baseline
+        run: python scripts/browser-bench.py --output target/browser-bench-ci --repeats 1 --tabs 1 5 --idle-seconds 5
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: browser-bench-macos
+          path: target/browser-bench-ci/
       - name: Whole-project completeness inventory
         run: python scripts/coverage-inventory.py
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -175,6 +182,28 @@ jobs:
         run: sh scripts/docker-toolbox-test.sh
       - name: Test streaming download pipeline
         run: sh scripts/docker-download-test.sh
+      - name: Two-engine compatibility and process-tree baseline in Linux
+        run: |
+          mkdir -p target/browser-bench-linux
+          docker run --rm --user "$(id -u):$(id -g)" --entrypoint sh \
+            -e HOME=/tmp -e XDG_CONFIG_HOME=/tmp/config -e XDG_CACHE_HOME=/tmp/cache -e XDG_DATA_HOME=/tmp/data \
+            -e DISPLAY=:97 -e LIBGL_ALWAYS_SOFTWARE=1 -e GITHUB_SHA \
+            -v "$PWD:/source:ro" -v "$PWD/target/browser-bench-linux:/results" \
+            "$(docker compose images -q wega)" -eu -c '
+              Xvfb :97 -screen 0 1440x900x24 -nolisten tcp -ac >/tmp/bench-display.log 2>&1 &
+              display_pid=$!
+              trap "kill $display_pid 2>/dev/null || true" EXIT
+              attempts=0
+              until xdpyinfo >/dev/null 2>&1; do
+                attempts=$((attempts + 1)); test "$attempts" -le 50; sleep 0.2
+              done
+              python3 /source/scripts/browser-bench.py --binary /usr/local/bin/wega --output /results/run --repeats 1 --tabs 1 5 --idle-seconds 5
+            '
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: browser-bench-linux
+          path: target/browser-bench-linux/
       - name: Shell adapter contracts and coverage
         run: |
           docker tag "$(docker compose images -q wega)" wega-shell-base:ci
@@ -237,6 +266,13 @@ jobs:
           scripts\windows-launch-check.ps1 -Directory target\debug
       - name: Real media playback and same-profile launch handoff
         run: python scripts/windows-runtime-test.py --binary target/debug/wega.exe
+      - name: Two-engine compatibility and process-tree baseline
+        run: python scripts/browser-bench.py --binary target/debug/wega.exe --output target/browser-bench-ci --repeats 1 --tabs 1 5 --idle-seconds 10
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: browser-bench-windows
+          path: target/browser-bench-ci/
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:

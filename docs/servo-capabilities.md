@@ -4,7 +4,7 @@ The default build remains WebRender/GL. The presence of a delegate method or Car
 
 | Requested feature | Implementation and remaining work |
 |---|---|
-| Unload confirmation | Native confirmation consumes Servo's `request_unload` responder for navigation. Closing a tab/window still drops the view directly; a proper engine close/unload handshake remains required. |
+| Unload confirmation | Servo navigation uses its `request_unload` responder. Browser-owned confirmation now protects loaded website/local tabs before close, manual unload, engine switch and quit; Wega also confirms navigation. Website/local tabs are excluded from automatic unloading. Cancellation retains live state. A proper acknowledged engine close/unload handshake remains required to replace this conservative policy. See [reliability baseline](reliability-baseline.md). |
 | Favicons | Engine raster images appear in tabs, bookmarks and history. Up to 128 URL favicons persist at bounded thumbnail size. |
 | Web notifications | WebView and worker delegates submit through macOS UserNotifications after OS authorization. Site permission remains separate. Requires `.app` identity. Delivery, OS UI, notification actions and click callbacks have not been integration tested. |
 | Navigation rules/external apps | Configurable host allow/block rules, domain-boundary matching, confirmation before opening external URI schemes through macOS open, Windows ShellExecuteW or Linux xdg-open. Windows/Linux dispatch still needs runtime validation. Host restrictions are not a secure kiosk mode. |

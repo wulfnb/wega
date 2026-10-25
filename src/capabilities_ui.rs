@@ -411,7 +411,7 @@ impl Browser {
                         ui.label("Unload background tabs after");
                         changed|=ui.add(egui::DragValue::new(&mut policy.discard_after_minutes).range(0..=wega::lifecycle::MAX_DISCARD_MINUTES).suffix(" min")).changed();
                     });
-                    ui.weak("Unloaded tabs keep their place, title and icon, and reload when selected. Tabs playing media, waiting for a dialog or used by developer tools stay loaded. 0 keeps every tab loaded.");
+                    ui.weak("Automatic unloading applies only to browser-owned internal pages. Website and local-file tabs stay loaded to protect unsaved work. Manual unloading asks first and restores only the address, title and icon. 0 disables automatic unloading.");
                     if changed { self.apply(wega::application::Command::Policy(policy)); }
 
                         }

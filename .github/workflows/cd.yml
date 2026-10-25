@@ -52,6 +52,13 @@ jobs:
         run: cargo install cargo-about --version 0.9.2 --features cli --locked
       - name: Build and bundle Wega.app
         run: bash scripts/package-macos.sh
+      - name: Verify both engines in the packaged app
+        run: env -u WEGA_ENGINE_BINARY -u GST_PLUGIN_PATH -u GST_PLUGIN_SYSTEM_PATH python3 scripts/browser-bench.py --binary target/Wega.app/Contents/MacOS/wega --output target/packaged-compatibility --mode compatibility
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: packaged-compatibility-macos
+          path: target/packaged-compatibility/
       - name: Create DMG and ZIP distributions
         run: |
           mkdir -p dist
@@ -105,13 +112,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push production Docker image
-        id: image
+      - name: Build production Docker image for validation
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          push: false
+          load: true
           provenance: false
           build-args: |
             BUILD_JOBS=4
@@ -122,12 +129,6 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Attest Docker image build provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.image.outputs.digest }}
-          push-to-registry: true
       - name: Install license notice generator
         run: cargo install cargo-about --version 0.9.2 --features cli --locked
       - name: Extract standalone Linux binary from built image
@@ -139,10 +140,50 @@ jobs:
           docker rm "$container_id"
           chmod 755 ./wega-linux ./wega-engine
           bash scripts/package-linux.sh ./wega-linux
+      - name: Verify both engines from the Linux archive
+        run: |
+          mkdir -p target/packaged-compatibility-linux
+          docker run --rm --user "$(id -u):$(id -g)" --entrypoint sh \
+            -e HOME=/tmp -e XDG_CONFIG_HOME=/tmp/config -e XDG_CACHE_HOME=/tmp/cache -e XDG_DATA_HOME=/tmp/data \
+            -e DISPLAY=:97 -e LIBGL_ALWAYS_SOFTWARE=1 -e GITHUB_SHA \
+            -v "$PWD:/source:ro" -v "$PWD/target/packaged-compatibility-linux:/results" \
+            "${IMAGE_NAME}:${GITHUB_SHA}" -eu -c '
+              mkdir /tmp/package
+              tar -xzf /source/dist/Wega-Linux-x86_64.tar.gz -C /tmp/package
+              /tmp/package/wega-linux-x86_64/bin/wega --help >/tmp/launcher-help.txt
+              Xvfb :97 -screen 0 1440x900x24 -nolisten tcp -ac >/tmp/bench-display.log 2>&1 &
+              display_pid=$!
+              trap "kill $display_pid 2>/dev/null || true" EXIT
+              attempts=0
+              until xdpyinfo >/dev/null 2>&1; do
+                attempts=$((attempts + 1)); test "$attempts" -le 50; sleep 0.2
+              done
+              python3 /source/scripts/browser-bench.py --binary /tmp/package/wega-linux-x86_64/libexec/wega --output /results/run --mode compatibility --label packaged-linux-release
+            '
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: packaged-compatibility-linux
+          path: target/packaged-compatibility-linux/
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: linux-dist
           path: dist/Wega-Linux-x86_64.tar.gz
+      - name: Publish the validated Docker image
+        id: published-image
+        run: |
+          docker push "${IMAGE_NAME}:${GITHUB_SHA}"
+          published_digest=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE_NAME}:${GITHUB_SHA}" | awk -F@ -v repository="$IMAGE_NAME" '$1 == repository {print $2; exit}')
+          [[ "$published_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$published_digest" >> "$GITHUB_OUTPUT"
+          docker push "${IMAGE_NAME}:latest"
+          docker push "${IMAGE_NAME}:test"
+      - name: Attest Docker image build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.published-image.outputs.digest }}
+          push-to-registry: true
 
   build-windows:
     needs: ci-validation
@@ -217,6 +258,19 @@ jobs:
         run: scripts\windows-launch-check.ps1 -Directory dist\wega-windows-x64
       - name: Test packaged media and URL handoff without installed SDK
         run: python scripts/windows-runtime-test.py --binary dist/wega-windows-x64/wega.exe
+      - name: Verify both engines in the packaged directory
+        shell: pwsh
+        run: |
+          Remove-Item Env:WEGA_ENGINE_BINARY -ErrorAction SilentlyContinue
+          Remove-Item Env:GST_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:GST_PLUGIN_SYSTEM_PATH -ErrorAction SilentlyContinue
+          python scripts/browser-bench.py --binary dist/wega-windows-x64/wega.exe --output target/packaged-compatibility --mode compatibility
+          if ($LASTEXITCODE -ne 0) { throw "Packaged engine compatibility failed" }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: packaged-compatibility-windows
+          path: target/packaged-compatibility/
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:

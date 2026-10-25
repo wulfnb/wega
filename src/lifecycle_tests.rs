@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn unknown_page_state_is_never_silently_discarded() {
+    for address in [
+        "https://example.org/editor",
+        "file:///tmp/draft.html",
+        "data:text/html,editor",
+        "broken",
+        "about:blank#editor",
+        "about:blank",
+    ] {
+        assert!(needs_confirmation(true, address), "{address}");
+        assert!(!needs_confirmation(false, address));
+    }
+    for address in ["wega://newtab", "wega://settings"] {
+        assert!(!needs_confirmation(true, address));
+    }
+}
+
+#[test]
 fn zero_minutes_disables_discarding_and_large_values_are_capped() {
     assert_eq!(timeout(0), None);
     assert_eq!(timeout(30), Some(Duration::from_secs(1800)));

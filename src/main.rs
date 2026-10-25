@@ -14,6 +14,7 @@ mod debug_model;
 mod debugger_ui;
 mod devtools_ui;
 mod file_handoff;
+mod page_safety;
 use wega::downloads;
 mod downloads_ui;
 mod engine;
@@ -166,11 +167,10 @@ impl ApplicationHandler<Wake> for App {
             return;
         }
         if matches!(event, WindowEvent::CloseRequested) {
-            browser.save();
-            event_loop.exit();
-            return;
+            browser.request_quit();
+        } else {
+            browser.handle_event(event);
         }
-        browser.handle_event(event);
         if browser.quit_requested {
             browser.save();
             event_loop.exit();
