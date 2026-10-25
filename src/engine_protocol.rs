@@ -1,7 +1,7 @@
 //! Versioned, bounded private pipe protocol shared with the independent engine worker.
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 
@@ -13,6 +13,7 @@ pub enum Command {
         offline: bool,
         blocked_hosts: String,
         allowed_hosts: String,
+        storage_dir: Option<String>,
     },
     Load(String),
     Resize {
@@ -25,6 +26,19 @@ pub enum Command {
     Click {
         x: f32,
         y: f32,
+    },
+    Key {
+        key: String,
+        code: String,
+        text: Option<String>,
+        pressed: bool,
+        modifiers: u8,
+        repeat: bool,
+    },
+    Ime {
+        text: String,
+        preedit: bool,
+        cursor: Option<(usize, usize)>,
     },
     Scroll {
         x: f64,

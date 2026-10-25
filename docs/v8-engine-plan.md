@@ -1,6 +1,6 @@
 # V8 engine plan: from QuickJS shim to a real-site engine
 
-Status: **approved plan, not yet implemented.** Written on 25 October 2026 after a
+Status: **P0–P2 implemented and locally validated; P3 in progress.** Written on 25 October 2026 after a
 successful spike. This document is the handover for whoever implements it, person or
 AI agent. Read it top to bottom before changing code. The background design is in
 [engine-strategy.md](engine-strategy.md), and the decision is recorded in
@@ -337,3 +337,34 @@ are listed in `NOTICE`.
 - Owner decisions still open: whether QuickJS is removed after P3 or kept for very small
   devices; where the offsite mirror lives; the per-site UI for P6.
 - Update this document's status and record measured numbers at the end of each phase.
+
+## Implementation evidence — 25 October 2026
+
+P0: fresh `/tmp/wega-p0-target` build; 8 error regression tests, 6 existing page
+tests and the protocol test pass. Strict clippy and formatting pass.
+`scripts/engine-p0-mutations.py` detected all 9 mutations and restored the source
+after each. Six vendored offline compatibility fixtures remain ignored until P3.
+Framework versions and MIT licenses are recorded in `engines/wega/tests/fixtures/`.
+
+P1: V8 and QuickJS each pass the 8 error regressions, 6 page tests and protocol
+contract, with strict clippy and fmt. The native engine suite passes with the V8
+worker (23.69 s). Local macOS arm64 **debug** worker: 157,633,552 bytes; blank-page
+idle RSS 54,444,032 bytes (JIT), 51,036,160 bytes (`--lite`). Raw measurements are
+in `docs/validation/p1-worker-baseline.json`. These are not real-site benchmarks.
+V8's trusted bootstrap has separate overhead; page allocation accounting retains
+the requested budget. Near-limit termination uses upstream Deno's emergency-heap
+headroom strategy, with an additional post-execution heap check. This is not an OS
+RSS cap. `--lite` is per worker (one worker per view); `WEGA_ENGINE_LITE=1` selects
+it when the browser creates workers. The private current-thread Tokio runtime is
+owned by the View's V8 host so the public View test API also works outside main.
+V8 async wakers feed the existing worker wake channel.
+
+P2: 6 native Web API tests pass: fetch, XHR, real jQuery Ajax, live-policy
+redirect/WebSocket/offline/file denial, bounded response bodies, persistent
+origin-partitioned storage and its quota, Web primitives and private core ops.
+P0's 8 regressions and the 6 original page tests remain green; strict clippy passes.
+The jQuery Ajax gate required the shared DOM foundation (scoped queries, fragments,
+cloning, tree mutations, namespaces and live collections) before the remaining P3
+framework gate. Deno's current crates use a concrete PermissionsContainer; Wega's
+descriptor adapter checks the live NetworkPolicy on every URL, without a global
+network grant. Deno's optional telemetry state is explicitly disabled.

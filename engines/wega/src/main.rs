@@ -13,12 +13,27 @@ enum Work {
 }
 
 fn main() {
-    if let Err(error) = run() {
+    // Keep enough native stack headroom on Windows for either bounded VM.
+    let result = std::thread::Builder::new()
+        .name("wega-dom".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| run().map_err(|error| error.to_string()))
+        .map_err(|error| error.to_string())
+        .and_then(|thread| {
+            thread
+                .join()
+                .unwrap_or_else(|_| Err("DOM worker thread panicked".into()))
+        });
+    if let Err(error) = result {
         eprintln!("Wega engine worker: {error}");
         std::process::exit(1);
     }
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "v8")]
+    if std::env::args().any(|arg| arg == "--lite") {
+        deno_core::v8_set_flags(vec![String::new(), "--lite-mode".into()]);
+    }
     let (sender, receiver) = mpsc::sync_channel(32);
     let reader = sender.clone();
     std::thread::spawn(move || {
@@ -37,13 +52,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    let (url, policy) = match receiver.recv()? {
+    let (url, policy, storage_dir) = match receiver.recv()? {
         Work::Command(Command::Init {
             version,
             url,
             offline,
             blocked_hosts,
             allowed_hosts,
+            storage_dir,
         }) if version == protocol::VERSION => (
             Url::parse(&url)?,
             NetworkPolicy {
@@ -51,17 +67,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 blocked_hosts,
                 allowed_hosts,
             },
+            storage_dir,
         ),
         _ => return Err("Expected versioned Init as the first private command".into()),
     };
     let wake = sender.clone();
-    let engine = Engine::new(
+    let mut engine = Engine::new(
         Limits::default(),
         policy,
         Arc::new(move || {
             let _ = wake.try_send(Work::Wake);
         }),
     )?;
+    if let Some(path) = storage_dir {
+        engine = engine.with_storage_dir(path.into());
+    }
     let mut view = engine.create_view(url)?;
     let mut output = std::io::stdout().lock();
     protocol::write(
@@ -158,6 +178,51 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     view.freeze(false);
                 }
                 Command::Click { x, y } => view.click(x, y),
+                Command::Key {
+                    key,
+                    code,
+                    text,
+                    pressed,
+                    modifiers,
+                    repeat,
+                } => {
+                    use keyboard_types::{Code, Key, Location, Modifiers};
+                    use wega_engine::events::{BlitzKeyEvent, KeyState};
+                    let mut flags = Modifiers::empty();
+                    for (bit, flag) in [
+                        (1, Modifiers::SHIFT),
+                        (2, Modifiers::CONTROL),
+                        (4, Modifiers::ALT),
+                        (8, Modifiers::META),
+                    ] {
+                        if modifiers & bit != 0 {
+                            flags.insert(flag);
+                        }
+                    }
+                    view.key(BlitzKeyEvent {
+                        key: key.parse().unwrap_or(Key::Character(key)),
+                        code: code.parse().unwrap_or(Code::Unidentified),
+                        text: text.map(Into::into),
+                        state: if pressed {
+                            KeyState::Pressed
+                        } else {
+                            KeyState::Released
+                        },
+                        location: Location::Standard,
+                        modifiers: flags,
+                        is_auto_repeating: repeat,
+                        is_composing: false,
+                    });
+                }
+                Command::Ime {
+                    text,
+                    preedit,
+                    cursor,
+                } => view.ime(if preedit {
+                    wega_engine::events::BlitzImeEvent::Preedit(text, cursor)
+                } else {
+                    wega_engine::events::BlitzImeEvent::Commit(text)
+                }),
                 Command::Scroll { x, y } => view.scroll(x, y),
                 Command::Freeze(frozen) => view.freeze(frozen),
                 Command::Stop => view.stop(),

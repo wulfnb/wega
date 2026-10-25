@@ -1,0 +1,1 @@
+import{h,render}from'preact';import{useState}from'preact/hooks';function App(){const[n,set]=useState(0);return h('button',{id:'action',onClick:()=>set(n+1)},String(n))}render(h(App),document.getElementById('mount'));

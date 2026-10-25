@@ -4,8 +4,20 @@ pub use blitz_traits::events;
 pub use blitz_traits::shell::ColorScheme;
 pub use url::Url;
 
+mod cookies;
+mod dom;
+#[cfg(feature = "v8")]
+mod module_loader;
 mod network;
+#[cfg(feature = "quickjs")]
+mod quickjs;
 mod script;
+#[cfg(feature = "v8")]
+mod v8;
+#[cfg(feature = "v8")]
+mod web;
+#[cfg(not(any(feature = "v8", feature = "quickjs")))]
+compile_error!("Enable the v8 or quickjs engine feature");
 mod view;
 pub use network::NetworkPolicy;
 pub use view::{Frame, View};
@@ -49,6 +61,12 @@ impl Engine {
             network: network::Network::new(policy, wake)?,
             limits,
         })
+    }
+    /// Storage is always partitioned by the document's tuple origin by the host.
+    pub fn with_storage_dir(mut self, path: std::path::PathBuf) -> Self {
+        self.network.cookies.set_directory(path.clone());
+        self.network.storage_dir = Some(path);
+        self
     }
     pub fn create_view(&self, url: Url) -> Result<View, String> {
         View::new(url, self.network.clone(), self.limits.clone())

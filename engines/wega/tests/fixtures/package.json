@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@angular/common": "20.3.0",
+    "@angular/compiler": "20.3.0",
+    "@angular/core": "20.3.0",
+    "@angular/platform-browser": "20.3.0",
+    "esbuild": "0.25.10",
+    "jquery": "3.7.1",
+    "preact": "10.27.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "rxjs": "7.8.2",
+    "vue": "3.5.22",
+    "zone.js": "0.15.1"
+  },
+  "name": "wega-offline-compatibility-fixtures",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

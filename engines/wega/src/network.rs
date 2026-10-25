@@ -41,12 +41,16 @@ pub(crate) struct Network {
     jobs: mpsc::SyncSender<Task>,
     pub policy: Arc<std::sync::RwLock<NetworkPolicy>>,
     pub wake: Arc<dyn Fn() + Send + Sync>,
+    pub cookies: Arc<crate::cookies::Cookies>,
+    pub storage_dir: Option<std::path::PathBuf>,
 }
 impl Network {
     pub fn new(policy: NetworkPolicy, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
         let policy = Arc::new(std::sync::RwLock::new(policy));
         let redirect_policy = policy.clone();
+        let cookies = Arc::new(crate::cookies::Cookies::default());
         let client = reqwest::blocking::Client::builder()
+            .cookie_provider(cookies.clone())
             .timeout(Duration::from_secs(15))
             .connect_timeout(Duration::from_secs(5))
             .pool_max_idle_per_host(2)
@@ -86,7 +90,13 @@ impl Network {
                 })
                 .map_err(|e| e.to_string())?;
         }
-        Ok(Self { jobs, policy, wake })
+        Ok(Self {
+            jobs,
+            policy,
+            wake,
+            storage_dir: None,
+            cookies,
+        })
     }
     pub fn spawn(
         &self,

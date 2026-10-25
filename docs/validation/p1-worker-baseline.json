@@ -1,0 +1,14 @@
+[
+  {
+    "mode": "jit",
+    "binary_bytes": 157633552,
+    "idle_blank_rss_bytes": 54444032,
+    "exit_code": 0
+  },
+  {
+    "mode": "lite",
+    "binary_bytes": 157633552,
+    "idle_blank_rss_bytes": 51036160,
+    "exit_code": 0
+  }
+]

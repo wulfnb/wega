@@ -37,7 +37,9 @@
     "scripts/windows-launch-check.ps1",
     "scripts/windows-installer-check.ps1",
     "engines/wega/tests/*.rs",
-    "engines/v8-spike/**"
+    "engines/v8-spike/**",
+    "scripts/engine-p0-mutations.py",
+    "engines/wega/tests/fixtures/**"
   ],
   "declaration_only": [
     "src/lib.rs",

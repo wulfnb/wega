@@ -17,7 +17,7 @@ class EngineBuildTests(unittest.TestCase):
             target=Path(temporary).resolve();name='wega-engine.exe' if os.name=='nt' else 'wega-engine';source=target/'wega-engine/debug'/name;source.parent.mkdir(parents=True);source.write_bytes(b'new worker')
             browser=target/'debug/wega';browser.parent.mkdir();browser.write_bytes(b'existing browser')
             previous=browser.with_name(name);previous.write_bytes(b'old worker')
-            with patch.dict(os.environ,{'CARGO_TARGET_DIR':str(target),'CARGO_BUILD_TARGET':''}),patch.object(builder.subprocess,'run') as run:
+            with patch.dict(os.environ,{'CARGO_TARGET_DIR':str(target),'CARGO_BUILD_TARGET':'','CI':''}),patch.object(builder.subprocess,'run') as run:
                 installed=builder.build('dev',jobs=2)
             self.assertEqual(installed.read_bytes(),b'new worker');self.assertEqual(browser.read_bytes(),b'existing browser')
             self.assertFalse(installed.with_suffix('.new').exists())
@@ -30,7 +30,7 @@ class EngineBuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             target=Path(temporary).resolve();triple='x86_64-pc-windows-msvc'
             source=target/'wega-engine'/triple/'release/wega-engine.exe';source.parent.mkdir(parents=True);source.write_bytes(b'Windows worker')
-            with patch.dict(os.environ,{'CARGO_TARGET_DIR':str(target)}),patch.object(builder.subprocess,'run'):
+            with patch.dict(os.environ,{'CARGO_TARGET_DIR':str(target),'CI':''}),patch.object(builder.subprocess,'run'):
                 installed=builder.build('release',triple)
                 self.assertEqual(installed,target/triple/'release/wega-engine.exe')
                 source.unlink()

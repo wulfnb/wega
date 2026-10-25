@@ -27,3 +27,33 @@ Fahrlässigkeit).
 Haftung
 Diese Software wird unentgeltlich überlassen. Gemäß § 521 BGB haften die
 Entwickler und Mitwirkenden nur für Vorsatz und grobe Fahrlässigkeit.
+
+Offline engine compatibility fixtures
+engines/wega/tests/fixtures contains bundled jQuery 3.7.1, React/ReactDOM 18.3.1,
+Vue 3.5.22, Preact 10.27.2, Angular 20.3.0 and RxJS 7.8.2 (MIT).
+Their license notices and package versions are included beside the fixtures.
+
+Wega's V8 script host
+The independent Wega engine embeds V8 through deno_core. V8 is BSD-3-Clause;
+rusty_v8, deno_core, deno_ops and serde_v8 are MIT. Their notices are included in
+the engine's generated WEGA-ENGINE-THIRD-PARTY-NOTICES.html distribution artifact.
+The optional QuickJS-ng backend remains MIT-licensed.
+
+Deno Web APIs (MIT)
+The engine uses deno_webidl, deno_web, deno_fetch, deno_net, deno_tls,
+deno_webstorage, deno_websocket and deno_crypto. Wega's runtime source adapter
+adds the HTML Document-to-Window event parent rule to Deno's EventTarget. The
+original dependency source files remain unmodified; the adapter is in
+engines/wega/src/web.rs and retains the original MIT source headers. Runtime
+telemetry collection/export is disabled.
+
+Web Platform Tests
+The engine's pinned DOM conformance tests and harness are from
+https://github.com/web-platform-tests/wpt under BSD-3-Clause. The revision,
+checksums and original license are included in engines/wega/tests/fixtures/wpt/.
+
+Wega cookie storage uses cookie_store (MIT/Apache-2.0) and publicsuffix
+(MIT/Apache-2.0). engines/wega/src/public_suffix_list.dat is the MPL-2.0
+Public Suffix List snapshot bundled in publicsuffix 2.3.0; its header is retained.
+Deno fetch's pinned source is adapted at extension load to attach browser cookies
+and ingest Set-Cookie on every redirect hop. Original MIT sources are unchanged.

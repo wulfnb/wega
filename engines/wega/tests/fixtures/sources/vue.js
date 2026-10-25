@@ -1,0 +1,1 @@
+import{createApp,h,ref}from'vue';createApp({setup(){const n=ref(0);return()=>h('button',{id:'action',onClick:()=>n.value++},String(n.value))}}).mount('#mount');

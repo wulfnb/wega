@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/web-platform-tests/wpt",
+  "revision": "68d964a5f292bc4b2c2eba2f21e2b916190b6ad2",
+  "files": {
+    "Node-constants.html": "43df38b7e3eeae941948a06cc6cd605619d8ec27364ad54a0e903ee080926737",
+    "Node-childNodes-cache.html": "51ba334f5edd54b9a230da333b7dd861e72b75919ed96b8ead1e3f1f58010207",
+    "Node-childNodes.html": "fc7abdb60f2ac3abaa8e370e797893d4b0e03e9310a4eddb64587938f14f5666",
+    "CharacterData-data.html": "598c6c56e1b33f16d659a7345bfdfece5a2f1a6dc35455a5f3d3a8425aff7d8f",
+    "testharness.js": "7a108d7cfa98ac413ddb38f82fd509fb2037dfcc25ccf466567520cbb6bdf1fa",
+    "constants.js": "d234258f5a4a56afb58094e08e53a079f30a8e2f2932531b0f9cd873918e7777",
+    "LICENSE.md": "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570"
+  }
+}

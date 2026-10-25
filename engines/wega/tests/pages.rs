@@ -99,17 +99,19 @@ fn heap_exhaustion_is_local_and_timers_pause_in_background() {
     view.poll();
     assert!(!view.notices.is_empty());
     view.set_html(
-        "<title>Waiting</title><script>setTimeout(()=>document.title='Timer fired',5)</script>",
+        "<title>Waiting</title><script>setTimeout(()=>document.title='Timer fired',50)</script>",
     )
     .unwrap();
     view.poll();
     view.freeze(true);
-    std::thread::sleep(Duration::from_millis(12));
+    // Leave enough margin for loaded CI hosts to finish the initial task,
+    // then wait beyond the timer deadline while the view is frozen.
+    std::thread::sleep(Duration::from_millis(70));
     view.poll();
     assert_eq!(view.title(), "Waiting");
     view.freeze(false);
     view.poll();
-    assert_eq!(view.title(), "Timer fired");
+    assert_eq!(view.title(), "Timer fired", "{:?}", view.notices);
 }
 #[test]
 fn failed_navigation_replaces_old_content_and_policy_updates_take_effect() {

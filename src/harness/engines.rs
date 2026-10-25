@@ -71,6 +71,48 @@ impl Browser {
                 if self.tab().title() != "Counter clicked: 1" {
                     return;
                 }
+                self.tab().wega.as_ref().unwrap().send(Command::Evaluate("globalThis.nativeEdit=document.createElement('input');nativeEdit.id='native-edit';document.body.append(nativeEdit);nativeEdit.focus();nativeEdit.addEventListener('input',()=>document.title='Native input: '+nativeEdit.value);'focused'".into())).unwrap();
+                self.harness.engine_test.as_mut().unwrap().stage = 12;
+            }
+            12 => {
+                let result = self
+                    .tab()
+                    .wega
+                    .as_ref()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .unwrap()
+                    .evaluated
+                    .take();
+                let Some(result) = result else {
+                    return;
+                };
+                assert_eq!(result.unwrap(), "\"focused\"");
+                self.harness.engine_test.as_mut().unwrap().stage = 13;
+                self.chrome.page_focused = true;
+                self.handle_event(winit::event::WindowEvent::Ime(winit::event::Ime::Commit(
+                    "Hello 文".into(),
+                )));
+            }
+            13 => {
+                if self.tab().title() != "Native input: Hello 文" {
+                    return;
+                }
+                self.tab()
+                    .wega
+                    .as_ref()
+                    .unwrap()
+                    .send(Command::Evaluate(
+                        "nativeEdit.remove();document.title='Counter clicked: 1'".into(),
+                    ))
+                    .unwrap();
+                self.harness.engine_test.as_mut().unwrap().stage = 14;
+            }
+            14 => {
+                if self.tab().title() != "Counter clicked: 1" {
+                    return;
+                }
                 let address = self.tab().url();
                 self.navigate("about:blank");
                 self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
@@ -156,7 +198,7 @@ impl Browser {
                 self.save();
                 assert_eq!(self.profile().engines, vec![EngineKind::Servo]);
                 println!(
-                    "DUAL ENGINE TEST PASSED: lazy Servo, real Wega pixels, native JS click, footer selection both directions, persisted choice, freezing, discard/reload and closing"
+                    "DUAL ENGINE TEST PASSED: lazy Servo, real Wega pixels, native JS click/IME input, footer selection both directions, persisted choice, freezing, discard/reload and closing"
                 );
                 self.harness.engine_test = None;
                 event_loop.exit();

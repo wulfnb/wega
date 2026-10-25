@@ -5,3 +5,9 @@ resolver = "2"
 [profile.dev]
 debug = 0
 incremental = false
+
+[patch.crates-io]
+deno_core = { path = "vendor/deno/deno_core" }
+deno_ops = { path = "vendor/deno/deno_ops" }
+serde_v8 = { path = "vendor/deno/serde_v8" }
+deno_v8 = { path = "vendor/deno/deno_v8" }
