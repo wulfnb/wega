@@ -1340,6 +1340,10 @@ impl Browser {
     }
 
     fn dialogs(&mut self, ctx: &egui::Context) {
+        if self.destructive_action.is_some() {
+            self.page_safety_ui(ctx);
+            return;
+        }
         self.feature_ui(ctx);
         if !self.dialogs.prompts.is_empty() || self.features.clear_data {
             return;

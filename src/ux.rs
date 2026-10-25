@@ -188,7 +188,9 @@ impl crate::browser::Browser {
                 ctx.memory_mut(|m| m.request_focus(id));
             } else {
                 self.chrome.page_focused = true;
-                self.view().set_focused(true);
+                if let Some(view) = self.tab().view() {
+                    view.set_focused(true);
+                }
             }
         }
     }

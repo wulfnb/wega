@@ -394,6 +394,12 @@ third-party notices cover the new dependencies.
 
 ## Which engine should we use now?
 
+The [25 October reliability baseline](reliability-baseline.md) now records
+repeatable compatibility probes, optimized process-tree RSS/CPU measurements,
+live reference-page captures and refreshed release-validation evidence. On its
+fixed article workload Wega uses more summed RSS as tabs increase; these results
+do not justify changing the default engine.
+
 **Use Servo as the default for everyday browsing.** It remains the supported
 choice for interactive sites, website sign-in, forms, media, developer tools and
 website accessibility. It is a compatibility fallback, not a guarantee that every

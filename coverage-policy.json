@@ -18,6 +18,7 @@
     "src/*_tests.rs",
     "src/harness/*.rs",
     "scripts/native-tests.py",
+    "scripts/browser-bench.py",
     "scripts/macos-launch-test.py",
     "scripts/windows-runtime-test.py",
     "scripts/docker-auth-test.py",

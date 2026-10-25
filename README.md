@@ -338,6 +338,10 @@ serialize DOM state or navigation stacks. The browser locks each profile to prev
 
 ## Verification
 
+See the [reliability, compatibility and release baseline](docs/reliability-baseline.md)
+for unsaved-state protection, repeatable two-engine process-tree benchmarks and
+the distinction between published-release validation and local changes.
+
 See [architecture](docs/architecture.md), [decision record](docs/architecture-decisions.md), and [quality checks, coverage and isolated test runners](docs/testing.md).
 The core can be tested without Servo using `cargo test --locked --no-default-features --lib`.
 The required target is 100% first-party line coverage; it is not yet achieved. See the [current coverage status and gaps](docs/quality-report.md#current-coverage-target-and-result).

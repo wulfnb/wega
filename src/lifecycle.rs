@@ -7,6 +7,13 @@ pub const MAX_DISCARD_MINUTES: u32 = 24 * 60;
 /// Ineligible tabs (playing media, open dialogs, …) are re-examined at most this often.
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
+/// Only browser-owned, non-editable documents can be discarded without asking.
+/// Neither engine currently exposes an acknowledged safe-to-close operation.
+/// A DOM probe cannot see all editor state, cross-origin frames or pending saves.
+pub fn needs_confirmation(loaded: bool, address: &str) -> bool {
+    loaded && !url::Url::parse(address).is_ok_and(|url| url.scheme() == "wega")
+}
+
 /// Idle timeout for a policy value; `0` disables discarding.
 pub fn timeout(minutes: u32) -> Option<Duration> {
     (minutes > 0).then(|| Duration::from_secs(u64::from(minutes.min(MAX_DISCARD_MINUTES)) * 60))

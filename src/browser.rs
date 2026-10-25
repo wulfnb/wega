@@ -142,6 +142,7 @@ pub struct Browser {
     pub(crate) download_ui: crate::downloads_ui::State,
     pub(crate) fullscreen: bool,
     pub(crate) quit_requested: bool,
+    pub(crate) destructive_action: Option<crate::page_safety::Action>,
     pub(crate) repaint_deadline: Arc<std::sync::Mutex<Option<Instant>>>,
     pub(crate) pending_save: Option<Instant>,
     pub(crate) capture: Option<crate::capture::Capture>,
@@ -331,6 +332,7 @@ impl Browser {
             },
             fullscreen: false,
             quit_requested: false,
+            destructive_action: None,
             repaint_deadline,
             pending_save: None,
             next_tab_key: 0,
@@ -484,6 +486,12 @@ impl Browser {
         self.session.tabs_mut()[active].wega.as_mut()
     }
     pub(crate) fn switch_engine(&mut self, target: EngineKind) {
+        if self.confirm_page_action(crate::page_safety::Action::Switch(self.tab().key, target)) {
+            return;
+        }
+        self.switch_engine_confirmed(target);
+    }
+    pub(crate) fn switch_engine_confirmed(&mut self, target: EngineKind) {
         let url = self
             .current_url()
             .unwrap_or_else(|| url::Url::parse("about:blank").unwrap());
@@ -750,6 +758,18 @@ impl Browser {
     /// Unload a background tab, keeping its address, title and favicon.
     /// Returns false for the selected tab and for tabs that are already unloaded.
     pub(crate) fn discard_tab(&mut self, index: usize) -> bool {
+        if index == self.session.active() {
+            return false;
+        }
+        let Some(tab) = self.session.tabs().get(index) else {
+            return false;
+        };
+        if self.confirm_page_action(crate::page_safety::Action::Discard(tab.key)) {
+            return false;
+        }
+        self.discard_tab_confirmed(index)
+    }
+    pub(crate) fn discard_tab_confirmed(&mut self, index: usize) -> bool {
         if index == self.session.active()
             || !self.session.tabs().get(index).is_some_and(Tab::loaded)
         {
@@ -805,7 +825,7 @@ impl Browser {
                         idle: tab.last_selected.elapsed(),
                     },
                     timeout,
-                )
+                ) && !wega::lifecycle::needs_confirmation(tab.loaded(), &tab.url())
             })
             .map(|(index, _)| index)
             .collect();
@@ -821,7 +841,11 @@ impl Browser {
                 .tabs()
                 .iter()
                 .enumerate()
-                .filter(|(index, tab)| *index != active && tab.loaded())
+                .filter(|(index, tab)| {
+                    *index != active
+                        && tab.loaded()
+                        && !wega::lifecycle::needs_confirmation(tab.loaded(), &tab.url())
+                })
                 .map(|(_, tab)| tab.last_selected),
             timeout,
             self.discard_checked,
@@ -865,6 +889,15 @@ impl Browser {
     }
 
     pub(crate) fn close_tab(&mut self, index: usize) {
+        let Some(tab) = self.session.tabs().get(index) else {
+            return;
+        };
+        if self.confirm_page_action(crate::page_safety::Action::Close(tab.key)) {
+            return;
+        }
+        self.close_tab_confirmed(index);
+    }
+    pub(crate) fn close_tab_confirmed(&mut self, index: usize) {
         if index >= self.session.tabs().len() {
             return;
         }
@@ -941,6 +974,32 @@ impl Browser {
         &mut self,
         command: wega::navigation::Command,
     ) -> Result<bool, String> {
+        if self.is_wega()
+            && matches!(
+                command,
+                wega::navigation::Command::Load(_)
+                    | wega::navigation::Command::Reload
+                    | wega::navigation::Command::Traverse { .. }
+            )
+            && self.confirm_page_action(crate::page_safety::Action::Navigate(
+                self.tab().key,
+                command.clone(),
+            ))
+        {
+            return Ok(false);
+        }
+        self.dispatch_navigation_confirmed(command)
+    }
+    pub(crate) fn dispatch_navigation_confirmed(
+        &mut self,
+        command: wega::navigation::Command,
+    ) -> Result<bool, String> {
+        if self.is_wega()
+            && let wega::navigation::Command::Load(address) = &command
+            && profile::resolve_address(address)?.scheme() == "wega"
+        {
+            self.switch_engine_confirmed(EngineKind::Servo);
+        }
         let active = self.session.active();
         if let Some(page) = &mut self.session.tabs_mut()[active].wega {
             let result = match command {
@@ -978,19 +1037,18 @@ impl Browser {
         }
         match self.resolve(address) {
             Ok(url) => {
-                if self.is_wega() && url.scheme() == "wega" {
-                    self.switch_engine(EngineKind::Servo);
+                match self.dispatch_navigation(wega::navigation::Command::Load(url.to_string())) {
+                    Ok(true) => {}
+                    Ok(false) => return,
+                    Err(error) => {
+                        self.status = Some(error);
+                        return;
+                    }
                 }
                 let active = self.session.active();
                 self.session.tabs_mut()[active].crash = None;
                 self.chrome.address = url.to_string();
                 self.chrome.last_url = self.chrome.address.clone();
-                if let Err(error) =
-                    self.dispatch_navigation(wega::navigation::Command::Load(url.to_string()))
-                {
-                    self.status = Some(error);
-                    return;
-                }
                 self.chrome.page_focused = true;
                 if let Some(view) = self.tab().view() {
                     view.set_focused(true);
@@ -1535,7 +1593,8 @@ impl Browser {
     }
 
     pub(crate) fn modal(&self) -> bool {
-        self.features.settings
+        self.destructive_action.is_some()
+            || self.features.settings
             || self.features.clear_data
             || self.features.delete_site.is_some()
             || self.chrome.confirm_clear_history
@@ -1627,7 +1686,7 @@ impl Browser {
                     self.new_tab();
                 }
                 "w" => self.close_tab(self.session.active()),
-                "q" => self.quit_requested = true,
+                "q" => self.request_quit(),
                 "[" => {
                     self.traverse(false);
                 }

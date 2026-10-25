@@ -288,6 +288,7 @@ impl Browser {
                 self.smoke_drag_tab(0, 1);
                 assert_eq!(self.view().id(), active_id);
                 self.close_tab(0);
+                self.coverage_click(&["Close tab"], |b, ui| b.ui(ui));
                 self.toggle_layout();
                 assert_eq!(self.view().id(), active_id);
                 self.bookmark();
@@ -339,8 +340,27 @@ impl Browser {
             10 if smoke.stage_at.elapsed() > Duration::from_millis(650) => {
                 assert!(self.chrome.library_rect.is_positive());
                 self.assert_library_layout();
+                self.chrome.show_bookmarks = false;
+                self.view().evaluate_javascript("var draft=document.createElement('textarea');draft.id='unsaved-draft';draft.value='Do not lose this draft';document.body.appendChild(draft);document.title='Unsaved draft ready';", |_| {});
+                self.smoke_stage(20);
+            }
+            20 if title == "Unsaved draft ready" => {
+                let id = self.view().id();
+                self.close_tab(self.session().active());
+                assert!(self.destructive_action.is_some());
+                self.request_quit(); // A second action cannot replace the pending close.
+                self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+                assert_eq!(self.view().id(), id);
+                assert!(!self.quit_requested);
+                self.view().evaluate_javascript("document.title=document.getElementById('unsaved-draft').value==='Do not lose this draft'?'Draft retained':'Draft lost'", |_| {});
+                self.smoke_stage(21);
+            }
+            21 if title == "Draft retained" => {
+                self.request_quit();
+                self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+                assert!(!self.quit_requested);
                 println!(
-                    "SMOKE TEST PASSED: Servo HTML/CSS/JS, native mouse routing, typing, scrolling, back/forward, popup tabs, top/side layouts, reorder, close, bookmarks, profile round-trip, console, toolbar reload, readable gradient text, unchanged regular gradients, aligned library panels, GPU pixels"
+                    "SMOKE TEST PASSED: Servo HTML/CSS/JS, native mouse routing, typing, scrolling, back/forward, popup tabs, top/side layouts, reorder, close, bookmarks, profile round-trip, console, toolbar reload, readable gradient text, unchanged regular gradients, aligned library panels, GPU pixels, unsaved textarea retained after cancelled close/quit"
                 );
                 self.harness.smoke = None;
                 event_loop.exit();

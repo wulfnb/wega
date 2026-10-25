@@ -1,6 +1,7 @@
 //! Navigation commands shared by desktop UI, shortcuts and automation.
 use crate::profile::resolve_address;
 
+#[derive(Clone)]
 pub enum Command {
     Load(String),
     Reload,
