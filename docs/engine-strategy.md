@@ -400,6 +400,9 @@ live reference-page captures and refreshed release-validation evidence. On its
 fixed article workload Wega uses more summed RSS as tabs increase; these results
 do not justify changing the default engine.
 
+The next step, replacing QuickJS-ng with V8 through deno_core, is planned in
+[v8-engine-plan.md](v8-engine-plan.md).
+
 **Use Servo as the default for everyday browsing.** It remains the supported
 choice for interactive sites, website sign-in, forms, media, developer tools and
 website accessibility. It is a compatibility fallback, not a guarantee that every
