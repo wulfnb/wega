@@ -120,6 +120,11 @@ Automated by `.github/workflows/v8-engine.yml`, which is separate from CI/CD:
   as this repository's `deno-v8-mirror-150.4.0` pre-release, an offsite copy. A failing
   weekly run is the early warning that upstream removed them.
 
+The main CI (`ci.yml`) skips its heavy jobs on pull requests that change **only** these
+V8 paths; its `CI Completion Gate` still reports. Any other file in the PR, and every
+push, merge and release (`cd.yml` calls `ci.yml` before packaging and the image), runs the
+complete suite. When P1 starts changing `engines/wega`, those PRs run both workflows.
+
 P1 extends this workflow to the real engine (`engines/Cargo.toml`) and bumps
 `V8_VERSION`, the checksum file and the mirror tag together whenever V8 is upgraded.
 
