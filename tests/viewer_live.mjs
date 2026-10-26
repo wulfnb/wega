@@ -21,7 +21,7 @@ try {
  const evaluate=async expression=>{const r=await cdp('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.text);return r.result.value;};
  const wait=async fn=>{for(let n=0;n<150;n++){try{if(await fn())return;}catch{}await sleep(200);}throw Error('Viewer UI timed out');};
  await cdp('Page.enable');await cdp('Runtime.enable');
- console.log('Chrome started');await cdp('Page.navigate',{url:origin+'/login.html'});await wait(()=>evaluate("!!document.querySelector('form')"));console.log('Login page ready');
+ console.log('Chrome started');await cdp('Page.navigate',{url:origin+'/login.html'});await wait(()=>evaluate("document.readyState==='complete'&&!!document.querySelector('form')"));console.log('Login page ready');
  const loginLayout=await evaluate("({display:getComputedStyle(document.body).display,overflow:getComputedStyle(document.body).overflow,card:document.querySelector('.login-card').getBoundingClientRect().toJSON(),width:innerWidth})");assert.equal(loginLayout.display,'flex');assert.notEqual(loginLayout.overflow,'hidden');assert.ok(Math.abs(loginLayout.card.x+loginLayout.card.width/2-loginLayout.width/2)<2,'Login card stays centered');
  const login=await evaluate(`fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'quality',password:${JSON.stringify(password)}})}).then(r=>r.status)`);assert.equal(login,200);console.log('Authenticated');
  await cdp('Page.navigate',{url:origin+'/'});

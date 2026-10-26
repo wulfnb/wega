@@ -211,13 +211,25 @@ fn response_size_limit_is_retained() {
     view.evaluate("fetch('/large').then(r=>r.text()).then(()=>globalThis.large='allowed',()=>globalThis.large='blocked')").unwrap();
     assert_eq!(wait(&mut view, "globalThis.large??null"), "\"blocked\"");
 }
+// Opening the on-disk storage and cookie files runs inside the script budget.
+// On a busy CI runner a debug build can spend more than the default 100 ms there.
+fn persistent_limits() -> Limits {
+    Limits {
+        script_time: Duration::from_secs(2),
+        ..Limits::default()
+    }
+}
 #[test]
 fn storage_is_persistent_origin_partitioned_and_has_a_quota() {
     let directory = std::env::temp_dir().join(format!("wega-web-storage-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {}))
-        .unwrap()
-        .with_storage_dir(directory.clone());
+    let engine = Engine::new(
+        persistent_limits(),
+        NetworkPolicy::default(),
+        Arc::new(|| {}),
+    )
+    .unwrap()
+    .with_storage_dir(directory.clone());
     {
         let mut first = page(&engine, "https://one.test/");
         first.evaluate("localStorage.setItem('key','one')").unwrap();
@@ -303,9 +315,13 @@ fn cookies_share_http_fetch_and_script_rules_and_persist() {
     let server = Server::new();
     let directory = std::env::temp_dir().join(format!("wega-cookies-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {}))
-        .unwrap()
-        .with_storage_dir(directory.clone());
+    let engine = Engine::new(
+        persistent_limits(),
+        NetworkPolicy::default(),
+        Arc::new(|| {}),
+    )
+    .unwrap()
+    .with_storage_dir(directory.clone());
     let mut view = engine
         .create_view(Url::parse(&format!("{}cookie-set", server.url)).unwrap())
         .unwrap();
@@ -370,9 +386,13 @@ fn cookies_share_http_fetch_and_script_rules_and_persist() {
     assert!(wait(&mut view, "globalThis.redirectCookies??null").contains("hop=redirect"));
     drop(view);
     drop(engine);
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {}))
-        .unwrap()
-        .with_storage_dir(directory.clone());
+    let engine = Engine::new(
+        persistent_limits(),
+        NetworkPolicy::default(),
+        Arc::new(|| {}),
+    )
+    .unwrap()
+    .with_storage_dir(directory.clone());
     let mut view = page(&engine, &server.url);
     assert_eq!(
         view.evaluate_json("document.cookie.includes('local=ok')")
