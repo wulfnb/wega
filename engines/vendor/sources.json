@@ -69,5 +69,13 @@
     "patches": [
       "blitz/patches/anyrender_skia.patch"
     ]
+  },
+  "skia-bindings": {
+    "version": "0.153.3",
+    "directory": "blitz/skia-bindings",
+    "sha256": "eb325787c91b3f6c34a7c6f2b8a2297b20292d733ca53a08c233e5028aec49af",
+    "patches": [
+      "blitz/patches/skia-bindings.patch"
+    ]
   }
 }

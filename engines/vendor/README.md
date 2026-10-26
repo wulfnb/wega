@@ -63,3 +63,27 @@ archive and compare every file after applying the patches. For offline validatio
 pass `--cache <Cargo registry archive directory>`. CI runs the same verifier; an
 unrecorded source change fails even if it builds. The code and pixel/WPT tests
 remain the authority for the supported subset; this is not full CSS conformance.
+
+## MSVC Skia and V8 coexistence (26 October 2026)
+
+`skia-bindings` 0.153.3 is also pinned in `sources.json`, with the exact
+`blitz/patches/skia-bindings.patch` delta. Its upstream Windows binary is built
+with `_HAS_EXCEPTIONS=0`. MSVC STL then defines an inline `std::terminate` in
+`SkExecutor`; V8 150.4.0's bundled libc++ supplies a non-COMDAT definition of the
+same symbol. Linking both fails with LNK2005/LNK1169, independent of library
+ordering. Merely selecting a different CRT does not remove that definition.
+
+On MSVC targets, the patch bypasses incompatible upstream binary downloads and
+builds Skia with `/U_HAS_EXCEPTIONS /D_HAS_EXCEPTIONS=1 /EHsc`. MSVC STL then uses
+the CRT's `::terminate` declaration. Bindgen and the C++ shim use the same header
+and unwind configuration. The upstream choice of `/MD` or `/MT` continues to
+follow Cargo's `crt-static` feature. Other targets retain upstream binary-cache
+behavior. This patch applies to direct Cargo builds, tests, the helper installer
+and CD without relying on runner environment flags. Windows needs the normal
+Skia source-build prerequisites (LLVM, Python, Ninja and Visual Studio C++).
+The first Windows build takes longer; its compiled output remains cacheable.
+No duplicate-symbol errors are suppressed.
+
+The original bindings MIT license and its pinned source/hash are included in
+`blitz/licenses/`, alongside Skia's BSD notice. Run the same vendor verifier to
+check all nine source archives and their documented patches.

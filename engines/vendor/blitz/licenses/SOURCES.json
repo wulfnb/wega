@@ -18,5 +18,9 @@
   "SKIA-BSD-3-Clause": {
     "url": "https://raw.githubusercontent.com/rust-skia/skia/m153-0.101.2/LICENSE",
     "sha256": "5f787c1dee3c56547f09ccc2906ab5f5293c4d8dd6c8654e573216c38e908dbd"
+  },
+  "rust-skia-LICENSE-MIT": {
+    "url": "https://raw.githubusercontent.com/rust-skia/rust-skia/b7f043e0b1e2a850e702245de811f01df1f6b0ff/LICENSE",
+    "sha256": "4b33ed5b329a3a79eb1243fd91373c68b0ae0b9df7503bfc50d0c5253adf1b9a"
   }
 }

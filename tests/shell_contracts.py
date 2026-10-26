@@ -39,6 +39,16 @@ def main():
             shutil.copytree(source / name, checkout / name)
         for name in ['LICENSE', 'NOTICE', 'about.toml', 'about.hbs']:
             shutil.copy2(source / name, checkout / name)
+        native_licenses = Path('engines/vendor/blitz/licenses')
+        shutil.copytree(source / native_licenses, checkout / native_licenses)
+        expected_licenses = {path.relative_to(source / native_licenses): path.read_bytes()
+                             for path in (source / native_licenses).rglob('*') if path.is_file()}
+        assert expected_licenses
+        def assert_native_licenses(directory):
+            packaged = directory / 'WEGA-ENGINE-NATIVE-LICENSES'
+            actual = {path.relative_to(packaged): path.read_bytes()
+                      for path in packaged.rglob('*') if path.is_file()}
+            assert actual == expected_licenses, (packaged, actual.keys(), expected_licenses.keys())
         fake = work / 'bin'
         fake.mkdir()
         calls = work / 'calls.jsonl'
@@ -98,6 +108,9 @@ def main():
         engine_manifest=checkout/'engines/wega/Cargo.toml';engine_manifest.parent.mkdir(parents=True);engine_manifest.write_text('[package]')
         run('scripts/third-party-notices.sh',[str(notices)],env=dict(base_env,WEGA_SOURCE_COMMIT='feedface'))
         assert (notices/'WEGA-ENGINE-THIRD-PARTY-NOTICES.html').is_file()
+        assert_native_licenses(notices)
+        run('scripts/package-linux.sh', [str(binary)])
+        assert_native_licenses(package)
         run('scripts/third-party-notices.sh',[str(work/'empty-worker-notices')],env=dict(base_env,FAKE_EMPTY_WORKER_NOTICES='1'),success=False)
         notice = (notices / 'NOTICE').read_text()
         assert notice.startswith((checkout / 'NOTICE').read_text())
@@ -113,6 +126,7 @@ def main():
         assert (prebuilt / 'notices/NOTICE').read_bytes() == (checkout / 'NOTICE').read_bytes()
         run('scripts/build-linux-binaries.sh', [str(prebuilt), 'desktop', '--notices'], env=dict(base_env, BUILD_JOBS='2'))
         assert (prebuilt / 'notices/THIRD-PARTY-NOTICES.html').read_text() == '<html>notices</html>'
+        assert_native_licenses(prebuilt / 'notices')
         commands = [json.loads(line) for line in calls.read_text().splitlines()]
         assert ['cargo', ['build', '--locked', '--features', 'test-harness', '--release', '--jobs', '4']] in commands
         assert ['cargo', ['build', '--locked', '--features', 'desktop', '--release', '--jobs', '2']] in commands
@@ -129,6 +143,7 @@ def main():
         assert (checkout / 'target/Wega.app/Contents/MacOS/wega').read_bytes() == debug.read_bytes()
         assert 'io.github.wulfnb.wega' in (checkout / 'target/Wega.app/Contents/Info.plist').read_text()
         assert (checkout / 'target/Wega.app/Contents/Resources/THIRD-PARTY-NOTICES.html').is_file()
+        assert_native_licenses(checkout / 'target/Wega.app/Contents/Resources')
         commands = [json.loads(line) for line in calls.read_text().splitlines()]
         assert ['cargo', ['build', '--locked', '--release', '--no-default-features', '--features', 'brotli-streams']] in commands
         assert ['cargo', ['build', '--locked', '--features', 'media']] in commands

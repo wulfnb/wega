@@ -17,3 +17,4 @@ blitz-dom = { path = "vendor/blitz/blitz-dom" }
 blitz-paint = { path = "vendor/blitz/blitz-paint" }
 stylo = { path = "vendor/blitz/stylo" }
 anyrender_skia = { path = "vendor/blitz/anyrender_skia" }
+skia-bindings = { path = "vendor/blitz/skia-bindings" }

@@ -22,3 +22,6 @@ engines/vendor/**/*.patch text eol=lf
 # A blank unified-diff context line is one space by definition.
 engines/vendor/**/*.patch whitespace=-blank-at-eol
 engines/vendor/blitz/licenses/** text eol=lf
+
+# Keep the published Skia crate byte-identical, including upstream whitespace.
+engines/vendor/blitz/skia-bindings/** text eol=lf whitespace=-blank-at-eol,-blank-at-eof

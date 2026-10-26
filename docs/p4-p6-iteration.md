@@ -54,7 +54,7 @@ The reported older CD failure was the Windows URL-handoff title readiness race,
 fixed by `c7592ce` on main. Latest main's complete
 [CD run 40349998980](https://github.com/wulfnb/wega/actions/runs/40349998980)
 passed Windows/macOS/Linux packaging, container validation and GitHub release
-publishing. That result certifies main `634168b`, not this unpushed combined
+publishing. That result certifies main `634168b`, not this combined
 branch. The main CI cache and parallel packaging changes are preserved.
 
 ## Validation boundaries
@@ -178,3 +178,41 @@ The three final allowlist screenshots were visually reviewed after the fix. Text
 is readable, the accidental second body is absent, and the example SVG starts at
 133 CSS pixels in a 708 CSS-pixel viewport, matching `25vh - 44px`. These
 observations do not claim pixel identity with Servo.
+
+## Windows linker follow-up (26 October 2026)
+
+The first pushed combined branch (`cc3a86e`) passed the Linux and macOS V8 jobs
+in [run 40379424338](https://github.com/wulfnb/wega/actions/runs/40379424338).
+Both the Windows V8 tests and desktop helper build failed with LNK2005/LNK1169:
+Skia's no-exception MSVC STL `std::terminate` definition collided with V8's
+bundled libc++. The exact Windows object files reproduce the duplicate-symbol
+error with LLVM's COFF linker on macOS, including reversed input order.
+
+The pinned `skia-bindings` build patch now compiles MSVC Skia with CRT exception
+declarations and matching unwind semantics, including the C++ shim and bindgen.
+It bypasses incompatible upstream MSVC prebuilts, while other platforms retain
+their upstream download/build behavior. This fixes the common dependency for
+all Windows helper, test and packaging entry points. See the
+[vendor patch notes](../engines/vendor/README.md) for the cause and build cost.
+
+The actual pinned SkExecutor source was recompiled with Microsoft Windows
+headers and the patched flags. It no longer defines `std::terminate`. A full
+COFF link with the same V8/Skia archives and Windows CRT/kernel import libraries
+produced a 17,920-byte Windows DLL with the Skia thread pool and V8 termination
+code retained, with no diagnostics and no duplicate/unresolved error
+suppression. The original object fails the same link. All 110 engine workspace
+tests, strict Clippy, nine-archive vendor integrity and engine license generation
+also passed on macOS. [Windows link evidence](validation/windows-skia-v8-link-2026-10-26.json)
+records exact commands, source versions and archive/object fingerprints.
+
+The same pushed CI run also exposed a Linux shell-contract fixture omission:
+it created an engine manifest without the native license directory required by
+`third-party-notices.sh`. The fixture now copies the real pinned license tree
+and asserts exact filenames and bytes in generated notices, Linux packaging,
+Docker build inputs and macOS app resources. All shell process-boundary contracts
+passed in a disposable Linux ARM64 container (kcov: 208/208 shell lines), and all
+71 Python tooling tests passed.
+
+Windows runtime and a complete remote CI rerun remain required after pushing
+this fix. The earlier benchmark evidence describes its original source and
+binaries; it is not re-labelled as evidence for this follow-up.
