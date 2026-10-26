@@ -37,7 +37,7 @@ fn real_http_is_shared_but_credentials_policy_and_cache_are_profile_partitioned(
                 assert!(header.len() < 65536);
             }
             let header = String::from_utf8(header).unwrap();
-            calls.fetch_add(1, Ordering::Relaxed);
+            let index = calls.fetch_add(1, Ordering::Relaxed) + 1;
             let (status, extra, body) = if header.starts_with("GET /redirect ") {
                 (
                     "302 Found",
@@ -55,7 +55,7 @@ fn real_http_is_shared_but_credentials_policy_and_cache_are_profile_partitioned(
                 (
                     "200 OK",
                     "Cache-Control: public, max-age=60\r\n".into(),
-                    "cached".into(),
+                    format!("cached-{index}"),
                 )
             };
             let _ = write!(
@@ -78,11 +78,36 @@ fn real_http_is_shared_but_credentials_policy_and_cache_are_profile_partitioned(
     };
     let url = url::Url::parse(&format!("http://{address}/public")).unwrap();
     let request = Request::get(&url, 1024);
-    assert_eq!(remote(&a).fetch(&request).unwrap().body, b"cached");
-    assert_eq!(remote(&b).fetch(&request).unwrap().body, b"cached");
+    assert_eq!(remote(&a).fetch(&request).unwrap().body, b"cached-1");
+    assert_eq!(remote(&b).fetch(&request).unwrap().body, b"cached-1");
     assert_eq!(count.load(Ordering::Relaxed), 1);
     remote(&c).fetch(&request).unwrap();
     assert_eq!(count.load(Ordering::Relaxed), 2);
+    let mut cached_only = request.clone();
+    cached_only.cache = "only-if-cached".into();
+    remote(&b).fetch(&cached_only).unwrap();
+    cached_only.url = url.join("/not-cached").unwrap().to_string();
+    assert!(
+        remote(&b)
+            .fetch(&cached_only)
+            .unwrap_err()
+            .contains("cache miss")
+    );
+    assert_eq!(
+        count.load(Ordering::Relaxed),
+        2,
+        "a cache miss must not make a network request"
+    );
+    let mut reload = request.clone();
+    reload.cache = "reload".into();
+    let refreshed = remote(&b).fetch(&reload).unwrap();
+    assert_eq!(refreshed.body, b"cached-3");
+    assert_eq!(remote(&b).fetch(&request).unwrap().body, refreshed.body);
+    assert_eq!(
+        count.load(Ordering::Relaxed),
+        3,
+        "reload must refresh the public cache"
+    );
     let mut small = request.clone();
     small.limit = 2;
     assert!(remote(&b).fetch(&small).is_err());

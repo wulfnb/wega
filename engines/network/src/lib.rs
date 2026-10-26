@@ -11,7 +11,7 @@ use std::{
 };
 use url::Url;
 mod cookies;
-pub use cookies::Cookies;
+pub use cookies::{Cookies, SiteContext};
 const MAX_HEADER: usize = 64 * 1024;
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;
@@ -53,6 +53,10 @@ pub struct Request {
     #[serde(skip)]
     pub body: Vec<u8>,
     pub origin: String,
+    #[serde(default)]
+    pub initiator: Option<Url>,
+    #[serde(default)]
+    pub top_level: bool,
     pub credentials: String,
     pub redirect: String,
     pub cache: String,
@@ -66,6 +70,8 @@ impl Request {
             headers: vec![],
             body: vec![],
             origin: url.origin().ascii_serialization(),
+            initiator: None,
+            top_level: true,
             credentials: "include".into(),
             redirect: "follow".into(),
             cache: "default".into(),
@@ -254,7 +260,15 @@ impl LocalClient {
                 || (request.credentials != "omit"
                     && url.origin().ascii_serialization() == request.origin);
             let cookie = if credentials {
-                cookies.get(&url, false)
+                cookies.get(
+                    &url,
+                    false,
+                    Cookies::context(
+                        &url,
+                        request.initiator.as_ref(),
+                        request.top_level && matches!(method.as_str(), "GET" | "HEAD"),
+                    ),
+                )
             } else {
                 String::new()
             };
@@ -263,8 +277,7 @@ impl LocalClient {
                 && !headers
                     .iter()
                     .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
-                && !matches!(request.cache.as_str(), "no-store" | "no-cache")
-                && request.cache != "reload";
+                && request.cache != "no-store";
             let key = format!(
                 "{}\n{}\n{:?}",
                 cache.map(|(_, scope)| scope).unwrap_or_default(),
@@ -272,6 +285,7 @@ impl LocalClient {
                 headers
             );
             if cacheable
+                && !matches!(request.cache.as_str(), "no-cache" | "reload")
                 && let Some((cache, _)) = cache
                 && let Some(response) = cache
                     .lock()
@@ -281,6 +295,9 @@ impl LocalClient {
                 let mut response = response;
                 response.redirected = hop > 0;
                 return Ok(response);
+            }
+            if request.cache == "only-if-cached" {
+                return Err("only-if-cached cache miss".into());
             }
             let mut builder = self.0.request(
                 method
@@ -314,7 +331,16 @@ impl LocalClient {
             if credentials {
                 for value in response.headers().get_all(reqwest::header::SET_COOKIE) {
                     if let Ok(value) = value.to_str() {
-                        cookies.set(&url, value, false);
+                        cookies.set(
+                            &url,
+                            value,
+                            false,
+                            Cookies::context(
+                                &url,
+                                request.initiator.as_ref(),
+                                request.top_level && matches!(method.as_str(), "GET" | "HEAD"),
+                            ),
+                        );
                     }
                 }
             }
@@ -521,37 +547,65 @@ impl Broker {
             .and_then(Weak::upgrade)
             .ok_or("Invalid broker capability")?;
         match request {
-            WireRequest::CookieGet { url, script, .. } => {
+            WireRequest::CookieGet {
+                url,
+                script,
+                context,
+                netscape,
+                ..
+            } => {
                 if bytes != 0 {
                     return Err("Unexpected cookie body".into());
                 };
                 let url = Url::parse(&url).map_err(|e| e.to_string())?;
-                let value = if session
+                let mut policy_url = url.clone();
+                if url.scheme() == "ws" {
+                    let _ = policy_url.set_scheme("http");
+                }
+                if url.scheme() == "wss" {
+                    let _ = policy_url.set_scheme("https");
+                }
+                let mut policy = session
                     .policy
                     .read()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .permits(&url)
-                {
-                    session.cookies.get(&url, script)
+                    .clone();
+                // Offline stops network I/O, not local document.cookie access.
+                if script {
+                    policy.offline = false;
+                }
+                let value = if policy.permits(&policy_url) {
+                    if netscape {
+                        session.cookies.netscape(&url)
+                    } else {
+                        session.cookies.get(&url, script, context)
+                    }
                 } else {
                     String::new()
                 };
                 write_packet(stream, &Reply::Cookie(String::new()), value.as_bytes())
             }
             WireRequest::CookieSet {
-                url, value, script, ..
+                url,
+                value,
+                script,
+                context,
+                ..
             } => {
                 if bytes != 0 || value.len() > 4096 {
                     return Err("Invalid cookie request".into());
                 };
                 let url = Url::parse(&url).map_err(|e| e.to_string())?;
-                if session
+                let mut policy = session
                     .policy
                     .read()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .permits(&url)
-                {
-                    session.cookies.set(&url, &value, script)
+                    .clone();
+                if script {
+                    policy.offline = false;
+                }
+                if policy.permits(&url) {
+                    session.cookies.set(&url, &value, script, context)
                 };
                 write_packet(stream, &Reply::Done, &[])
             }
@@ -646,11 +700,22 @@ impl Remote {
         }
     }
     pub fn cookie_get(&self, url: &Url, script: bool) -> Result<String, String> {
+        self.cookie_read(url, script, SiteContext::SameSite, false)
+    }
+    pub fn cookie_read(
+        &self,
+        url: &Url,
+        script: bool,
+        context: SiteContext,
+        netscape: bool,
+    ) -> Result<String, String> {
         let (reply, body) = self.call(
             WireRequest::CookieGet {
                 token: self.token.clone(),
                 url: url.to_string(),
                 script,
+                context,
+                netscape,
             },
             &[],
         )?;
@@ -665,12 +730,22 @@ impl Remote {
         }
     }
     pub fn cookie_set(&self, url: &Url, value: &str, script: bool) -> Result<(), String> {
+        self.cookie_write(url, value, script, SiteContext::SameSite)
+    }
+    pub fn cookie_write(
+        &self,
+        url: &Url,
+        value: &str,
+        script: bool,
+        context: SiteContext,
+    ) -> Result<(), String> {
         let (reply, _) = self.call(
             WireRequest::CookieSet {
                 token: self.token.clone(),
                 url: url.to_string(),
                 value: value.into(),
                 script,
+                context,
             },
             &[],
         )?;
@@ -692,18 +767,21 @@ enum FetchCall<'a> {
 enum WireRequest {
     Fetch {
         token: String,
-        request: Request,
+        request: Box<Request>,
     },
     CookieGet {
         token: String,
         url: String,
         script: bool,
+        context: SiteContext,
+        netscape: bool,
     },
     CookieSet {
         token: String,
         url: String,
         value: String,
         script: bool,
+        context: SiteContext,
     },
 }
 #[derive(Serialize, Deserialize)]
@@ -780,7 +858,17 @@ mod tests {
             offline: true,
             ..Default::default()
         });
-        assert_eq!(remote(&first).cookie_get(&url, true).unwrap(), "");
+        assert_eq!(remote(&first).cookie_get(&url, true).unwrap(), "shared=yes");
+        remote(&first)
+            .cookie_set(&url, "offline=kept; Path=/", true)
+            .unwrap();
+        assert!(
+            remote(&first)
+                .cookie_get(&url, true)
+                .unwrap()
+                .contains("offline=kept")
+        );
+        assert_eq!(remote(&first).cookie_get(&url, false).unwrap(), "");
         let (addr, token) = second.endpoint();
         let revoked = Remote::new(&addr, token).unwrap();
         drop(second);

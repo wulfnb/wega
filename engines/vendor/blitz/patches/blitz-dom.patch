@@ -1,3 +1,27 @@
+--- a/assets/default.css
++++ b/assets/default.css
+@@ -1,6 +1,8 @@
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++/* Modified by Wega contributors, 2026: see the documented P4-P5 patch. */
++
+ 
+ @namespace url(http://www.w3.org/1999/xhtml);
+ /* set default namespace to HTML */
+@@ -260,6 +262,12 @@
+     display: block;
+ }
+ 
++/* Modified by Wega contributors, 2026: use the scheme-aware default text
++   color. Author colors still win through the normal cascade. */
++:root {
++    color: CanvasText;
++}
++
+ body {
+     display: block;
+     margin: 8px;
 --- a/src/document.rs
 +++ b/src/document.rs
 @@ -1,3 +1,4 @@

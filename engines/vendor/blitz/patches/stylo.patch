@@ -30,7 +30,16 @@
  spec = "https://drafts.csswg.org/css-overflow-4/#webkit-line-clamp"
 --- a/stylesheets/rule_parser.rs
 +++ b/stylesheets/rule_parser.rs
-@@ -282,7 +282,8 @@
+@@ -1,6 +1,8 @@
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
++// Modified by Wega contributors, 2026: see the documented P4-P5 patch.
++
+ 
+ //! Parsing of the stylesheet contents.
+ 
+@@ -282,7 +284,8 @@
              "counter-style" if cfg!(feature = "gecko") => Self::CounterStyle,
              "media" => Self::Media,
              "custom-media" if crate::pref!("layout.css.custom-media.enabled") => Self::CustomMedia,

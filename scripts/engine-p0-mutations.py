@@ -57,7 +57,7 @@ def main():
     '        __wega_report(error);',
     '        throw error;'),
    ('engines/wega/src/v8.rs',
-    'fatal: self.oom.load(Ordering::Relaxed) || timed_out.load(Ordering::Relaxed),',
+    'fatal: self.oom.load(Ordering::Relaxed) || timed_out,',
     'fatal: true,')],
   'one_timer_exception_does_not_block_other_timers'),
  ('missing-api-tracker',
@@ -67,7 +67,7 @@ def main():
   'missing_api_names_source_and_keeps_the_next_script_alive'),
  ('source-diagnostics',
   [('engines/wega/src/view.rs',
-    'format!("{} inline #{}", self.url, index + 1)',
+    'format!("{document} inline #{}", self.script_count)',
     'String::from("anonymous")')],
   'missing_api_names_source_and_keeps_the_next_script_alive'),
  ('window-onerror',
@@ -88,10 +88,8 @@ def main():
   'deadline_remains_fatal_and_a_new_document_recovers'),
  ('heap-and-stack-classification',
   [('engines/wega/src/v8.rs',
-    'let fatal = timed_out.load(Ordering::Relaxed)\n'
-    '                    || self.oom.load(Ordering::Relaxed)\n'
-    '                    || text.contains("Maximum call stack size exceeded");',
-    'let fatal = false;')],
+    'fatal: text.contains("Maximum call stack size exceeded"),',
+    'fatal: false,')],
   'heap_and_stack_exhaustion_remain_fatal')]
     results=[]
     for name,patches,test in mutations:

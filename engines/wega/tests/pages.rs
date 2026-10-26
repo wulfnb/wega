@@ -66,7 +66,14 @@ fn native_dom_budget_and_cycles_are_rejected() {
         .unwrap();
     view.poll();
     view.evaluate("let rejected=false;try{document.getElementById('b').appendChild(document.getElementById('a'));}catch{rejected=true;}if(!rejected)throw Error('DOM cycle accepted');").unwrap();
-    assert!(view.set_html(&"<div>x</div>".repeat(30)).is_err());
+    view.set_html(&"<div>x</div>".repeat(30)).unwrap();
+    view.poll();
+    assert_eq!(view.title(), "Page unavailable");
+    assert!(
+        view.notices
+            .iter()
+            .any(|n| n.contains("DOM node limit exceeded"))
+    );
     assert!(view.paint(u32::MAX, u32::MAX, 1.0, 1.0, false).is_err());
 }
 #[test]
@@ -202,4 +209,28 @@ fn parallel_style_threshold_preserves_updates_on_large_documents() {
         &frame.rgba[(8 * 64 + 8) * 4..(8 * 64 + 8) * 4 + 4],
         &[0, 255, 0, 255]
     );
+}
+
+#[test]
+fn replacing_content_returns_its_node_and_text_budget() {
+    // 50 x 100 KB of text would exceed a 1 MiB budget if replaced text were never credited.
+    let mut view = page(Limits {
+        dom_text_bytes: 1024 * 1024,
+        dom_nodes: 200,
+        ..Limits::default()
+    });
+    view.set_html("<div id=box></div>").unwrap();
+    view.poll();
+    // Text node data, element textContent and innerHTML replacement; script holds
+    // no wrappers for the replaced nodes (held nodes stay charged until collected).
+    view.evaluate("const box=document.getElementById('box');const text='x'.repeat(100000);const node=document.createTextNode('');box.append(node);for(let i=0;i<50;i++)node.data=text+i;for(let i=0;i<50;i++)box.textContent=text+i;for(let i=0;i<500;i++)box.textContent='n'+i;for(let i=0;i<50;i++)box.innerHTML='<p>'+text+'</p>';globalThis.done=true").unwrap();
+    assert_eq!(
+        view.evaluate_json("done").unwrap(),
+        "true",
+        "{:?}",
+        view.notices
+    );
+    let (nodes, bytes) = view.dom_budget().unwrap();
+    assert!(nodes < 200, "replaced nodes stay counted: {nodes}");
+    assert!(bytes < 512 * 1024, "replaced text stays charged: {bytes}");
 }

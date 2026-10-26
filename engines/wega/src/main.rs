@@ -1,9 +1,13 @@
 //! One private worker per Wega tab. No window, network control port or Servo VM.
 use std::{
+    cell::RefCell,
+    collections::VecDeque,
     io::Write,
+    rc::Rc,
     sync::{Arc, mpsc},
+    time::{Duration, Instant},
 };
-use wega_engine::{Engine, Limits, NetworkPolicy, Url};
+use wega_engine::{Engine, Limits, NetworkPolicy, PageEvent, Pointer, PointerKind, Url};
 #[path = "../../../src/engine_protocol.rs"]
 mod protocol;
 use protocol::{Command, Event};
@@ -102,13 +106,48 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let interval = std::time::Duration::from_secs(2);
     let mut sampled = std::time::Instant::now();
     let mut rss_bytes = wega_platform::resident_bytes();
-    let mut output = std::io::stdout().lock();
-    protocol::write(
-        &mut output,
-        &Event::Ready {
-            version: protocol::VERSION,
-        },
-    )?;
+    let output = Rc::new(RefCell::new(std::io::stdout().lock()));
+    let receiver = Rc::new(receiver);
+    // Commands that arrive while a dialog waits for its answer run afterwards.
+    let deferred: Rc<RefCell<VecDeque<Work>>> = Default::default();
+    {
+        let output = output.clone();
+        let receiver = receiver.clone();
+        let deferred = deferred.clone();
+        view.set_dialog_handler(Box::new(move |kind, message, default| {
+            let event = Event::Dialog {
+                kind: kind.into(),
+                message: message.into(),
+                default: default.into(),
+            };
+            if protocol::write(&mut *output.borrow_mut(), &event).is_err() {
+                return None;
+            }
+            let deadline = Instant::now() + Duration::from_secs(300);
+            loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                match receiver.recv_timeout(remaining) {
+                    Ok(Work::Command(Command::DialogReply(value))) => return value,
+                    Ok(Work::Wake) => {}
+                    Ok(work @ Work::Command(Command::Shutdown)) => {
+                        deferred.borrow_mut().push_back(work);
+                        return None;
+                    }
+                    Ok(work) => {
+                        let mut queue = deferred.borrow_mut();
+                        if queue.len() < 64 {
+                            queue.push_back(work);
+                        }
+                    }
+                    Err(_) => return None,
+                }
+            }
+        }));
+    }
+    let write = |event: &Event| protocol::write(&mut *output.borrow_mut(), event);
+    write(&Event::Ready {
+        version: protocol::VERSION,
+    })?;
     let mut viewport = (1000, 700, 1.0, 1.0, false);
     let mut state = String::new();
     let frame_interval = std::time::Duration::from_millis(33);
@@ -124,25 +163,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(frame) => {
                     if frame.serial == serial && !frozen {
                         match frame.pixels {
-                            wega_engine::Pixels::Shared { slot, sequence } => protocol::write(
-                                &mut output,
-                                &Event::SharedFrame {
+                            wega_engine::Pixels::Shared { slot, sequence } => {
+                                write(&Event::SharedFrame {
                                     serial: frame.serial,
                                     width: frame.width,
                                     height: frame.height,
                                     slot,
                                     sequence,
-                                },
-                            )?,
+                                })?
+                            }
                             wega_engine::Pixels::Owned(bytes) => {
-                                protocol::write(
-                                    &mut output,
-                                    &Event::Frame {
-                                        serial: frame.serial,
-                                        width: frame.width,
-                                        height: frame.height,
-                                    },
-                                )?;
+                                write(&Event::Frame {
+                                    serial: frame.serial,
+                                    width: frame.width,
+                                    height: frame.height,
+                                })?;
+                                let mut output = output.borrow_mut();
                                 output.write_all(&bytes)?;
                                 output.flush()?;
                             }
@@ -157,13 +193,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some((slot, _)) = completed_target {
                         credits[slot as usize] = None;
                     }
-                    protocol::write(
-                        &mut output,
-                        &Event::Compatibility {
-                            serial,
-                            reason: error,
-                        },
-                    )?;
+                    write(&Event::Compatibility {
+                        serial,
+                        reason: error,
+                    })?;
                 }
             }
         }
@@ -176,29 +209,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             loading: view.loading,
             nodes: view.node_count(),
             js_heap: view.heap_bytes(),
+            back: view.document_history().0,
+            forward: view.document_history().1,
         };
         let serialized = serde_json::to_string(&snapshot)?;
         if state != serialized {
-            protocol::write(&mut output, &snapshot)?;
+            write(&snapshot)?;
             state = serialized;
         }
         while let Some(notice) = view.notices.pop_front() {
-            protocol::write(
-                &mut output,
-                &Event::Notice(notice.chars().take(4096).collect()),
-            )?;
+            write(&Event::Notice(notice.chars().take(4096).collect()))?;
         }
         if let Some(reason) = view.compatibility.take() {
-            protocol::write(
-                &mut output,
-                &Event::Compatibility {
-                    serial,
-                    reason: reason.chars().take(4096).collect(),
-                },
-            )?;
+            write(&Event::Compatibility {
+                serial,
+                reason: reason.chars().take(4096).collect(),
+            })?;
         }
         while let Some(url) = view.next_navigation() {
-            protocol::write(&mut output, &Event::Navigate(url.to_string()))?;
+            write(&Event::Navigate(url.to_string()))?;
+        }
+        while let Some(event) = view.events.pop_front() {
+            write(&match event {
+                PageEvent::Download(url) => Event::Download {
+                    cookies: view.download_cookies(&url),
+                    url: url.to_string(),
+                },
+                PageEvent::OpenWindow(url) => Event::OpenWindow(url.to_string()),
+                PageEvent::Traverse(delta) => Event::TraverseUnhandled(delta),
+                PageEvent::Cursor(cursor) => Event::Cursor(cursor),
+            })?;
         }
         let slot = credits.iter().position(Option::is_none);
         let can_paint = !view.paint_pending() && (!shared || slot.is_some());
@@ -235,13 +275,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     frozen = true;
                     view.freeze(true);
-                    protocol::write(
-                        &mut output,
-                        &Event::Compatibility {
-                            serial,
-                            reason: error,
-                        },
-                    )?;
+                    write(&Event::Compatibility {
+                        serial,
+                        reason: error,
+                    })?;
                 }
             }
         }
@@ -252,7 +289,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         let resource_delay = interval.saturating_sub(sampled.elapsed());
         delay = Some(delay.map_or(resource_delay, |delay| delay.min(resource_delay)));
-        let work = if let Some(delay) = delay {
+        let queued = deferred.borrow_mut().pop_front();
+        let work = if let Some(work) = queued {
+            work
+        } else if let Some(delay) = delay {
             match receiver.recv_timeout(delay) {
                 Ok(work) => work,
                 Err(mpsc::RecvTimeoutError::Timeout) => Work::Wake,
@@ -277,7 +317,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         .map_err(|e| e.to_string())
                         .and_then(|url| view.load(url))
                     {
-                        protocol::write(&mut output, &Event::Notice(error))?;
+                        write(&Event::Notice(error))?;
                     }
                 }
                 Command::Resize {
@@ -292,6 +332,45 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     view.request_redraw();
                 }
                 Command::Click { x, y } => view.click(x, y),
+                Command::Pointer {
+                    kind,
+                    x,
+                    y,
+                    button,
+                    buttons,
+                    modifiers,
+                    delta_x,
+                    delta_y,
+                } => {
+                    let kind = match kind.as_str() {
+                        "move" => Some(PointerKind::Move),
+                        "down" => Some(PointerKind::Down),
+                        "up" => Some(PointerKind::Up),
+                        "leave" => Some(PointerKind::Leave),
+                        "wheel" => Some(PointerKind::Wheel),
+                        _ => None,
+                    };
+                    if let Some(kind) = kind
+                        && x.is_finite()
+                        && y.is_finite()
+                        && delta_x.is_finite()
+                        && delta_y.is_finite()
+                    {
+                        view.pointer(Pointer {
+                            kind,
+                            x,
+                            y,
+                            button,
+                            buttons,
+                            modifiers,
+                            delta_x,
+                            delta_y,
+                        });
+                    }
+                }
+                Command::Traverse(delta) => view.traverse(delta),
+                // A late answer after the dialog timed out.
+                Command::DialogReply(_) => {}
                 Command::Key {
                     key,
                     code,
@@ -378,7 +457,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             error: Some(error),
                         },
                     };
-                    protocol::write(&mut output, &event)?;
+                    write(&event)?;
                 }
                 Command::Init { .. } => return Err("Worker was initialized more than once".into()),
             },

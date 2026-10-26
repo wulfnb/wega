@@ -39,7 +39,11 @@
     "engines/wega/tests/*.rs",
     "engines/v8-spike/**",
     "scripts/engine-p0-mutations.py",
-    "engines/wega/tests/fixtures/**"
+    "scripts/engine-web-mutations.py",
+    "engines/wega/tests/fixtures/**",
+    "engines/*/tests/**",
+    "scripts/engine-p4-p6-mutations.py",
+    "scripts/verify-engine-vendor.py"
   ],
   "declaration_only": [
     "src/lib.rs",

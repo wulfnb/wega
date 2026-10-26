@@ -1,3 +1,4 @@
+// Modified by Wega contributors, 2026: see the documented P4-P5 patch.
 use std::sync::Arc;
 
 use anyrender::filters::component_transfer::TransferFunction;

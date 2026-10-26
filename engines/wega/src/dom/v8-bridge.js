@@ -4,6 +4,14 @@
     value: (source) =>
       ops.op_result(JSON.stringify((0, eval)(source)) ?? "null"),
   });
+  // Run a classic script synchronously in the global scope (inserted inline
+  // scripts). Unlike eval, this is a real script and is not subject to CSP eval.
+  Object.defineProperty(globalThis, "__wega_run_script", {
+    value: (source, name) => {
+      const [, error] = ops.op_eval_context(String(source), String(name));
+      if (error) throw error.thrown;
+    },
+  });
   Object.defineProperty(globalThis, "__wega_call", {
     value: (op, a = "", b = "", c = "", d = "") => {
       if (op === "setAttrNS")

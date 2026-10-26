@@ -76,16 +76,181 @@
       this.detail = options.detail ?? null;
     }
   }
+  class UIEvent extends Event {
+    constructor(type, options = {}) {
+      super(type, options);
+      Object.defineProperty(this, "detail", { value: Number(options.detail ?? 0) });
+      Object.defineProperty(this, "view", { value: options.view ?? null });
+    }
+  }
+  class MouseEvent extends UIEvent {
+    constructor(type, options = {}) {
+      super(type, options);
+      for (const [key, fallback] of [
+        ["screenX", 0],
+        ["screenY", 0],
+        ["clientX", 0],
+        ["clientY", 0],
+        ["button", 0],
+        ["buttons", 0],
+        ["ctrlKey", false],
+        ["shiftKey", false],
+        ["altKey", false],
+        ["metaKey", false],
+        ["movementX", 0],
+        ["movementY", 0],
+        ["relatedTarget", null],
+      ])
+        Object.defineProperty(this, key, { value: options[key] ?? fallback });
+    }
+    get pageX() {
+      return this.clientX + scrollX;
+    }
+    get pageY() {
+      return this.clientY + scrollY;
+    }
+    get x() {
+      return this.clientX;
+    }
+    get y() {
+      return this.clientY;
+    }
+    get offsetX() {
+      const rect = this.target?.getBoundingClientRect?.();
+      return rect ? this.clientX - rect.left : this.clientX;
+    }
+    get offsetY() {
+      const rect = this.target?.getBoundingClientRect?.();
+      return rect ? this.clientY - rect.top : this.clientY;
+    }
+    getModifierState(key) {
+      return (
+        { Shift: this.shiftKey, Control: this.ctrlKey, Alt: this.altKey, Meta: this.metaKey }[
+          key
+        ] ?? false
+      );
+    }
+  }
+  class PointerEvent extends MouseEvent {
+    constructor(type, options = {}) {
+      super(type, options);
+      for (const [key, fallback] of [
+        ["pointerId", 1],
+        ["pointerType", "mouse"],
+        ["isPrimary", true],
+        ["width", 1],
+        ["height", 1],
+        ["pressure", 0],
+        ["tiltX", 0],
+        ["tiltY", 0],
+      ])
+        Object.defineProperty(this, key, { value: options[key] ?? fallback });
+    }
+    getCoalescedEvents() {
+      return [this];
+    }
+  }
+  class WheelEvent extends MouseEvent {
+    constructor(type, options = {}) {
+      super(type, options);
+      for (const key of ["deltaX", "deltaY", "deltaZ"])
+        Object.defineProperty(this, key, { value: Number(options[key] ?? 0) });
+      Object.defineProperty(this, "deltaMode", { value: Number(options.deltaMode ?? 0) });
+    }
+  }
+  for (const [key, value] of [
+    ["DOM_DELTA_PIXEL", 0],
+    ["DOM_DELTA_LINE", 1],
+    ["DOM_DELTA_PAGE", 2],
+  ])
+    Object.defineProperty(WheelEvent, key, { value });
+  class FocusEvent extends UIEvent {
+    constructor(type, options = {}) {
+      super(type, options);
+      Object.defineProperty(this, "relatedTarget", { value: options.relatedTarget ?? null });
+    }
+  }
+  class SubmitEvent extends Event {
+    constructor(type, options = {}) {
+      super(type, options);
+      this.submitter = options.submitter ?? null;
+    }
+  }
+  class HashChangeEvent extends Event {
+    constructor(type, options = {}) {
+      super(type, options);
+      Object.defineProperty(this, "oldURL", { value: String(options.oldURL ?? "") });
+      Object.defineProperty(this, "newURL", { value: String(options.newURL ?? "") });
+    }
+  }
+  class PopStateEvent extends Event {
+    constructor(type, options = {}) {
+      super(type, options);
+      Object.defineProperty(this, "state", { value: options.state ?? null });
+    }
+  }
+  const mouseTypes = new Set([
+    "click",
+    "dblclick",
+    "mousedown",
+    "mouseup",
+    "mousemove",
+    "mouseover",
+    "mouseout",
+    "mouseenter",
+    "mouseleave",
+    "contextmenu",
+  ]);
+  const notBubbling = new Set([
+    "focus",
+    "blur",
+    "mouseenter",
+    "mouseleave",
+    "pointerenter",
+    "pointerleave",
+  ]);
+  const notCancelable = new Set([
+    "focus",
+    "blur",
+    "focusin",
+    "focusout",
+    "input",
+    "mouseenter",
+    "mouseleave",
+    "pointerenter",
+    "pointerleave",
+    "compositionstart",
+    "compositionupdate",
+    "compositionend",
+    "change",
+  ]);
   Object.defineProperty(globalThis, "__wega_native_event", {
-    value: (type, id, options) => {
+    value: (type, id, options = {}) => {
       const target = __wega_node(id);
-      const bubbles = !["focus", "blur"].includes(type);
-      const cancelable = ["keydown", "keyup", "beforeinput"].includes(type);
+      if (!target) return false;
+      const init = {
+        ...options,
+        bubbles: !notBubbling.has(type),
+        cancelable: !notCancelable.has(type),
+        composed: true,
+        view: globalThis,
+        relatedTarget:
+          options.relatedTarget == null ? null : __wega_node(options.relatedTarget),
+        detail: type === "dblclick" ? 2 : type === "click" ? 1 : 0,
+      };
       const event = type.startsWith("key")
-        ? new KeyboardEvent(type, { ...options, bubbles, cancelable })
+        ? new KeyboardEvent(type, init)
         : ["input", "beforeinput"].includes(type)
-          ? new InputEvent(type, { ...options, bubbles, cancelable })
-          : new Event(type, { bubbles, cancelable });
+          ? new InputEvent(type, init)
+          : type === "wheel"
+            ? new WheelEvent(type, init)
+            : type.startsWith("pointer")
+              ? new PointerEvent(type, init)
+              : mouseTypes.has(type)
+                ? new MouseEvent(type, init)
+                : ["focus", "blur", "focusin", "focusout"].includes(type)
+                  ? new FocusEvent(type, init)
+                  : new Event(type, init);
       if (type.startsWith("composition")) event.data = options.data || "";
       return !target.dispatchEvent(event);
     },
@@ -266,6 +431,14 @@
     DOMRect,
     KeyboardEvent,
     InputEvent,
+    UIEvent,
+    MouseEvent,
+    PointerEvent,
+    WheelEvent,
+    FocusEvent,
+    SubmitEvent,
+    HashChangeEvent,
+    PopStateEvent,
     ResizeObserver,
     IntersectionObserver,
   });
@@ -278,6 +451,9 @@
     };
   const historyEntries = [{ state: null, url: location.href }];
   let historyIndex = 0;
+  // The browser enables Back/Forward from this document's own entries.
+  const reportHistory = () =>
+    host("historyPosition", String(historyIndex), String(historyEntries.length));
   globalThis.history = {
     get length() {
       return historyEntries.length;
@@ -298,6 +474,7 @@
         url: next,
       });
       historyIndex++;
+      reportHistory();
     },
     replaceState(state, _unused, url) {
       const next =
@@ -312,13 +489,13 @@
       };
     },
     go(delta = 0) {
-      const index = historyIndex + Number(delta);
-      if (index < 0 || index >= historyEntries.length) return;
-      historyIndex = index;
-      host("history", historyEntries[index].url);
-      const event = new Event("popstate");
-      event.state = historyEntries[index].state;
-      dispatchEvent(event);
+      delta = Number(delta) || 0;
+      if (!delta) {
+        location.reload();
+        return;
+      }
+      // Outside this document's entries the browser's own history continues.
+      if (!traverse(delta)) host("traverseHost", String(delta));
     },
     back() {
       this.go(-1);
@@ -327,7 +504,47 @@
       this.go(1);
     },
   };
+  const withoutHash = (url) => url.split("#")[0];
+  // Move within this document's session history: popstate, and hashchange
+  // when only the fragment differs.
+  function traverse(delta) {
+    const index = historyIndex + delta;
+    if (index < 0 || index >= historyEntries.length) return false;
+    const old = location.href;
+    historyIndex = index;
+    reportHistory();
+    const next = historyEntries[index].url;
+    if (withoutHash(old) === withoutHash(next) && old !== next) host("fragment", next);
+    else host("history", next);
+    dispatchEvent(new PopStateEvent("popstate", { state: historyEntries[index].state }));
+    if (withoutHash(old) === withoutHash(next) && old !== next)
+      dispatchEvent(new HashChangeEvent("hashchange", { oldURL: old, newURL: next }));
+    return true;
+  }
+  function navigateFragment(url, replace) {
+    const old = location.href;
+    host("fragment", url);
+    if (replace) historyEntries[historyIndex] = { state: null, url };
+    else {
+      historyEntries.splice(historyIndex + 1);
+      historyEntries.push({ state: null, url });
+      historyIndex++;
+    }
+    reportHistory();
+    if (old !== url)
+      dispatchEvent(new HashChangeEvent("hashchange", { oldURL: old, newURL: url }));
+  }
   Object.defineProperties(globalThis, {
+    __wega_traverse: { value: (delta) => traverse(Number(delta)) },
+    __wega_navigate_fragment: { value: (url) => navigateFragment(String(url), false) },
+    __wega_location_navigate: {
+      value: (value, replace) => {
+        const url = new URL(value, location.href).href;
+        if (url.includes("#") && withoutHash(url) === withoutHash(location.href))
+          navigateFragment(url, replace);
+        else host("navigate", url);
+      },
+    },
     __wega_has_frame: { value: () => raf.size > 0 },
     __wega_frame: {
       value: (timestamp) => {

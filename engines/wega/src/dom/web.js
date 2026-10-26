@@ -86,68 +86,48 @@
   globals.fetch = async (input, init) => {
     if (inFlight >= 32) throw new TypeError("Network queue is full");
     inFlight++;
-    let abort;
-    let req;
     try {
       if (typeof input === "string" || input instanceof url.URL)
         input = new url.URL(String(input), globalThis.location.href).href;
-      req = new request.Request(input, init);
-      req.signal.throwIfAborted();
-      const bytes = new Uint8Array(await req.arrayBuffer());
-      if (bytes.byteLength > limit)
-        throw new TypeError("Upload exceeds its size limit");
-      req.signal.throwIfAborted();
-      const cancelled = new Promise((_, reject) => {
-        abort = () => reject(req.signal.reason);
-        req.signal.addEventListener("abort", abort, { once: true });
-      });
-      const result = await Promise.race([
-        core.ops.op_wega_fetch(
-          {
-            url: req.url,
-            method: req.method,
-            headers: [...req.headers],
-            origin: "",
-            credentials: req.credentials,
-            redirect: req.redirect,
-            cache: req.cache,
-            limit,
-          },
-          bytes,
-        ),
-        cancelled,
-      ]);
-      req.signal.throwIfAborted();
-      const bounded = new response.Response(
-        [101, 204, 205, 304].includes(result.status) || req.method === "HEAD"
-          ? null
-          : result.body,
-        {
-          status: result.status,
-          statusText: result.statusText,
-          headers: result.headers,
-        },
-      );
-      const inner = response.toInnerResponse(bounded);
-      inner.type =
-        req.redirect === "manual" &&
-        [301, 302, 303, 307, 308].includes(result.status)
-          ? "opaqueredirect"
-          : "basic";
-      if (inner.type === "opaqueredirect") {
-        inner.status = 0;
-        inner.statusMessage = "";
-        inner.headerList = [];
-        inner.body = null;
-        inner.urlList = [];
-      } else {
-        inner.urlList = result.redirected
-          ? [req.url, result.url]
-          : [result.url];
+      const result = await fetch.fetch(input, init);
+      if (Number(result.headers.get("content-length")) > limit) {
+        await result.body?.cancel();
+        throw new TypeError("Resource exceeds the size limit");
       }
+      if (!result.body) return result;
+      const reader = result.body.getReader();
+      let used = 0;
+      const body = new streams.ReadableStream({
+        async pull(controller) {
+          try {
+            const part = await reader.read();
+            if (part.done) {
+              controller.close();
+              return;
+            }
+            used += part.value.byteLength;
+            if (used > limit) {
+              await reader.cancel();
+              throw new TypeError("Resource exceeds the size limit");
+            }
+            controller.enqueue(part.value);
+          } catch (error) {
+            controller.error(error);
+          }
+        },
+        cancel(reason) {
+          return reader.cancel(reason);
+        },
+      });
+      const bounded = new response.Response(body, {
+        status: result.status,
+        statusText: result.statusText,
+        headers: result.headers,
+      });
+      const inner = response.toInnerResponse(result);
+      inner.body = response.toInnerResponse(bounded).body;
       return response.fromInnerResponse(inner, "immutable");
     } finally {
-      if (abort) req.signal.removeEventListener("abort", abort);
       inFlight--;
     }
   };

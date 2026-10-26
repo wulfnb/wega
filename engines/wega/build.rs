@@ -28,6 +28,7 @@ fn main() {
         ("observers", "observers.js"),
         ("install", "install-web.js"),
         ("xhr", "xhr.js"),
+        ("forms", "forms.js"),
     ] {
         let path = PathBuf::from("src/dom").join(file);
         println!("cargo:rerun-if-changed={}", path.display());

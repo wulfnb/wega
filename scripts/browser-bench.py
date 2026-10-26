@@ -32,7 +32,7 @@ PROBES = {
     "fetch": "fetch('/payload').then(function(r){return r.text();}).then(function(t){check(t==='network ok');}).catch(function(){check(false);});",
 }
 # These are bounded API probes, not claims of whole-site compatibility.
-REQUIRED = {"servo": set(PROBES), "wega": {"article", "dom", "timer"}}
+REQUIRED = {"servo": set(PROBES), "wega": set(PROBES)}
 LIVE_SITES = ["https://example.com/", "https://example.org/", "https://example.net/",
               "https://en.wikipedia.org/wiki/Rust_(programming_language)",
               "https://developer.mozilla.org/en-US/", "https://github.com/",

@@ -26,9 +26,9 @@ class MeasurementTests(unittest.TestCase):
         with patch.object(bench.sys, 'platform', 'darwin'), patch.object(bench.os, 'name', 'posix'), patch.object(bench.subprocess, 'check_output', return_value=' 10 1 1024 00:02.50\n'):
             self.assertEqual(bench.process_snapshot(), {10: (1, 1048576, 2.5)})
 
-    def test_required_cases_do_not_claim_experimental_form_support(self):
+    def test_required_cases_cover_the_bounded_supported_apis(self):
         self.assertEqual(bench.REQUIRED['servo'], set(bench.PROBES))
-        self.assertNotIn('forms', bench.REQUIRED['wega'])
+        self.assertEqual(bench.REQUIRED['wega'], set(bench.PROBES))
         self.assertIn(b'FormData', bench.fixture('forms'))
         self.assertIn(b'PENDING:fetch', bench.fixture('fetch'))
 

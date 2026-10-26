@@ -30,7 +30,7 @@ def main():
          '&& *credit == Some(sequence)', '&& true',
          ['-p', 'wega-engine', '--test', 'worker'], 'shared_frames_wait_for_exact_credits_and_resize_cannot_unfreeze_a_tab'),
         ('resize-keeps-freeze', 'engines/wega/src/main.rs',
-         'view.request_redraw();', 'view.freeze(false);',
+         'view.request_redraw();', 'frozen = false; view.freeze(false);',
          ['-p', 'wega-engine', '--test', 'worker'], 'shared_frames_wait_for_exact_credits_and_resize_cannot_unfreeze_a_tab'),
         ('skia-color-alpha', 'engines/vendor/blitz/anyrender_skia/src/scene.rs',
          'self.cache.paint.set_alpha_f(self.cache.paint.alpha_f() * alpha);', 'self.cache.paint.set_alpha_f(alpha);',
@@ -39,8 +39,19 @@ def main():
          'Some(app_units::Au::from_f32_px(layout.content_box_width()))', 'None',
          ['-p', 'wega-engine', '--test', 'css'], 'inline_size_container_query_uses_content_size_and_updates_after_resize'),
         ('scheme-default-color', 'engines/vendor/blitz/blitz-dom/assets/default.css',
-         'color: CanvasText;', 'color: black;',
+         ':root {\n    color: CanvasText;\n}', ':root {\n    color: black;\n}',
          ['-p', 'wega-engine', '--test', 'css'], 'default_text_color_follows_the_root_color_scheme_and_author_colors_win'),
+        ('broker-resource-concurrency', 'engines/wega/src/network.rs',
+         'if brokered { 2 } else { 4 }', 'if brokered { 1 } else { 4 }',
+         ['-p', 'wega-engine', '--test', 'scripts'], 'script_inserted_scripts_keep_order_only_when_async_is_false'),
+        ('offline-cookie-state', 'engines/network/src/lib.rs',
+         'if script {\n                    policy.offline = false;\n                }\n                let value = if policy.permits(&policy_url)',
+         'if false { policy.offline = false; }\n                let value = if policy.permits(&policy_url)',
+         ['-p', 'wega-network', '--lib'], 'tests::capabilities_partition_profiles_share_live_cookies_and_track_policy'),
+        ('cache-only-never-requests-network', "engines/network/src/lib.rs", 'if request.cache == "only-if-cached" {', 'if false {',
+         ["-p", "wega-network", "--test", "broker"], 'real_http_is_shared_but_credentials_policy_and_cache_are_profile_partitioned'),
+        ('reload-updates-public-cache', "engines/network/src/lib.rs", 'if cacheable && let Some((cache, _)) = cache {', 'if cacheable && request.cache != "reload" && let Some((cache, _)) = cache {',
+         ["-p", "wega-network", "--test", "broker"], 'real_http_is_shared_but_credentials_policy_and_cache_are_profile_partitioned'),
     ]
     results = []
     for name, relative, before, after, flags, test in mutations:
@@ -53,6 +64,7 @@ def main():
             run = subprocess.run(['cargo', 'test', '--offline', '--locked', '--manifest-path',
                                   str(ROOT / 'engines/Cargo.toml'), '--target-dir', target,
                                   '--jobs', '2', *flags, test, '--', '--exact'], cwd=ROOT,
+                                 env={**os.environ, **({'WEGA_TEST_BROKER': '1'} if name == 'broker-resource-concurrency' else {})},
                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             (output.parent / f'{name}.log').write_text(run.stdout)
             detected = run.returncode != 0 and f'test {test} ... FAILED' in run.stdout

@@ -420,7 +420,7 @@ fn broker_fetch_retains_response_filtering_immutability_and_redirect_metadata() 
     view.evaluate("fetch('/redirect').then(r=>{let immutable=false;try{r.headers.set('test','value')}catch{immutable=true}globalThis.follow=[r.type,r.status,r.redirected,immutable]})").unwrap();
     assert_eq!(
         wait(&mut view, "globalThis.follow??null"),
-        "[\"basic\",200,true,true]"
+        "[\"cors\",200,true,true]"
     );
 }
 

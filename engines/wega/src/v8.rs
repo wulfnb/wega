@@ -4,16 +4,13 @@ use crate::{
     dom::Dom,
     script::{ScriptError, ScriptHost},
 };
-use blitz_dom::{BaseDocument, NodeId};
 use deno_core::{JsRuntime, RuntimeOptions};
 use serde_json::json;
 use std::{
-    cell::RefCell,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc,
     },
     task::{Context, Poll, Wake, Waker},
     time::{Duration, Instant},
@@ -25,7 +22,15 @@ impl crate::native_ops::NativeHost for Dom {
         mut request: wega_network::Request,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<wega_network::Response, String>>>>
     {
-        request.origin = self.document.borrow().url().origin().ascii_serialization();
+        let blocked = self.connect_check(&request.url);
+        if !blocked.is_empty() {
+            return Box::pin(std::future::ready(Err(blocked)));
+        }
+        let document = self.document.borrow().url().clone();
+        request.origin = document.origin().ascii_serialization();
+        request.initiator = Some(document);
+        request.top_level = false;
+        request.redirect = "manual".into();
         request.limit = self.limits.resource_bytes.min(wega_network::MAX_BODY);
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let queued = self.network.spawn(move |client| {
@@ -33,37 +38,91 @@ impl crate::native_ops::NativeHost for Dom {
         });
         Box::pin(async move {
             queued?;
-            let mut response = receiver.await.map_err(|_| "Network dispatcher stopped")??;
-            response
-                .headers
-                .retain(|(name, _)| !name.eq_ignore_ascii_case("set-cookie"));
-            Ok(response)
+            receiver.await.map_err(|_| "Network dispatcher stopped")?
         })
     }
 
     fn call(&self, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
         Dom::call(self, args)
     }
-    fn cookie_header(&self, address: &str, mode: &str) -> String {
+    fn cookie_header(&self, address: &str, include: bool) -> String {
         let Ok(url) = url::Url::parse(address) else {
             return String::new();
         };
-        if mode == "omit"
-            || (mode != "include" && url.origin() != self.document.borrow().url().origin())
-        {
+        if !include {
             return String::new();
         }
-        self.network.cookies.get(&url, false)
+        let document = self.document.borrow().url().clone();
+        let context = self.network.cookies.context(&url, Some(&document), false);
+        self.network.cookies.get(&url, false, context)
     }
-    fn cookie_response(&self, address: &str, mode: &str, value: &str) {
+    fn cookie_response(&self, address: &str, include: bool, value: &str) {
         let Ok(url) = url::Url::parse(address) else {
             return;
         };
-        if mode != "omit"
-            && (mode == "include" || url.origin() == self.document.borrow().url().origin())
-        {
-            self.network.cookies.set(&url, value, false);
+        if !include {
+            return;
         }
+        let document = self.document.borrow().url().clone();
+        let context = self.network.cookies.context(&url, Some(&document), false);
+        self.network.cookies.set(&url, value, false, context);
+    }
+    fn document_origin(&self) -> String {
+        self.document.borrow().url().origin().ascii_serialization()
+    }
+    fn ws_headers(&self, address: &str) -> Vec<(String, String)> {
+        let document = self.document.borrow().url().clone();
+        let mut headers = vec![("origin".to_owned(), document.origin().ascii_serialization())];
+        if let Ok(url) = url::Url::parse(address) {
+            let context = self.network.cookies.context(&url, Some(&document), false);
+            let cookie = self.network.cookies.get(&url, false, context);
+            if !cookie.is_empty() {
+                headers.push(("cookie".to_owned(), cookie));
+            }
+        }
+        headers
+    }
+    fn referrer(&self, address: &str) -> String {
+        let Ok(url) = url::Url::parse(address) else {
+            return String::new();
+        };
+        let document = self.document.borrow().url().clone();
+        crate::network::referrer(&document, &url, None).unwrap_or_default()
+    }
+    fn connect_check(&self, address: &str) -> String {
+        let Ok(url) = url::Url::parse(address) else {
+            return "Invalid URL".into();
+        };
+        let mut policy_url = url.clone();
+        if url.scheme() == "ws" {
+            let _ = policy_url.set_scheme("http");
+        }
+        if url.scheme() == "wss" {
+            let _ = policy_url.set_scheme("https");
+        }
+        if matches!(url.scheme(), "http" | "https" | "ws" | "wss")
+            && !self
+                .network
+                .policy
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .permits(&policy_url)
+        {
+            return "Network request blocked by browsing policy".into();
+        }
+        let document = self.document.borrow().url().clone();
+        if crate::network::mixed_content(Some(&document), &url, false) {
+            return format!("Mixed content blocked: {url}");
+        }
+        if !self
+            .csp
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .allows_url("connect-src", &url, &document, None)
+        {
+            return format!("Refused to connect to {url}: Content Security Policy connect-src");
+        }
+        String::new()
     }
 }
 use crate::native_ops::wega_dom;
@@ -99,15 +158,107 @@ impl Wake for WakeLoop {
         (self.0)();
     }
 }
+
+/// One long-lived watchdog thread per isolate. `arm` starts a deadline for one
+/// script run; when it passes before `disarm`, execution is terminated.
+struct Watchdog {
+    shared: Arc<(Mutex<WatchState>, Condvar)>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+#[derive(Default)]
+struct WatchState {
+    deadline: Option<Instant>,
+    generation: u64,
+    fired: bool,
+    shutdown: bool,
+}
+impl Watchdog {
+    fn new(handle: deno_core::v8::IsolateHandle) -> Result<Self, String> {
+        let shared = Arc::new((Mutex::new(WatchState::default()), Condvar::new()));
+        let state = shared.clone();
+        let thread = std::thread::Builder::new()
+            .name("wega-watchdog".into())
+            .spawn(move || {
+                let (lock, wake) = &*state;
+                let mut watch = lock
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                while !watch.shutdown {
+                    match watch.deadline {
+                        None => {
+                            watch = wake
+                                .wait(watch)
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        }
+                        Some(deadline) => {
+                            let now = Instant::now();
+                            if now >= deadline {
+                                watch.fired = true;
+                                watch.deadline = None;
+                                handle.terminate_execution();
+                            } else {
+                                watch = wake
+                                    .wait_timeout(watch, deadline - now)
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .0;
+                            }
+                        }
+                    }
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(Self {
+            shared,
+            thread: Some(thread),
+        })
+    }
+    fn arm(&self, budget: Duration) {
+        let (lock, wake) = &*self.shared;
+        let mut watch = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        watch.generation += 1;
+        watch.fired = false;
+        watch.deadline = Some(Instant::now() + budget);
+        wake.notify_one();
+    }
+    /// Stop the current deadline; returns whether it already fired.
+    fn disarm(&self) -> bool {
+        let (lock, wake) = &*self.shared;
+        let mut watch = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        watch.deadline = None;
+        wake.notify_one();
+        watch.fired
+    }
+}
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        {
+            let (lock, wake) = &*self.shared;
+            let mut watch = lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            watch.shutdown = true;
+            wake.notify_one();
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 pub(crate) struct V8Host {
     runtime: Option<JsRuntime>,
     loading_module: Option<ModuleLoad>,
     evaluating_modules: Vec<ModuleEvaluation>,
     queued: std::collections::VecDeque<(String, String, bool)>,
-    terminate: deno_core::v8::IsolateHandle,
-    executor: tokio::runtime::Runtime,
+    watchdog: Watchdog,
+    executor: Rc<tokio::runtime::Runtime>,
     dom: Rc<Dom>,
     budget: Duration,
+    slow: Duration,
     oom: Arc<AtomicBool>,
     pending: bool,
     frozen: bool,
@@ -118,18 +269,18 @@ pub(crate) struct V8Host {
 }
 impl V8Host {
     pub fn new(
-        document: Rc<RefCell<BaseDocument>>,
+        context: crate::script::HostContext,
         limits: &Limits,
-        navigate: Rc<RefCell<Vec<url::Url>>>,
         initial_bytes: usize,
-        network: crate::network::Network,
     ) -> Result<Self, String> {
-        let executor = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| e.to_string())?;
+        let executor = Rc::new(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| e.to_string())?,
+        );
         let entered = executor.enter();
-        let dom = Rc::new(Dom::new(document, limits, navigate, initial_bytes, network));
+        let dom = Rc::new(Dom::new(context, limits, initial_bytes));
         // Do not enable lite mode per isolate: V8 flags are process-wide. Workers receive
         // their per-view option before initializing the platform.
         let document_url = dom.document.borrow().url().clone();
@@ -159,7 +310,7 @@ impl V8Host {
             module_loader: Some(Rc::new(crate::module_loader::Loader::new(
                 dom.network.clone(),
                 &document_url,
-                1024 * 1024,
+                limits.resource_bytes,
             ))),
             extension_transpiler: Some(Rc::new(crate::web::adapt_extension)),
             create_params: Some(
@@ -194,17 +345,18 @@ impl V8Host {
             terminate.terminate_execution();
             current.saturating_mul(2)
         });
-        let terminate = runtime.v8_isolate().thread_safe_handle();
+        let watchdog = Watchdog::new(runtime.v8_isolate().thread_safe_handle())?;
         drop(entered);
         Ok(Self {
             runtime: Some(runtime),
             loading_module: None,
             evaluating_modules: vec![],
             queued: Default::default(),
-            terminate,
+            watchdog,
             executor,
             dom,
             budget: limits.script_time,
+            slow: limits.slow_script,
             oom,
             pending: false,
             frozen: false,
@@ -214,40 +366,43 @@ impl V8Host {
             polled_at: Instant::now(),
         })
     }
-    fn execute(&mut self, source: &str, name: &str) -> Result<String, ScriptError> {
+    /// Run one bounded step of script; reports a notice when it is slow.
+    fn bounded<T>(&mut self, name: &str, run: impl FnOnce(&mut Self) -> T) -> (T, bool) {
+        let started = Instant::now();
+        self.watchdog.arm(self.budget);
+        let result = run(self);
+        let fired = self.watchdog.disarm();
+        let elapsed = started.elapsed();
+        if !fired && elapsed > self.slow {
+            let mut errors = self.dom.errors.borrow_mut();
+            if errors.len() < 16 {
+                errors.push(format!(
+                    "{name}: slow script ({} ms); the page may be unresponsive",
+                    elapsed.as_millis()
+                ));
+            }
+        }
+        (result, fired)
+    }
+    fn execute_value(
+        &mut self,
+        source: &str,
+        name: &str,
+    ) -> Result<deno_core::v8::Global<deno_core::v8::Value>, ScriptError> {
         if self.runtime.is_none() {
             return Err(ScriptError {
                 fatal: false,
                 message: "Module graph is loading".into(),
             });
         }
-        let entered = self.executor.enter();
-        let handle = self
-            .runtime
-            .as_mut()
-            .unwrap()
-            .v8_isolate()
-            .thread_safe_handle();
-        let timed_out = Arc::new(AtomicBool::new(false));
-        let flag = timed_out.clone();
-        let budget = self.budget;
-        let (done, wait) = mpsc::channel();
-        let watchdog = std::thread::spawn(move || {
-            if matches!(
-                wait.recv_timeout(budget),
-                Err(mpsc::RecvTimeoutError::Timeout)
-            ) {
-                flag.store(true, Ordering::Relaxed);
-                handle.terminate_execution();
-            }
+        let executor = self.executor.clone();
+        let entered = executor.enter();
+        let (result, timed_out) = self.bounded(name, |host| {
+            host.runtime
+                .as_mut()
+                .unwrap()
+                .execute_script(name.to_owned(), source.to_owned())
         });
-        let result = self
-            .runtime
-            .as_mut()
-            .unwrap()
-            .execute_script(name.to_owned(), source.to_owned());
-        let _ = done.send(());
-        let _ = watchdog.join();
         self.polled_at = Instant::now();
         self.heap = heap_bytes(self.runtime.as_mut().unwrap());
         if self.heap > self.heap_limit && !self.oom.load(Ordering::Relaxed) {
@@ -264,32 +419,23 @@ impl V8Host {
                 ),
             });
         }
-        if timed_out.load(Ordering::Relaxed) {
+        if timed_out {
             return Err(ScriptError {
                 fatal: true,
                 message: format!("{name}: Script deadline exceeded"),
             });
         }
-        match result {
-            Ok(value) => Ok(format!("{value:?}")),
-            Err(error) => {
-                let text = error.to_string();
-                let fatal = timed_out.load(Ordering::Relaxed)
-                    || self.oom.load(Ordering::Relaxed)
-                    || text.contains("Maximum call stack size exceeded");
-                let text = if timed_out.load(Ordering::Relaxed) {
-                    format!("Script deadline exceeded: {text}")
-                } else if self.oom.load(Ordering::Relaxed) {
-                    format!("V8 heap limit exceeded: {text}")
-                } else {
-                    text
-                };
-                Err(ScriptError {
-                    fatal,
-                    message: format!("{name}: {text}"),
-                })
+        result.map_err(|error| {
+            let text = error.to_string();
+            ScriptError {
+                fatal: text.contains("Maximum call stack size exceeded"),
+                message: format!("{name}: {text}"),
             }
-        }
+        })
+    }
+    fn execute(&mut self, source: &str, name: &str) -> Result<String, ScriptError> {
+        self.execute_value(source, name)
+            .map(|value| format!("{value:?}"))
     }
 }
 impl ScriptHost for V8Host {
@@ -351,28 +497,17 @@ impl ScriptHost for V8Host {
             || !self.evaluating_modules.is_empty()
             || !self.queued.is_empty()
     }
-    fn dispatch(&mut self, event: &str, id: NodeId) -> Result<bool, ScriptError> {
-        let text = self.evaluate_json(&format!(
-            "__wega_dispatch({}, {})",
-            json!(event),
-            json!(id.as_u64().to_string())
-        ))?;
-        self.pending = true;
-        Ok(text == "true")
-    }
+    /// Run `source` and return its completion value as JSON, without `eval`
+    /// (which a page's CSP may disable).
     fn evaluate_json(&mut self, source: &str) -> Result<String, ScriptError> {
-        self.execute(
-            &format!("__wega_evaluate({})", json!(source)),
-            "evaluate_json",
-        )?;
-        Ok(self
-            .runtime
-            .as_mut()
-            .unwrap()
-            .op_state()
-            .borrow()
-            .borrow::<String>()
-            .clone())
+        let value = self.execute_value(source, "evaluate_json")?;
+        let runtime = self.runtime.as_mut().unwrap();
+        deno_core::scope!(scope, runtime);
+        let local = deno_core::v8::Local::new(scope, value);
+        Ok(deno_core::v8::json::stringify(scope, local)
+            .map(|text| text.to_rust_string_lossy(scope))
+            .filter(|text| text != "undefined")
+            .unwrap_or_else(|| "null".into()))
     }
     fn tick(&mut self) -> Result<(), ScriptError> {
         if self.frozen {
@@ -380,27 +515,14 @@ impl ScriptHost for V8Host {
         }
         let module_waker = Waker::from(Arc::new(WakeLoop(self.dom.network.wake.clone())));
         let mut module_cx = Context::from_waker(&module_waker);
-        if let Some(load) = &mut self.loading_module {
-            let handle = self.terminate.clone();
-            let budget = self.budget;
-            let (done, wait) = mpsc::channel();
-            let expired = Arc::new(AtomicBool::new(false));
-            let flag = expired.clone();
-            let watchdog = std::thread::spawn(move || {
-                if matches!(
-                    wait.recv_timeout(budget),
-                    Err(mpsc::RecvTimeoutError::Timeout)
-                ) {
-                    flag.store(true, Ordering::Relaxed);
-                    handle.terminate_execution();
-                }
+        if self.loading_module.is_some() {
+            let (result, expired) = self.bounded("module loading", |host| {
+                let load = host.loading_module.as_mut().unwrap();
+                host.executor.block_on(async {
+                    tokio::task::yield_now().await;
+                    load.as_mut().poll(&mut module_cx)
+                })
             });
-            let result = self.executor.block_on(async {
-                tokio::task::yield_now().await;
-                load.as_mut().poll(&mut module_cx)
-            });
-            let _ = done.send(());
-            let _ = watchdog.join();
             self.polled_at = Instant::now();
             match result {
                 Poll::Pending => {
@@ -411,29 +533,17 @@ impl ScriptHost for V8Host {
                     self.runtime = Some(runtime);
                     self.loading_module = None;
                     let id = result.map_err(|e| ScriptError {
-                        fatal: expired.load(Ordering::Relaxed) || self.oom.load(Ordering::Relaxed),
+                        fatal: expired || self.oom.load(Ordering::Relaxed),
                         message: e.to_string(),
                     })?;
-                    let entered = self.executor.enter();
-                    let handle = self.terminate.clone();
-                    let budget = self.budget;
-                    let (done, wait) = mpsc::channel();
-                    let flag = expired.clone();
-                    let watchdog = std::thread::spawn(move || {
-                        if matches!(
-                            wait.recv_timeout(budget),
-                            Err(mpsc::RecvTimeoutError::Timeout)
-                        ) {
-                            flag.store(true, Ordering::Relaxed);
-                            handle.terminate_execution();
-                        }
+                    let executor = self.executor.clone();
+                    let entered = executor.enter();
+                    let (evaluation, expired) = self.bounded("module evaluation", |host| {
+                        host.runtime.as_mut().unwrap().mod_evaluate(id)
                     });
-                    let evaluation = self.runtime.as_mut().unwrap().mod_evaluate(id);
-                    let _ = done.send(());
-                    let _ = watchdog.join();
                     drop(entered);
                     self.evaluating_modules.push(Box::pin(evaluation));
-                    if expired.load(Ordering::Relaxed) || self.oom.load(Ordering::Relaxed) {
+                    if expired || self.oom.load(Ordering::Relaxed) {
                         return Err(ScriptError {
                             fatal: true,
                             message: "Module execution exceeded its limit".into(),
@@ -455,33 +565,19 @@ impl ScriptHost for V8Host {
         self.run("__wega_timers()", "timer dispatch")?;
         let waker = Waker::from(Arc::new(WakeLoop(self.dom.network.wake.clone())));
         let mut cx = Context::from_waker(&waker);
-        let runtime = self.runtime.as_mut().unwrap();
-        let handle = runtime.v8_isolate().thread_safe_handle();
-        let timed_out = Arc::new(AtomicBool::new(false));
-        let flag = timed_out.clone();
-        let budget = self.budget;
-        let (done, wait) = mpsc::channel();
-        let watchdog = std::thread::spawn(move || {
-            if matches!(
-                wait.recv_timeout(budget),
-                Err(mpsc::RecvTimeoutError::Timeout)
-            ) {
-                flag.store(true, Ordering::Relaxed);
-                handle.terminate_execution();
-            }
-        });
-        let result = self.executor.block_on(async {
-            for _ in 0..4 {
-                tokio::task::yield_now().await;
-                let result = runtime.poll_event_loop(&mut cx, Default::default());
-                if result.is_ready() {
-                    return result;
+        let (result, timed_out) = self.bounded("event loop", |host| {
+            let runtime = host.runtime.as_mut().unwrap();
+            host.executor.block_on(async {
+                for _ in 0..4 {
+                    tokio::task::yield_now().await;
+                    let result = runtime.poll_event_loop(&mut cx, Default::default());
+                    if result.is_ready() {
+                        return result;
+                    }
                 }
-            }
-            Poll::Pending
+                Poll::Pending
+            })
         });
-        let _ = done.send(());
-        let _ = watchdog.join();
         self.polled_at = Instant::now();
         self.heap = heap_bytes(self.runtime.as_mut().unwrap());
         self.runtime
@@ -498,12 +594,12 @@ impl ScriptHost for V8Host {
             }
             Poll::Ready(Err(e)) => {
                 return Err(ScriptError {
-                    fatal: self.oom.load(Ordering::Relaxed) || timed_out.load(Ordering::Relaxed),
+                    fatal: self.oom.load(Ordering::Relaxed) || timed_out,
                     message: e.to_string(),
                 });
             }
         }
-        if timed_out.load(Ordering::Relaxed) {
+        if timed_out {
             return Err(ScriptError {
                 fatal: true,
                 message: "Microtask deadline exceeded".into(),
@@ -566,6 +662,26 @@ impl ScriptHost for V8Host {
     }
     fn take_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut *self.dom.errors.borrow_mut())
+    }
+    fn take_requests(&mut self) -> crate::dom::Requests {
+        std::mem::take(&mut *self.dom.requests.borrow_mut())
+    }
+    fn allow_eval(&mut self, allowed: bool) {
+        if let Some(runtime) = &mut self.runtime {
+            deno_core::scope!(scope, runtime);
+            scope
+                .get_current_context()
+                .set_allow_generation_from_strings(allowed);
+        }
+    }
+    fn budget(&self) -> (usize, usize) {
+        self.dom.budget()
+    }
+    fn sync_nodes(&mut self, count: usize) {
+        self.dom.set_allocated(count);
+    }
+    fn history(&self) -> (usize, usize) {
+        self.dom.history.get()
     }
     fn freeze(&mut self, frozen: bool) {
         self.frozen = frozen;

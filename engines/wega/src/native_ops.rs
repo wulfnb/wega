@@ -9,8 +9,12 @@ pub(crate) trait NativeHost {
         request: wega_network::Request,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<wega_network::Response, String>>>>;
     fn call(&self, args: &[Value]) -> Result<Value, String>;
-    fn cookie_header(&self, address: &str, mode: &str) -> String;
-    fn cookie_response(&self, address: &str, mode: &str, value: &str);
+    fn cookie_header(&self, address: &str, include: bool) -> String;
+    fn cookie_response(&self, address: &str, include: bool, value: &str);
+    fn document_origin(&self) -> String;
+    fn ws_headers(&self, address: &str) -> Vec<(String, String)>;
+    fn referrer(&self, address: &str) -> String;
+    fn connect_check(&self, address: &str) -> String;
 }
 #[op2]
 #[serde]
@@ -73,25 +77,41 @@ fn op_dom_set_attr_ns(
 }
 #[op2]
 #[string]
-fn op_wega_cookie_header(
-    state: &mut OpState,
-    #[string] address: &str,
-    #[string] mode: &str,
-) -> String {
+fn op_wega_cookie_header(state: &mut OpState, #[string] address: &str, include: bool) -> String {
     state
         .borrow::<Rc<dyn NativeHost>>()
-        .cookie_header(address, mode)
+        .cookie_header(address, include)
 }
 #[op2(fast)]
 fn op_wega_cookie_response(
     state: &mut OpState,
     #[string] address: &str,
-    #[string] mode: &str,
+    include: bool,
     #[string] value: &str,
 ) {
     state
         .borrow::<Rc<dyn NativeHost>>()
-        .cookie_response(address, mode, value);
+        .cookie_response(address, include, value)
+}
+#[op2]
+#[string]
+fn op_wega_document_origin(state: &mut OpState) -> String {
+    state.borrow::<Rc<dyn NativeHost>>().document_origin()
+}
+#[op2]
+#[serde]
+fn op_wega_ws_headers(state: &mut OpState, #[string] address: &str) -> Vec<(String, String)> {
+    state.borrow::<Rc<dyn NativeHost>>().ws_headers(address)
+}
+#[op2]
+#[string]
+fn op_wega_referrer(state: &mut OpState, #[string] address: &str) -> String {
+    state.borrow::<Rc<dyn NativeHost>>().referrer(address)
+}
+#[op2]
+#[string]
+fn op_wega_connect_check(state: &mut OpState, #[string] address: &str) -> String {
+    state.borrow::<Rc<dyn NativeHost>>().connect_check(address)
 }
 #[op2(fast)]
 fn op_result(state: &mut OpState, #[string] value: String) {
@@ -105,7 +125,11 @@ struct FetchResult {
     status_text: String,
     headers: Vec<(String, String)>,
     redirected: bool,
-    body: deno_core::serde_v8::ToJsBuffer,
+    #[serde(rename = "responseRid")]
+    response_rid: u32,
+    #[serde(rename = "bodyDecoded")]
+    body_decoded: bool,
+    error: Option<String>,
 }
 #[op2]
 #[serde]
@@ -124,7 +148,12 @@ async fn op_wega_fetch(
         status: result.status,
         headers: result.headers,
         redirected: result.redirected,
-        body: result.body.into(),
+        response_rid: state
+            .borrow_mut()
+            .resource_table
+            .add(FetchBody(std::cell::RefCell::new(result.body.into()))),
+        body_decoded: true,
+        error: None,
     })
 }
 deno_core::extension!(
@@ -133,6 +162,10 @@ deno_core::extension!(
         op_dom_set_attr_ns,
         op_wega_cookie_header,
         op_wega_cookie_response,
+        op_wega_document_origin,
+        op_wega_ws_headers,
+        op_wega_referrer,
+        op_wega_connect_check,
         op_dom_read,
         op_dom_set_text,
         op_dom_set_attr,
@@ -140,3 +173,18 @@ deno_core::extension!(
         op_wega_fetch
     ]
 );
+
+// The broker returns a bounded body, exposed through Deno's existing stream lifecycle.
+struct FetchBody(std::cell::RefCell<deno_core::BufView>);
+impl deno_core::Resource for FetchBody {
+    fn read(self: Rc<Self>, limit: usize) -> deno_core::AsyncResult<deno_core::BufView> {
+        let mut bytes = self.0.borrow_mut();
+        let count = limit.min(bytes.len());
+        let chunk = bytes.split_to(count);
+        Box::pin(std::future::ready(Ok(chunk)))
+    }
+    fn size_hint(&self) -> (u64, Option<u64>) {
+        let len = self.0.borrow().len() as u64;
+        (len, Some(len))
+    }
+}
