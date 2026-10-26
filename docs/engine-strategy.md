@@ -131,21 +131,59 @@ and cookie_store-backed HTTP/document cookies. The six offline framework fixture
 and selected 31-case DOM WPT subset pass; see [v8-engine-plan.md](v8-engine-plan.md)
 for exact evidence and limits. Servo remains the everyday default.
 
+The web-correctness work (26 October 2026) adds the browser rules a real engine
+needs before it can be trusted with logged-in sites, and fixes how scripts load:
+
+- **Same-origin policy:** fetch/XHR enforce CORS (Origin, preflight, Allow-Origin/
+  Credentials checks, opaque `no-cors` and filtered `cors` responses), request modes
+  and credentials modes. Cookies are SameSite-aware (unset means Lax) on every request
+  and redirect hop; WebSocket handshakes send Origin and SameSite-filtered cookies.
+- **CSP** (header and `<meta>`): `script-src` with nonces, hashes, `'strict-dynamic'`
+  and `'unsafe-eval'` (eval and `new Function` are disabled without it), `connect-src`,
+  and `img-src`/`style-src`/`font-src` for Blitz subresources (classified by file
+  extension, since Blitz requests carry no destination). Reporting is not implemented.
+- **Mixed content** is blocked for subresources, fetch and WebSocket; Referer follows
+  Referrer-Policy (default `strict-origin-when-cross-origin`).
+- **Script loading:** the HTML parser runs incrementally and pauses at each
+  `</script>`, so scripts see the partial document and `document.write` inserts at the
+  insertion point. `defer`, `async`, `nomodule`, script-inserted scripts (async unless
+  `async = false`), `load`/`error` on scripts, `document.currentScript` and synchronous
+  inserted inline scripts follow HTML. DOMContentLoaded and `load` are separate tasks;
+  `load` waits for images, stylesheets and fonts.
+- **Forms:** POST (urlencoded, multipart, text/plain) loads in the worker; cancelable
+  `submit` events with `submitter`; `submit()`, `requestSubmit()`, `new FormData(form)`
+  and implicit submission with Enter.
+- **Documents:** charset from BOM, Content-Type and `<meta>` (any WHATWG encoding);
+  plain text and images get viewer pages; other types and attachments become
+  downloads; Refresh header and meta refresh navigate.
+- **History:** `pushState` entries and fragments are traversed in the page (popstate,
+  hashchange, no refetch); the browser's Back/Forward use them first.
+- **Input:** pointer move/down/up/leave and wheel with hover (`:hover`), the full
+  pointer/mouse event sequence, double click, context menu, wheel scrolling of the
+  container under the pointer, and the CSS cursor. `alert`/`confirm`/`prompt` are
+  answered by the browser; `window.open` and `target=_blank` open tabs on a user
+  gesture.
+- **Events** now reach ancestors when the target has no listeners of its own (Deno's
+  EventTarget skipped dispatch then), which event delegation depends on.
+
 The native capture reports `engine: wega` and `servoInitialized: false`.
 Its reported `jsHeapBytes` is the VM's own accounting, **not process RSS or total
 page memory**. No memory target in the table below has been certified.
 
-Limits currently include a 32 MiB JS heap, 100 ms script interruption, a bounded
-microtask batch, 30,000 DOM nodes, a conservative 16 MiB DOM text allocation
-budget, 4 MiB HTML and 8 MiB resource responses, a bounded four-worker network
-queue and bounded frame storage. Rendering is capped at 30 fps; idle workers wait
+Limits currently include a 128 MiB JS heap, a 5 s fatal script deadline (tasks over
+100 ms are reported as slow but keep running; one watchdog thread per isolate), a
+bounded microtask batch, 30,000 DOM nodes (also enforced while parsing), a 16 MiB DOM
+text allocation budget that is credited back when content is replaced or collected,
+4 MiB HTML and 8 MiB resource and script responses, 1,024 scripts per document, a
+bounded four-worker network queue and bounded frame storage. Rendering is capped at 30 fps; idle workers wait
 for actual input/resource/timer deadlines. These are component limits, not a
 hard total RSS limit or an OS sandbox. Decoded-image/cache budgets, total memory
 pressure and representative-site benchmarks remain work to do.
 
-**Still requires Servo:** broad DOM/Web API compatibility, complete forms and
-FormData integration, CORS/CSP completeness, website sign-in validation, media,
-website accessibility and developer tools. Cookie/live-state synchronization
+**Still requires Servo:** iframes, Shadow DOM and custom elements, canvas/WebGL,
+media, workers, IndexedDB, page text selection and clipboard, website accessibility
+and developer tools (see [wega-compatibility-roadmap.md](wega-compatibility-roadmap.md)),
+plus website sign-in validation on real sites. The worker has no OS sandbox yet. Cookie/live-state synchronization
 between Wega workers needs the shared broker planned in P4; state does not transfer
 between engines. Unsupported APIs report errors; unsupported WebDriver operations
 return UnsupportedOperation. Full WPT coverage and real-site compatibility remain
