@@ -1,0 +1,1544 @@
+{
+  "date": "2026-10-26",
+  "machine": {
+    "cpu": "Apple M4",
+    "ram_bytes": 17179869184
+  },
+  "main_merged": "634168baf0c47abd20d11d76cd3b6765d553372a",
+  "main_cd": {
+    "run": 40349998980,
+    "conclusion": "success",
+    "scope": "main only"
+  },
+  "checks": {
+    "engine_workspace_rust_tests": 110,
+    "dom_wpt_assertions": 31,
+    "css_wpt_assertions": 7,
+    "css_pixel_layout_tests": 11,
+    "brokered_http_fixtures": 25,
+    "core_unit_tests": 84,
+    "desktop_unit_tests": [
+      84,
+      34
+    ],
+    "python_tooling_tests": 71,
+    "native_suites": [
+      {
+        "suite": "smoke",
+        "exit_code": 0,
+        "seconds": 26.18
+      },
+      {
+        "suite": "theme",
+        "exit_code": 0,
+        "seconds": 10.42
+      },
+      {
+        "suite": "capabilities",
+        "exit_code": 0,
+        "seconds": 60.69
+      },
+      {
+        "suite": "toolbox",
+        "exit_code": 0,
+        "seconds": 44.96
+      },
+      {
+        "suite": "download",
+        "exit_code": 0,
+        "seconds": 1.08
+      },
+      {
+        "suite": "webdriver",
+        "exit_code": 0,
+        "seconds": 12.17
+      },
+      {
+        "suite": "media",
+        "exit_code": 0,
+        "seconds": 16.25
+      },
+      {
+        "suite": "capture",
+        "exit_code": 0,
+        "seconds": 3.87
+      },
+      {
+        "suite": "engine",
+        "exit_code": 0,
+        "seconds": 5.36
+      }
+    ],
+    "mutation_proofs": [
+      {
+        "mutation": "frozen-state-preservation",
+        "test": "startup_snapshot_is_private_per_document_and_freezing_preserves_live_state",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "style-pool-cap",
+        "test": "parallel_style_threshold_preserves_updates_on_large_documents",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "frame-credit-sequence",
+        "test": "shared_frames_wait_for_exact_credits_and_resize_cannot_unfreeze_a_tab",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "resize-keeps-freeze",
+        "test": "shared_frames_wait_for_exact_credits_and_resize_cannot_unfreeze_a_tab",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "skia-color-alpha",
+        "test": "text_shadow_matches_positioned_glyph_reference",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "container-size",
+        "test": "inline_size_container_query_uses_content_size_and_updates_after_resize",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "scheme-default-color",
+        "test": "default_text_color_follows_the_root_color_scheme_and_author_colors_win",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "broker-resource-concurrency",
+        "test": "script_inserted_scripts_keep_order_only_when_async_is_false",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "offline-cookie-state",
+        "test": "tests::capabilities_partition_profiles_share_live_cookies_and_track_policy",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "edited-fallback",
+        "test": "native engine stage 15",
+        "detected": true,
+        "evidence": "p4-p6"
+      },
+      {
+        "mutation": "cors-requires-allow-origin",
+        "test": "security::cross_origin_reads_need_access_control_allow_origin",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "cors-wildcard-never-with-credentials",
+        "test": "security::cross_origin_reads_need_access_control_allow_origin",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "credentials-mode-controls-cookies",
+        "test": "security::credentials_cross_origin_only_with_an_exact_origin_and_allow_credentials",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "preflight-non-simple-requests",
+        "test": "security::non_simple_requests_are_preflighted_and_respect_the_answer",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "opaque-no-cors-responses",
+        "test": "security::modes_opaque_responses_and_exposed_headers",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "cors-exposed-headers-only",
+        "test": "security::modes_opaque_responses_and_exposed_headers",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "samesite-cross-site-blocks-lax",
+        "test": "security::samesite_cookies_stay_on_their_site",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "csp-connect-src",
+        "test": "security::content_security_policy_governs_scripts_eval_and_connections",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "referrer-strict-origin-cross-origin",
+        "test": "security::referer_follows_strict_origin_when_cross_origin",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "events-reach-ancestors",
+        "test": "input::events_reach_ancestors_when_the_target_has_no_listeners",
+        "detected": true,
+        "evidence": "web-security"
+      },
+      {
+        "mutation": "broker-live-local-policy",
+        "test": "security::broker_honors_fetch_cache_modes_and_live_engine_policy_without_reloading",
+        "detected": true,
+        "evidence": "broker-boundaries"
+      },
+      {
+        "mutation": "fetch-cache-mode",
+        "test": "security::broker_honors_fetch_cache_modes_and_live_engine_policy_without_reloading",
+        "detected": true,
+        "evidence": "broker-boundaries"
+      },
+      {
+        "mutation": "cache-only-never-requests-network",
+        "detected": true,
+        "evidence": "cache-modes"
+      },
+      {
+        "mutation": "reload-updates-public-cache",
+        "detected": true,
+        "evidence": "cache-modes"
+      },
+      {
+        "mutation": "html-fragment-context",
+        "test": "dom::adjacent_html_uses_the_insertion_position_and_namespace_context",
+        "detected": true,
+        "evidence": "fragments"
+      },
+      {
+        "mutation": "fragment-body-padding",
+        "test": "css::inserted_svg_does_not_duplicate_the_body_or_its_padding",
+        "detected": true,
+        "evidence": "fragments"
+      }
+    ],
+    "vendor_integrity": {
+      "pinned_crates": 8,
+      "undocumented_edit_rejected": true
+    },
+    "format_and_lints": [
+      "root rustfmt",
+      "engine workspace rustfmt",
+      "core all-targets Clippy -D warnings",
+      "desktop all-targets Clippy -D warnings",
+      "desktop test-harness all-targets Clippy -D warnings",
+      "engine workspace all-targets Clippy -D warnings",
+      "actionlint CI/CD/V8 workflows",
+      "git diff --check"
+    ],
+    "licenses": "cargo-about 0.9.2 --locked --fail succeeded for desktop and independent engine; original native license files included"
+  },
+  "benchmark": {
+    "schema": 1,
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "label": "P4-P6 final: matched debug browser and V8 worker, merged main plus fragment-context fix",
+    "sample_interval_seconds": 0.25,
+    "idle_requested_seconds": 3.0,
+    "fixture_sha256": "de680a58c1be4acd2a92fe5bdfde29d4f1842568a7699e2efc9431d571f48c16",
+    "binary_sha256": "9404a313edbd1cca52d70d8f0ed8a96bc9d8b1cfcaf1f0a2b3b0dd0d86a19e2f",
+    "scope": "sum of browser and descendant RSS; shared pages may be counted multiple times; CPU 100% = one core; fresh profile, OS caches uncontrolled",
+    "complete": true,
+    "source_commit": "f529ac88fe41bca55ab89f7adb6a4668990c005e",
+    "working_tree": "",
+    "worker_sha256": "ad4d0d7226c9a9c77201333164b677d74e52fffc99c4f7c97f61cd91b3be8470",
+    "binary_unchanged": true,
+    "worker_unchanged": true,
+    "compatibility": [
+      {
+        "engine": "servo",
+        "case": "article",
+        "url": "http://127.0.0.1:63350/article",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "title": "PASS:article",
+          "url": "http://127.0.0.1:63350/article",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.215050708
+        },
+        "capture_elapsed_seconds": 4.795088874991052
+      },
+      {
+        "engine": "servo",
+        "case": "dom",
+        "url": "http://127.0.0.1:63350/dom",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "title": "PASS:dom",
+          "url": "http://127.0.0.1:63350/dom",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.136428208
+        },
+        "capture_elapsed_seconds": 4.633242500014603
+      },
+      {
+        "engine": "servo",
+        "case": "timer",
+        "url": "http://127.0.0.1:63350/timer",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "title": "PASS:timer",
+          "url": "http://127.0.0.1:63350/timer",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.13284075
+        },
+        "capture_elapsed_seconds": 4.609379207948223
+      },
+      {
+        "engine": "servo",
+        "case": "events",
+        "url": "http://127.0.0.1:63350/events",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "title": "PASS:events",
+          "url": "http://127.0.0.1:63350/events",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.138953375
+        },
+        "capture_elapsed_seconds": 4.612341957981698
+      },
+      {
+        "engine": "servo",
+        "case": "forms",
+        "url": "http://127.0.0.1:63350/forms",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "title": "PASS:forms",
+          "url": "http://127.0.0.1:63350/forms",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.135311292
+        },
+        "capture_elapsed_seconds": 4.619771625031717
+      },
+      {
+        "engine": "servo",
+        "case": "storage",
+        "url": "http://127.0.0.1:63350/storage",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "title": "PASS:storage",
+          "url": "http://127.0.0.1:63350/storage",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.142459708
+        },
+        "capture_elapsed_seconds": 4.642578582977876
+      },
+      {
+        "engine": "servo",
+        "case": "fetch",
+        "url": "http://127.0.0.1:63350/fetch",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "title": "PASS:fetch",
+          "url": "http://127.0.0.1:63350/fetch",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.132712833
+        },
+        "capture_elapsed_seconds": 4.83059179096017
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://example.com/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "Example Domain",
+          "url": "https://example.com/",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.258802541
+        },
+        "capture_elapsed_seconds": 4.691951791988686
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://example.org/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "Example Domain",
+          "url": "https://example.org/",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.248935125
+        },
+        "capture_elapsed_seconds": 4.6688347910530865
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://example.net/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "Example Domain",
+          "url": "https://example.net/",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.27832525
+        },
+        "capture_elapsed_seconds": 4.74055933393538
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "Rust (programming language) - Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 1.515492
+        },
+        "capture_elapsed_seconds": 8.323741291998886
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://developer.mozilla.org/en-US/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "MDN Web Docs",
+          "url": "https://developer.mozilla.org/en-US/",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.553047583
+        },
+        "capture_elapsed_seconds": 5.1551401250762865
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://github.com/",
+        "required": false,
+        "status": "error",
+        "error": "[Errno 2] No such file or directory: '/tmp/wega-p4-p6-bench-validated/live-servo-5/page.json'"
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://news.ycombinator.com/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "Hacker News",
+          "url": "https://news.ycombinator.com/",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 1.872858333
+        },
+        "capture_elapsed_seconds": 6.891513957991265
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://react.dev/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "Application error: a client-side exception has occurred",
+          "url": "https://react.dev/",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 1.818672958
+        },
+        "capture_elapsed_seconds": 5.51349229097832
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://angular.dev/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "Home \u2022 Angular",
+          "url": "https://angular.dev/",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 1.317917584
+        },
+        "capture_elapsed_seconds": 7.337619416997768
+      },
+      {
+        "engine": "servo",
+        "case": "live",
+        "url": "https://vuejs.org/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "title": "Vue.js - The Progressive JavaScript Framework | Vue.js",
+          "url": "https://vuejs.org/",
+          "textGradients": [],
+          "engine": "servo",
+          "loadSeconds": 0.987086042
+        },
+        "capture_elapsed_seconds": 5.536401457968168
+      },
+      {
+        "engine": "wega",
+        "case": "article",
+        "url": "http://127.0.0.1:63350/article",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "PASS:article",
+          "url": "http://127.0.0.1:63350/article",
+          "nodes": 515,
+          "jsHeapBytes": 3887559,
+          "workerRssBytes": 96501760,
+          "servoInitialized": false,
+          "loadSeconds": 0.413145333,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 5.23458266700618
+      },
+      {
+        "engine": "wega",
+        "case": "dom",
+        "url": "http://127.0.0.1:63350/dom",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "PASS:dom",
+          "url": "http://127.0.0.1:63350/dom",
+          "nodes": 519,
+          "jsHeapBytes": 3916775,
+          "workerRssBytes": 117555200,
+          "servoInitialized": false,
+          "loadSeconds": 0.232200667,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.7412252080393955
+      },
+      {
+        "engine": "wega",
+        "case": "timer",
+        "url": "http://127.0.0.1:63350/timer",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "PASS:timer",
+          "url": "http://127.0.0.1:63350/timer",
+          "nodes": 517,
+          "jsHeapBytes": 3927375,
+          "workerRssBytes": 93274112,
+          "servoInitialized": false,
+          "loadSeconds": 0.228126375,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.7940526669844985
+      },
+      {
+        "engine": "wega",
+        "case": "events",
+        "url": "http://127.0.0.1:63350/events",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "PASS:events",
+          "url": "http://127.0.0.1:63350/events",
+          "nodes": 517,
+          "jsHeapBytes": 3953167,
+          "workerRssBytes": 117440512,
+          "servoInitialized": false,
+          "loadSeconds": 0.224989625,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.766775291995145
+      },
+      {
+        "engine": "wega",
+        "case": "forms",
+        "url": "http://127.0.0.1:63350/forms",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "PASS:forms",
+          "url": "http://127.0.0.1:63350/forms",
+          "nodes": 517,
+          "jsHeapBytes": 3905799,
+          "workerRssBytes": 117440512,
+          "servoInitialized": false,
+          "loadSeconds": 0.225558833,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.806653458974324
+      },
+      {
+        "engine": "wega",
+        "case": "storage",
+        "url": "http://127.0.0.1:63350/storage",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "PASS:storage",
+          "url": "http://127.0.0.1:63350/storage",
+          "nodes": 517,
+          "jsHeapBytes": 3871495,
+          "workerRssBytes": 118685696,
+          "servoInitialized": false,
+          "loadSeconds": 0.229546583,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.803207708988339
+      },
+      {
+        "engine": "wega",
+        "case": "fetch",
+        "url": "http://127.0.0.1:63350/fetch",
+        "required": true,
+        "status": "pass",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "PASS:fetch",
+          "url": "http://127.0.0.1:63350/fetch",
+          "nodes": 517,
+          "jsHeapBytes": 4227977,
+          "workerRssBytes": 118030336,
+          "servoInitialized": false,
+          "loadSeconds": 0.232750833,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.8196471250848845
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://example.com/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "Example Domain",
+          "url": "https://example.com/",
+          "nodes": 34,
+          "jsHeapBytes": 3695736,
+          "workerRssBytes": 195936256,
+          "servoInitialized": false,
+          "loadSeconds": 0.525969959,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.997787875006907
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://example.org/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "Example Domain",
+          "url": "https://example.org/",
+          "nodes": 34,
+          "jsHeapBytes": 3712448,
+          "workerRssBytes": 270057472,
+          "servoInitialized": false,
+          "loadSeconds": 0.416148291,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.879066874971613
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://example.net/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "Example Domain",
+          "url": "https://example.net/",
+          "nodes": 34,
+          "jsHeapBytes": 3698424,
+          "workerRssBytes": 270073856,
+          "servoInitialized": false,
+          "loadSeconds": 0.506293708,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.219785708002746
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "Rust (programming language) - Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+          "nodes": 19308,
+          "jsHeapBytes": 0,
+          "workerRssBytes": 208519168,
+          "servoInitialized": false,
+          "loadSeconds": 2.863235916,
+          "compatibility": "Uncaught Error: execution terminated"
+        },
+        "capture_elapsed_seconds": 10.024416500004008
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://developer.mozilla.org/en-US/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "MDN Web Docs",
+          "url": "https://developer.mozilla.org/en-US/",
+          "nodes": 1910,
+          "jsHeapBytes": 5089518,
+          "workerRssBytes": 113934336,
+          "servoInitialized": false,
+          "loadSeconds": 1.018456125,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 5.306811916059814
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://github.com/",
+        "required": false,
+        "status": "error",
+        "error": "[Errno 2] No such file or directory: '/tmp/wega-p4-p6-bench-validated/live-wega-5/page.json'"
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://news.ycombinator.com/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "Hacker News",
+          "url": "https://news.ycombinator.com/",
+          "nodes": 1311,
+          "jsHeapBytes": 4286903,
+          "workerRssBytes": 73089024,
+          "servoInitialized": false,
+          "loadSeconds": 1.733946875,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 6.7192493750480935
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://react.dev/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "react.dev",
+          "url": "https://react.dev/",
+          "nodes": 66,
+          "jsHeapBytes": 13814528,
+          "workerRssBytes": 173998080,
+          "servoInitialized": false,
+          "loadSeconds": 1.755624584,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 4.952907582977787
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://angular.dev/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "Home \u2022 Angular",
+          "url": "https://angular.dev/",
+          "nodes": 534,
+          "jsHeapBytes": 17054482,
+          "workerRssBytes": 758644736,
+          "servoInitialized": false,
+          "loadSeconds": 1.286268708,
+          "compatibility": null
+        },
+        "capture_elapsed_seconds": 5.670332000008784
+      },
+      {
+        "engine": "wega",
+        "case": "live",
+        "url": "https://vuejs.org/",
+        "required": false,
+        "status": "captured_unverified",
+        "exit_code": 0,
+        "report": {
+          "engine": "wega",
+          "title": "Vue.js - The Progressive JavaScript Framework | Vue.js",
+          "url": "https://vuejs.org/",
+          "nodes": 1249,
+          "jsHeapBytes": 5397115,
+          "workerRssBytes": 140705792,
+          "servoInitialized": false,
+          "loadSeconds": 1.534896291,
+          "compatibility": "TypeError: Cannot read properties of undefined (reading 'indexOf')\nTypeError: Cannot read properties of undefined (reading 'indexOf')\n    at Object.trackPageview (https://cdn.usefathom.com/script.js:1:5524)\n    at https://cdn.usefathom.com/script.js:1:4720\n    at ext:wega_dom/web.js:78:21\n    at callback (ext:wega_dom/web.js:141:22)\n    at Object.wrappedCallback [as _onTimeout] (ext:deno_web/02_timers.js:57:7)\n    at listOnTimeout (ext:core/02_timers.js:307:17)\n    at Object.processTimers (ext:core/02_timers.js:250:7)\n    at __processTimers (ext:core/01_core.js:448:21); missing: Element.relList, Document.prerendering, Document.referrer"
+        },
+        "capture_elapsed_seconds": 5.103873834013939
+      }
+    ],
+    "resources": [
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "http://127.0.0.1:63350/article",
+        "status": "measured",
+        "title": "PASS:article",
+        "all_tabs_ready_seconds": 0.6713207920547575,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 235274240,
+        "idle_tree_cpu_percent": 0.38290632757223103,
+        "idle_median_tree_rss_bytes": 235274240.0,
+        "repeat": 0,
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 5,
+        "url": "http://127.0.0.1:63350/article",
+        "status": "measured",
+        "title": "PASS:article",
+        "all_tabs_ready_seconds": 1.4355346249649301,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 268419072,
+        "idle_tree_cpu_percent": 0.0,
+        "idle_median_tree_rss_bytes": 251019264,
+        "repeat": 0,
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          },
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          },
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          },
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          },
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "http://127.0.0.1:63350/article",
+        "status": "measured",
+        "title": "PASS:article",
+        "all_tabs_ready_seconds": 1.0589399168966338,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 346996736,
+        "idle_tree_cpu_percent": 0.34949074175621847,
+        "idle_median_tree_rss_bytes": 346996736,
+        "repeat": 0,
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 126287872,
+            "jsHeapBytes": 3877439,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 5,
+        "url": "http://127.0.0.1:63350/article",
+        "status": "measured",
+        "title": "PASS:article",
+        "all_tabs_ready_seconds": 2.133770874934271,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 691208192,
+        "idle_tree_cpu_percent": 0.770082401278141,
+        "idle_median_tree_rss_bytes": 650838016.0,
+        "repeat": 0,
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 77709312,
+            "jsHeapBytes": 3106581,
+            "frozen": true,
+            "loading": false,
+            "compatibility": null
+          },
+          {
+            "engine": "wega",
+            "workerRssBytes": 92176384,
+            "jsHeapBytes": 3107037,
+            "frozen": true,
+            "loading": false,
+            "compatibility": null
+          },
+          {
+            "engine": "wega",
+            "workerRssBytes": 92061696,
+            "jsHeapBytes": 3107037,
+            "frozen": true,
+            "loading": false,
+            "compatibility": null
+          },
+          {
+            "engine": "wega",
+            "workerRssBytes": 91963392,
+            "jsHeapBytes": 3107037,
+            "frozen": true,
+            "loading": false,
+            "compatibility": null
+          },
+          {
+            "engine": "wega",
+            "workerRssBytes": 108134400,
+            "jsHeapBytes": 3867575,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://example.com/",
+        "status": "measured",
+        "title": "Example Domain",
+        "all_tabs_ready_seconds": 0.6939795829821378,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 248332288,
+        "idle_tree_cpu_percent": 0.3459008131267579,
+        "idle_median_tree_rss_bytes": 248332288,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://example.org/",
+        "status": "measured",
+        "title": "Example Domain",
+        "all_tabs_ready_seconds": 0.7104279160266742,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 248758272,
+        "idle_tree_cpu_percent": 0.38444932587831654,
+        "idle_median_tree_rss_bytes": 248758272.0,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://example.net/",
+        "status": "measured",
+        "title": "Example Domain",
+        "all_tabs_ready_seconds": 0.7976751669775695,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 248283136,
+        "idle_tree_cpu_percent": 0.0,
+        "idle_median_tree_rss_bytes": 248283136,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+        "status": "measured",
+        "title": "Rust (programming language) - Wikipedia",
+        "all_tabs_ready_seconds": 2.484519709018059,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 416694272,
+        "idle_tree_cpu_percent": 196.15410939840018,
+        "idle_median_tree_rss_bytes": 408420352,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": true
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://developer.mozilla.org/en-US/",
+        "status": "measured",
+        "title": "MDN Web Docs",
+        "all_tabs_ready_seconds": 1.0794582080561668,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 330481664,
+        "idle_tree_cpu_percent": 0.34081339682642753,
+        "idle_median_tree_rss_bytes": 330481664,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://github.com/",
+        "status": "error",
+        "error": "Browser readiness timed out: <urlopen error [Errno 61] Connection refused>",
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 724025344,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": []
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://news.ycombinator.com/",
+        "status": "measured",
+        "title": "Hacker News",
+        "all_tabs_ready_seconds": 2.102848166017793,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 250593280,
+        "idle_tree_cpu_percent": 0.3426482644346331,
+        "idle_median_tree_rss_bytes": 250593280,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://react.dev/",
+        "status": "measured",
+        "title": "Application error: a client-side exception has occurred",
+        "all_tabs_ready_seconds": 2.703981874976307,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 343998464,
+        "idle_tree_cpu_percent": 0.34388546360313815,
+        "idle_median_tree_rss_bytes": 342327296,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://angular.dev/",
+        "status": "measured",
+        "title": "Home \u2022 Angular",
+        "all_tabs_ready_seconds": 2.8759251249721274,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 429457408,
+        "idle_tree_cpu_percent": 159.8499815028686,
+        "idle_median_tree_rss_bytes": 389808128,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "servo",
+        "tabs": 1,
+        "url": "https://vuejs.org/",
+        "status": "measured",
+        "title": "Vue.js - The Progressive JavaScript Framework | Vue.js",
+        "all_tabs_ready_seconds": 1.3796353749930859,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 292110336,
+        "idle_tree_cpu_percent": 0.0,
+        "idle_median_tree_rss_bytes": 292110336,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "servo",
+            "workerRssBytes": null,
+            "jsHeapBytes": null,
+            "frozen": null,
+            "loading": false
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://example.com/",
+        "status": "measured",
+        "title": "Example Domain",
+        "all_tabs_ready_seconds": 1.3560090840328485,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 506003456,
+        "idle_tree_cpu_percent": 0.34036029373876203,
+        "idle_median_tree_rss_bytes": 506003456,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 278020096,
+            "jsHeapBytes": 3724080,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://example.org/",
+        "status": "measured",
+        "title": "Example Domain",
+        "all_tabs_ready_seconds": 1.3273277499247342,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 474169344,
+        "idle_tree_cpu_percent": 0.3430836908510457,
+        "idle_median_tree_rss_bytes": 473350144,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 278740992,
+            "jsHeapBytes": 3724080,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://example.net/",
+        "status": "measured",
+        "title": "Example Domain",
+        "all_tabs_ready_seconds": 1.08935862488579,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 506773504,
+        "idle_tree_cpu_percent": 0.3454542381686686,
+        "idle_median_tree_rss_bytes": 404193280,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 202915840,
+            "jsHeapBytes": 3728096,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+        "status": "measured",
+        "title": "Rust (programming language) - Wikipedia",
+        "all_tabs_ready_seconds": 3.3998474159743637,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 425820160,
+        "idle_tree_cpu_percent": 103.556684060031,
+        "idle_median_tree_rss_bytes": 394313728,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 145981440,
+            "jsHeapBytes": 10979814,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://developer.mozilla.org/en-US/",
+        "status": "measured",
+        "title": "MDN Web Docs",
+        "all_tabs_ready_seconds": 2.082374209072441,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 329416704,
+        "idle_tree_cpu_percent": 0.34982857164584524,
+        "idle_median_tree_rss_bytes": 322895872,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 106037248,
+            "jsHeapBytes": 4534966,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://github.com/",
+        "status": "measured",
+        "title": "GitHub \u00b7 Change is constant. GitHub keeps you ahead. \u00b7 GitHub \u00b7 GitHub",
+        "all_tabs_ready_seconds": 2.544733459013514,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 398704640,
+        "idle_tree_cpu_percent": 0.0,
+        "idle_median_tree_rss_bytes": 234110976,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 34766848,
+            "jsHeapBytes": 4257475,
+            "frozen": false,
+            "loading": false,
+            "compatibility": "Wega engine stopped. Reload this page or switch to Servo."
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://news.ycombinator.com/",
+        "status": "measured",
+        "title": "Hacker News",
+        "all_tabs_ready_seconds": 2.7358030829345807,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 305643520,
+        "idle_tree_cpu_percent": 0.3466881860172669,
+        "idle_median_tree_rss_bytes": 288210944,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 90898432,
+            "jsHeapBytes": 4257327,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://react.dev/",
+        "status": "measured",
+        "title": "react.dev",
+        "all_tabs_ready_seconds": 2.6849114160286263,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 419037184,
+        "idle_tree_cpu_percent": 104.96233215653972,
+        "idle_median_tree_rss_bytes": 418889728,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 181878784,
+            "jsHeapBytes": 14631408,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://angular.dev/",
+        "status": "measured",
+        "title": "Home \u2022 Angular",
+        "all_tabs_ready_seconds": 2.4967923749936745,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 1012236288,
+        "idle_tree_cpu_percent": 198.46036306513352,
+        "idle_median_tree_rss_bytes": 809009152.0,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 585236480,
+            "jsHeapBytes": 18810794,
+            "frozen": false,
+            "loading": false,
+            "compatibility": null
+          }
+        ]
+      },
+      {
+        "engine": "wega",
+        "tabs": 1,
+        "url": "https://vuejs.org/",
+        "status": "measured",
+        "title": "Vue.js - The Progressive JavaScript Framework | Vue.js",
+        "all_tabs_ready_seconds": 2.173167541041039,
+        "sampling_errors": [],
+        "peak_tree_rss_bytes": 330989568,
+        "idle_tree_cpu_percent": 0.3489785558024585,
+        "idle_median_tree_rss_bytes": 305774592,
+        "reference": true,
+        "scope": "load and idle only; inspect compatibility and pixels separately",
+        "tabs_resources": [
+          {
+            "engine": "wega",
+            "workerRssBytes": 100941824,
+            "jsHeapBytes": 5067692,
+            "frozen": false,
+            "loading": false,
+            "compatibility": "TypeError: Cannot read properties of undefined (reading 'indexOf')\nTypeError: Cannot read properties of undefined (reading 'indexOf')\n    at Object.trackPageview (https://cdn.usefathom.com/script.js:1:5524)\n    at https://cdn.usefathom.com/script.js:1:4720\n    at ext:wega_dom/web.js:78:21\n    at callback (ext:wega_dom/web.js:141:22)\n    at Object.wrappedCallback [as _onTimeout] (ext:deno_web/02_timers.js:57:7)\n    at listOnTimeout (ext:core/02_timers.js:307:17)\n    at Object.processTimers (ext:core/02_timers.js:250:7)\n    at __processTimers (ext:core/01_core.js:448:21); missing: Document.prerendering, Document.referrer"
+          }
+        ]
+      }
+    ]
+  },
+  "before": {
+    "schema": 1,
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "label": "P4 development baseline: debug browser and V8-only worker, merged main 5d7c1fb",
+    "sample_interval_seconds": 0.25,
+    "idle_requested_seconds": 3.0,
+    "fixture_sha256": "de680a58c1be4acd2a92fe5bdfde29d4f1842568a7699e2efc9431d571f48c16",
+    "binary_sha256": "c5869699694718bee651d313f5e0c4a8f24e60c54ab9e38e7c0c45633468e70d",
+    "scope": "sum of browser and descendant RSS; shared pages may be counted multiple times; CPU 100% = one core; fresh profile, OS caches uncontrolled",
+    "complete": true,
+    "source_commit": "5d7c1fb2091243a33df5396d3befa237b864789a",
+    "working_tree": "",
+    "worker_sha256": "f5b772022f77f92d605a8763be22b526aee311316b7b18c44afbfe45aa8d11cb",
+    "binary_unchanged": true,
+    "worker_unchanged": true
+  },
+  "before_resources": [
+    {
+      "engine": "servo",
+      "tabs": 1,
+      "url": "http://127.0.0.1:63213/article",
+      "status": "measured",
+      "all_tabs_ready_seconds": 2.9777493339497596,
+      "sampling_errors": [],
+      "peak_tree_rss_bytes": 225001472,
+      "idle_tree_cpu_percent": 0.0,
+      "idle_median_tree_rss_bytes": 222937088,
+      "repeat": 0,
+      "tabs_resources": []
+    },
+    {
+      "engine": "servo",
+      "tabs": 5,
+      "url": "http://127.0.0.1:63213/article",
+      "status": "measured",
+      "all_tabs_ready_seconds": 1.8859880410600454,
+      "sampling_errors": [],
+      "peak_tree_rss_bytes": 254115840,
+      "idle_tree_cpu_percent": 0.0,
+      "idle_median_tree_rss_bytes": 236191744.0,
+      "repeat": 0,
+      "tabs_resources": []
+    },
+    {
+      "engine": "wega",
+      "tabs": 1,
+      "url": "http://127.0.0.1:63213/article",
+      "status": "measured",
+      "all_tabs_ready_seconds": 1.691965457983315,
+      "sampling_errors": [],
+      "peak_tree_rss_bytes": 258605056,
+      "idle_tree_cpu_percent": 1.139040525233339,
+      "idle_median_tree_rss_bytes": 233791488.0,
+      "repeat": 0,
+      "tabs_resources": []
+    },
+    {
+      "engine": "wega",
+      "tabs": 5,
+      "url": "http://127.0.0.1:63213/article",
+      "status": "measured",
+      "all_tabs_ready_seconds": 3.598460250068456,
+      "sampling_errors": [],
+      "peak_tree_rss_bytes": 564936704,
+      "idle_tree_cpu_percent": 1.0283072709933585,
+      "idle_median_tree_rss_bytes": 472383488,
+      "repeat": 0,
+      "tabs_resources": []
+    }
+  ],
+  "remaining_gates": [
+    "Article RSS below 100 MB is not reliably met on this workload",
+    "Frozen worker RSS below 10 MB is not met",
+    "App RSS below 250 MB and real app functionality are not certified",
+    "Linux and Windows runtime and remote CI of this branch remain unrun",
+    "Full CSS/Web compatibility and upstream submissions remain outside the validated subset"
+  ]
+}

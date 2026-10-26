@@ -206,8 +206,10 @@ and the real native engine round trip. Windows checks include a packaged Wega
 capture without SDK PATH. Local macOS and Linux checks do not certify unrun
 Windows or remote release jobs.
 
-Current native evidence is under `target/remaining/wega-native/` (page, complete
+The 24 October checkpoint used `target/remaining/wega-native/` (page, complete
 window capture and report) and `target/remaining/wega-ui.log` (native round trip).
+Current P4–P6 evidence and the remaining RSS/platform gates are recorded in
+[p4-p6-iteration.md](p4-p6-iteration.md).
 Local verification on 24 October 2026:
 
 | Check | Result |

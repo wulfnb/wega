@@ -520,12 +520,12 @@ missing browser rules. This change fixes them; what remains is listed in
   delegation). The pinned `02_event.js` adapter keeps the full path for DOM nodes,
   and nodes get listener data when they are wrapped.
 
-Local validation (macOS ARM64): **82 engine tests** pass (12 unit, 1 protocol,
+Web-correctness checkpoint validation (macOS ARM64): **82 engine tests** pass (12 unit, 1 protocol,
 6 framework fixtures, 31-case DOM WPT subset, and new suites `security`, `scripts`,
 `forms`, `documents`, `history`, `input` against real local HTTP servers, two origins
 and two sites); strict engine and desktop Clippy, rustfmt, 84 + 34 + 2 desktop unit
 tests, and the native `engine` suite (real browser and worker round trip) pass.
 `scripts/engine-web-mutations.py` breaks each new rule in turn and requires exactly
-its test to fail. The full run is not finished yet: 23 of 42 were confirmed detected before one survivor (`submit-event-is-cancelable`) was found and its test fixed; the remaining 18 still need a run (`python3 scripts/engine-web-mutations.py`).
+its test to fail. At that checkpoint, 23 of 42 faults were detected before one survivor (`submit-event-is-cancelable`) was found and its test fixed; the remaining cases were not claimed complete. The combined P4–P6 iteration subsequently proves the merged transport/security/fragment regressions in its 26 targeted faults; see [the current validation record](p4-p6-iteration.md). This does not claim a completed full web mutation matrix.
 Not run locally: `cargo llvm-cov` coverage (not installed here), Docker, Linux and
 Windows runtimes. Real-site compatibility is not certified; Servo stays the default.
