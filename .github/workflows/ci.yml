@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -60,6 +61,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-ci-lint"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Formatting check
         run: cargo fmt --check
       - name: Core lints
@@ -72,7 +74,7 @@ jobs:
 
   core-matrix:
     name: Core Suite (${{ matrix.os }})
-    needs: changes
+    needs: [changes, lint]
     if: needs.changes.outputs.full == 'true'
     strategy:
       fail-fast: false
@@ -90,6 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-core-${{ matrix.os }}"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Core unit tests
         run: cargo test --locked --no-default-features --lib
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -119,7 +122,7 @@ jobs:
 
   desktop-macos:
     name: Desktop Native & Engine Suite (macOS)
-    needs: changes
+    needs: [changes, lint]
     if: needs.changes.outputs.full == 'true'
     runs-on: macos-latest
     timeout-minutes: 90
@@ -135,6 +138,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-desktop-macos"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Native system dependencies
         run: brew install pkgconf gstreamer libnice-gstreamer
       - name: Production lints
@@ -168,9 +172,10 @@ jobs:
         run: python scripts/native-tests.py --suite all
       # Cargo caches can restore old reports; every workflow attempt needs a fresh output.
       - name: Two-engine compatibility and process-tree baseline
+        if: github.event_name != 'pull_request'
         run: python scripts/browser-bench.py --output target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }} --repeats 1 --tabs 1 5 --idle-seconds 5
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         with:
           name: browser-bench-macos
           path: target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }}/
@@ -184,9 +189,37 @@ jobs:
             target/coverage/
             !target/coverage/desktop/objects/
 
+  linux-binaries:
+    name: Linux Binaries for Docker (test harness)
+    needs: [changes, lint]
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    # Same RUST_IMAGE as compose.quality.yaml, so the binaries match the trixie runtime.
+    container: rust:1.98.0-slim-trixie
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Native build dependencies
+        run: apt-get update && xargs -a docker/builder-packages.txt apt-get install -y --no-install-recommends
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "wega-linux-harness"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build test-harness binaries
+        run: bash scripts/build-linux-binaries.sh dist/docker test-harness
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: linux-binaries-test-harness
+          path: dist/docker/
+          retention-days: 1
+
   docker-integration:
     name: Docker & Web Gateway Integration (Linux)
-    needs: changes
+    needs: [changes, linux-binaries]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -202,8 +235,33 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '26'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: linux-binaries-test-harness
+          path: dist/docker
+      # Artifacts drop the executable bit.
+      - name: Restore binary permissions
+        run: chmod 755 dist/docker/wega dist/docker/wega-engine
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Only the runtime layers are built here; CD keeps their cache in GHCR.
       - name: Build test container image
-        run: docker compose build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runtime-prebuilt
+          push: false
+          load: true
+          provenance: false
+          tags: wega-quality:local
+          cache-from: type=registry,ref=ghcr.io/wulfnb/wega:buildcache
       - name: Launch test environment
         run: docker compose up -d --wait --wait-timeout 180
       - name: Test authentication gateway & WebSocket revocation
@@ -224,6 +282,7 @@ jobs:
       - name: Test streaming download pipeline
         run: sh scripts/docker-download-test.sh
       - name: Two-engine compatibility and process-tree baseline in Linux
+        if: github.event_name != 'pull_request'
         run: |
           mkdir -p target/browser-bench-linux/${{ github.run_id }}-${{ github.run_attempt }}
           docker run --rm --user "$(id -u):$(id -g)" --entrypoint sh \
@@ -241,7 +300,7 @@ jobs:
               python3 /source/scripts/browser-bench.py --binary /usr/local/bin/wega --output /results/run --repeats 1 --tabs 1 5 --idle-seconds 5
             '
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         with:
           name: browser-bench-linux
           path: target/browser-bench-linux/${{ github.run_id }}-${{ github.run_attempt }}/
@@ -279,7 +338,7 @@ jobs:
 
   desktop-windows:
     name: Desktop Build & Launch (Windows)
-    needs: changes
+    needs: [changes, lint]
     if: needs.changes.outputs.full == 'true'
     runs-on: windows-latest
     timeout-minutes: 90
@@ -291,9 +350,22 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-desktop-windows"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Restore pinned media SDK installer
+        id: media-sdk
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gstreamer-msvc-1.28.8.exe
+          key: gstreamer-msvc-1.28.8-${{ hashFiles('scripts/install-windows-media.ps1') }}
       - name: Install pinned media SDK
         shell: pwsh
         run: scripts\install-windows-media.ps1
+      - name: Save pinned media SDK installer
+        if: steps.media-sdk.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gstreamer-msvc-1.28.8.exe
+          key: ${{ steps.media-sdk.outputs.cache-primary-key }}
       - name: Build the independent Wega engine
         run: python scripts/build-wega-engine.py --debug
       - name: Build the desktop browser
@@ -310,9 +382,10 @@ jobs:
       - name: Real media playback and same-profile launch handoff
         run: python scripts/windows-runtime-test.py --binary target/debug/wega.exe
       - name: Two-engine compatibility and process-tree baseline
+        if: github.event_name != 'pull_request'
         run: python scripts/browser-bench.py --binary target/debug/wega.exe --output target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }} --repeats 1 --tabs 1 5 --idle-seconds 10
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         with:
           name: browser-bench-windows
           path: target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }}/
@@ -325,7 +398,7 @@ jobs:
   ci-gate:
     name: CI Completion Gate
     if: always()
-    needs: [changes, lint, core-matrix, desktop-macos, desktop-windows, docker-integration]
+    needs: [changes, lint, core-matrix, desktop-macos, desktop-windows, linux-binaries, docker-integration]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all checks passed

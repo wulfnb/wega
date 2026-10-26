@@ -15,19 +15,22 @@ on:
 # publishing jobs receive write or OIDC (attestation) permissions.
 permissions: {}
 
+# A newer push to main supersedes the moving test-preview; release tags always finish.
 concurrency:
   group: cd-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # Runs in parallel with packaging. Nothing is published, and the image is not
+  # promoted to :latest/:test, until this passes (publish-release needs it).
   ci-validation:
-    name: Require CI before release packaging
+    name: Require CI before release publishing
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
+      packages: read
 
   build-macos:
-    needs: ci-validation
     name: Package macOS Bundle (ARM64)
     runs-on: macos-latest
     timeout-minutes: 90
@@ -46,10 +49,13 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-cd-macos"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Native system dependencies
         run: brew install pkgconf gstreamer libnice-gstreamer
       - name: Install license notice generator
-        run: cargo install cargo-about --version 0.9.2 --features cli --locked
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-about@0.9.2
       - name: Build and bundle Wega.app
         run: bash scripts/package-macos.sh
       # Cargo caches can restore old reports; every workflow attempt needs a fresh output.
@@ -87,8 +93,40 @@ jobs:
           name: macos-dist
           path: dist/*
 
+  build-linux-binaries:
+    name: Build Linux Binaries
+    runs-on: ubuntu-latest
+    # Same RUST_IMAGE as the Dockerfile builder, so the binaries match the trixie runtime.
+    container: rust:1.98.0-slim-trixie
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Native build dependencies
+        run: apt-get update && xargs -a docker/builder-packages.txt apt-get install -y --no-install-recommends
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "wega-cd-linux"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install license notice generator
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-about@0.9.2
+      - name: Build release binaries and license notices
+        run: bash scripts/build-linux-binaries.sh dist/docker desktop --notices
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: linux-binaries-release
+          path: dist/docker/
+          retention-days: 1
+
   build-linux-and-docker:
-    needs: ci-validation
+    needs: build-linux-binaries
     name: Build Linux Package & Docker (GHCR)
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -97,10 +135,19 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+    outputs:
+      digest: ${{ steps.published-image.outputs.digest }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: linux-binaries-release
+          path: dist/docker
+      # Artifacts drop the executable bit.
+      - name: Restore binary permissions
+        run: chmod 755 dist/docker/wega dist/docker/wega-engine
       - name: Set lowercased image repository name
         env:
           REPOSITORY: ${{ github.repository }}
@@ -118,20 +165,18 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          target: runtime-prebuilt
           push: false
           load: true
           provenance: false
-          build-args: |
-            BUILD_JOBS=4
-            WEGA_SOURCE_COMMIT=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:test
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # GHCR, not the 10 GB Actions cache.
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
       - name: Install license notice generator
-        run: cargo install cargo-about --version 0.9.2 --features cli --locked
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-about@0.9.2
       - name: Extract standalone Linux binary from built image
         run: |
           mkdir -p dist
@@ -170,6 +215,7 @@ jobs:
         with:
           name: linux-dist
           path: dist/Wega-Linux-x86_64.tar.gz
+      # Only the per-commit tag here; publish-release promotes it after CI passes.
       - name: Publish the validated Docker image
         id: published-image
         run: |
@@ -177,8 +223,6 @@ jobs:
           published_digest=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE_NAME}:${GITHUB_SHA}" | awk -F@ -v repository="$IMAGE_NAME" '$1 == repository {print $2; exit}')
           [[ "$published_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "digest=$published_digest" >> "$GITHUB_OUTPUT"
-          docker push "${IMAGE_NAME}:latest"
-          docker push "${IMAGE_NAME}:test"
       - name: Attest Docker image build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -187,7 +231,6 @@ jobs:
           push-to-registry: true
 
   build-windows:
-    needs: ci-validation
     name: Package Windows (x64)
     runs-on: windows-latest
     timeout-minutes: 90
@@ -202,15 +245,30 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-cd-windows"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Restore pinned media SDK installer
+        id: media-sdk
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gstreamer-msvc-1.28.8.exe
+          key: gstreamer-msvc-1.28.8-${{ hashFiles('scripts/install-windows-media.ps1') }}
       - name: Install pinned media SDK
         shell: pwsh
         run: scripts\install-windows-media.ps1
+      - name: Save pinned media SDK installer
+        if: steps.media-sdk.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/gstreamer-msvc-1.28.8.exe
+          key: ${{ steps.media-sdk.outputs.cache-primary-key }}
       - name: Build the independent Wega engine
         run: python scripts/build-wega-engine.py
       - name: Build Windows release executable
         run: cargo build --release --locked --no-default-features --features desktop,brotli-streams,media
       - name: Install license notice generator
-        run: cargo install cargo-about --version 0.9.2 --features cli --locked
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-about@0.9.2
       - name: Write LICENSE, NOTICE and THIRD-PARTY-NOTICES.html
         shell: bash
         run: bash scripts/third-party-notices.sh dist/wega-windows-x64 --no-default-features --features "desktop brotli-streams media" --target x86_64-pc-windows-msvc
@@ -286,11 +344,12 @@ jobs:
 
   publish-release:
     name: Publish GitHub Test Release
-    needs: [build-macos, build-linux-and-docker, build-windows]
+    needs: [ci-validation, build-macos, build-linux-and-docker, build-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
+      packages: write
       id-token: write
       attestations: write
     steps:
@@ -301,6 +360,16 @@ jobs:
         env:
           REPOSITORY: ${{ github.repository }}
         run: echo "IMAGE_NAME=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote the CI-validated image to latest and test
+        env:
+          DIGEST: ${{ needs.build-linux-and-docker.outputs.digest }}
+        run: docker buildx imagetools create --tag "${IMAGE_NAME}:latest" --tag "${IMAGE_NAME}:test" "${IMAGE_NAME}@${DIGEST}"
       - name: Download all release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:

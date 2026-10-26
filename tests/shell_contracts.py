@@ -53,6 +53,7 @@ def main():
         program('git', "print('0123456789abcdef0123456789abcdef01234567')\n")
         program('python3', log + "if 'scripts/build-wega-engine.py' in sys.argv:\n for folder in ['debug','release']:\n  p=Path.cwd()/'target'/folder/'wega-engine';p.parent.mkdir(parents=True,exist_ok=True);p.write_text('engine worker');p.chmod(0o755)\n")
         program('codesign', log)
+        program('strip', log)
         program('uname', "print('Darwin')\n")
         program('supervisord', log + "assert not any(k in os.environ for k in ['BROWSER_USER','BROWSER_PASSWORD','BROWSER_PASSWORD_FILE'])\n")
         program('supervisorctl', "print('\\n'.join(f'worker{i} RUNNING pid 1' for i in range(6)))\n")
@@ -103,6 +104,19 @@ def main():
         assert 'source commit: feedface\nCorresponding source: https://github.com/wulfnb/wega/tree/feedface' in notice
         commands = [json.loads(line) for line in calls.read_text().splitlines()]
         assert any(name == 'cargo' and arguments[:5] == ['about', 'generate', '--locked', '--fail', '--config'] and arguments[-5:-3] == ['--features', 'media'] for name, arguments in commands)
+        # Docker runtime-prebuilt binaries: usage, quick notices and full notices.
+        run('scripts/build-linux-binaries.sh', [str(work / 'docker-out')], success=False)
+        prebuilt = work / 'docker-out'
+        run('scripts/build-linux-binaries.sh', [str(prebuilt), 'test-harness'])
+        assert (prebuilt / 'wega').read_bytes() == binary.read_bytes()
+        assert (prebuilt / 'wega-engine').read_text() == 'engine worker'
+        assert (prebuilt / 'notices/NOTICE').read_bytes() == (checkout / 'NOTICE').read_bytes()
+        run('scripts/build-linux-binaries.sh', [str(prebuilt), 'desktop', '--notices'], env=dict(base_env, BUILD_JOBS='2'))
+        assert (prebuilt / 'notices/THIRD-PARTY-NOTICES.html').read_text() == '<html>notices</html>'
+        commands = [json.loads(line) for line in calls.read_text().splitlines()]
+        assert ['cargo', ['build', '--locked', '--features', 'test-harness', '--release', '--jobs', '4']] in commands
+        assert ['cargo', ['build', '--locked', '--features', 'desktop', '--release', '--jobs', '2']] in commands
+        assert ['strip', [str(prebuilt / 'wega'), str(prebuilt / 'wega-engine')]] in commands
         # macOS packager contracts substitute only external compiler/media ports.
         linux_env = dict(base_env, PATH='/usr/bin:/bin')
         run('scripts/package-macos.sh', env=linux_env, success=False)
