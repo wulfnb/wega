@@ -184,15 +184,25 @@ impl Drop for Server {
 }
 
 pub fn engine() -> Engine {
-    Engine::new(
-        Limits {
-            script_time: Duration::from_secs(3),
-            ..Limits::default()
-        },
-        NetworkPolicy::default(),
-        Arc::new(|| {}),
-    )
-    .unwrap()
+    let limits = Limits {
+        script_time: Duration::from_secs(3),
+        ..Limits::default()
+    };
+    if std::env::var_os("WEGA_TEST_BROKER").is_some() {
+        let directory = tempfile::tempdir().unwrap();
+        let broker = wega_network::Broker::new().unwrap();
+        let session = broker
+            .open_session(directory.path().to_owned(), NetworkPolicy::default())
+            .unwrap();
+        let (address, token) = session.endpoint();
+        // Hold the capability and private profile for exactly this engine's lifetime.
+        let wake = Arc::new(move || {
+            let _ = (&directory, &broker, &session);
+        });
+        Engine::brokered(limits, NetworkPolicy::default(), wake, &address, token).unwrap()
+    } else {
+        Engine::new(limits, NetworkPolicy::default(), Arc::new(|| {})).unwrap()
+    }
 }
 /// Load a URL and poll until the page's load event fired.
 pub fn open(engine: &Engine, url: &str) -> View {

@@ -1,9 +1,9 @@
 # Engine strategy: a low-memory Wega engine
 
-Status: **first experimental implementation**, updated 24 October 2026.
+Status: **experimental P4–P6 iteration**, updated 26 October 2026.
 The Blitz-based Wega engine now renders real pages in a private worker process;
-the native footer selects Servo or Wega for the active tab. Servo remains the
-default. The original design below includes future work; it does not describe a
+the address-bar badge and native footer select Servo or Wega for the active tab. Servo remains the
+general default, with a narrow validated static-site allowlist. The original design below includes future work; it does not describe a
 finished compatible browser engine. See the implementation checkpoint and the
 [engine recommendation at the bottom](#which-engine-should-we-use-now).
 
@@ -120,7 +120,7 @@ worker, rather than forcing incompatible crates into one process.
 
 ### What the first worker actually supports
 
-Blitz 0.3.0-beta.4 supplies HTML/CSS, Stylo/Taffy/Parley and Vello CPU painting.
+Blitz 0.3.0-beta.4 supplies HTML/CSS and Stylo/Taffy/Parley; P5 uses the Skia CPU paint backend.
 Wega now uses V8 through deno_core as its only worker JavaScript runtime. QuickJS
 was removed on 26 October 2026. The bindings operate on the Rust DOM through checked
 generational node IDs. The P0–P3 migration adds DOM classes, scoped selectors,
@@ -183,8 +183,7 @@ pressure and representative-site benchmarks remain work to do.
 **Still requires Servo:** iframes, Shadow DOM and custom elements, canvas/WebGL,
 media, workers, IndexedDB, page text selection and clipboard, website accessibility
 and developer tools (see [wega-compatibility-roadmap.md](wega-compatibility-roadmap.md)),
-plus website sign-in validation on real sites. The worker has no OS sandbox yet. Cookie/live-state synchronization
-between Wega workers needs the shared broker planned in P4; state does not transfer
+plus website sign-in validation on real sites. The worker has no OS sandbox yet. Wega workers share a profile cookie jar through the P4 browser broker; live page state does not transfer
 between engines. Unsupported APIs report errors; unsupported WebDriver operations
 return UnsupportedOperation. Full WPT coverage and real-site compatibility remain
 open; passing the selected subset does not certify a complete browser.
@@ -207,8 +206,10 @@ and the real native engine round trip. Windows checks include a packaged Wega
 capture without SDK PATH. Local macOS and Linux checks do not certify unrun
 Windows or remote release jobs.
 
-Current native evidence is under `target/remaining/wega-native/` (page, complete
+The 24 October checkpoint used `target/remaining/wega-native/` (page, complete
 window capture and report) and `target/remaining/wega-ui.log` (native round trip).
+Current P4–P6 evidence and the remaining RSS/platform gates are recorded in
+[p4-p6-iteration.md](p4-p6-iteration.md).
 Local verification on 24 October 2026:
 
 | Check | Result |
@@ -440,9 +441,9 @@ live reference-page captures and refreshed release-validation evidence. On its
 fixed article workload Wega uses more summed RSS as tabs increase; these results
 do not justify changing the default engine.
 
-V8 through deno_core is implemented through P3; QuickJS has been removed.
-Remaining performance, CSS and rollout work is in
-[v8-engine-plan.md](v8-engine-plan.md).
+V8 through deno_core is mandatory; QuickJS has been removed. The combined
+performance, CSS and rollout implementation and its remaining gates are in
+[p4-p6-iteration.md](p4-p6-iteration.md).
 
 **Use Servo as the default for everyday browsing.** It remains the supported
 choice for interactive sites, website sign-in, forms, media, developer tools and
@@ -450,8 +451,9 @@ website accessibility. It is a compatibility fallback, not a guarantee that ever
 site or browser API works.
 
 **Choose Wega (experimental) for testing article/static pages and the initial
-JavaScript integration.** Use the bottom-right selector or `--engine wega`, and
-switch back to Servo if the page needs unsupported APIs. Keep Wega opt-in until
-reference-site compatibility and whole-process memory/CPU measurements justify
-changing the default. A separate worker and a small JS heap alone do not establish
+JavaScript integration.** Use the address-bar badge, bottom-right selector or `--engine wega`, and
+switch back to Servo if the page needs unsupported APIs. Outside the three exact HTTPS example domains, Wega remains opt-in. Per-origin
+preferences take priority; the automatic allowlist and compatibility fallback can
+be disabled in the engine menu. A broader default must wait for compatibility
+and whole-process memory/CPU evidence. A separate worker and a small JS heap alone do not establish
 that the new engine uses less total memory on real sites.

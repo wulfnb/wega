@@ -281,6 +281,8 @@ impl Dom {
                 let charge=payload[0].len()+payload[1].len();if self.used.get().saturating_add(charge)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}self.used.set(self.used.get()+charge);
                 doc.mutate().set_attribute(target,QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]);Value::Null
             },
+            "supports"=>json!(doc.css_supports_condition(text(1))),
+            "supportsProperty"=>json!(doc.style_attr_set_property("",text(1),text(2),false).is_some_and(|css|!css.is_empty())),
             "inlineCSS"=>{let target=node_id()?;let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}json!(css)},
             "inlineProperty"=>{let target=node_id()?;let mut css=String::new();if let Ok(property)=style::properties::PropertyId::parse_enabled_for_all_content(text(2)) && let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).property_value_to_css(&property,&mut css);}json!(css)},
             "styleSet"=>{
@@ -306,6 +308,12 @@ impl Dom {
                 }).unwrap_or_default();json!(value)
             },
             "limits" => json!({"resourceBytes":self.limits.resource_bytes}),
+            "windowNamed" => json!(blitz_dom::traversal::TreeTraverser::new(&doc).filter(|id| {
+                doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e| {
+                    let attribute = |name: &str| e.attrs.iter().find(|a|a.name.local.as_str()==name).map(|a|a.value.as_str());
+                    attribute("id")==Some(text(1)) || (matches!(e.name.local.as_str(),"form"|"img"|"embed"|"object") && attribute("name")==Some(text(1)))
+                })
+            }).map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "root" => json!(doc.root_node().id.as_u64().to_string()),
             "query" => json!(
                 doc.query_selector(text(1))

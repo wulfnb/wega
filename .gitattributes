@@ -13,3 +13,15 @@
 
 # Pinned WPT checksums cover upstream LF bytes on every checkout platform.
 engines/wega/tests/fixtures/wpt/** text eol=lf
+
+# CSS WPT fixtures and vendor deltas preserve upstream LF bytes.
+engines/wega/tests/fixtures/css-wpt/** text eol=lf
+engines/vendor/**/*.css text eol=lf
+engines/vendor/**/*.js text eol=lf
+engines/vendor/**/*.patch text eol=lf
+# A blank unified-diff context line is one space by definition.
+engines/vendor/**/*.patch whitespace=-blank-at-eol
+engines/vendor/blitz/licenses/** text eol=lf
+
+# Keep the published Skia crate byte-identical, including upstream whitespace.
+engines/vendor/blitz/skia-bindings/** text eol=lf whitespace=-blank-at-eol,-blank-at-eof

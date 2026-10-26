@@ -1,7 +1,7 @@
 //! Versioned, bounded private pipe protocol shared with the independent engine worker.
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 
@@ -14,8 +14,18 @@ pub enum Command {
         blocked_hosts: String,
         allowed_hosts: String,
         storage_dir: Option<String>,
+        broker_address: Option<String>,
+        broker_token: Option<String>,
+        frame_path: Option<String>,
     },
-    Load(String),
+    Load {
+        url: String,
+        serial: u64,
+    },
+    FrameConsumed {
+        slot: u8,
+        sequence: u64,
+    },
     Resize {
         width: u32,
         height: u32,
@@ -43,6 +53,8 @@ pub enum Command {
     Scroll {
         x: f64,
         y: f64,
+        pointer_x: f32,
+        pointer_y: f32,
     },
     Freeze(bool),
     Stop,
@@ -79,6 +91,8 @@ pub enum Event {
         version: u32,
     },
     State {
+        serial: u64,
+        rss_bytes: Option<u64>,
         url: String,
         title: String,
         loading: bool,
@@ -88,6 +102,17 @@ pub enum Event {
         back: bool,
         forward: bool,
     },
+    Compatibility {
+        serial: u64,
+        reason: String,
+    },
+    SharedFrame {
+        serial: u64,
+        width: u32,
+        height: u32,
+        slot: u8,
+        sequence: u64,
+    },
     Navigate(String),
     Notice(String),
     Evaluated {
@@ -96,6 +121,7 @@ pub enum Event {
     },
     /// Exactly width*height*4 raw RGBA bytes follow this bounded JSON packet.
     Frame {
+        serial: u64,
         width: u32,
         height: u32,
     },

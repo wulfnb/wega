@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-26",
+  "source_base": "cc3a86e017401fb35bfaa48bd7bdedd6b5dfe198",
+  "host": "macOS ARM64; Apple clang 21; Rust LLVM COFF linker",
+  "scope": "Windows x86_64 native-object link regression, not full browser build or Windows execution",
+  "skia_bindings": "0.153.3",
+  "skia_source": "https://github.com/rust-skia/skia/tree/m153-0.101.2",
+  "windows_stl_update": "202503L",
+  "windows_sdk": "10.0.26100",
+  "archives": {
+    "skia": {
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.153.3/skia-binaries-b7f043e0b1e2a850e702-x86_64-pc-windows-msvc-ganesh-gl-jpegd-jpege-pdf-textlayout.tar.gz",
+      "sha256": "56bc9791500a67a3a6eb0cabe05e8086879ac25d2b2560a583bb79a4302295db",
+      "verification": "matches upstream GitHub asset digest"
+    },
+    "v8": {
+      "file": "rusty_v8_simdutf_release_x86_64-pc-windows-msvc.lib.gz",
+      "sha256": "f231f82cbacb9aefe6d9af57e6df2e8959a40e001f79306485133e3c075b98f0",
+      "verification": "matches engines/vendor/deno/V8-PREBUILT-SHA256SUMS"
+    }
+  },
+  "compile": "clang --target=x86_64-pc-windows-msvc --driver-mode=cl /nologo /c /std:c++20 /O2 /MD /GR /DNDEBUG /D_CRT_SECURE_NO_WARNINGS /D_HAS_EXCEPTIONS=0 /DWIN32_LEAN_AND_MEAN /DNOMINMAX /I skia-m153-0.101.2 /I sdk/crt/include /I sdk/sdk/include/ucrt /I sdk/sdk/include/shared /I sdk/sdk/include/um /U_HAS_EXCEPTIONS /D_HAS_EXCEPTIONS=1 /EHsc skia-m153-0.101.2/src/core/SkExecutor.cpp /Fofixed.SkExecutor.obj",
+  "before": {
+    "objects": [
+      "upstream core.SkExecutor.obj",
+      "upstream V8 exception.obj"
+    ],
+    "result": "duplicate symbol: void __cdecl std::terminate(void)",
+    "reverse_input_order": "also rejected"
+  },
+  "after": {
+    "objects": [
+      "recompiled fixed.SkExecutor.obj",
+      "same upstream V8 exception.obj"
+    ],
+    "skia_defines_std_terminate": false,
+    "link_exit_code": 0,
+    "link_diagnostics": "",
+    "link": "rust-lld -flavor link /dll /noentry /out:fixed-probe.dll fixed.SkExecutor.obj exception.obj skia-binaries/skia.lib v8.lib /libpath:sdk/crt/lib/x86_64 /libpath:sdk/sdk/lib/um/x86_64 /libpath:sdk/sdk/lib/ucrt/x86_64 vcruntime.lib ucrt.lib kernel32.lib /include:?MakeFIFOThreadPool@SkExecutor@@SA?AV?$unique_ptr@VSkExecutor@@U?$default_delete@VSkExecutor@@@std@@@std@@H_N@Z /include:?terminate@std@@YAXXZ",
+    "output_format": "PE32+ x86-64 Windows DLL",
+    "output_bytes": 17920,
+    "objects_sha256": {
+      "upstream_skia": "c20bf271f8000032995fb54ef443270af8affa0e3fe92ddbc34924f1c1b5b4e9",
+      "fixed_skia": "4321d5d2438d532e89166bf33c26d42b6c26c93bff727d4bc6fec06ee4f9f565",
+      "v8_exception": "ffd8776c0150ebe1f74f2c337e27191e40ad90dc085ce7986a1562a7d2fdf380"
+    },
+    "duplicate_or_unresolved_error_suppression": false
+  },
+  "local_checks": {
+    "workspace_tests": 110,
+    "strict_workspace_clippy": "passed",
+    "vendor_archives": 9,
+    "license_generation": "passed",
+    "python_tests": 71,
+    "shell_contracts": {
+      "platform": "Linux ARM64 disposable Docker container",
+      "result": "passed",
+      "collector": "kcov",
+      "covered_lines": 208,
+      "total_lines": 208,
+      "scope": [
+        "docker/entrypoint.sh",
+        "docker/start-browser.sh",
+        "scripts/package-linux.sh",
+        "scripts/package-macos.sh",
+        "scripts/third-party-notices.sh"
+      ],
+      "license_bytes_checked_in": [
+        "generated notices",
+        "Linux package",
+        "Docker build inputs",
+        "macOS bundle resources"
+      ]
+    }
+  },
+  "pending": [
+    "complete Windows CI build and runtime tests",
+    "CI rerun on this follow-up commit"
+  ]
+}

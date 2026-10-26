@@ -174,3 +174,19 @@ fn box_metrics_distinguish_content_padding_borders_and_scroll_overflow() {
     view.paint(400, 300, 1.0, 1.0, false).unwrap();
     assert_eq!(view.evaluate_json("[box.offsetWidth,box.clientLeft,box.clientTop,box.offsetParent===document.querySelector('main'),box.scrollWidth>box.clientWidth,box.scrollHeight>box.clientHeight,boxEntry.contentRect.width,boxEntry.borderBoxSize[0].inlineSize]").unwrap(),"[110,5,5,true,true,true,80,110]");
 }
+
+#[test]
+fn window_named_elements_are_live_and_do_not_override_own_globals() {
+    let mut view =
+        page("<div id=namedFixture></div><form name=namedForm></form><div id=location></div>");
+    view.evaluate("if(namedFixture!==document.getElementById('namedFixture')||namedForm!==document.querySelector('form')||typeof location.href!=='string')throw Error('Named access');namedFixture.id='renamedFixture';if(typeof namedFixture!=='undefined'||!renamedFixture)throw Error('Stale ID');globalThis.renamedFixture=7;if(renamedFixture!==7)throw Error('Own property shadowing');delete globalThis.renamedFixture;if(!renamedFixture.nodeType)throw Error('Named access restoration');").unwrap();
+}
+
+#[test]
+fn adjacent_html_uses_the_insertion_position_and_namespace_context() {
+    let mut view = page(
+        "<div id=anchor><b>existing</b></div><table><tbody id=rows></tbody></table><svg id=graphic xmlns='http://www.w3.org/2000/svg'></svg>",
+    );
+    view.evaluate("const anchor=document.getElementById('anchor');anchor.insertAdjacentHTML('afterbegin','<span id=first>first</span>');anchor.insertAdjacentHTML('beforeend','<span id=last>last</span>');document.getElementById('rows').insertAdjacentHTML('beforeend','<tr><td>cell</td></tr>');document.getElementById('graphic').insertAdjacentHTML('beforeend','<circle id=dot r=5></circle>');document.body.insertAdjacentHTML('afterbegin','<style>p{color:green}</style><p id=intro>intro</p>')").unwrap();
+    assert_eq!(view.evaluate_json("[anchor.firstElementChild.id,anchor.lastElementChild.id,document.getElementById('rows').firstElementChild.localName,document.getElementById('dot').namespaceURI,document.querySelectorAll('body').length,document.getElementById('intro').parentNode===document.body]").unwrap(), "[\"first\",\"last\",\"tr\",\"http://www.w3.org/2000/svg\",1,true]");
+}

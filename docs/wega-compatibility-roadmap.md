@@ -28,7 +28,7 @@ use, then iframes and components, then storage and workers.
 | --- | --- | --- |
 | iframes and `postMessage` | Blitz already has sub-document support (`iframe.rs`). Give each frame its own document and script host in the worker (same-site) or its own worker (cross-site), route input by hit testing, and implement `postMessage`/`MessageChannel` over the existing structured clone. | 6–8 |
 | Shadow DOM and custom elements | Shadow roots need Blitz/Stylo support for scoped styles and slots (upstream work). `customElements.define`, upgrade and lifecycle callbacks can be done in the bindings once shadow roots exist. | 6+ (upstream) |
-| Canvas 2D | Implement `CanvasRenderingContext2D` on Vello (already the paint backend) into a Blitz custom widget or image node. | 4–6 |
+| Canvas 2D | Implement `CanvasRenderingContext2D` on Skia (the P5 paint backend) into a Blitz custom widget or image node. | 4–6 |
 | WebGL / WebGPU | wgpu-based; only after the GPU compositor. | 8+ |
 | Media (`<video>`, `<audio>`, MSE) | A separate media worker using the platform decoders; frames as textures. EME/DRM stays on Servo. | 8+ |
 | Web Workers | A second V8 isolate per worker in the same process with its own event loop and `postMessage`; SharedWorker and Service Workers after that (Service Workers need the shared network broker for interception). | 3 (Workers), 6+ (SW) |
@@ -41,8 +41,8 @@ use, then iframes and components, then storage and workers.
 
 | Item | Approach | Size |
 | --- | --- | --- |
-| GPU compositor and partial repaint | Raster on its own thread from a display-list snapshot; share frames through shared memory instead of RGBA over the pipe; repaint damaged regions only; async scrolling. Overlaps P4/P5. | 6–8 |
-| CSS gaps (sticky, filters, multicol, 3D transforms, container queries, line-clamp) | Upstream Blitz/Stylo work; tracked in P5. | P5 |
+| GPU compositor and partial repaint | P4 now has an owned display list, a separate raster thread and acknowledged shared-memory frames. Remaining: GPU compositing, damage-only repaint and compositor-driven async scrolling. | 6–8 |
+| CSS gaps (sticky, filters, multicol, 3D transforms, container queries, line-clamp) | P5 implements tested subsets of sticky, filters, container queries, clamp/ellipsis, shadows and blend modes. Multicol, 3D transforms, border-image and broader conformance remain upstream work. | P5 |
 | Responsive images and lazy loading | `srcset`/`<picture>` selection, `loading=lazy` via the intersection logic, decoded-image budgets. | 2 |
 
 ## Tooling and accessibility

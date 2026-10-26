@@ -313,9 +313,9 @@ allowlist. Video/audio DRM, WebGL/WebGPU and complex editors stay on Servo for n
 - Every bug fix gets a regression test, proven by mutation.
 - Commands:
   ```sh
-  cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine
-  cargo clippy --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets -- -D warnings
-  cargo fmt --manifest-path engines/Cargo.toml --check
+  cargo test --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine
+  cargo clippy --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets -- -D warnings
+  cargo fmt --manifest-path engines/Cargo.toml --all --check
   python3 scripts/build-wega-engine.py --debug && python3 scripts/native-tests.py --suite engine
   ```
 - Coverage: `coverage-policy.json` requires line measurements for first-party engine
@@ -339,7 +339,7 @@ are listed in `NOTICE`.
   `RUSTY_V8_MIRROR=<mirror>/rusty_v8-prebuilt cargo build --offline --config
   "source.crates-io.replace-with='mirror'" --config "source.mirror.directory='<mirror>/graph/vendor'"`.
 - QuickJS removal is decided and implemented. Owner decisions still open: where
-  the offsite mirror lives and the per-site UI for P6.
+  the offsite mirror lives; the per-site UI is implemented in P6.
 - Update this document's status and record measured numbers at the end of each phase.
 
 ## Implementation evidence — 25 October 2026
@@ -428,8 +428,9 @@ their own rerun. Evidence: `docs/validation/native-input-ci-followup.json`.
 Remote CI must rerun after the follow-up is pushed. The complete Docker image and
 Windows runtime were not rerun locally. No whole-project line-coverage percentage
 is claimed; completeness/coverage reports remain subject to `coverage-policy.json`.
-P4–P6 remain pending. Broad DOM/Web API conformance, full forms/FormData integration,
-CORS/CSP completeness, cross-worker live cookie synchronization, observer edge cases,
+The P4–P6 follow-up is recorded in [p4-p6-iteration.md](p4-p6-iteration.md).
+Broad DOM/Web API conformance, full forms/FormData integration,
+CORS/CSP completeness, observer edge cases,
 media and representative-site/RSS validation still need work. Classic scripts are
 queued while a static module graph loads. Keep Servo as the everyday default.
 Machine-readable local evidence: `docs/validation/p3-gates.json`.
@@ -460,6 +461,29 @@ For baseline commit `a5ac41f`, main CI run `40288197021` passed all jobs, and th
 Windows job in V8 run `40288197041` passed V8 contracts before failing QuickJS
 contracts. The removal itself still needs a push and remote rerun.
 
+
+P4–P6 follow-up — 26 October 2026:
+
+The same iteration implements compiled startup factories, protocol v4 worker RSS,
+a bounded browser HTTP/cache/cookie broker, two-thread V8/Stylo pools, a separate
+Skia raster thread with owned display lists, two acknowledged shared frame slots,
+and non-destructive freeze collection/release. P5 adds documented upstream-ready
+Blitz/Stylo/Skia fixes and pinned CSS WPT/pixel regressions. P6 adds origin-scoped
+preferences, an address-bar badge, one-way compatibility fallback and an exact
+HTTPS rollout allowlist (`example.com`, `example.org`, `example.net`).
+
+Fallback is automatic only before input. Edited pages use the existing discard
+confirmation; cancellation keeps the live worker and does not repeatedly prompt.
+Live permissions update without reloading the DOM. A fallback never rewrites a
+saved site preference or switches the same tab back into a failing Wega page.
+
+The performance gates are measured separately from functional completion. Lite
+mode is chosen at process creation for simple pages; existing app isolates are
+paused/collected when hidden, preserving JIT/JS state. Live node images remain
+available offline after thaw; redundant caches, raster state and frame mappings
+are released. Do not describe this as full live-image eviction or a <10 MB frozen
+VM. See the iteration record for measurements, remaining targets and validation
+boundaries. Servo remains the general browsing engine.
 Web correctness — 26 October 2026:
 
 The review of the engine against a full browser found nine defects and a set of
@@ -487,19 +511,21 @@ missing browser rules. This change fixes them; what remains is listed in
   MutationObserver needs them.
 - **Forms, documents, history, input:** see
   [engine-strategy.md](engine-strategy.md#what-the-first-worker-actually-supports).
-  The worker protocol is version 3 (pointer, traverse, dialog, download, popup and
-  cursor messages; in-document history in `State`).
+  The web-correctness checkpoint introduced protocol version 3 (pointer, traverse,
+  dialog, download, popup and cursor messages; in-document history in `State`).
+  This combined iteration uses version 4, adding shared frames, navigation serials
+  and native worker RSS.
 - **Event dispatch fix:** Deno's EventTarget returned early when the target itself had
   no listener, so events never reached ancestors or the window (breaking event
   delegation). The pinned `02_event.js` adapter keeps the full path for DOM nodes,
   and nodes get listener data when they are wrapped.
 
-Local validation (macOS ARM64): **82 engine tests** pass (12 unit, 1 protocol,
+Web-correctness checkpoint validation (macOS ARM64): **82 engine tests** pass (12 unit, 1 protocol,
 6 framework fixtures, 31-case DOM WPT subset, and new suites `security`, `scripts`,
 `forms`, `documents`, `history`, `input` against real local HTTP servers, two origins
 and two sites); strict engine and desktop Clippy, rustfmt, 84 + 34 + 2 desktop unit
 tests, and the native `engine` suite (real browser and worker round trip) pass.
 `scripts/engine-web-mutations.py` breaks each new rule in turn and requires exactly
-its test to fail. The full run is not finished yet: 23 of 42 were confirmed detected before one survivor (`submit-event-is-cancelable`) was found and its test fixed; the remaining 18 still need a run (`python3 scripts/engine-web-mutations.py`).
+its test to fail. At that checkpoint, 23 of 42 faults were detected before one survivor (`submit-event-is-cancelable`) was found and its test fixed; the remaining cases were not claimed complete. The combined P4–P6 iteration subsequently proves the merged transport/security/fragment regressions in its 26 targeted faults; see [the current validation record](p4-p6-iteration.md). This does not claim a completed full web mutation matrix.
 Not run locally: `cargo llvm-cov` coverage (not installed here), Docker, Linux and
 Windows runtimes. Real-site compatibility is not certified; Servo stays the default.

@@ -284,3 +284,65 @@ fn referer_follows_strict_origin_when_cross_origin() {
         Some(page.url("127.0.0.1", "/").as_str())
     );
 }
+
+#[test]
+fn broker_honors_fetch_cache_modes_and_live_engine_policy_without_reloading() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use wega_engine::{Engine, Limits, NetworkPolicy};
+    let count = Arc::new(AtomicUsize::new(0));
+    let requests = count.clone();
+    let server = Server::new(move |seen| {
+        if seen.path == "/public" {
+            return Reply::ok(
+                "text/plain",
+                requests.fetch_add(1, Ordering::SeqCst).to_string(),
+            )
+            .header("Cache-Control", "public, max-age=60");
+        }
+        Reply::html("<title>Broker policy</title><input id=draft value=initial>")
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let broker = wega_network::Broker::new().unwrap();
+    let session = broker
+        .open_session(directory.path().to_owned(), NetworkPolicy::default())
+        .unwrap();
+    let (address, token) = session.endpoint();
+    let keep = (session, directory);
+    let engine = Engine::brokered(
+        Limits::default(),
+        NetworkPolicy::default(),
+        Arc::new(move || {
+            let _ = &keep;
+        }),
+        &address,
+        token,
+    )
+    .unwrap();
+    let mut view = open(&engine, &server.url("127.0.0.1", "/"));
+    view.evaluate("document.getElementById('draft').value='unsaved';(async()=>{let results=[];for(const cache of ['default','default','no-store','no-store'])results.push(await(await fetch('/public',{cache})).text());globalThis.cacheValues=results})()").unwrap();
+    assert_eq!(
+        wait(&mut view, "globalThis.cacheValues??null"),
+        "[\"0\",\"0\",\"1\",\"2\"]"
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 3);
+    // The library's local policy must also apply when the broker's session
+    // still allows the URL (the native browser updates both).
+    engine.set_policy(NetworkPolicy {
+        offline: true,
+        ..Default::default()
+    });
+    view.evaluate("fetch('/blocked').then(()=>globalThis.policyResult='allowed',()=>globalThis.policyResult='blocked')").unwrap();
+    assert_eq!(
+        wait(&mut view, "globalThis.policyResult??null"),
+        "\"blocked\""
+    );
+    assert_eq!(server.requests("/blocked").len(), 0);
+    assert_eq!(
+        view.evaluate_json("document.getElementById('draft').value")
+            .unwrap(),
+        "\"unsaved\""
+    );
+}

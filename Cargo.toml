@@ -11,7 +11,7 @@ build = "build.rs"
 
 [features]
 default = ["desktop", "brotli-streams", "media"]
-desktop = ["dep:windows-sys", "dep:malloc_size_of", "dep:rfd", "dep:accesskit", "dep:egui-winit", "dep:egui", "dep:egui_glow", "dep:winit", "dep:servo", "dep:euclid", "dep:dpi", "dep:rustls", "dep:arboard", "dep:servo-devtools-traits", "dep:servo-base", "dep:crossbeam-channel", "dep:webdriver", "dep:base64", "dep:image", "dep:http", "dep:libc", "dep:pkcs1", "dep:objc2", "dep:block2", "dep:objc2-app-kit", "dep:objc2-foundation"]
+desktop = ["dep:wega-platform", "dep:wega-network", "dep:windows-sys", "dep:malloc_size_of", "dep:rfd", "dep:accesskit", "dep:egui-winit", "dep:egui", "dep:egui_glow", "dep:winit", "dep:servo", "dep:euclid", "dep:dpi", "dep:rustls", "dep:arboard", "dep:servo-devtools-traits", "dep:servo-base", "dep:crossbeam-channel", "dep:webdriver", "dep:base64", "dep:image", "dep:http", "dep:libc", "dep:pkcs1", "dep:objc2", "dep:block2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 test-harness = ["desktop"]
 brotli-streams = ["desktop", "servo/brotli-compression-stream"]
 multiprocess = ["desktop", "servo/multiprocess"]
@@ -28,6 +28,8 @@ path = "vendor/servo-script-bindings/mem.rs"
 required-features = ["desktop"]
 
 [dependencies]
+wega-platform = {path="engines/platform",optional=true}
+wega-network = {path="engines/network",optional=true}
 malloc_size_of = { package = "servo-malloc-size-of", version = "=0.7.0", optional = true }
 rfd = { version = "=0.17.2", optional = true }
 accesskit = { version = "=0.25.1", features = ["serde"], optional = true }

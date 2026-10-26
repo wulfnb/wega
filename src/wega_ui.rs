@@ -47,15 +47,11 @@ fn button_index(button: egui::PointerButton) -> u8 {
 
 impl Browser {
     pub(crate) fn engine_picker(&mut self, ui: &mut egui::Ui) {
-        let mut engine = self.tab().engine;
-        let available = crate::wega_page::executable().is_some();
-        let response=egui::ComboBox::from_id_salt("page-engine")
-            .selected_text(engine.name()).width(145.0)
-            .show_ui(ui,|ui|{
-                ui.selectable_value(&mut engine,EngineKind::Servo,"Servo").on_hover_text("Recommended for everyday browsing, interactive sites, media and developer tools.");
-                ui.add_enabled_ui(available,|ui|ui.selectable_value(&mut engine,EngineKind::Wega,"Wega (experimental)")).inner
-                    .on_hover_text(if available{"Uses a separate Blitz/V8 worker. Reloads this tab; cookies and sign-in state are separate. Media, iframes and page tools currently need Servo."}else{"Build/install the wega-engine worker with python3 scripts/build-wega-engine.py --debug to enable this choice."});
-            }).response.on_hover_text("Engine for this tab. Changing it reloads the page and loses unsaved page state.");
+        let response = egui::ComboBox::from_id_salt("page-engine")
+            .selected_text(self.tab().engine.name())
+            .width(145.0)
+            .show_ui(ui, |ui| self.engine_options(ui))
+            .response;
         response.widget_info(|| {
             egui::WidgetInfo::labeled(
                 egui::Role::ComboBox,
@@ -63,8 +59,60 @@ impl Browser {
                 format!("Engine: {}", self.tab().engine.name()),
             )
         });
+    }
+    pub(crate) fn engine_badge(&mut self, ui: &mut egui::Ui) {
+        let name = if self.is_wega() { "Wega" } else { "Servo" };
+        ui.menu_button(name, |ui| self.engine_options(ui))
+            .response
+            .on_hover_text("Page engine and preference for this site");
+    }
+    fn engine_options(&mut self, ui: &mut egui::Ui) {
+        let mut engine = self.tab().engine;
+        ui.selectable_value(&mut engine, EngineKind::Servo, "Servo")
+            .on_hover_text("Full browser engine for interactive apps, media and page tools.");
+        ui.add_enabled_ui(crate::wega_page::executable().is_some(), |ui| {
+            ui.selectable_value(&mut engine, EngineKind::Wega, "Wega (experimental)")
+        });
+        let mut policy = self.profile().policy.clone();
+        let mut changed = false;
+        if let Some(key) = self
+            .current_url()
+            .and_then(|url| wega::engine_choice::site_key(&url))
+        {
+            ui.separator();
+            ui.label(&key);
+            let mut remember = policy.site_engines.contains_key(&key);
+            if ui
+                .checkbox(&mut remember, "Remember engine for this site")
+                .changed()
+            {
+                if remember {
+                    policy.site_engines.insert(key, self.tab().engine);
+                } else {
+                    policy.site_engines.remove(&key);
+                }
+                changed = true;
+            }
+        }
+        changed |= ui
+            .checkbox(
+                &mut policy.wega_rollout,
+                "Use Wega for validated static sites",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut policy.wega_fallback,
+                "Use Servo when Wega cannot run a page",
+            )
+            .on_hover_text("Edited pages require confirmation before their state is discarded.")
+            .changed();
+        if changed {
+            self.apply(wega::application::Command::Policy(policy));
+        }
         if engine != self.tab().engine {
             self.switch_engine(engine);
+            ui.close();
         }
     }
     pub(crate) fn pump_wega(&mut self) {
@@ -127,6 +175,36 @@ impl Browser {
                     visit_count: 0,
                 },
             ));
+        }
+        // Handle one compatibility report only after any existing prompt is resolved.
+        // Initial unedited pages can reload automatically; user input always keeps
+        // the existing conservative page-state confirmation path.
+        if !self.modal() && self.profile().policy.wega_fallback && navigations.is_empty() {
+            let fallback = self.tab().wega.as_ref().and_then(|page| {
+                let mut state = page
+                    .state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                state.compatibility.take().map(|reason| {
+                    state.fallback_reported = true;
+                    (reason, state.interacted)
+                })
+            });
+            if let Some((reason, interacted)) = fallback {
+                self.notify(
+                    crate::ux::Severity::Warning,
+                    format!("This page needs Servo: {reason}"),
+                    None,
+                );
+                if interacted {
+                    self.confirm_page_action(crate::page_safety::Action::Fallback(self.tab().key));
+                } else if let Some(url) = self.current_url() {
+                    let key = wega::engine_choice::site_key(&url);
+                    if self.replace_engine_confirmed(EngineKind::Servo, url, false) {
+                        self.mark_fallback(key);
+                    }
+                }
+            }
         }
         if let Some(address) = navigations.last() {
             let current = self.current_url();

@@ -1,0 +1,279 @@
+--- a/assets/default.css
++++ b/assets/default.css
+@@ -1,6 +1,8 @@
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++/* Modified by Wega contributors, 2026: see the documented P4-P5 patch. */
++
+ 
+ @namespace url(http://www.w3.org/1999/xhtml);
+ /* set default namespace to HTML */
+@@ -260,6 +262,12 @@
+     display: block;
+ }
+ 
++/* Modified by Wega contributors, 2026: use the scheme-aware default text
++   color. Author colors still win through the normal cascade. */
++:root {
++    color: CanvasText;
++}
++
+ body {
+     display: block;
+     margin: 8px;
+--- a/src/document.rs
++++ b/src/document.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: bounded style scheduling and cache release.
+ use crate::NodeTree;
+ use crate::events::{DragMode, handle_dom_event};
+ use crate::layout::construct::ConstructionTask;
+@@ -393,6 +394,13 @@
+ }
+ 
+ impl BaseDocument {
++    /// Select parallel traversal only for large documents. The embedder caps the
++    /// shared Stylo pool before creating a document.
++    pub fn set_style_threading(&mut self, threading: StyleThreading) { self.style_threading = threading; }
++    /// Release redundant decoded-image cache references. Live nodes retain their
++    /// images so freezing never loses pixels or requires a network reload.
++    pub fn release_image_cache(&mut self) { self.image_cache.clear(); }
++
+     /// Create a new (empty) [`BaseDocument`] with the specified configuration
+     pub fn new(config: DocumentConfig) -> Self {
+         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
+@@ -436,7 +444,8 @@
+         style_config::set_pref!("layout.variable_fonts.enabled", true);
+         #[cfg(feature = "writing-mode")]
+         style_config::set_pref!("layout.writing-mode.enabled", true);
+-        style_config::set_pref!("layout.threads", -1);
++        style_config::set_pref!("layout.threads", 2);
++        style_config::set_pref!("layout.container-queries.enabled", true);
+ 
+         let viewport = config.viewport.unwrap_or_default();
+         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
+--- a/src/layout/inline.rs
++++ b/src/layout/inline.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: use clamped line-box height for layout.
+ use blitz_traits::node_id::NodeId;
+ use parley::{AlignmentOptions, BreakReason, IndentOptions};
+ use style::values::specified::box_::{DisplayInside, DisplayOutside};
+@@ -848,7 +849,7 @@
+         // content ends the final line box without starting a new one. Parley still emits an
+         // empty line after it (so that editors have a line to place the cursor on), so that
+         // line is excluded from the measured height (and from the last baseline).
+-        let line_count = inline_layout.layout.len();
++        let mut line_count = inline_layout.layout.len();
+         let mut trailing_empty_line = None;
+         if line_count >= 2
+             && let (Some(prev_line), Some(last_line)) = (
+@@ -868,6 +869,16 @@
+             if is_bfc_root {
+                 height = height.max(float_height_contribution * scale)
+             };
++        }
++
++        let clamp = self.nodes[node_id].primary_styles()
++            .and_then(|s| s.clone_line_clamp().max_lines.lines_value().map(|n| n.0 as usize));
++        if let Some(count) = clamp.filter(|count| *count > 0 && *count < line_count) {
++            if let Some(line) = inline_layout.layout.get(count - 1) {
++                height = height.min(line.metrics().block_max_coord);
++                line_count = count;
++                trailing_empty_line = None;
++            }
+         }
+ 
+         // Note: `width` and `height` are content-box measurements of the inline content.
+--- a/src/node/element.rs
++++ b/src/node/element.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: track visual sticky deltas separately from layout.
+ use blitz_traits::node_id::NodeId;
+ use cssparser::Parser;
+ use kurbo::{Affine, Rect as KurboRect};
+@@ -128,6 +129,7 @@
+     pub unrounded_layout: Layout,
+     pub final_layout: Layout,
+     pub scroll_offset: crate::Point<f64>,
++    pub sticky_delta: crate::Point<f32>,
+     pub scrollable_overflow: KurboRect,
+     /// The writing mode this node's layout algorithm ran in (the root takes it from `<body>`),
+     /// recorded by the layout pass for CSSOM geometry lookups.
+@@ -142,6 +144,7 @@
+             unrounded_layout: Layout::new(),
+             final_layout: Layout::new(),
+             scroll_offset: crate::Point::ZERO,
++            sticky_delta: crate::Point {x:0.0,y:0.0},
+             scrollable_overflow: KurboRect::ZERO,
+             #[cfg(feature = "writing-mode")]
+             writing_mode: stylo_taffy::WritingMode::empty(),
+--- a/src/node/node.rs
++++ b/src/node/node.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: blend modes establish a stacking context.
+ use crate::Document;
+ use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
+ use bitflags::bitflags;
+@@ -1318,7 +1319,7 @@
+             return true;
+         }
+ 
+-        // TODO: mix-blend-mode
++        if style.clone_mix_blend_mode() != style::computed_values::mix_blend_mode::T::Normal { return true; }
+         // TODO: contain
+ 
+         false
+@@ -1827,8 +1828,8 @@
+ 
+         loop {
+             let layout = current.final_layout();
+-            x += layout.location.x;
+-            y += layout.location.y;
++            x += layout.location.x - current.layout_data().sticky_delta.x;
++            y += layout.location.y - current.layout_data().sticky_delta.y;
+ 
+             let Some(parent_id) = current.containing_block() else {
+                 break;
+--- a/src/resolve.rs
++++ b/src/resolve.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: bounded container-query convergence and sticky offsets.
+ //! Resolve style and layout
+ 
+ use blitz_traits::node_id::NodeId;
+@@ -62,6 +63,15 @@
+             return;
+         }
+ 
++        for (_, node) in self.nodes.iter_mut() {
++            if let Some(element) = node.element_data_mut() {
++                if let Some(data) = element.layout_data.as_deref_mut() {
++                    data.final_layout.location.x -= data.sticky_delta.x;
++                    data.final_layout.location.y -= data.sticky_delta.y;
++                    data.sticky_delta = crate::Point {x:0.0,y:0.0};
++                }
++            }
++        }
+         self.resolve_scroll_animation();
+ 
+         // Drop scrollbar-activity entries whose fade-out has finished (also
+@@ -79,6 +89,11 @@
+         // accumulated since the last resolve as a single device rebuild.
+         self.flush_pending_device_changes();
+ 
++        // Size queries depend on the previous layout. Restyle only when an
++        // actual query container changes size; containment breaks size cycles.
++        // A hard bound prevents pathological CSS from monopolizing the worker.
++        for pass in 0..4 {
++            let before = self.query_container_sizes();
+         // we need to resolve stylist first since it will need to drive our layout bits
+         self.resolve_stylist(current_time_for_animations);
+         timer.record_time("style");
+@@ -111,6 +126,11 @@
+         // Next we resolve layout with the data resolved by stlist
+         self.resolve_layout();
+         timer.record_time("layout");
++            if before == self.query_container_sizes() || pass == 3 { break; }
++            use style::invalidation::element::restyle_hints::RestyleHint;
++            self.nodes[root_node_id].set_restyle_hint(RestyleHint::restyle_subtree());
++        }
++        self.resolve_sticky_offsets();
+         self.nodes.bump_geometry_generation();
+ 
+         // Resolve transforms
+@@ -166,6 +186,72 @@
+         timer.record_time("subdocs");
+ 
+         timer.print_times(&format!("Resolve({}): ", self.id()));
++    }
++
++    fn query_container_sizes(&self) -> Vec<(NodeId, f32, f32)> {
++        self.nodes.iter().filter_map(|(id,node)| {
++            let style = node.primary_styles()?;
++            style.clone_container_type().is_size_container_type().then(|| {
++                let layout = node.final_layout();
++                (id, layout.content_box_width(), layout.content_box_height())
++            })
++        }).collect()
++    }
++
++    fn resolve_sticky_offsets(&mut self) {
++        use style::computed_values::position::T as Position;
++        use style::values::computed::{CSSPixelLength, LengthPercentage, Overflow};
++        use style::values::generics::position::Inset;
++        fn inset<P>(value: &Inset<P, LengthPercentage>, basis: f32) -> Option<f32> {
++            match value { Inset::LengthPercentage(lp) => Some(lp.resolve(CSSPixelLength::new(basis)).px()), _ => None }
++        }
++        let mut sticky: Vec<_> = self.nodes.iter().filter_map(|(id,node)| {
++            (node.primary_styles()?.clone_position() == Position::Sticky).then_some(id)
++        }).collect();
++        sticky.sort_by_key(|id| { let mut depth=0;let mut p=self.nodes[*id].containing_block();while let Some(id)=p {depth+=1;p=self.nodes[id].containing_block();} depth });
++        for id in sticky {
++            let node = &self.nodes[id];
++            let Some(parent_id) = node.containing_block() else {continue};
++            let Some(style) = node.primary_styles() else {continue};
++            let pos = style.get_position();
++            let size = node.final_layout().size;
++            let parent = &self.nodes[parent_id];
++            // absolute_position includes each box's own scroll. Undo the own
++            // offset for border-box coordinates used by sticky constraints.
++            let normal = node.absolute_position(0.0,0.0);
++            let normal = crate::Point {x:normal.x + node.scroll_offset().x as f32,y:normal.y + node.scroll_offset().y as f32};
++            let mut scrollport = node.containing_block();
++            let mut found = None;
++            while let Some(ancestor) = scrollport {
++                let candidate=&self.nodes[ancestor];
++                if candidate.primary_styles().is_some_and(|s| !matches!(s.get_box().overflow_x,Overflow::Visible|Overflow::Clip) || !matches!(s.get_box().overflow_y,Overflow::Visible|Overflow::Clip)) {
++                    found=Some(ancestor);break;
++                }
++                scrollport=candidate.containing_block();
++            }
++            let (start, extent)=if let Some(scroller)=found {
++                let scroller=&self.nodes[scroller];let layout=scroller.final_layout();let at=scroller.absolute_position(0.0,0.0);
++                (crate::Point{x:at.x+scroller.scroll_offset().x as f32+layout.border.left,y:at.y+scroller.scroll_offset().y as f32+layout.border.top},
++                 (layout.size.width-layout.border.left-layout.border.right,layout.size.height-layout.border.top-layout.border.bottom))
++            } else {
++                let scroll=self.viewport_scroll();let scale=self.viewport.scale();
++                (crate::Point{x:scroll.x as f32,y:scroll.y as f32},(self.viewport.window_size.0 as f32/scale,self.viewport.window_size.1 as f32/scale))
++            };
++            let mut target=normal;
++            if let Some(top)=inset(&pos.top,extent.1) {target.y=target.y.max(start.y+top);}
++            else if let Some(bottom)=inset(&pos.bottom,extent.1) {target.y=target.y.min(start.y+extent.1-bottom-size.height);}
++            if let Some(left)=inset(&pos.left,extent.0) {target.x=target.x.max(start.x+left);}
++            else if let Some(right)=inset(&pos.right,extent.0) {target.x=target.x.min(start.x+extent.0-right-size.width);}
++            let parent_at=parent.absolute_position(0.0,0.0);
++            let cb=parent.final_layout();
++            let max_y=parent_at.y+cb.size.height-cb.border.bottom-cb.padding.bottom-size.height;
++            let max_x=parent_at.x+cb.size.width-cb.border.right-cb.padding.right-size.width;
++            target.y=target.y.min(max_y.max(normal.y));target.x=target.x.min(max_x.max(normal.x));
++            let delta=crate::Point{x:target.x-normal.x,y:target.y-normal.y};
++            drop(style);
++            let layout=self.nodes[id].layout_data_mut();
++            layout.final_layout.location.x+=delta.x;layout.final_layout.location.y+=delta.y;layout.sticky_delta=delta;
++        }
+     }
+ 
+     fn resolve_transforms(&mut self, node_id: NodeId) -> Rect {
+--- a/src/stylo.rs
++++ b/src/stylo.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: size queries use the laid-out content box.
+ //! Enable the dom to participate in styling by servo
+ //!
+ 
+@@ -1211,8 +1212,11 @@
+         &self,
+         _display: &style::values::specified::Display,
+     ) -> euclid::default::Size2D<Option<app_units::Au>> {
+-        // FIXME: Implement container queries. For now this effectively disables them without panicking.
+-        Default::default()
++        let layout = self.final_layout();
++        euclid::default::Size2D::new(
++            Some(app_units::Au::from_f32_px(layout.content_box_width())),
++            Some(app_units::Au::from_f32_px(layout.content_box_height())),
++        )
+     }
+ 
+     fn each_custom_state<F>(&self, _callback: F)

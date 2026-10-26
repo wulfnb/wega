@@ -66,6 +66,7 @@ impl crate::browser::Browser {
         let Some(report) = capture.report.borrow_mut().take() else {
             return;
         };
+        let load_seconds = loaded.duration_since(capture.start).as_secs_f64();
         let output = capture.output.clone();
         if let Some(parent) = output.parent() {
             std::fs::create_dir_all(parent).expect("Capture directory");
@@ -83,7 +84,14 @@ impl crate::browser::Browser {
             .expect("Capture pixels")
             .save(&output)
             .expect("Save page capture");
-        std::fs::write(output.with_extension("json"), report).expect("Save capture report");
+        let mut report: serde_json::Value = serde_json::from_str(&report).expect("Capture JSON");
+        report["engine"] = "servo".into();
+        report["loadSeconds"] = load_seconds.into();
+        std::fs::write(
+            output.with_extension("json"),
+            serde_json::to_vec_pretty(&report).unwrap(),
+        )
+        .expect("Save capture report");
         println!("CAPTURE PASSED: {}", output.display());
         self.capture = None;
         event_loop.exit();
@@ -123,7 +131,7 @@ impl crate::browser::Browser {
         }
         if let Some(result) = state.capture_result.take() {
             result.expect("Save Wega page capture");
-            let report = serde_json::json!({"engine":"wega","title":title,"url":url,"nodes":state.nodes,"jsHeapBytes":state.js_heap,"servoInitialized":self.servo.initialized()});
+            let report = serde_json::json!({"engine":"wega","title":title,"url":url,"nodes":state.nodes,"jsHeapBytes":state.js_heap,"workerRssBytes":state.rss_bytes,"servoInitialized":self.servo.initialized(),"loadSeconds":capture.loaded.map(|at|at.duration_since(capture.start).as_secs_f64()),"compatibility":state.compatibility});
             std::fs::write(
                 capture.output.with_extension("json"),
                 serde_json::to_vec_pretty(&report).unwrap(),

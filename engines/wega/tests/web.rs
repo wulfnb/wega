@@ -406,3 +406,38 @@ fn cookies_share_http_fetch_and_script_rules_and_persist() {
     drop(engine);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn broker_fetch_retains_response_filtering_immutability_and_redirect_metadata() {
+    let server = Server::new();
+    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let mut view = page(&engine, &server.url);
+    view.evaluate("fetch('/redirect',{redirect:'manual'}).then(r=>globalThis.manual=[r.type,r.status,[...r.headers].length,r.body===null])").unwrap();
+    assert_eq!(
+        wait(&mut view, "globalThis.manual??null"),
+        "[\"opaqueredirect\",0,0,true]"
+    );
+    view.evaluate("fetch('/redirect').then(r=>{let immutable=false;try{r.headers.set('test','value')}catch{immutable=true}globalThis.follow=[r.type,r.status,r.redirected,immutable]})").unwrap();
+    assert_eq!(
+        wait(&mut view, "globalThis.follow??null"),
+        "[\"cors\",200,true,true]"
+    );
+}
+
+#[test]
+fn fetch_preserves_abort_reason_and_status_text() {
+    let server = Server::new();
+    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let mut view = page(&engine, &server.url);
+    view.evaluate("const stopped=new AbortController();stopped.abort('custom reason');fetch('/data',{signal:stopped.signal}).catch(reason=>globalThis.aborted=reason)").unwrap();
+    assert_eq!(
+        wait(&mut view, "globalThis.aborted??null"),
+        "\"custom reason\""
+    );
+    view.evaluate("fetch('/data').then(r=>globalThis.statusTextValue=r.statusText)")
+        .unwrap();
+    assert_eq!(
+        wait(&mut view, "globalThis.statusTextValue??null"),
+        "\"OK\""
+    );
+}

@@ -1,0 +1,81 @@
+{
+  "deno_core": {
+    "version": "0.413.0",
+    "directory": "deno/deno_core",
+    "sha256": "7ad7d5294f640fd99db08c455e2453c9860b1fa728b76fbdacf0eed3e308d48a",
+    "patches": [
+      "deno/patches/embed-extension-sources.patch",
+      "deno/patches/two-platform-workers.patch"
+    ],
+    "extra_licenses": [
+      "LICENSE.md"
+    ]
+  },
+  "deno_ops": {
+    "version": "0.289.0",
+    "directory": "deno/deno_ops",
+    "sha256": "fa9d0b78c77e9484b52d356e9a5519e11e0cf5bad56f469f05d7752e89031640",
+    "patches": [],
+    "extra_licenses": [
+      "LICENSE.md"
+    ]
+  },
+  "serde_v8": {
+    "version": "0.322.0",
+    "directory": "deno/serde_v8",
+    "sha256": "6973c29f2c5cc313d6f5fbed7fbfc7e5c4064d6f3f8bb8ec09838a5a8176b809",
+    "patches": [],
+    "extra_licenses": [
+      "LICENSE.md"
+    ]
+  },
+  "deno_v8": {
+    "version": "0.5.0",
+    "directory": "deno/deno_v8",
+    "sha256": "3dfb3151dcae150420c2fe784928b0dbce8897c6d8bc4bac7b54a5565e06b288",
+    "patches": [],
+    "extra_licenses": [
+      "LICENSE.md"
+    ]
+  },
+  "blitz-dom": {
+    "version": "0.3.0-beta.4",
+    "directory": "blitz/blitz-dom",
+    "sha256": "a814bfd3ad19e6d8d26f99c75188062baca499564f9abe44250230962427d183",
+    "patches": [
+      "blitz/patches/blitz-dom.patch"
+    ]
+  },
+  "blitz-paint": {
+    "version": "0.3.0-beta.4",
+    "directory": "blitz/blitz-paint",
+    "sha256": "28803328124d7b7ea5f8f41501513ccb005559e9f6baf33fa0c1fb7612654a93",
+    "patches": [
+      "blitz/patches/blitz-paint.patch"
+    ]
+  },
+  "stylo": {
+    "version": "0.22.0",
+    "directory": "blitz/stylo",
+    "sha256": "7a255e46af2478628c48daab3774090caabd7812b1dd3ca98801c2b9c53491ed",
+    "patches": [
+      "blitz/patches/stylo.patch"
+    ]
+  },
+  "anyrender_skia": {
+    "version": "0.12.0",
+    "directory": "blitz/anyrender_skia",
+    "sha256": "282fdae1228486bcdbc973abf6f45afabcbd1579b63b4c95de9da4a0b893b4b7",
+    "patches": [
+      "blitz/patches/anyrender_skia.patch"
+    ]
+  },
+  "skia-bindings": {
+    "version": "0.153.3",
+    "directory": "blitz/skia-bindings",
+    "sha256": "eb325787c91b3f6c34a7c6f2b8a2297b20292d733ca53a08c233e5028aec49af",
+    "patches": [
+      "blitz/patches/skia-bindings.patch"
+    ]
+  }
+}

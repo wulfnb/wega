@@ -1,4 +1,5 @@
 // Copyright 2018-2026 the Deno authors. MIT license.
+// Modified by Wega contributors, 2026: bound each tab platform pool to two workers.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -206,8 +207,8 @@ fn v8_init(
     let thread_pool_size = std::cmp::min(
       std::thread::available_parallelism()
         .map(|n| n.get() as u32)
-        .unwrap_or(4),
-      4,
+        .unwrap_or(2),
+      2,
     );
     v8::new_custom_platform(
       thread_pool_size,

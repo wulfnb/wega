@@ -32,9 +32,12 @@ PROBES = {
     "fetch": "fetch('/payload').then(function(r){return r.text();}).then(function(t){check(t==='network ok');}).catch(function(){check(false);});",
 }
 # These are bounded API probes, not claims of whole-site compatibility.
-REQUIRED = {"servo": set(PROBES), "wega": {"article", "dom", "timer"}}
-LIVE_SITES = ["https://example.com/", "https://en.wikipedia.org/wiki/Rust_(programming_language)",
-              "https://developer.mozilla.org/en-US/", "https://github.com/", "https://news.ycombinator.com/"]
+REQUIRED = {"servo": set(PROBES), "wega": set(PROBES)}
+LIVE_SITES = ["https://example.com/", "https://example.org/", "https://example.net/",
+              "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+              "https://developer.mozilla.org/en-US/", "https://github.com/",
+              "https://news.ycombinator.com/", "https://react.dev/",
+              "https://angular.dev/", "https://vuejs.org/"]
 
 
 def fixture(name):
@@ -189,19 +192,20 @@ def wait_until(operation, timeout=40):
     raise TimeoutError(f'Browser readiness timed out: {last_error}')
 
 
-def resource_run(binary, engine, url, tabs, idle, folder):
+def resource_run(binary, engine, url, tabs, idle, folder, expected_title="PASS:article"):
     folder.mkdir(parents=True)
     profile = folder / 'profile'
     profile.mkdir()
     # Existing profiles have no defaults dependency; serde fills unspecified settings.
     (profile / 'browser.json').write_text(json.dumps({'urls': [url] * tabs, 'active': 0,
-        'policy': {'discard_after_minutes': 0}, 'engines': [engine.capitalize()] * tabs}))
+        'policy': {'discard_after_minutes': 0, 'wega_fallback': False}, 'engines': [engine.capitalize()] * tabs}))
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
     base = f'http://127.0.0.1:{port}'
     command = [str(binary), '--engine', engine, '--profile-dir', str(profile), '--webdriver-port', str(port)]
     result = {'engine': engine, 'tabs': tabs, 'url': url, 'command': command, 'status': 'error'}
+    started = time.monotonic()
     with (folder / 'browser.log').open('w') as log:
         process = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=os.name != 'nt')
         sampler = Sampler(process)
@@ -216,7 +220,15 @@ def resource_run(binary, engine, url, tabs, idle, folder):
             for handle in handles:
                 request(base, 'POST', path + '/window', {'handle': handle})
                 wait_until(lambda: request(base, 'GET', '/status')['ready'])
-                wait_until(lambda: request(base, 'GET', path + '/title') == 'PASS:article')
+                if expected_title is not None:
+                    wait_until(lambda: request(base, 'GET', path + '/title') == expected_title)
+                title = request(base, 'GET', path + '/title')
+                if title in ('', 'Page unavailable'):
+                    raise RuntimeError(f'Page did not load: {title!r}')
+                result['title'] = title
+                actual = request(base, 'GET', path + '/wega/resources')
+                if actual['engine'] != engine:
+                    raise RuntimeError(f'Requested {engine}, actual engine is {actual["engine"]}')
             result['all_tabs_ready_seconds'] = time.monotonic() - sampler.start
             sampler.phase = 'settle'
             time.sleep(2)
@@ -226,6 +238,7 @@ def resource_run(binary, engine, url, tabs, idle, folder):
                 if process.poll() is not None:
                     raise RuntimeError('Browser exited during idle measurement')
                 time.sleep(0.1)
+            result['tabs_resources'] = request(base, 'GET', path + '/wega/resources')['tabs']
             result['status'] = 'measured'
         except (OSError, ValueError, RuntimeError, TimeoutError) as error:
             result['error'] = str(error)
@@ -252,17 +265,23 @@ def resource_run(binary, engine, url, tabs, idle, folder):
 
 def compatibility_run(binary, engine, name, url, folder, required):
     folder.mkdir(parents=True)
+    profile = folder / 'profile'
+    profile.mkdir()
+    (profile / 'browser.json').write_text(json.dumps({'policy': {'wega_fallback': False}}))
     image = folder / 'page.png'
     command = [str(binary), '--engine', engine, '--profile-dir', str(folder / 'profile'), '--capture', str(image), url]
     result = {'engine': engine, 'case': name, 'url': url, 'required': required, 'status': 'error'}
+    started = time.monotonic()
     with (folder / 'browser.log').open('w') as log:
         process = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=os.name != 'nt')
         try:
             status = process.wait(timeout=75)
             report = json.loads(image.with_suffix('.json').read_text())
             valid_png = image.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
-            result.update(exit_code=status, report=report)
-            if status == 0 and valid_png:
+            result.update(exit_code=status, report=report, capture_elapsed_seconds=time.monotonic() - started)
+            if report.get('engine', 'servo') != engine:
+                result['status'] = 'engine_fallback'
+            elif status == 0 and valid_png:
                 result['status'] = ('captured_unverified' if name == 'live' else
                                     'pass' if report.get('title') == f'PASS:{name}' else 'unsupported_or_failed')
         except (OSError, ValueError, subprocess.TimeoutExpired) as error:
@@ -279,14 +298,25 @@ def write_summary(report, output):
     lines.extend(f'| {row["engine"]} | {row["case"]} | {row["status"]} |' for row in report['compatibility'])
     lines += ['', '| Engine | Tabs | Runs | Median idle RSS (MiB) | Max sampled RSS (MiB) | Median idle CPU (%) |',
               '| --- | --- | --- | --- | --- | --- |']
-    groups = sorted({(r['engine'], r['tabs']) for r in report['resources']})
+    groups = sorted({(r['engine'], r['tabs']) for r in report['resources'] if not r.get('reference')})
     for engine, tabs in groups:
-        rows = [r for r in report['resources'] if (r['engine'], r['tabs']) == (engine, tabs) and r['status'] == 'measured']
+        rows = [r for r in report['resources'] if not r.get('reference') and (r['engine'], r['tabs']) == (engine, tabs) and r['status'] == 'measured']
         if rows:
             rss = statistics.median(r['idle_median_tree_rss_bytes'] for r in rows) / 1048576
             peak = max(r['peak_tree_rss_bytes'] for r in rows) / 1048576
             cpu = statistics.median(r['idle_tree_cpu_percent'] for r in rows)
             lines.append(f'| {engine} | {tabs} | {len(rows)} | {rss:.1f} | {peak:.1f} | {cpu:.1f} |')
+    references = [row for row in report['resources'] if row.get('reference')]
+    if references:
+        lines += ['', '| Engine | Reference URL | Result | Load readiness (s) | Worker RSS (MiB) | Tree RSS (MiB) |',
+                  '| --- | --- | --- | --- | --- | --- |']
+        for row in references:
+            tabs = row.get('tabs_resources', [])
+            worker = tabs[0].get('workerRssBytes') if tabs else None
+            load = row.get('all_tabs_ready_seconds')
+            tree = row.get('idle_median_tree_rss_bytes')
+            fmt = lambda value: f'{value:.2f}' if value is not None else 'unavailable'
+            lines.append(f'| {row["engine"]} | {row["url"]} | {row["status"]} | {fmt(load)} | {fmt(worker / 1048576 if worker else None)} | {fmt(tree / 1048576 if tree else None)} |')
     lines += ['', f'Complete: {report["complete"]}. Binary unchanged: {report["binary_unchanged"]}. Worker unchanged: {report["worker_unchanged"]}.',
               '', 'See results.json for hashes, startup readiness, raw process samples, failures and individual runs.', '']
     (output / 'summary.md').write_text('\n'.join(lines))
@@ -355,6 +385,16 @@ def main():
                         report['resources'].append(result)
                         print(f'{engine} {tabs} tabs repeat {repeat}: {result["status"]}', flush=True)
                         (args.output / 'results.json').write_text(json.dumps(report, indent=2))
+            if args.live or args.live_url:
+                for engine in args.engine:
+                    for index, url in enumerate(args.live_url or LIVE_SITES):
+                        result = resource_run(binary, engine, url, 1, args.idle_seconds,
+                            args.output / f'reference-{engine}-{index}', expected_title=None)
+                        result['reference'] = True
+                        result['scope'] = 'load and idle only; inspect compatibility and pixels separately'
+                        report['resources'].append(result)
+                        print(f'{engine} reference {url}: {result["status"]}', flush=True)
+                        (args.output / 'results.json').write_text(json.dumps(report, indent=2))
         report['complete'] = True
     finally:
         server.shutdown()
@@ -364,7 +404,7 @@ def main():
         (args.output / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
         write_summary(report, args.output)
     failed = any(r['required'] and r['status'] != 'pass' for r in report['compatibility'])
-    failed |= any(r['status'] != 'measured' for r in report['resources'])
+    failed |= any(r['status'] != 'measured' for r in report['resources'] if not r.get('reference'))
     failed |= not report['binary_unchanged'] or not report['worker_unchanged']
     return int(failed)
 

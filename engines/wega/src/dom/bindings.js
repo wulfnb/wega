@@ -1090,11 +1090,25 @@
       this.replaceWith(...context.childNodes);
     }
     insertAdjacentHTML(position, html) {
-      const context = this.ownerDocument.createElement(
-        this.parentElement?.localName || "body",
+      position = String(position).toLowerCase();
+      const outside = position === "beforebegin" || position === "afterend";
+      if (!outside && position !== "afterbegin" && position !== "beforeend")
+        fail("SyntaxError", "Invalid insertion position");
+      let context = outside ? this.parentNode : this;
+      if (!context || context.nodeType === 9)
+        fail("NoModificationAllowedError", "Insertion needs a parent element");
+      if (
+        context.nodeType !== 1 ||
+        (context.namespaceURI === "http://www.w3.org/1999/xhtml" &&
+          context.localName === "html")
+      )
+        context = this.ownerDocument.createElement("body");
+      const fragment = this.ownerDocument.createElementNS(
+        context.namespaceURI,
+        context.localName,
       );
-      context.innerHTML = String(html);
-      this.insertAdjacentElementList(position, [...context.childNodes]);
+      fragment.innerHTML = String(html);
+      this.insertAdjacentElementList(position, [...fragment.childNodes]);
     }
     insertAdjacentElementList(position, nodes) {
       switch (String(position).toLowerCase()) {
@@ -1300,7 +1314,17 @@
   class HTMLIFrameElement extends HTMLElement {}
   Object.defineProperty(Element.prototype, "form", {
     get() {
-      if (!["input", "button", "select", "textarea", "fieldset", "output", "object"].includes(this.localName))
+      if (
+        ![
+          "input",
+          "button",
+          "select",
+          "textarea",
+          "fieldset",
+          "output",
+          "object",
+        ].includes(this.localName)
+      )
         return undefined;
       const owner = this.getAttribute("form");
       if (owner !== null)
@@ -1327,7 +1351,11 @@
         host("submitForm", this._id, submitter ? submitter._id : "");
     }
     reset() {
-      if (this.dispatchEvent(new Event("reset", { bubbles: true, cancelable: true })))
+      if (
+        this.dispatchEvent(
+          new Event("reset", { bubbles: true, cancelable: true }),
+        )
+      )
         for (const control of this.elements) {
           if (["checkbox", "radio"].includes(control.type))
             control.checked = control.defaultChecked;
@@ -1439,7 +1467,9 @@
   ])
     Object.defineProperty(HTMLScriptElement.prototype, key, {
       get() {
-        return this.getAttribute(attribute) ?? (key === "crossOrigin" ? null : "");
+        return (
+          this.getAttribute(attribute) ?? (key === "crossOrigin" ? null : "")
+        );
       },
       set(value) {
         this.setAttribute(attribute, value);
@@ -1867,7 +1897,26 @@
   document.readyState = "loading";
   connected.set(document._id, document);
   const globalEvents = new BaseTarget();
-  Object.setPrototypeOf(globalThis, globalEvents);
+  // HTML named properties live behind Window's own properties and remain live
+  // when an element is renamed, removed, or shadowed by a script-owned property.
+  const namedWindow = (key) =>
+    typeof key === "string" && key.length ? host("windowNamed", key) : [];
+  Object.setPrototypeOf(
+    globalThis,
+    new Proxy(globalEvents, {
+      has(target, key) {
+        return Reflect.has(target, key) || namedWindow(key).length > 0;
+      },
+      get(target, key, receiver) {
+        if (Reflect.has(target, key)) return Reflect.get(target, key, receiver);
+        const ids = namedWindow(key);
+        if (!ids.length) return undefined;
+        return ids.length === 1
+          ? wrap(ids[0])
+          : nodeList(() => namedWindow(key).map((id) => wrap(id)), true);
+      },
+    }),
+  );
   for (const method of [
     "addEventListener",
     "removeEventListener",
@@ -1965,15 +2014,23 @@
       if (url === "" || url === "about:blank") return null;
       if (!host("open", String(url))) return null;
       // The new page runs in its own engine; this handle cannot reach it.
-      return { closed: false, close() {}, focus() {}, blur() {}, postMessage() {} };
+      return {
+        closed: false,
+        close() {},
+        focus() {},
+        blur() {},
+        postMessage() {},
+      };
     },
     getComputedStyle: (element) => new CSSStyleDeclaration(element, true),
     CSS: {
       escape: cssEscape,
-      supports: (name, value) => {
-        const element = document.createElement("div");
-        element.style.setProperty(name, value);
-        return !!element.style.getPropertyValue(name);
+      supports: (...args) => {
+        if (!args.length)
+          throw new TypeError("CSS.supports requires an argument");
+        return args.length === 1
+          ? host("supports", String(args[0]))
+          : host("supportsProperty", String(args[0]), String(args[1]));
       },
     },
     console: {
@@ -2067,8 +2124,12 @@
     __wega_resources_done: {
       value: (done) => {
         const status = new Map(done);
-        for (const element of document.querySelectorAll("img[src], link[href]")) {
-          const raw = element.getAttribute(element.localName === "img" ? "src" : "href");
+        for (const element of document.querySelectorAll(
+          "img[src], link[href]",
+        )) {
+          const raw = element.getAttribute(
+            element.localName === "img" ? "src" : "href",
+          );
           let url;
           try {
             url = new URL(raw, document.URL).href;

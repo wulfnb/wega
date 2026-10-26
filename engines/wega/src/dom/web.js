@@ -124,12 +124,9 @@
         statusText: result.statusText,
         headers: result.headers,
       });
-      Object.defineProperties(bounded, {
-        url: { value: result.url },
-        redirected: { value: result.redirected },
-        type: { value: result.type },
-      });
-      return bounded;
+      const inner = response.toInnerResponse(result);
+      inner.body = response.toInnerResponse(bounded).body;
+      return response.fromInnerResponse(inner, "immutable");
     } finally {
       inFlight--;
     }

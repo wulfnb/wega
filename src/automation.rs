@@ -15,6 +15,25 @@ use webdriver::{
 pub type Job = Box<dyn FnOnce(&mut Browser) + Send>;
 // The listener owns process-wide signal handling and lives until process exit.
 static SERVER: OnceLock<webdriver::server::Listener> = OnceLock::new();
+#[derive(Clone, Debug, PartialEq)]
+struct ResourcesRoute;
+#[derive(Clone, Debug)]
+pub(crate) struct ResourcesCommand;
+impl webdriver::command::WebDriverExtensionCommand for ResourcesCommand {
+    fn parameters_json(&self) -> Option<Value> {
+        None
+    }
+}
+impl webdriver::httpapi::WebDriverExtensionRoute for ResourcesRoute {
+    type Command = ResourcesCommand;
+    fn command(
+        &self,
+        _: &webdriver::Parameters,
+        _: &Value,
+    ) -> WebDriverResult<Command<ResourcesCommand>> {
+        Ok(Command::Extension(ResourcesCommand))
+    }
+}
 struct Handler {
     jobs: Sender<Job>,
     proxy: winit::event_loop::EventLoopProxy<Wake>,
@@ -25,11 +44,11 @@ fn error(status: ErrorStatus, message: impl Into<String>) -> WebDriverError {
 fn value(value: Value) -> WebDriverResult<Response> {
     Ok(Response::Generic(ValueResponse(value)))
 }
-impl WebDriverHandler for Handler {
+impl WebDriverHandler<ResourcesRoute> for Handler {
     fn handle_command(
         &mut self,
         _: &Option<Session>,
-        message: WebDriverMessage,
+        message: WebDriverMessage<ResourcesRoute>,
     ) -> WebDriverResult<Response> {
         let (tx, rx) = crossbeam_channel::bounded(1);
         let timeout = Duration::from_secs(35);
@@ -66,7 +85,11 @@ pub fn start(
         ],
         vec![],
         Handler { jobs, proxy },
-        vec![],
+        vec![(
+            http::Method::GET,
+            "/session/{sessionId}/wega/resources",
+            ResourcesRoute,
+        )],
     )
     .map_err(|e| e.to_string())?;
     println!("WebDriver listening on http://{}", listener.socket);
@@ -93,7 +116,7 @@ fn js(value: servo::JSValue) -> Value {
 impl Browser {
     pub fn automation_command(
         &mut self,
-        command: Command<webdriver::command::VoidWebDriverExtensionCommand>,
+        command: Command<ResourcesCommand>,
         reply: Sender<WebDriverResult<Response>>,
     ) {
         if self.is_wega()
@@ -107,6 +130,7 @@ impl Browser {
                     | Command::SwitchToWindow(_)
                     | Command::GetCurrentUrl
                     | Command::GetTitle
+                    | Command::Extension(_)
             )
         {
             let _ = reply.send(Err(error(
@@ -116,6 +140,28 @@ impl Browser {
             return;
         }
         let result = match command {
+            Command::Extension(_) => {
+                fn resources(tab: &Tab) -> Value {
+                    if let Some(page) = &tab.wega {
+                        let state = page
+                            .state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        json!({"engine":"wega","pid":page.pid(),"workerRssBytes":state.rss_bytes,"jsHeapBytes":state.js_heap,"frozen":state.frozen,"loading":state.loading,"compatibility":state.compatibility})
+                    } else {
+                        json!({"engine":"servo","pid":std::process::id(),"workerRssBytes":null,"jsHeapBytes":null,"frozen":null,"loading":tab.loading()})
+                    }
+                }
+                let mut report = resources(self.tab());
+                report["tabs"] = self
+                    .session()
+                    .tabs()
+                    .iter()
+                    .map(resources)
+                    .collect::<Vec<_>>()
+                    .into();
+                value(report)
+            }
             Command::Status => {
                 let ready = !self.tab().loading();
                 value(

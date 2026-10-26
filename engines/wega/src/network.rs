@@ -2,38 +2,32 @@ use crate::cookies::Cookies;
 use std::{
     io::Read,
     sync::{Arc, Mutex, mpsc},
-    time::Duration,
 };
 use url::Url;
 
-#[derive(Clone, Default, Debug)]
-pub struct NetworkPolicy {
-    pub offline: bool,
-    pub blocked_hosts: String,
-    pub allowed_hosts: String,
+pub use wega_network::Policy as NetworkPolicy;
+#[derive(Clone)]
+pub(crate) enum Client {
+    Local {
+        http: wega_network::LocalClient,
+        policy: Arc<std::sync::RwLock<NetworkPolicy>>,
+        cookies: Arc<wega_network::Cookies>,
+    },
+    Remote(wega_network::Remote),
 }
-impl NetworkPolicy {
-    pub fn permits(&self, url: &Url) -> bool {
-        if self.offline {
-            return false;
+impl Client {
+    pub fn response(
+        &self,
+        request: &wega_network::Request,
+    ) -> Result<wega_network::Response, String> {
+        match self {
+            Self::Local {
+                http,
+                policy,
+                cookies,
+            } => http.fetch(request, policy, cookies),
+            Self::Remote(remote) => remote.fetch(request),
         }
-        let host = url
-            .host_str()
-            .unwrap_or_default()
-            .trim_end_matches('.')
-            .to_ascii_lowercase();
-        let matches = |rules: &str| {
-            rules.split_whitespace().any(|rule| {
-                let rule = rule
-                    .trim_start_matches("*.")
-                    .trim_end_matches('.')
-                    .to_ascii_lowercase();
-                !rule.is_empty() && (host == rule || host.ends_with(&format!(".{rule}")))
-            })
-        };
-        matches!(url.scheme(), "http" | "https")
-            && !matches(&self.blocked_hosts)
-            && (self.allowed_hosts.trim().is_empty() || matches(&self.allowed_hosts))
     }
 }
 
@@ -157,7 +151,7 @@ pub(crate) fn referrer(initiator: &Url, target: &Url, policy: Option<&str>) -> O
     }
 }
 
-type Task = Box<dyn FnOnce(&reqwest::blocking::Client) + Send>;
+type Task = Box<dyn FnOnce(&Client) + Send>;
 #[derive(Clone)]
 pub(crate) struct Network {
     jobs: mpsc::SyncSender<Task>,
@@ -168,21 +162,44 @@ pub(crate) struct Network {
 }
 impl Network {
     pub fn new(policy: NetworkPolicy, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
+        Self::create(policy, wake, None)
+    }
+    pub fn brokered(
+        policy: NetworkPolicy,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        remote: wega_network::Remote,
+    ) -> Result<Self, String> {
+        Self::create(policy, wake, Some(remote))
+    }
+    fn create(
+        policy: NetworkPolicy,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        remote: Option<wega_network::Remote>,
+    ) -> Result<Self, String> {
         let policy = Arc::new(std::sync::RwLock::new(policy));
-        let cookies = Arc::new(Cookies::default());
-        // Redirects are followed in `fetch` so that policy, mixed content and
-        // SameSite cookies are applied at every hop.
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .connect_timeout(Duration::from_secs(5))
-            .pool_max_idle_per_host(2)
-            .user_agent(USER_AGENT)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|e| e.to_string())?;
+        let brokered = remote.is_some();
+        let (client, cookies) = if let Some(remote) = remote {
+            (
+                Client::Remote(remote.clone()),
+                Arc::new(crate::cookies::Cookies::Remote(remote)),
+            )
+        } else {
+            let cookies = Arc::new(wega_network::Cookies::default());
+            (
+                Client::Local {
+                    http: wega_network::LocalClient::new()?,
+                    policy: policy.clone(),
+                    cookies: cookies.clone(),
+                },
+                Arc::new(crate::cookies::Cookies::Local(cookies)),
+            )
+        };
         let (jobs, receiver) = mpsc::sync_channel::<Task>(32);
         let receiver = Arc::new(Mutex::new(receiver));
-        for index in 0..4 {
+        // Tab workers keep two bounded broker dispatchers so independent resources
+        // can complete out of order. They own no HTTP/TLS clients.
+        // The standalone library retains a bounded local pool for in-process users.
+        for index in 0..if brokered { 2 } else { 4 } {
             let receiver = receiver.clone();
             let client = client.clone();
             std::thread::Builder::new()
@@ -199,7 +216,7 @@ impl Network {
                         job(&client);
                     }
                 })
-                .map_err(|e| e.to_string())?;
+                .map_err(|error| error.to_string())?;
         }
         Ok(Self {
             jobs,
@@ -209,10 +226,7 @@ impl Network {
             cookies,
         })
     }
-    pub fn spawn(
-        &self,
-        task: impl FnOnce(&reqwest::blocking::Client) + Send + 'static,
-    ) -> Result<(), String> {
+    pub fn spawn(&self, task: impl FnOnce(&Client) + Send + 'static) -> Result<(), String> {
         self.jobs
             .try_send(Box::new(task))
             .map_err(|_| "Network queue is full".into())
@@ -225,7 +239,7 @@ impl Network {
     }
     pub fn fetch(
         &self,
-        client: &reqwest::blocking::Client,
+        client: &Client,
         url: &Url,
         context: &FetchContext,
         limit: usize,
@@ -281,7 +295,7 @@ impl Network {
     }
     fn fetch_http(
         &self,
-        client: &reqwest::blocking::Client,
+        client: &Client,
         url: &Url,
         context: &FetchContext,
         limit: usize,
@@ -298,36 +312,33 @@ impl Network {
             if mixed_content(context.initiator.as_ref(), &url, top_level) {
                 return Err(format!("Mixed content blocked: {url}"));
             }
-            let safe = matches!(method, reqwest::Method::GET | reqwest::Method::HEAD);
-            let site = self
-                .cookies
-                .context(&url, context.initiator.as_ref(), top_level && safe);
-            let mut request = client.request(method.clone(), url.clone());
-            let cookie = self.cookies.get(&url, false, site);
-            if !cookie.is_empty() {
-                request = request.header(reqwest::header::COOKIE, cookie);
-            }
+            let mut request = wega_network::Request::get(&url, limit);
+            request.method = method.to_string();
+            request.body = body.clone().unwrap_or_default();
+            request.initiator = context.initiator.clone();
+            request.top_level = top_level;
+            request.redirect = "manual".into();
             if let Some(initiator) = &context.initiator
                 && let Some(value) = referrer(initiator, &url, context.referrer_policy.as_deref())
             {
-                request = request.header(reqwest::header::REFERER, value);
+                request.headers.push(("referer".into(), value));
             }
             if let Some(kind) = &content_type {
-                request = request.header(reqwest::header::CONTENT_TYPE, kind.as_str());
+                request.headers.push(("content-type".into(), kind.clone()));
             }
-            if let Some(bytes) = &body {
-                request = request.body(bytes.clone());
-            }
-            let response = request.send().map_err(|e| e.to_string())?;
-            for value in response.headers().get_all(reqwest::header::SET_COOKIE) {
-                if let Ok(value) = value.to_str() {
-                    self.cookies.set(&url, value, false, site);
+            let response = client.response(&request)?;
+            let status =
+                reqwest::StatusCode::from_u16(response.status).map_err(|e| e.to_string())?;
+            let mut headers = reqwest::header::HeaderMap::new();
+            for (name, value) in response.headers {
+                if let (Ok(name), Ok(value)) =
+                    (name.parse::<reqwest::header::HeaderName>(), value.parse())
+                {
+                    headers.append(name, value);
                 }
             }
-            let status = response.status();
             if status.is_redirection()
-                && let Some(location) = response
-                    .headers()
+                && let Some(location) = headers
                     .get(reqwest::header::LOCATION)
                     .and_then(|v| v.to_str().ok())
             {
@@ -347,15 +358,7 @@ impl Network {
             if !status.is_success() && !top_level {
                 return Err(format!("HTTP status {status}"));
             }
-            let headers = response.headers().clone();
-            let mut bytes = Vec::new();
-            response
-                .take(limit as u64 + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|e| e.to_string())?;
-            if bytes.len() > limit {
-                return Err("Resource exceeds the size limit".into());
-            }
+            let bytes = response.body;
             return Ok(Response {
                 url,
                 status: status.as_u16(),
@@ -366,8 +369,6 @@ impl Network {
         Err("Too many redirects".into())
     }
 }
-pub(crate) const USER_AGENT: &str =
-    "Mozilla/5.0 (compatible; Wega/0.2; Blitz) AppleWebKit/537.36 (KHTML, like Gecko)";
 
 #[cfg(test)]
 mod tests {
