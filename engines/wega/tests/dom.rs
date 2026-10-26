@@ -108,6 +108,34 @@ fn native_keyboard_and_ime_edit_parley_and_deliver_cancelable_input() {
     view.key(key("b", Some("b")));
     assert_eq!(view.evaluate_json("edit.value").unwrap(), "\"a文\"");
 }
+fn inserted_input_before_paint(ime: bool) {
+    let mut view = page("<p>Ready</p>");
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    view.evaluate("globalThis.events=[];globalThis.edit=document.createElement('input');document.body.append(edit);edit.focus();edit.addEventListener('input',()=>events.push(edit.value))").unwrap();
+    // Deliberately send input before another paint, as a worker command can
+    // arrive during the frame throttle interval after JavaScript mutates DOM.
+    if ime {
+        view.ime(BlitzImeEvent::Commit("Hello 文".into()));
+    } else {
+        view.key(key("a", Some("a")));
+    }
+    let expected = if ime { "Hello 文" } else { "a" };
+    assert_eq!(
+        view.evaluate_json("[edit.value,document.activeElement===edit,events]")
+            .unwrap(),
+        serde_json::json!([expected, true, [expected]]).to_string(),
+        "native {} before paint",
+        if ime { "IME" } else { "keyboard" }
+    );
+}
+#[test]
+fn newly_inserted_focused_input_accepts_keyboard_before_paint() {
+    inserted_input_before_paint(false);
+}
+#[test]
+fn newly_inserted_focused_input_accepts_ime_before_paint() {
+    inserted_input_before_paint(true);
+}
 #[cfg(feature = "v8")]
 #[test]
 fn detached_wrappers_and_listeners_release_the_native_node_budget() {

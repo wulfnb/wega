@@ -194,7 +194,10 @@ impl Dom {
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
             "checked"=>json!(doc.get_node(node_id()?).unwrap().element_data().and_then(|e|e.checkbox_input_checked()).unwrap_or(false)),
-            "focus"=>{let target=node_id()?;doc.set_focus_to(target);Value::Null},
+            // Blitz creates native text editors during layout. Initialize a
+            // newly inserted input before focus so immediate key/IME commands
+            // cannot be silently dropped while waiting for the next paint.
+            "focus"=>{let target=node_id()?;doc.resolve(self.start.elapsed().as_secs_f64());doc.set_focus_to(target);Value::Null},
             "serialize"=>{let mut html=String::new();Self::serialize(&doc,node_id()?,&mut html);json!(html)},
             "computed"=>{
                 let target=node_id()?;doc.resolve(self.start.elapsed().as_secs_f64());

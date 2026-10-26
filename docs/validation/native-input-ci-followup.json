@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-26",
+  "branch": "feature/wega-v8-spike",
+  "base_commit": "f3bb1e2",
+  "platform": "macOS arm64",
+  "reported_failures": [
+    "native engine timeout at stage 13 waiting for Unicode IME input",
+    "Windows benchmark FileExistsError for target/browser-bench-ci"
+  ],
+  "regression_proof": {
+    "old_keyboard_result": [
+      "",
+      true,
+      []
+    ],
+    "old_ime_result": [
+      "",
+      true,
+      []
+    ],
+    "old_ime_expected": [
+      "Hello \u6587",
+      true,
+      [
+        "Hello \u6587"
+      ]
+    ],
+    "old_code_regression_exit_code": 101,
+    "fixed_code_regressions": "pass for both backends"
+  },
+  "rust_tests": {
+    "v8": 40,
+    "quickjs": 30
+  },
+  "strict_clippy": {
+    "v8": "pass",
+    "quickjs": "pass"
+  },
+  "native_engine_runs": [
+    {
+      "suite": "engine",
+      "exit_code": 0,
+      "seconds": 15.29,
+      "profile": "/private/tmp/wega-ime-native-1/engine-od9ar5co"
+    },
+    {
+      "suite": "engine",
+      "exit_code": 0,
+      "seconds": 9.44,
+      "profile": "/private/tmp/wega-ime-native-2/engine-8ot_7e_e"
+    }
+  ],
+  "second_native_run_extension_sources_readable": false,
+  "benchmark_attempt_isolation": {
+    "attempts": 2,
+    "engine": "wega",
+    "mode": "resources",
+    "tabs": 1,
+    "idle_seconds": 2,
+    "both_passed": true,
+    "cached_report_preserved": true,
+    "binary_and_worker_unchanged": true
+  },
+  "benchmark_python_unit_tests": 3,
+  "formatting": "pass",
+  "actionlint": "pass",
+  "remote_ci_after_fix": "pending push and rerun",
+  "windows_runtime_locally_verified": false
+}

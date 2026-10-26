@@ -52,13 +52,14 @@ jobs:
         run: cargo install cargo-about --version 0.9.2 --features cli --locked
       - name: Build and bundle Wega.app
         run: bash scripts/package-macos.sh
+      # Cargo caches can restore old reports; every workflow attempt needs a fresh output.
       - name: Verify both engines in the packaged app
-        run: env -u WEGA_ENGINE_BINARY -u GST_PLUGIN_PATH -u GST_PLUGIN_SYSTEM_PATH python3 scripts/browser-bench.py --binary target/Wega.app/Contents/MacOS/wega --output target/packaged-compatibility --mode compatibility
+        run: env -u WEGA_ENGINE_BINARY -u GST_PLUGIN_PATH -u GST_PLUGIN_SYSTEM_PATH python3 scripts/browser-bench.py --binary target/Wega.app/Contents/MacOS/wega --output target/packaged-compatibility/${{ github.run_id }}-${{ github.run_attempt }} --mode compatibility
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: packaged-compatibility-macos
-          path: target/packaged-compatibility/
+          path: target/packaged-compatibility/${{ github.run_id }}-${{ github.run_attempt }}/
       - name: Create DMG and ZIP distributions
         run: |
           mkdir -p dist
@@ -142,11 +143,11 @@ jobs:
           bash scripts/package-linux.sh ./wega-linux
       - name: Verify both engines from the Linux archive
         run: |
-          mkdir -p target/packaged-compatibility-linux
+          mkdir -p target/packaged-compatibility-linux/${{ github.run_id }}-${{ github.run_attempt }}
           docker run --rm --user "$(id -u):$(id -g)" --entrypoint sh \
             -e HOME=/tmp -e XDG_CONFIG_HOME=/tmp/config -e XDG_CACHE_HOME=/tmp/cache -e XDG_DATA_HOME=/tmp/data \
             -e DISPLAY=:97 -e LIBGL_ALWAYS_SOFTWARE=1 -e GITHUB_SHA \
-            -v "$PWD:/source:ro" -v "$PWD/target/packaged-compatibility-linux:/results" \
+            -v "$PWD:/source:ro" -v "$PWD/target/packaged-compatibility-linux/${{ github.run_id }}-${{ github.run_attempt }}:/results" \
             "${IMAGE_NAME}:${GITHUB_SHA}" -eu -c '
               mkdir /tmp/package
               tar -xzf /source/dist/Wega-Linux-x86_64.tar.gz -C /tmp/package
@@ -164,7 +165,7 @@ jobs:
         if: always()
         with:
           name: packaged-compatibility-linux
-          path: target/packaged-compatibility-linux/
+          path: target/packaged-compatibility-linux/${{ github.run_id }}-${{ github.run_attempt }}/
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: linux-dist
@@ -264,13 +265,13 @@ jobs:
           Remove-Item Env:WEGA_ENGINE_BINARY -ErrorAction SilentlyContinue
           Remove-Item Env:GST_PLUGIN_PATH -ErrorAction SilentlyContinue
           Remove-Item Env:GST_PLUGIN_SYSTEM_PATH -ErrorAction SilentlyContinue
-          python scripts/browser-bench.py --binary dist/wega-windows-x64/wega.exe --output target/packaged-compatibility --mode compatibility
+          python scripts/browser-bench.py --binary dist/wega-windows-x64/wega.exe --output target/packaged-compatibility/${{ github.run_id }}-${{ github.run_attempt }} --mode compatibility
           if ($LASTEXITCODE -ne 0) { throw "Packaged engine compatibility failed" }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: packaged-compatibility-windows
-          path: target/packaged-compatibility/
+          path: target/packaged-compatibility/${{ github.run_id }}-${{ github.run_attempt }}/
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:

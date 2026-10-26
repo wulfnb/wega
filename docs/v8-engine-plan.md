@@ -406,6 +406,23 @@ before CI compares every source file. A regression asserts that all extension
 sources are runtime-loadable without a build tree; a separate test simulates
 Windows Git CRLF conversion while checking the original WPT hashes.
 
+Subsequent native-input/benchmark CI follow-up (26 October 2026): the macOS
+stage-13 timeout exposed a race between JavaScript creating/focusing an input and
+Blitz initializing its native editor during the next paint. Focus now resolves
+layout first. Two regressions send native keyboard/Unicode IME input immediately
+after inserting the input, with no intervening paint; the IME regression also
+fails against the old code with an empty value and no input event. Final local
+checks pass **40 V8 tests and 30 QuickJS tests**, strict Clippy for both backends,
+and two native engine runs (15.29 s and 9.44 s, the latter with extension source
+access denied). The harness timing and assertions remain unchanged.
+
+CI and release benchmark output/artifact paths now include the workflow run ID
+and attempt, avoiding Windows `FileExistsError` from restored reports while
+keeping each report immutable. Two local Wega resource runs in separate attempt
+folders under an existing report directory passed and preserved the old report.
+This checks output isolation on macOS; Windows runtime and remote CI still need
+their own rerun. Evidence: `docs/validation/native-input-ci-followup.json`.
+
 Remote CI must rerun after the follow-up is pushed. The complete Docker image and
 Windows runtime were not rerun locally. No whole-project line-coverage percentage
 is claimed; completeness/coverage reports remain subject to `coverage-policy.json`.
