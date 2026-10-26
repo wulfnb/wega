@@ -240,6 +240,14 @@
     }
     return result;
   }
+  // Before replacing all children: forget them as connected, and wrap them only
+  // when a MutationObserver needs removedNodes (wrappers keep nodes alive).
+  function detachChildren(parent) {
+    const old = mutationObservers.size ? [...parent.childNodes] : [];
+    for (const id of host("subtree", parent._id))
+      if (id !== parent._id) connected.delete(id);
+    return old;
+  }
   function retainTree(node, live) {
     for (const id of host("subtree", node._id)) {
       const value = weak ? cache.get(id)?.deref() : cache.get(id);
@@ -320,6 +328,9 @@
   class Node extends BaseTarget {
     constructor(id, info) {
       super();
+      // Deno allocates listener data lazily; a node must take part in event
+      // paths (delegation) even before it has listeners of its own.
+      web?.event.setEventTargetData(this);
       Object.defineProperties(this, {
         _id: { value: id },
         _info: { value: info },
@@ -400,13 +411,14 @@
       return host("text", this._id);
     }
     set textContent(value) {
-      const old = [...this.childNodes];
-      for (const child of old) retainTree(child, false);
+      const old = detachChildren(this);
       host("setText", this._id, String(value === null ? "" : value));
-      notify(this, "childList", {
-        removedNodes: old,
-        addedNodes: [...this.childNodes],
-      });
+      if (mutationObservers.size)
+        notify(this, "childList", {
+          removedNodes: old,
+          addedNodes: [...this.childNodes],
+        });
+      if (isScript(this) && this.isConnected) prepareScript(this);
     }
     get nodeValue() {
       return [3, 8].includes(this.nodeType) ? this.textContent : null;
@@ -497,6 +509,10 @@
           addedNodes: [],
         });
       notify(this, "childList", { removedNodes: [], addedNodes: [child] });
+      if (this.getRootNode() === document) {
+        prepareInserted(child);
+        if (isScript(this)) prepareScript(this);
+      }
       return child;
     }
     removeChild(child) {
@@ -864,6 +880,8 @@
         fail("InvalidCharacterError", "Invalid attribute name");
       const old = this.getAttribute(name);
       host("setAttr", this._id, name, String(value));
+      if (name === "src" && isScript(this) && this.isConnected)
+        prepareScript(this);
       if (name.startsWith("on")) {
         ensureHandler(name.slice(2));
         this[name] = new Function("event", String(value));
@@ -1052,13 +1070,13 @@
         .join("");
     }
     set innerHTML(value) {
-      const old = [...this.childNodes];
-      for (const child of old) retainTree(child, false);
+      const old = detachChildren(this);
       host("innerHTML", this._id, String(value));
-      notify(this, "childList", {
-        removedNodes: old,
-        addedNodes: [...this.childNodes],
-      });
+      if (mutationObservers.size)
+        notify(this, "childList", {
+          removedNodes: old,
+          addedNodes: [...this.childNodes],
+        });
     }
     get outerHTML() {
       return host("serialize", this._id);
@@ -1242,9 +1260,21 @@
       this.dispatchEvent(new Event("blur"));
     }
     click() {
-      this.dispatchEvent(
-        new Event("click", { bubbles: true, cancelable: true }),
-      );
+      if (this._clicking || this.hasAttribute("disabled")) return;
+      this._clicking = true;
+      try {
+        const Mouse = globalThis.MouseEvent || Event;
+        const event = new Mouse("click", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          detail: 1,
+        });
+        // Activation behaviour (links, submit buttons, checkboxes) runs natively.
+        if (this.dispatchEvent(event)) host("activate", this._id);
+      } finally {
+        this._clicking = false;
+      }
     }
   }
   class HTMLElement extends Element {}
@@ -1268,12 +1298,70 @@
     });
 
   class HTMLIFrameElement extends HTMLElement {}
+  Object.defineProperty(Element.prototype, "form", {
+    get() {
+      if (!["input", "button", "select", "textarea", "fieldset", "output", "object"].includes(this.localName))
+        return undefined;
+      const owner = this.getAttribute("form");
+      if (owner !== null)
+        return this.ownerDocument.getElementById(owner)?.localName === "form"
+          ? this.ownerDocument.getElementById(owner)
+          : null;
+      return this.closest("form");
+    },
+  });
   class HTMLInputElement extends HTMLElement {}
   class HTMLTextAreaElement extends HTMLElement {}
   class HTMLSelectElement extends HTMLElement {}
   class HTMLOptionElement extends HTMLElement {}
   class HTMLButtonElement extends HTMLElement {}
   class HTMLFormElement extends HTMLElement {
+    // submit() skips the submit event and validation, per HTML.
+    submit() {
+      host("submitForm", this._id, "");
+    }
+    requestSubmit(submitter = null) {
+      if (submitter !== null && submitter.form !== this)
+        fail("NotFoundError", "The submitter is not owned by this form");
+      if (!__wega_submit_event(this._id, submitter ? submitter._id : null))
+        host("submitForm", this._id, submitter ? submitter._id : "");
+    }
+    reset() {
+      if (this.dispatchEvent(new Event("reset", { bubbles: true, cancelable: true })))
+        for (const control of this.elements) {
+          if (["checkbox", "radio"].includes(control.type))
+            control.checked = control.defaultChecked;
+          else if (control.localName !== "select" && "defaultValue" in control)
+            control.value = control.defaultValue;
+        }
+    }
+    get length() {
+      return this.elements.length;
+    }
+    get action() {
+      const value = this.getAttribute("action");
+      return new URL(value || "", this.ownerDocument.URL).href;
+    }
+    set action(value) {
+      this.setAttribute("action", value);
+    }
+    get method() {
+      return (this.getAttribute("method") || "get").toLowerCase() === "post"
+        ? "post"
+        : "get";
+    }
+    set method(value) {
+      this.setAttribute("method", value);
+    }
+    get enctype() {
+      const value = (this.getAttribute("enctype") || "").toLowerCase();
+      return ["multipart/form-data", "text/plain"].includes(value)
+        ? value
+        : "application/x-www-form-urlencoded";
+    }
+    set enctype(value) {
+      this.setAttribute("enctype", value);
+    }
     get elements() {
       return nodeList(
         () => [
@@ -1307,7 +1395,112 @@
       },
     });
   class HTMLImageElement extends HTMLElement {}
-  class HTMLScriptElement extends HTMLElement {}
+  class HTMLScriptElement extends HTMLElement {
+    get src() {
+      const value = this.getAttribute("src");
+      return value === null ? "" : new URL(value, this.ownerDocument.URL).href;
+    }
+    set src(value) {
+      this.setAttribute("src", value);
+    }
+    get text() {
+      return this.textContent;
+    }
+    set text(value) {
+      this.textContent = value;
+    }
+    // Script-created scripts are async unless script clears `async`.
+    get async() {
+      return this._forceAsync === true || this.hasAttribute("async");
+    }
+    set async(value) {
+      this._forceAsync = false;
+      this.toggleAttribute("async", !!value);
+    }
+  }
+  for (const [key, attribute] of [
+    ["defer", "defer"],
+    ["noModule", "nomodule"],
+  ])
+    Object.defineProperty(HTMLScriptElement.prototype, key, {
+      get() {
+        return this.hasAttribute(attribute);
+      },
+      set(value) {
+        this.toggleAttribute(attribute, !!value);
+      },
+    });
+  for (const [key, attribute] of [
+    ["nonce", "nonce"],
+    ["charset", "charset"],
+    ["integrity", "integrity"],
+    ["crossOrigin", "crossorigin"],
+    ["referrerPolicy", "referrerpolicy"],
+  ])
+    Object.defineProperty(HTMLScriptElement.prototype, key, {
+      get() {
+        return this.getAttribute(attribute) ?? (key === "crossOrigin" ? null : "");
+      },
+      set(value) {
+        this.setAttribute(attribute, value);
+      },
+    });
+  const HTML_NS = "http://www.w3.org/1999/xhtml";
+  const isScript = (node) =>
+    node?.nodeType === 1 &&
+    node.localName === "script" &&
+    node.namespaceURI === HTML_NS;
+  const scriptType = (script) => {
+    const type = (script.getAttribute("type") ?? "").trim().toLowerCase();
+    if (type === "module") return "module";
+    return /^(|(text|application)\/(x-)?(java|ecma)script|text\/javascript1\.[0-5]|text\/(jscript|livescript))$/.test(
+      type,
+    )
+      ? "classic"
+      : null;
+  };
+  let currentScript = null;
+  // HTML "prepare the script element" for script-inserted scripts: inline
+  // classic scripts run now; external and module scripts go to the native loader.
+  function prepareScript(script) {
+    if (!isScript(script) || !script.isConnected) return;
+    const kind = scriptType(script);
+    if (!kind) return;
+    if (!script.hasAttribute("src")) {
+      const text = script.textContent;
+      if (!text) return;
+      if (kind === "module") {
+        host("scriptInserted", script._id, "true");
+        return;
+      }
+      if (!host("scriptStart", script._id)) return;
+      if (!host("cspInline", script.getAttribute("nonce") || "", text)) {
+        host(
+          "error",
+          "Refused to execute an inline script: Content Security Policy",
+        );
+        return;
+      }
+      const previous = currentScript;
+      currentScript = script;
+      try {
+        __wega_run_script(text, host("url"));
+      } catch (error) {
+        report(error);
+      } finally {
+        currentScript = previous;
+      }
+      return;
+    }
+    host("scriptInserted", script._id, String(script._forceAsync === true));
+  }
+  function prepareInserted(node) {
+    if (node?.nodeType !== 1) return;
+    if (isScript(node)) prepareScript(node);
+    else if (node.firstElementChild)
+      for (const script of node.querySelectorAll("script"))
+        prepareScript(script);
+  }
   class HTMLTemplateElement extends HTMLElement {
     get content() {
       return wrap(host("templateContent", this._id), this.ownerDocument);
@@ -1412,7 +1605,9 @@
       name = String(name).toLowerCase();
       if (!/^[a-z_][\w.:-]*$/i.test(name))
         fail("InvalidCharacterError", "Invalid element name");
-      return wrap(host("create", name), this);
+      const element = wrap(host("create", name), this);
+      if (name === "script") element._forceAsync = true;
+      return element;
     }
     createElementNS(namespace, name) {
       return wrap(
@@ -1465,6 +1660,19 @@
     get activeElement() {
       return wrap(host("active"), this) || this.body;
     }
+    get currentScript() {
+      return this === document ? currentScript : null;
+    }
+    write(...text) {
+      if (this === document) host("write", text.join(""));
+    }
+    writeln(...text) {
+      this.write(...text, "\n");
+    }
+    open() {
+      return this;
+    }
+    close() {}
     hasFocus() {
       return true;
     }
@@ -1714,11 +1922,50 @@
     top: globalThis,
     parent: globalThis,
     navigator: {
-      userAgent: "Wega/0.1 (Blitz)",
-      platform: "",
+      userAgent:
+        "Mozilla/5.0 (compatible; Wega/0.2; Blitz) AppleWebKit/537.36 (KHTML, like Gecko)",
+      appName: "Netscape",
+      appVersion: "5.0 (compatible; Wega/0.2; Blitz)",
+      product: "Gecko",
+      vendor: "",
+      platform: host("platform"),
       language: "en-US",
       languages: ["en-US"],
       onLine: true,
+      cookieEnabled: true,
+      hardwareConcurrency: 2,
+      maxTouchPoints: 0,
+      webdriver: false,
+      javaEnabled: () => false,
+      sendBeacon: (url, data) => {
+        try {
+          fetch(url, { method: "POST", body: data, keepalive: true }).catch(
+            () => {},
+          );
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    },
+    Image: function Image(width, height) {
+      const image = document.createElement("img");
+      if (width !== undefined) image.setAttribute("width", String(width));
+      if (height !== undefined) image.setAttribute("height", String(height));
+      return image;
+    },
+    alert: (message = "") => {
+      host("dialog", "alert", String(message), "");
+    },
+    confirm: (message = "") =>
+      host("dialog", "confirm", String(message), "") === "true",
+    prompt: (message = "", value = "") =>
+      host("dialog", "prompt", String(message), String(value)),
+    open: (url = "", _target = "_blank", _features = "") => {
+      if (url === "" || url === "about:blank") return null;
+      if (!host("open", String(url))) return null;
+      // The new page runs in its own engine; this handle cannot reach it.
+      return { closed: false, close() {}, focus() {}, blur() {}, postMessage() {} };
     },
     getComputedStyle: (element) => new CSSStyleDeclaration(element, true),
     CSS: {
@@ -1760,13 +2007,13 @@
       return host("url");
     },
     set href(value) {
-      host("navigate", String(value));
+      __wega_location_navigate(String(value), false);
     },
     assign(value) {
-      this.href = value;
+      __wega_location_navigate(String(value), false);
     },
     replace(value) {
-      this.href = value;
+      __wega_location_navigate(String(value), true);
     },
     reload() {
       host("navigate", host("url"));
@@ -1789,6 +2036,12 @@
       get() {
         return new URL(this.href)[key];
       },
+      set(value) {
+        if (key === "origin") return;
+        const url = new URL(this.href);
+        url[key] = String(value);
+        __wega_location_navigate(url.href, false);
+      },
     });
   Object.defineProperty(globalThis, "location", { value: location });
   Object.defineProperties(globalThis, {
@@ -1799,6 +2052,42 @@
         return !target.dispatchEvent(
           event || new Event(type, { bubbles: true, cancelable: true }),
         );
+      },
+    },
+    __wega_current_script: {
+      value: (id) => {
+        currentScript = id === null ? null : wrap(id);
+      },
+    },
+    __wega_script_done: {
+      value: (id, ok) => {
+        wrap(id)?.dispatchEvent(new Event(ok ? "load" : "error"));
+      },
+    },
+    __wega_resources_done: {
+      value: (done) => {
+        const status = new Map(done);
+        for (const element of document.querySelectorAll("img[src], link[href]")) {
+          const raw = element.getAttribute(element.localName === "img" ? "src" : "href");
+          let url;
+          try {
+            url = new URL(raw, document.URL).href;
+          } catch {
+            continue;
+          }
+          if (!status.has(url) || element._loaded === url) continue;
+          element._loaded = url;
+          element.dispatchEvent(new Event(status.get(url) ? "load" : "error"));
+        }
+      },
+    },
+    __wega_submit_event: {
+      value: (formId, submitterId) => {
+        const form = wrap(formId);
+        if (!form) return true;
+        const event = new Event("submit", { bubbles: true, cancelable: true });
+        event.submitter = submitterId === null ? null : wrap(submitterId);
+        return !form.dispatchEvent(event);
       },
     },
     __wega_timers: {

@@ -1,5 +1,49 @@
 use crate::browser::Browser;
-use wega::{engine_choice::EngineKind, engine_protocol::Command};
+use wega::engine_choice::EngineKind;
+
+/// A CSS cursor keyword as the closest egui cursor.
+fn cursor_icon(name: &str) -> egui::CursorIcon {
+    use egui::CursorIcon as C;
+    match name {
+        "pointer" => C::PointingHand,
+        "text" | "vertical-text" => C::Text,
+        "wait" => C::Wait,
+        "progress" => C::Progress,
+        "help" => C::Help,
+        "crosshair" => C::Crosshair,
+        "move" | "all-scroll" => C::Move,
+        "grab" => C::Grab,
+        "grabbing" => C::Grabbing,
+        "not-allowed" | "no-drop" => C::NotAllowed,
+        "copy" => C::Copy,
+        "alias" => C::Alias,
+        "cell" => C::Cell,
+        "context-menu" => C::ContextMenu,
+        "zoom-in" => C::ZoomIn,
+        "zoom-out" => C::ZoomOut,
+        "none" => C::None,
+        "col-resize" | "ew-resize" | "e-resize" | "w-resize" => C::ResizeHorizontal,
+        "row-resize" | "ns-resize" | "n-resize" | "s-resize" => C::ResizeVertical,
+        "nesw-resize" | "ne-resize" | "sw-resize" => C::ResizeNeSw,
+        "nwse-resize" | "nw-resize" | "se-resize" => C::ResizeNwSe,
+        _ => C::Default,
+    }
+}
+fn modifier_bits(modifiers: egui::Modifiers) -> u8 {
+    u8::from(modifiers.shift)
+        | u8::from(modifiers.ctrl) << 1
+        | u8::from(modifiers.alt) << 2
+        | u8::from(modifiers.mac_cmd || (modifiers.command && !modifiers.ctrl)) << 3
+}
+fn button_index(button: egui::PointerButton) -> u8 {
+    match button {
+        egui::PointerButton::Primary => 0,
+        egui::PointerButton::Middle => 1,
+        egui::PointerButton::Secondary => 2,
+        egui::PointerButton::Extra1 => 3,
+        egui::PointerButton::Extra2 => 4,
+    }
+}
 
 impl Browser {
     pub(crate) fn engine_picker(&mut self, ui: &mut egui::Ui) {
@@ -10,7 +54,7 @@ impl Browser {
             .show_ui(ui,|ui|{
                 ui.selectable_value(&mut engine,EngineKind::Servo,"Servo").on_hover_text("Recommended for everyday browsing, interactive sites, media and developer tools.");
                 ui.add_enabled_ui(available,|ui|ui.selectable_value(&mut engine,EngineKind::Wega,"Wega (experimental)")).inner
-                    .on_hover_text(if available{"Uses a separate Blitz/V8 worker. Reloads this tab; cookies and sign-in state are separate. Forms, media and page tools currently need Servo."}else{"Build/install the wega-engine worker with python3 scripts/build-wega-engine.py --debug to enable this choice."});
+                    .on_hover_text(if available{"Uses a separate Blitz/V8 worker. Reloads this tab; cookies and sign-in state are separate. Media, iframes and page tools currently need Servo."}else{"Build/install the wega-engine worker with python3 scripts/build-wega-engine.py --debug to enable this choice."});
             }).response.on_hover_text("Engine for this tab. Changing it reloads the page and loses unsaved page state.");
         response.widget_info(|| {
             egui::WidgetInfo::labeled(
@@ -28,6 +72,9 @@ impl Browser {
         let mut notices = vec![];
         let mut navigations = vec![];
         let mut visits = vec![];
+        let mut downloads = vec![];
+        let mut windows = vec![];
+        let mut traversals = vec![];
         for (index, tab) in self.session().tabs().iter().enumerate() {
             let Some(page) = &tab.wega else { continue };
             let mut state = page
@@ -40,6 +87,32 @@ impl Browser {
             if index == active {
                 notices.extend(state.notices.drain(..));
                 navigations.extend(state.navigations.drain(..));
+                windows.extend(state.windows.drain(..));
+                traversals.extend(state.traversals.drain(..));
+            }
+            downloads.extend(state.downloads.drain(..));
+        }
+        for (url, cookies) in downloads {
+            let connections = self.download_ui.connections;
+            let message = match self.start_download(&url, "", connections, cookies) {
+                Ok(()) => format!("Downloading {url}"),
+                Err(error) => error,
+            };
+            self.notify(crate::ux::Severity::Info, message, None);
+        }
+        for url in windows {
+            match url::Url::parse(&url) {
+                Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => self.add_tab(&url),
+                _ => self.notify(
+                    crate::ux::Severity::Warning,
+                    "The page tried to open an unsupported address.",
+                    None,
+                ),
+            }
+        }
+        for delta in traversals {
+            for _ in 0..delta.unsigned_abs().min(8) {
+                self.traverse(delta > 0);
             }
         }
         for message in notices {
@@ -111,12 +184,12 @@ impl Browser {
             .theme
             .dark(self.window.theme() != Some(winit::window::Theme::Light));
         let context = ui.ctx().clone();
-        let response = ui.allocate_rect(rect, egui::Sense::click());
+        let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(
                 egui::Role::Image,
                 true,
-                "Wega experimental page. Page accessibility, forms and media require Servo.",
+                "Wega experimental page. Page accessibility, media and iframes require Servo.",
             )
         });
         let Some(page) = self.wega_mut() else { return };
@@ -154,27 +227,134 @@ impl Browser {
                 egui::Color32::DARK_GRAY,
             );
         }
-        let clicked = response.clicked();
-        if clicked && let Some(position) = response.interact_pointer_pos() {
-            let local = position - rect.min;
-            let _ = page.send(Command::Click {
-                x: local.x / page.zoom,
-                y: local.y / page.zoom,
+        // Pointer input in viewport CSS pixels: moves, presses, releases and wheel.
+        let zoom = page.zoom;
+        let local = |position: egui::Pos2| {
+            let point = position - rect.min;
+            (point.x / zoom, point.y / zoom)
+        };
+        let (events, pressed_buttons, hovered) = ui.input(|input| {
+            let buttons = [
+                egui::PointerButton::Primary,
+                egui::PointerButton::Secondary,
+                egui::PointerButton::Middle,
+            ]
+            .iter()
+            .filter(|b| input.pointer.button_down(**b))
+            .fold(0u8, |bits, b| {
+                bits | match b {
+                    egui::PointerButton::Primary => 1,
+                    egui::PointerButton::Secondary => 2,
+                    _ => 4,
+                }
             });
-        }
-        if response.hovered() {
-            let delta = ui.input(|i| i.smooth_scroll_delta);
-            if delta != egui::Vec2::ZERO {
-                let _ = page.send(Command::Scroll {
-                    x: -(delta.x / page.zoom) as f64,
-                    y: -(delta.y / page.zoom) as f64,
-                });
+            (input.events.clone(), buttons, input.pointer.hover_pos())
+        });
+        let inside = |position: egui::Pos2| rect.contains(position);
+        let mut pressed = false;
+        for event in events {
+            match event {
+                egui::Event::PointerMoved(position) if inside(position) || pressed_buttons != 0 => {
+                    page.pointer("move", local(position), (0, pressed_buttons), 0, (0.0, 0.0));
+                }
+                egui::Event::PointerButton {
+                    pos,
+                    button,
+                    pressed: down,
+                    modifiers,
+                } if inside(pos) || !down => {
+                    pressed |= down;
+                    page.pointer(
+                        if down { "down" } else { "up" },
+                        local(pos),
+                        (button_index(button), pressed_buttons),
+                        modifier_bits(modifiers),
+                        (0.0, 0.0),
+                    );
+                }
+                egui::Event::PointerGone => {
+                    page.pointer("leave", (0.0, 0.0), (0, 0), 0, (0.0, 0.0))
+                }
+                egui::Event::MouseWheel {
+                    unit,
+                    delta,
+                    modifiers,
+                    ..
+                } if hovered.is_some_and(inside) => {
+                    let position = local(hovered.unwrap_or(rect.min));
+                    let scale = match unit {
+                        egui::MouseWheelUnit::Point => 1.0 / zoom,
+                        egui::MouseWheelUnit::Line => 40.0,
+                        egui::MouseWheelUnit::Page => rect.height() / zoom,
+                    };
+                    // egui's wheel delta is positive upwards; DOM deltas are positive downwards.
+                    page.pointer(
+                        "wheel",
+                        position,
+                        (0, pressed_buttons),
+                        modifier_bits(modifiers),
+                        ((-delta.x * scale) as f64, (-delta.y * scale) as f64),
+                    );
+                }
+                _ => {}
             }
         }
-        if clicked {
+        if response.hovered() {
+            let cursor = page
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .cursor
+                .clone();
+            if let Some(cursor) = cursor {
+                context.set_cursor_icon(cursor_icon(&cursor));
+            }
+        }
+        self.wega_dialog(&context);
+        if pressed || response.clicked() {
             self.chrome.page_focused = true;
             context.memory_mut(|m| m.surrender_focus(egui::Id::unique("address")));
         }
         ui.allocate_rect(outer, egui::Sense::hover());
+    }
+    /// A page dialog, answered back to the worker that waits for it.
+    fn wega_dialog(&mut self, context: &egui::Context) {
+        let Some(page) = self.wega_mut() else { return };
+        let dialog = page
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .dialog
+            .clone();
+        let Some(dialog) = dialog else { return };
+        if dialog.kind == "prompt" && page.dialog_input.is_empty() {
+            page.dialog_input = dialog.default.clone();
+        }
+        let mut answer = None;
+        egui::Window::new("This page says")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(context, |ui| {
+                ui.label(&dialog.message);
+                if dialog.kind == "prompt" {
+                    ui.text_edit_singleline(&mut page.dialog_input);
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("OK").clicked() {
+                        answer = Some(Some(match dialog.kind.as_str() {
+                            "confirm" => "true".to_owned(),
+                            "prompt" => page.dialog_input.clone(),
+                            _ => String::new(),
+                        }));
+                    }
+                    if dialog.kind != "alert" && ui.button("Cancel").clicked() {
+                        answer = Some(None);
+                    }
+                });
+            });
+        if let Some(value) = answer {
+            page.answer_dialog(value);
+        }
     }
 }

@@ -5,20 +5,27 @@ pub use blitz_traits::shell::ColorScheme;
 pub use url::Url;
 
 mod cookies;
+mod csp;
 mod dom;
+mod encoding;
 mod module_loader;
 mod network;
+mod parser;
 mod script;
 mod v8;
 mod view;
 mod web;
+pub use dom::DialogHandler;
 pub use network::NetworkPolicy;
-pub use view::{Frame, View};
+pub use view::{Frame, PageEvent, Pointer, PointerKind, View};
 
 #[derive(Clone, Debug)]
 pub struct Limits {
     pub js_heap_bytes: usize,
+    /// Hard limit for one script task; exceeding it tears the page's VM down.
     pub script_time: std::time::Duration,
+    /// Tasks longer than this are reported as slow but keep running.
+    pub slow_script: std::time::Duration,
     pub html_bytes: usize,
     pub resource_bytes: usize,
     pub dom_nodes: usize,
@@ -28,8 +35,9 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            js_heap_bytes: 32 * 1024 * 1024,
-            script_time: std::time::Duration::from_millis(100),
+            js_heap_bytes: 128 * 1024 * 1024,
+            script_time: std::time::Duration::from_secs(5),
+            slow_script: std::time::Duration::from_millis(100),
             html_bytes: 4 * 1024 * 1024,
             resource_bytes: 8 * 1024 * 1024,
             dom_nodes: 30_000,

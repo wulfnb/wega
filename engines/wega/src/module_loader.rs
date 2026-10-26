@@ -1,5 +1,5 @@
 //! Module graphs use the same bounded network queue and live policy as page resources.
-use crate::network::Network;
+use crate::network::{Destination, FetchContext, Network};
 use deno_core::error::ModuleLoaderError;
 use deno_core::{
     ModuleLoadOptions, ModuleLoadReferrer, ModuleLoadResponse, ModuleLoader, ModuleSource,
@@ -11,6 +11,7 @@ pub(crate) struct Loader {
     network: Network,
     local: Option<PathBuf>,
     limit: usize,
+    document: url::Url,
 }
 impl Loader {
     pub fn new(network: Network, url: &url::Url, limit: usize) -> Self {
@@ -26,6 +27,7 @@ impl Loader {
             network,
             local,
             limit,
+            document: url.clone(),
         }
     }
 }
@@ -53,15 +55,14 @@ impl ModuleLoader for Loader {
     ) -> ModuleLoadResponse {
         let url = specifier.clone();
         let local = self.local.clone();
-        let policy = self.network.policy.clone();
+        let network = self.network.clone();
         let limit = self.limit;
+        let context = FetchContext::subresource(&self.document, Destination::Script);
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let spawned = self.network.spawn(move |client| {
-            let policy = policy
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
-            let result = Network::fetch(client, &policy, &url, limit, local.as_deref());
+            let result = network
+                .fetch(client, &url, &context, limit, local.as_deref())
+                .map(|response| (response.url, response.bytes));
             let _ = sender.send(result);
         });
         let specifier = specifier.clone();

@@ -27,6 +27,13 @@ pub(crate) fn executable() -> Option<PathBuf> {
         })?;
     path.is_file().then_some(path)
 }
+/// A blocking `alert`, `confirm` or `prompt` the page is waiting on.
+#[derive(Clone, Debug)]
+pub(crate) struct Dialog {
+    pub kind: String,
+    pub message: String,
+    pub default: String,
+}
 #[derive(Default)]
 pub(crate) struct Snapshot {
     pub url: String,
@@ -43,6 +50,17 @@ pub(crate) struct Snapshot {
     pub visited: Option<(String, String)>,
     pub evaluated: Option<Result<String, String>>,
     pub frozen: bool,
+    /// The page's own history (pushState, fragments) can go back / forward.
+    pub document_back: bool,
+    pub document_forward: bool,
+    /// Files to download: (url, Netscape cookie lines).
+    pub downloads: std::collections::VecDeque<(String, String)>,
+    /// User-activated popups and `target=_blank` links.
+    pub windows: std::collections::VecDeque<String>,
+    /// History steps outside the page's own entries.
+    pub traversals: std::collections::VecDeque<i32>,
+    pub cursor: Option<String>,
+    pub dialog: Option<Dialog>,
 }
 pub(crate) struct Page {
     child: Child,
@@ -51,6 +69,8 @@ pub(crate) struct Page {
     pub texture: Option<egui::TextureHandle>,
     pub viewport: Option<(u32, u32, f32, f32, bool)>,
     pub zoom: f32,
+    /// The text of an open `prompt`.
+    pub dialog_input: String,
     history: Vec<String>,
     index: usize,
 }
@@ -172,10 +192,14 @@ impl Page {
                             loading,
                             nodes,
                             js_heap,
+                            back,
+                            forward,
                         } => {
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            state.document_back = back;
+                            state.document_forward = forward;
                             if state.loading && !loading {
                                 state.visited = Some((url.clone(), title.clone()));
                             }
@@ -207,6 +231,50 @@ impl Page {
                                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                                 .evaluated = Some(error.map_or(Ok(value), Err));
                         }
+                        Event::Download { url, cookies } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if state.downloads.len() < 8 {
+                                state.downloads.push_back((url, cookies));
+                            }
+                        }
+                        Event::OpenWindow(url) => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if state.windows.len() < 4 {
+                                state.windows.push_back(url);
+                            }
+                        }
+                        Event::TraverseUnhandled(delta) => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if state.traversals.len() < 8 {
+                                state.traversals.push_back(delta);
+                            }
+                        }
+                        Event::Cursor(cursor) => {
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .cursor = Some(cursor);
+                        }
+                        Event::Dialog {
+                            kind,
+                            message,
+                            default,
+                        } => {
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .dialog = Some(Dialog {
+                                kind,
+                                message,
+                                default,
+                            });
+                        }
                         Event::Ready { .. } => return Err("Unexpected worker handshake".into()),
                     }
                     let _ = proxy.send_event(Wake::Ui);
@@ -224,6 +292,7 @@ impl Page {
             texture: None,
             viewport: None,
             zoom: 1.0,
+            dialog_input: String::new(),
             history: vec![url.to_string()],
             index: 0,
         };
@@ -314,11 +383,48 @@ impl Page {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .loading
     }
+    fn document_history(&self) -> (bool, bool) {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (state.document_back, state.document_forward)
+    }
     pub fn can_back(&self) -> bool {
-        self.index > 0
+        self.index > 0 || self.document_history().0
     }
     pub fn can_forward(&self) -> bool {
-        self.index + 1 < self.history.len()
+        self.index + 1 < self.history.len() || self.document_history().1
+    }
+    /// Pointer input in viewport CSS pixels; see `Command::Pointer`.
+    /// `buttons` is (DOM `button`, DOM `buttons`).
+    pub fn pointer(
+        &self,
+        kind: &str,
+        (x, y): (f32, f32),
+        (button, buttons): (u8, u8),
+        modifiers: u8,
+        delta: (f64, f64),
+    ) {
+        let _ = self.send(Request::Pointer {
+            kind: kind.into(),
+            x,
+            y,
+            button,
+            buttons,
+            modifiers,
+            delta_x: delta.0,
+            delta_y: delta.1,
+        });
+    }
+    /// Answer the open dialog (None cancels).
+    pub fn answer_dialog(&mut self, value: Option<String>) {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .dialog = None;
+        self.dialog_input.clear();
+        let _ = self.send(Request::DialogReply(value));
     }
     pub fn freeze(&mut self, frozen: bool) {
         let _ = self.send(Request::Freeze(frozen));
@@ -384,7 +490,14 @@ impl NavigationPort for Page {
         let _ = self.send(Request::Load(self.url()));
     }
     fn traverse(&mut self, forward: bool) -> bool {
-        if (forward && !self.can_forward()) || (!forward && !self.can_back()) {
+        // The page's own entries first; it reports TraverseUnhandled otherwise.
+        let (back, ahead) = self.document_history();
+        if (forward && ahead) || (!forward && back) {
+            return self
+                .send(Request::Traverse(if forward { 1 } else { -1 }))
+                .is_ok();
+        }
+        if (forward && self.index + 1 >= self.history.len()) || (!forward && self.index == 0) {
             return false;
         }
         let next = if forward {

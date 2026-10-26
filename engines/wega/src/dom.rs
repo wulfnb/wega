@@ -4,39 +4,70 @@ use blitz_dom::node::NodeData;
 use blitz_dom::{BaseDocument, NodeId};
 use html5ever::{LocalName, QualName, ns};
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
-    time::Instant,
+    time::{Duration, Instant},
 };
+
+/// A `<script>` element that script inserted into the document.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ScriptRequest {
+    pub node: NodeId,
+    /// Dynamically inserted scripts are async unless script set `async = false`.
+    pub force_async: bool,
+}
+/// Synchronous dialogs (`alert`, `confirm`, `prompt`) answered by the browser.
+pub type DialogHandler = Box<dyn FnMut(&str, &str, &str) -> Option<String>>;
+
+/// Requests from page script that the view or the browser must act on.
+#[derive(Default)]
+pub(crate) struct Requests {
+    pub scripts: VecDeque<ScriptRequest>,
+    /// `element.click()` activation behaviour, run natively after script.
+    pub activate: Vec<NodeId>,
+    pub writes: String,
+    pub opened: Vec<url::Url>,
+    pub traverse: Vec<i32>,
+}
+
 pub(crate) struct Dom {
     pub network: crate::network::Network,
     pub document: Rc<RefCell<BaseDocument>>,
     pub limits: Limits,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
     pub errors: Rc<RefCell<Vec<String>>>,
+    pub requests: RefCell<Requests>,
+    pub csp: std::sync::Arc<std::sync::RwLock<crate::csp::Csp>>,
+    pub dialog: Rc<RefCell<Option<DialogHandler>>>,
+    /// Transient user activation, for popups.
+    pub activation: Rc<Cell<Option<Instant>>>,
+    pub started_scripts: Rc<RefCell<HashSet<NodeId>>>,
+    /// This document's session history: (index, length), reported by script.
+    pub history: Cell<(usize, usize)>,
     allocated: Cell<usize>,
     used: Cell<usize>,
     start: Instant,
     retained: RefCell<HashSet<NodeId>>,
 }
 impl Dom {
-    pub fn new(
-        document: Rc<RefCell<BaseDocument>>,
-        limits: &Limits,
-        navigate: Rc<RefCell<Vec<url::Url>>>,
-        initial_bytes: usize,
-        _network: crate::network::Network,
-    ) -> Self {
+    pub fn new(context: crate::script::HostContext, limits: &Limits, initial_bytes: usize) -> Self {
+        let document = context.document;
         let allocated =
             Cell::new(blitz_dom::traversal::TreeTraverser::new(&document.borrow()).count());
         Self {
-            network: _network,
+            network: context.network,
             document,
             limits: limits.clone(),
-            navigate,
+            navigate: context.navigate,
             errors: Default::default(),
+            requests: Default::default(),
+            csp: context.csp,
+            dialog: context.dialog,
+            activation: context.activation,
+            started_scripts: context.started_scripts,
+            history: Cell::new((0, 1)),
             allocated,
             used: Cell::new(initial_bytes),
             start: Instant::now(),
@@ -52,12 +83,76 @@ impl Dom {
             }
             return Ok(Value::Null);
         }
+        // Dialogs block this thread on the browser's answer; never hold the DOM.
+        if text(0) == "dialog" {
+            let mut handler = self.dialog.borrow_mut();
+            let answer = handler.as_mut().and_then(|handler| {
+                handler(
+                    text(1),
+                    &text(2).chars().take(4096).collect::<String>(),
+                    text(3),
+                )
+            });
+            return Ok(answer.map_or(Value::Null, Value::String));
+        }
+        if text(0) == "cspInline" {
+            return Ok(json!(
+                self.csp
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .allows_inline_script(Some(text(1)), text(2))
+            ));
+        }
+        if text(0) == "cspConnect" {
+            let document = self.document.borrow().url().clone();
+            let Ok(url) = document.join(text(1)) else {
+                return Ok(json!(false));
+            };
+            let allowed = self
+                .csp
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .allows_url("connect-src", &url, &document, None)
+                && !crate::network::mixed_content(Some(&document), &url, false);
+            return Ok(json!(allowed));
+        }
+        if text(0) == "platform" {
+            return Ok(json!(match std::env::consts::OS {
+                "macos" => "MacIntel",
+                "windows" => "Win32",
+                "linux" => "Linux x86_64",
+                other => other,
+            }));
+        }
+        if text(0) == "historyPosition" {
+            let index = text(1)
+                .parse::<usize>()
+                .map_err(|_| "Invalid history index")?;
+            let length = text(2)
+                .parse::<usize>()
+                .map_err(|_| "Invalid history length")?;
+            if index < length {
+                self.history.set((index, length));
+            }
+            return Ok(Value::Null);
+        }
+        if text(0) == "traverseHost" {
+            let delta = text(1)
+                .parse::<i32>()
+                .map_err(|_| "Invalid history delta")?;
+            let mut requests = self.requests.borrow_mut();
+            if requests.traverse.len() < 8 {
+                requests.traverse.push(delta);
+            }
+            return Ok(Value::Null);
+        }
         let charge = match text(0) {
             "setText" => text(2).len() + 32,
             "setAttr" => text(2).len() + text(3).len() + 32,
             "create" | "createText" | "createComment" | "createFragment" => text(1).len() + 32,
             "createNS" => text(1).len() + text(2).len() + 32,
             "innerHTML" => text(2).len() + 32,
+            "write" => text(1).len(),
             "styleSet" => text(2).len() + text(3).len() + 32,
             _ => 0,
         };
@@ -85,8 +180,8 @@ impl Dom {
             }
         };
         let value = match text(0) {
-            "cookie"=>json!(self.network.cookies.get(doc.url(),true)),
-            "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true);Value::Null},
+            "cookie"=>json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite)),
+            "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);Value::Null},
             "templateContent"=>{let target=node_id()?;let content=doc.mutate().template_contents(target);json!(content.as_u64().to_string())},
             "viewport"=>{let viewport=doc.viewport();let scale=(viewport.hidpi_scale*viewport.zoom) as f64;let scroll=doc.viewport_scroll();json!({"width":viewport.window_size.0 as f64/scale,"height":viewport.window_size.1 as f64/scale,"dpr":scale,"scrollX":scroll.x,"scrollY":scroll.y})},
             "scroll"=>{let node=doc.get_node(node_id()?).unwrap();let scroll=node.scroll_offset();json!({"x":scroll.x,"y":scroll.y})},
@@ -136,6 +231,8 @@ impl Dom {
                 let name=element.name.clone();let staging=doc.mutate().create_element(name,vec![]);
                 {let mut mutation=doc.mutate();blitz_html::DocumentHtmlParser::parse_inner_html_into_mutator(&mut mutation,staging,text(2));}
                 let parsed=Self::subtree(&doc,staging);
+                // Fragment-parsed scripts are "already started" and never run (HTML).
+                for id in &parsed {if doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e|&*e.name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}
                 if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {doc.mutate().remove_and_drop_node(staging);return Err("DOM node limit exceeded".into());}
                 let old=doc.get_node(target).unwrap().children.to_vec();let children=doc.get_node(staging).unwrap().children.to_vec();
                 doc.mutate().replace_children(target,&children);doc.mutate().remove_and_drop_node(staging);
@@ -269,20 +366,41 @@ impl Dom {
             ),
             "setText" => {
                 let id = node_id()?;
-                if let NodeData::Comment{contents}=&mut doc.get_node_mut(id).unwrap().data {*contents=text(2).to_owned();return Ok(Value::Null);}
-                if matches!(doc.get_node(id).unwrap().data,NodeData::Document(_)){return Ok(Value::Null);}
-                if text(2).len() > 1024 * 1024 || self.allocated.get() >= self.limits.dom_nodes {
-                    return Err("DOM text or node budget exceeded".into());
+                if text(2).len() > 1024 * 1024 {
+                    return Err("DOM text budget exceeded".into());
                 }
-                self.allocated.set(self.allocated.get() + 1);
-                if matches!(
-                    doc.get_node(id).unwrap().data,
-                    blitz_dom::node::NodeData::Text(_)
-                ) {
-                    doc.mutate().set_node_text(id, text(2));
+                let credit = |old: usize| self.used.set(self.used.get().saturating_sub(old));
+                match &mut doc.get_node_mut(id).unwrap().data {
+                    NodeData::Comment { contents } => {
+                        credit(contents.len());
+                        *contents = text(2).to_owned();
+                        return Ok(Value::Null);
+                    }
+                    NodeData::Document(_) => return Ok(Value::Null),
+                    NodeData::Text(data) => {
+                        credit(data.content.len());
+                        doc.mutate().set_node_text(id, text(2));
+                        return Ok(Value::Null);
+                    }
+                    _ => {}
+                }
+                // Replacing an element's children: only a new text child is a new node,
+                // and the old children are collected (crediting their budget) unless
+                // script still holds them.
+                let old = doc.get_node(id).unwrap().children.to_vec();
+                if text(2).is_empty() {
+                    doc.mutate().replace_children(id, &[]);
                 } else {
+                    if self.allocated.get() >= self.limits.dom_nodes {
+                        return Err("DOM text or node budget exceeded".into());
+                    }
+                    self.allocated.set(self.allocated.get() + 1);
                     let mut mutation = doc.mutate();
-                    if text(2).is_empty(){mutation.replace_children(id,&[]);}else{let child=mutation.create_text_node(text(2));mutation.replace_children(id,&[child]);}
+                    let child = mutation.create_text_node(text(2));
+                    mutation.replace_children(id, &[child]);
+                }
+                for child in old {
+                    self.collect_detached(&mut doc, child);
                 }
                 Value::Null
             }
@@ -341,6 +459,78 @@ impl Dom {
                 doc.mutate().remove_node(id);
                 Value::Null
             }
+            "scriptInserted" => {
+                let node = node_id()?;
+                let is_script = doc.get_node(node).and_then(|n| n.element_data()).is_some_and(|e| &*e.name.local == "script");
+                let mut requests = self.requests.borrow_mut();
+                if is_script && requests.scripts.len() < 1024 {
+                    requests.scripts.push_back(ScriptRequest { node, force_async: text(2) != "false" });
+                }
+                Value::Null
+            }
+            // Marks a script element "already started"; false if it was.
+            "scriptStart" => json!(self.started_scripts.borrow_mut().insert(node_id()?)),
+            "activate" => {
+                let node = node_id()?;
+                let mut requests = self.requests.borrow_mut();
+                if requests.activate.len() < 64 {
+                    requests.activate.push(node);
+                }
+                Value::Null
+            }
+            "write" => {
+                let mut requests = self.requests.borrow_mut();
+                if requests.writes.len().saturating_add(text(1).len()) > self.limits.html_bytes {
+                    return Err("document.write exceeds the HTML size limit".into());
+                }
+                requests.writes.push_str(text(1));
+                Value::Null
+            }
+            "open" => {
+                let url = doc.url().join(text(1)).map_err(|e| e.to_string())?;
+                let active = self.activation.get().is_some_and(|at| at.elapsed() < Duration::from_secs(5));
+                let mut requests = self.requests.borrow_mut();
+                if !active || !matches!(url.scheme(), "http" | "https") || requests.opened.len() >= 4 {
+                    return Ok(json!(false));
+                }
+                // One popup per user activation.
+                self.activation.set(None);
+                requests.opened.push(url);
+                json!(true)
+            }
+            "fragment" => {
+                let url = doc.url().join(text(1)).map_err(|e| e.to_string())?;
+                let mut without = url.clone();
+                without.set_fragment(None);
+                let mut current = doc.url().clone();
+                current.set_fragment(None);
+                if without != current {
+                    return Err("Fragment navigation must stay in the document".into());
+                }
+                doc.set_base_url(url.as_str());
+                let fragment = url.fragment().unwrap_or_default().to_owned();
+                doc.resolve(self.start.elapsed().as_secs_f64());
+                if fragment.is_empty() {
+                    doc.set_viewport_scroll(blitz_dom::Point { x: 0.0, y: 0.0 });
+                } else {
+                    doc.scroll_to_fragment(&fragment);
+                }
+                Value::Null
+            }
+            "formEntries" => {
+                let form = node_id()?;
+                let submitter = if text(2).is_empty() { None } else { Some(id(2)?) };
+                json!(Self::form_entries(&doc, form, submitter))
+            }
+            "submitForm" => {
+                let form = node_id()?;
+                let submitter = if text(2).is_empty() { form } else { id(2)? };
+                if doc.get_node(submitter).is_none() {
+                    return Err("Node no longer exists".into());
+                }
+                doc.submit_form(form, submitter);
+                Value::Null
+            }
             "url" => json!(doc.url().as_str()),
             "navigate" => {
                 let target = doc.url().join(text(1)).map_err(|e| e.to_string())?;
@@ -390,9 +580,142 @@ impl Dom {
         if nodes.iter().any(|id| self.retained.borrow().contains(id)) {
             return;
         }
+        let bytes: usize = nodes
+            .iter()
+            .filter_map(|id| doc.get_node(*id))
+            .map(|node| {
+                32 + match &node.data {
+                    NodeData::Text(text) => text.content.len(),
+                    NodeData::Comment { contents } => contents.len(),
+                    NodeData::Element(e) | NodeData::AnonymousBlock(e) => e
+                        .attrs
+                        .iter()
+                        .map(|a| a.name.local.len() + a.value.len())
+                        .sum(),
+                    NodeData::Document(_) => 0,
+                }
+            })
+            .sum();
         doc.mutate().remove_and_drop_node(root);
         self.allocated
             .set(self.allocated.get().saturating_sub(nodes.len()));
+        self.used.set(self.used.get().saturating_sub(bytes));
+    }
+    pub fn set_allocated(&self, count: usize) {
+        self.allocated.set(self.allocated.get().max(count));
+    }
+    /// Budget counters, for tests and diagnostics.
+    pub fn budget(&self) -> (usize, usize) {
+        (self.allocated.get(), self.used.get())
+    }
+    /// The form owner of a control: its `form` attribute, else the nearest ancestor form.
+    pub fn form_owner(doc: &BaseDocument, control: NodeId) -> Option<NodeId> {
+        let element = doc.get_node(control)?.element_data()?;
+        if let Some(owner) = element.attr(LocalName::from("form")) {
+            return doc.get_element_by_id(owner).filter(|id| {
+                doc.get_node(*id)
+                    .and_then(|n| n.element_data())
+                    .is_some_and(|e| &*e.name.local == "form")
+            });
+        }
+        let mut parent = doc.get_node(control)?.parent;
+        while let Some(id) = parent {
+            let node = doc.get_node(id)?;
+            if node
+                .element_data()
+                .is_some_and(|e| &*e.name.local == "form")
+            {
+                return Some(id);
+            }
+            parent = node.parent;
+        }
+        None
+    }
+    /// The form data set of a form (HTML "constructing the entry list"), for
+    /// `new FormData(form)`. File inputs contribute empty entries.
+    fn form_entries(
+        doc: &BaseDocument,
+        form: NodeId,
+        submitter: Option<NodeId>,
+    ) -> Vec<(String, String)> {
+        let mut entries = Vec::new();
+        for id in blitz_dom::traversal::TreeTraverser::new(doc) {
+            let Some(element) = doc.get_node(id).and_then(|n| n.element_data()) else {
+                continue;
+            };
+            let tag = &*element.name.local;
+            if !matches!(tag, "input" | "select" | "textarea" | "button")
+                || Self::form_owner(doc, id) != Some(form)
+                || element.attr(LocalName::from("disabled")).is_some()
+            {
+                continue;
+            }
+            let Some(name) = element
+                .attr(LocalName::from("name"))
+                .filter(|n| !n.is_empty())
+            else {
+                continue;
+            };
+            let kind = element
+                .attr(LocalName::from("type"))
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let value = || {
+                element
+                    .text_input_data()
+                    .map(|data| data.editor.text().to_string())
+                    .or_else(|| element.attr(LocalName::from("value")).map(str::to_owned))
+                    .unwrap_or_default()
+            };
+            match tag {
+                "button" => {
+                    if Some(id) == submitter {
+                        entries.push((name.to_owned(), value()));
+                    }
+                }
+                "select" => {
+                    for option in Self::subtree(doc, id).into_iter().rev() {
+                        let Some(option) = doc.get_node(option) else {
+                            continue;
+                        };
+                        if option.element_data().is_some_and(|e| {
+                            &*e.name.local == "option"
+                                && e.attr(LocalName::from("selected")).is_some()
+                        }) {
+                            let value = option
+                                .element_data()
+                                .and_then(|e| e.attr(LocalName::from("value")).map(str::to_owned))
+                                .unwrap_or_else(|| option.text_content().trim().to_owned());
+                            entries.push((name.to_owned(), value));
+                        }
+                    }
+                }
+                "textarea" => entries.push((name.to_owned(), value())),
+                _ => match kind.as_str() {
+                    "submit" | "image" | "button" | "reset" => {
+                        if Some(id) == submitter && kind == "submit" {
+                            entries.push((name.to_owned(), value()));
+                        }
+                    }
+                    "checkbox" | "radio" => {
+                        // Blitz creates checkbox state at layout; before that, use the attribute.
+                        let checked = element
+                            .checkbox_input_checked()
+                            .unwrap_or_else(|| element.attr(LocalName::from("checked")).is_some());
+                        if checked {
+                            let value = element
+                                .attr(LocalName::from("value"))
+                                .unwrap_or("on")
+                                .to_owned();
+                            entries.push((name.to_owned(), value));
+                        }
+                    }
+                    "file" => entries.push((name.to_owned(), String::new())),
+                    _ => entries.push((name.to_owned(), value())),
+                },
+            }
+        }
+        entries
     }
     fn serialize(doc: &BaseDocument, id: NodeId, out: &mut String) {
         let Some(node) = doc.get_node(id) else {
