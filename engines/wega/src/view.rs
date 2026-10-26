@@ -105,19 +105,20 @@ impl NavigationProvider for Navigation {
     }
 }
 enum Script {
-    Inline(String),
-    External(Url),
+    Inline(String, String, bool),
+    External(Url, bool),
 }
 
 pub struct View {
     document: Rc<RefCell<BaseDocument>>,
-    script: Option<ScriptHost>,
+    script: Option<Box<dyn ScriptHost>>,
     network: Network,
     limits: Limits,
     abort: Option<AbortController>,
     pending: Option<mpsc::Receiver<FetchResult>>,
     scripts: VecDeque<Script>,
     pending_script: Option<mpsc::Receiver<FetchResult>>,
+    pending_script_module: bool,
     navigate: Rc<RefCell<Vec<Url>>>,
     navigation_rx: mpsc::Receiver<Url>,
     revision: Arc<AtomicU64>,
@@ -128,6 +129,7 @@ pub struct View {
     dirty: bool,
     frozen: bool,
     ready_event_sent: bool,
+    composing: bool,
     pub url: Url,
     pub loading: bool,
     pub notices: VecDeque<String>,
@@ -149,6 +151,7 @@ impl View {
             pending: None,
             scripts: VecDeque::new(),
             pending_script: None,
+            pending_script_module: false,
             navigate: Default::default(),
             navigation_rx,
             revision: Arc::new(AtomicU64::new(0)),
@@ -159,6 +162,7 @@ impl View {
             dirty: true,
             frozen: false,
             ready_event_sent: false,
+            composing: false,
             url: url.clone(),
             loading: false,
             notices: VecDeque::new(),
@@ -195,6 +199,7 @@ impl View {
         self.url = url.clone();
         self.loading = true;
         self.ready_event_sent = false;
+        self.composing = false;
         if url.as_str() == "about:blank" {
             self.set_html("<!doctype html><title>New tab</title><body></body>")?;
         } else {
@@ -252,44 +257,57 @@ impl View {
             return Err("DOM node limit exceeded; use Servo for this page".into());
         }
         let mut scripts = VecDeque::new();
-        for id in doc
+        for (index, id) in doc
             .query_selector_all("script")
             .map_err(|_| "Unable to inspect scripts")?
             .iter()
             .take(64)
+            .enumerate()
         {
             let node = doc.get_node(*id).unwrap();
             let element = node.element_data().unwrap();
             let kind = element.attr(LocalName::from("type")).unwrap_or_default();
-            if kind == "module" {
-                self.notices.push_back(
-                    "JavaScript modules are not supported yet; use Servo for this page".into(),
-                );
-                continue;
-            }
-            if !kind.is_empty() && !matches!(kind, "text/javascript" | "application/javascript") {
+            let module = kind == "module";
+            if !kind.is_empty()
+                && !matches!(
+                    kind,
+                    "text/javascript" | "application/javascript" | "module"
+                )
+            {
                 continue;
             }
             if let Some(source) = element.attr(LocalName::from("src")) {
                 if let Ok(url) = self.url.join(source) {
-                    scripts.push_back(Script::External(url));
+                    scripts.push_back(Script::External(url, module));
                 }
             } else {
-                scripts.push_back(Script::Inline(node.text_content()));
+                scripts.push_back(Script::Inline(
+                    node.text_content(),
+                    if module {
+                        let mut url = self.url.clone();
+                        url.set_query(Some(&format!("__wega_inline_module={}", index + 1)));
+                        url.to_string()
+                    } else {
+                        format!("{} inline #{}", self.url, index + 1)
+                    },
+                    module,
+                ));
             }
         }
         self.script = None;
         self.document = Rc::new(RefCell::new(doc));
         self.abort = Some(abort);
         self.scripts = scripts;
-        self.script = Some(ScriptHost::new(
+        self.script = Some(crate::script::create(
             self.document.clone(),
             &self.limits,
             self.navigate.clone(),
             html.len(),
+            self.network.clone(),
         )?);
         self.dirty = true;
         self.ready_event_sent = false;
+        self.composing = false;
         Ok(())
     }
     pub fn poll(&mut self) {
@@ -320,7 +338,11 @@ impl View {
         if let Some(result) = script_result {
             self.pending_script = None;
             match result {
-                Ok((_, bytes)) => self.run(&String::from_utf8_lossy(&bytes)),
+                Ok((url, bytes)) => self.run_program(
+                    &String::from_utf8_lossy(&bytes),
+                    url.as_str(),
+                    self.pending_script_module,
+                ),
                 Err(error) => self.notice(error),
             }
         }
@@ -329,9 +351,12 @@ impl View {
             && let Some(script) = self.scripts.pop_front()
         {
             match script {
-                Script::Inline(source) => self.run(&source),
-                Script::External(url) => match self.fetch(url, 1024 * 1024) {
-                    Ok(rx) => self.pending_script = Some(rx),
+                Script::Inline(source, name, module) => self.run_program(&source, &name, module),
+                Script::External(url, module) => match self.fetch(url, 1024 * 1024) {
+                    Ok(rx) => {
+                        self.pending_script = Some(rx);
+                        self.pending_script_module = module;
+                    }
                     Err(error) => self.notice(error),
                 },
             }
@@ -339,23 +364,36 @@ impl View {
         if self.pending.is_none()
             && self.pending_script.is_none()
             && self.scripts.is_empty()
+            && !self
+                .script
+                .as_ref()
+                .is_some_and(|script| script.modules_pending())
             && !self.ready_event_sent
         {
             self.ready_event_sent = true;
             self.loading = false;
-            self.run("document.readyState='interactive';__wega_dispatch('DOMContentLoaded',document._id);document.readyState='complete';__wega_dispatch('load',document._id)");
+            self.run("document.readyState='interactive';document.dispatchEvent(new Event('readystatechange'));__wega_dispatch('DOMContentLoaded',document._id);document.readyState='complete';document.dispatchEvent(new Event('readystatechange'));window.dispatchEvent(new Event('load'))", "wega:load");
         }
-        if let Some(script) = &self.script {
+        if let Some(script) = &mut self.script {
             let due = script.next_timer().is_some_and(|t| t.is_zero());
             if due {
                 let result = script.tick();
                 if let Err(error) = result {
-                    self.script = None;
-                    self.scripts.clear();
-                    self.notice(error);
+                    self.script_error(error);
                 }
                 self.dirty = true;
             }
+        }
+        if let Some(script) = &mut self.script {
+            for error in script.take_errors() {
+                self.notices.push_back(error);
+            }
+        }
+        while self.notices.len() > 16 {
+            self.notices.pop_front();
+        }
+        if self.pending.is_none() && !self.loading {
+            self.url = self.document.borrow().url().clone();
         }
         while let Ok(url) = self.navigation_rx.try_recv() {
             self.navigate.borrow_mut().push(url);
@@ -377,31 +415,62 @@ impl View {
         self.loading = false;
         self.notice(error);
     }
-    fn run(&mut self, source: &str) {
-        if let Some(script) = &self.script {
-            let result = script.run(source).and_then(|_| script.tick());
+    fn script_error(&mut self, error: crate::script::ScriptError) {
+        if error.fatal {
+            self.script = None;
+            self.scripts.clear();
+            self.pending_script = None;
+        }
+        self.notice(error.to_string());
+    }
+    fn run(&mut self, source: &str, name: &str) {
+        self.run_program(source, name, false);
+    }
+    fn run_program(&mut self, source: &str, name: &str, module: bool) {
+        if let Some(script) = &mut self.script {
+            let result = if module {
+                script.run_module(source, name)
+            } else {
+                script.run(source, name)
+            }
+            .and_then(|_| script.tick());
             if let Err(error) = result {
-                self.script = None;
-                self.scripts.clear();
-                self.pending_script = None;
-                self.notice(error);
+                self.script_error(error);
             }
             self.dirty = true;
         }
     }
     pub fn evaluate(&mut self, source: &str) -> Result<String, String> {
-        let result = self.script.as_ref().ok_or("No script context")?.run(source);
+        let result = self
+            .script
+            .as_mut()
+            .ok_or("No script context")?
+            .run(source, "evaluate")
+            .and_then(|value| {
+                self.script.as_mut().unwrap().tick()?;
+                Ok(value)
+            });
         self.dirty = true;
-        result
+        if let Err(error) = &result
+            && error.fatal
+        {
+            self.script = None;
+        }
+        result.map_err(|e| e.to_string())
     }
     pub fn evaluate_json(&mut self, source: &str) -> Result<String, String> {
         let result = self
             .script
-            .as_ref()
+            .as_mut()
             .ok_or("No script context")?
             .evaluate_json(source);
         self.dirty = true;
-        result
+        if let Err(error) = &result
+            && error.fatal
+        {
+            self.script = None;
+        }
+        result.map_err(|e| e.to_string())
     }
     pub fn title(&self) -> String {
         let doc = self.document.borrow();
@@ -426,11 +495,11 @@ impl View {
         } else if !self.scripts.is_empty() && self.pending_script.is_none() {
             Some(Duration::ZERO)
         } else {
-            self.script.as_ref().and_then(ScriptHost::next_timer)
+            self.script.as_ref().and_then(|script| script.next_timer())
         }
     }
     pub fn heap_bytes(&self) -> usize {
-        self.script.as_ref().map_or(0, ScriptHost::heap_bytes)
+        self.script.as_ref().map_or(0, |script| script.heap_bytes())
     }
     pub fn node_count(&self) -> usize {
         TreeTraverser::new(&self.document.borrow()).count()
@@ -443,6 +512,9 @@ impl View {
     }
     pub fn freeze(&mut self, freeze: bool) {
         self.frozen = freeze;
+        if let Some(script) = &mut self.script {
+            script.freeze(freeze);
+        }
         self.renderer = None;
         self.size = (0, 0);
         if !freeze {
@@ -454,25 +526,169 @@ impl View {
         if let Some(id) = id {
             let cancelled = self
                 .script
-                .as_ref()
+                .as_mut()
                 .map(|script| script.dispatch("click", id))
                 .transpose();
             match cancelled {
-                Err(error) => self.notice(error),
+                Err(error) => self.script_error(error),
                 Ok(Some(true)) => {}
                 _ => {
-                    let mut doc = self.document.borrow_mut();
-                    if let Some(node) = doc.get_node(id) {
-                        let mut event = blitz_traits::events::DomEvent::new(
-                            id,
-                            node.synthetic_click_event(Default::default()),
-                        );
-                        doc.handle_dom_event(&mut event, |_| {});
-                    }
+                    let generated = {
+                        let mut generated = Vec::new();
+                        let mut doc = self.document.borrow_mut();
+                        if let Some(node) = doc.get_node(id) {
+                            let mut event = blitz_traits::events::DomEvent::new(
+                                id,
+                                node.synthetic_click_event(Default::default()),
+                            );
+                            doc.handle_dom_event(&mut event, |event| generated.push(event));
+                        }
+                        generated
+                    };
+                    self.generated_events(generated, serde_json::json!({}));
                 }
             }
             self.dirty = true;
         }
+    }
+    fn generated_events(
+        &mut self,
+        events: Vec<blitz_traits::events::DomEvent>,
+        input_options: serde_json::Value,
+    ) {
+        for event in events {
+            let event_type = event.data.name();
+            let source = format!(
+                "__wega_native_event({}, {}, {})",
+                serde_json::json!(event_type),
+                serde_json::json!(event.target.as_u64().to_string()),
+                if event_type == "input" {
+                    input_options.clone()
+                } else {
+                    serde_json::json!({})
+                }
+            );
+            self.run(&source, "wega:native-event");
+        }
+    }
+    /// Native editing goes through Blitz/Parley after cancelable DOM events.
+    pub fn key(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+        use blitz_traits::events::{DomEvent, DomEventData};
+        use keyboard_types::Modifiers;
+        let target = self
+            .document
+            .borrow()
+            .get_focussed_node_id()
+            .unwrap_or(self.document.borrow().root_node().id);
+        let pressed = event.state.is_pressed();
+        let options = serde_json::json!({"key":event.key.to_string(),"code":event.code.to_string(),"repeat":event.is_auto_repeating,"isComposing":event.is_composing,"shiftKey":event.modifiers.contains(Modifiers::SHIFT),"ctrlKey":event.modifiers.contains(Modifiers::CONTROL),"altKey":event.modifiers.contains(Modifiers::ALT),"metaKey":event.modifiers.contains(Modifiers::META)});
+        let source = format!(
+            "__wega_native_event({}, {}, {})",
+            serde_json::json!(if pressed { "keydown" } else { "keyup" }),
+            serde_json::json!(target.as_u64().to_string()),
+            options
+        );
+        if self.evaluate_json(&source).as_deref() == Ok("true") {
+            return;
+        }
+        if pressed {
+            let key = event.key.to_string();
+            let input_type = match key.as_str() {
+                "Backspace" => "deleteContentBackward",
+                "Delete" => "deleteContentForward",
+                "Enter" => "insertLineBreak",
+                _ => {
+                    if event.text.as_ref().is_some_and(|t| !t.is_empty())
+                        && !event
+                            .modifiers
+                            .intersects(Modifiers::CONTROL | Modifiers::META | Modifiers::ALT)
+                    {
+                        "insertText"
+                    } else {
+                        ""
+                    }
+                }
+            };
+            let input_options = serde_json::json!({"inputType":input_type,"data":event.text.as_ref().map(|text|text.as_str()),"isComposing":event.is_composing});
+            if !input_type.is_empty() {
+                let source = format!(
+                    "__wega_native_event('beforeinput',{}, {})",
+                    serde_json::json!(target.as_u64().to_string()),
+                    input_options
+                );
+                if self.evaluate_json(&source).as_deref() == Ok("true") {
+                    return;
+                }
+            }
+            let generated = {
+                let mut generated = Vec::new();
+                self.document.borrow_mut().handle_dom_event(
+                    &mut DomEvent::new(target, DomEventData::KeyDown(event)),
+                    |event| generated.push(event),
+                );
+                generated
+            };
+            self.generated_events(generated, input_options);
+        }
+        self.dirty = true;
+    }
+    pub fn ime(&mut self, event: blitz_traits::events::BlitzImeEvent) {
+        use blitz_traits::events::{BlitzImeEvent, DomEvent, DomEventData};
+        let target = self
+            .document
+            .borrow()
+            .get_focussed_node_id()
+            .unwrap_or(self.document.borrow().root_node().id);
+        let (text, kind) = match &event {
+            BlitzImeEvent::Preedit(text, _) => (text, "compositionupdate"),
+            BlitzImeEvent::Commit(text) => (text, "compositionend"),
+            _ => return,
+        };
+        if matches!(&event,BlitzImeEvent::Preedit(text,_) if !text.is_empty()) && !self.composing {
+            self.composing = true;
+            self.run(
+                &format!(
+                    "__wega_native_event('compositionstart',{},{{data:''}})",
+                    serde_json::json!(target.as_u64().to_string())
+                ),
+                "wega:composition",
+            );
+        }
+        let commit = matches!(event, BlitzImeEvent::Commit(_));
+        let input_options = serde_json::json!({"inputType":if commit{"insertText"}else{"insertCompositionText"},"data":text,"isComposing":!commit});
+        if commit {
+            self.composing = false;
+            if self
+                .evaluate_json(&format!(
+                    "__wega_native_event('beforeinput',{}, {})",
+                    serde_json::json!(target.as_u64().to_string()),
+                    input_options
+                ))
+                .as_deref()
+                == Ok("true")
+            {
+                return;
+            }
+        }
+        self.run(
+            &format!(
+                "__wega_native_event({}, {},{{data:{}}})",
+                serde_json::json!(kind),
+                serde_json::json!(target.as_u64().to_string()),
+                serde_json::json!(text)
+            ),
+            "wega:composition",
+        );
+        let generated = {
+            let mut generated = Vec::new();
+            self.document.borrow_mut().handle_dom_event(
+                &mut DomEvent::new(target, DomEventData::Ime(event)),
+                |event| generated.push(event),
+            );
+            generated
+        };
+        self.generated_events(generated, input_options);
+        self.dirty = true;
     }
     pub fn scroll(&mut self, x: f64, y: f64) {
         let mut doc = self.document.borrow_mut();
@@ -513,6 +729,20 @@ impl View {
             },
         });
         doc.resolve(self.started.elapsed().as_secs_f64());
+        drop(doc);
+        let another_frame = if let Some(script) = &mut self.script {
+            match script.frame(self.started.elapsed().as_secs_f64() * 1000.0) {
+                Ok(pending) => pending,
+                Err(error) => {
+                    self.script_error(error);
+                    true
+                }
+            }
+        } else {
+            false
+        };
+        let mut doc = self.document.borrow_mut();
+        doc.resolve(self.started.elapsed().as_secs_f64());
         if self.size != (width, height) {
             self.renderer = Some(VelloCpuImageRenderer::new(width, height));
             self.size = (width, height);
@@ -534,7 +764,7 @@ impl View {
             },
             &mut rgba,
         );
-        self.dirty = false;
+        self.dirty = another_frame;
         Ok(Frame {
             width,
             height,

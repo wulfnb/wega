@@ -210,14 +210,17 @@ impl Browser {
                     ),
                 });
                 self.handle_event(WindowEvent::RedrawRequested);
+                // Queue one click before painting. A full Servo/GPU redraw between
+                // press and release can exceed egui's click-duration limit on CI,
+                // turning this synthetic click into a held press with no reload.
                 for state in [ElementState::Pressed, ElementState::Released] {
                     self.handle_event(WindowEvent::MouseInput {
                         device_id: DeviceId::dummy(),
                         state,
                         button: MouseButton::Left,
                     });
-                    self.handle_event(WindowEvent::RedrawRequested);
                 }
+                self.handle_event(WindowEvent::RedrawRequested);
                 self.smoke_stage(11);
             }
             // Complete can still describe the previous document while native input

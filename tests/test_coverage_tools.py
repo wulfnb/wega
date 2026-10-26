@@ -111,6 +111,21 @@ class CoverageGateTests(unittest.TestCase):
             (root / 'src/brand.rs').write_text('fn now_executable() {}')
             self.assertFalse(accounting.inventory(root, policy, [(rust, {'platform': 'host: test'})], {})['complete'])
 
+    def test_vendored_third_party_sources_are_not_first_party(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'engines/wega').mkdir(parents=True)
+            (root / 'engines/vendor/deno/deno_core').mkdir(parents=True)
+            (root / 'engines/wega/lib.rs').write_text('fn covered() {}')
+            (root / 'engines/vendor/deno/deno_core/lib.rs').write_text('fn upstream() {}')
+            policy = {'include': ['engines/**/*.rs'], 'test_only': [], 'third_party': ['engines/vendor/**'], 'declaration_only': [], 'required_builds': ['test:desktop'], 'target_line_percent': 100}
+            rust = {'data': [{'files': [{'filename': str(root / 'engines/wega/lib.rs'), 'summary': {'lines': {'count': 1, 'covered': 1}}}]}]}
+            report = accounting.inventory(root, policy, [(rust, {'platform': 'host: test'})], {})
+            self.assertTrue(report['complete'])
+            self.assertEqual([item['file'] for item in report['files']], ['engines/wega/lib.rs'])
+            policy['third_party'] = []
+            self.assertFalse(accounting.inventory(root, policy, [(rust, {'platform': 'host: test'})], {})['complete'])
+
     def test_shell_counters_require_passing_contracts_and_matching_sources(self):
         import hashlib
         with tempfile.TemporaryDirectory() as directory:

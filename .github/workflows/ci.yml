@@ -13,8 +13,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Select CI scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # Pull requests that only touch the V8 migration are covered by v8-engine.yml.
+      # Everything else, and every push/merge/release (cd.yml calls this workflow),
+      # runs the complete suite.
+      - id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BASE_SHA...$HEAD_SHA" > changed.txt
+          cat changed.txt
+          if grep -vE '^(engines/v8-spike/|engines/vendor/|docs/v8-engine-plan\.md$|\.github/workflows/v8-engine\.yml$)' changed.txt | grep -q .; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only V8 migration files changed; the V8 Engine workflow covers them."
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: Code Quality & Lints
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -38,6 +72,8 @@ jobs:
 
   core-matrix:
     name: Core Suite (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -83,6 +119,8 @@ jobs:
 
   desktop-macos:
     name: Desktop Native & Engine Suite (macOS)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: macos-latest
     timeout-minutes: 90
     env:
@@ -128,13 +166,14 @@ jobs:
         run: python scripts/desktop-coverage.py
       - name: Native integration suite verification
         run: python scripts/native-tests.py --suite all
+      # Cargo caches can restore old reports; every workflow attempt needs a fresh output.
       - name: Two-engine compatibility and process-tree baseline
-        run: python scripts/browser-bench.py --output target/browser-bench-ci --repeats 1 --tabs 1 5 --idle-seconds 5
+        run: python scripts/browser-bench.py --output target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }} --repeats 1 --tabs 1 5 --idle-seconds 5
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: browser-bench-macos
-          path: target/browser-bench-ci/
+          path: target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }}/
       - name: Whole-project completeness inventory
         run: python scripts/coverage-inventory.py
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -147,6 +186,8 @@ jobs:
 
   docker-integration:
     name: Docker & Web Gateway Integration (Linux)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -184,11 +225,11 @@ jobs:
         run: sh scripts/docker-download-test.sh
       - name: Two-engine compatibility and process-tree baseline in Linux
         run: |
-          mkdir -p target/browser-bench-linux
+          mkdir -p target/browser-bench-linux/${{ github.run_id }}-${{ github.run_attempt }}
           docker run --rm --user "$(id -u):$(id -g)" --entrypoint sh \
             -e HOME=/tmp -e XDG_CONFIG_HOME=/tmp/config -e XDG_CACHE_HOME=/tmp/cache -e XDG_DATA_HOME=/tmp/data \
             -e DISPLAY=:97 -e LIBGL_ALWAYS_SOFTWARE=1 -e GITHUB_SHA \
-            -v "$PWD:/source:ro" -v "$PWD/target/browser-bench-linux:/results" \
+            -v "$PWD:/source:ro" -v "$PWD/target/browser-bench-linux/${{ github.run_id }}-${{ github.run_attempt }}:/results" \
             "$(docker compose images -q wega)" -eu -c '
               Xvfb :97 -screen 0 1440x900x24 -nolisten tcp -ac >/tmp/bench-display.log 2>&1 &
               display_pid=$!
@@ -203,7 +244,7 @@ jobs:
         if: always()
         with:
           name: browser-bench-linux
-          path: target/browser-bench-linux/
+          path: target/browser-bench-linux/${{ github.run_id }}-${{ github.run_attempt }}/
       - name: Shell adapter contracts and coverage
         run: |
           docker tag "$(docker compose images -q wega)" wega-shell-base:ci
@@ -238,6 +279,8 @@ jobs:
 
   desktop-windows:
     name: Desktop Build & Launch (Windows)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
@@ -267,12 +310,12 @@ jobs:
       - name: Real media playback and same-profile launch handoff
         run: python scripts/windows-runtime-test.py --binary target/debug/wega.exe
       - name: Two-engine compatibility and process-tree baseline
-        run: python scripts/browser-bench.py --binary target/debug/wega.exe --output target/browser-bench-ci --repeats 1 --tabs 1 5 --idle-seconds 10
+        run: python scripts/browser-bench.py --binary target/debug/wega.exe --output target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }} --repeats 1 --tabs 1 5 --idle-seconds 10
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: browser-bench-windows
-          path: target/browser-bench-ci/
+          path: target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }}/
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
@@ -281,9 +324,29 @@ jobs:
 
   ci-gate:
     name: CI Completion Gate
-    needs: [lint, core-matrix, desktop-macos, desktop-windows, docker-integration]
+    if: always()
+    needs: [changes, lint, core-matrix, desktop-macos, desktop-windows, docker-integration]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all checks passed
-        run: echo "All parallel CI checks and integration test suites succeeded."
+        env:
+          FULL: ${{ needs.changes.outputs.full }}
+          SCOPE: ${{ needs.changes.result }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Scope: full=$FULL; results: $RESULTS"
+          test "$SCOPE" = success
+          # Skips are only acceptable when the scope job chose a V8-only run.
+          for result in $RESULTS; do
+            case "$result" in
+              success) ;;
+              skipped) test "$FULL" = false ;;
+              *) exit 1 ;;
+            esac
+          done
+          if [ "$FULL" = true ]; then
+            echo "All parallel CI checks and integration test suites succeeded."
+          else
+            echo "V8-only change: the full suite runs again on merge before release packaging."
+          fi
 

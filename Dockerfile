@@ -30,7 +30,7 @@ COPY Cargo.toml Cargo.lock build.rs ./
 COPY vendor ./vendor
 COPY src ./src
 COPY engines ./engines
-COPY scripts/build-wega-engine.py ./scripts/build-wega-engine.py
+COPY scripts/build-wega-engine.py scripts/v8_prebuilt.py ./scripts/
 COPY assets/icons/browser-icon-256.png ./assets/icons/browser-icon-256.png
 ARG BUILD_PROFILE=release
 ARG BUILD_JOBS=4

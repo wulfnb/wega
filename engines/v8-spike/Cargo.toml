@@ -1,0 +1,32 @@
+[package]
+name = "v8-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Spike: Blitz DOM + V8 (deno_core) in one Cargo graph"
+
+# Standalone so the spike never touches the wega-engine lockfile.
+[workspace]
+
+[dependencies]
+blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars"] }
+blitz-html = "=0.3.0-beta.4"
+blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
+blitz-traits = "=0.3.0-beta.4"
+anyrender = "=0.14.0"
+anyrender_vello_cpu = { version = "=0.18.0", default-features = false }
+deno_core = "=0.413.0"
+tokio = { version = "1", features = ["rt", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+debug = 0
+
+# Build against the in-repo copy of Deno's core (engines/vendor/deno), not crates.io.
+[patch.crates-io]
+deno_core = { path = "../vendor/deno/deno_core" }
+deno_ops = { path = "../vendor/deno/deno_ops" }
+serde_v8 = { path = "../vendor/deno/serde_v8" }
+deno_v8 = { path = "../vendor/deno/deno_v8" }

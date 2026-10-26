@@ -36,14 +36,18 @@
     "scripts/coverage-rustc.rs",
     "scripts/windows-launch-check.ps1",
     "scripts/windows-installer-check.ps1",
-    "engines/wega/tests/*.rs"
+    "engines/wega/tests/*.rs",
+    "engines/v8-spike/**",
+    "scripts/engine-p0-mutations.py",
+    "engines/wega/tests/fixtures/**"
   ],
   "declaration_only": [
     "src/lib.rs",
     "src/brand.rs"
   ],
   "third_party": [
-    "vendor/**"
+    "vendor/**",
+    "engines/vendor/**"
   ],
   "required_builds": [
     "aarch64-apple-darwin:desktop",

@@ -1,0 +1,10 @@
+--- a/extensions.rs
++++ b/extensions.rs
+@@ -1,0 +2 @@
++// Modified by Wega contributors, 2026: embed sources in workers without snapshots.
+@@ -1000 +1001 @@
+-    $crate::__extension_include_js_files_inner!(mode=loaded, name=$name, dir=$crate::__extension_root_dir!($($dir)?), $([
++    $crate::__extension_include_js_files_inner!(mode=included, name=$name, dir=$crate::__extension_root_dir!($($dir)?), $([
+@@ -1030 +1031 @@
+-  ($($rest:tt)*) => { $crate::__extension_include_js_files_inner!(mode=loaded, $($rest)*) };
++  ($($rest:tt)*) => { $crate::__extension_include_js_files_inner!(mode=included, $($rest)*) };

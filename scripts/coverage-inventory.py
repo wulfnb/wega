@@ -72,6 +72,9 @@ def inventory(root, policy, rust_reports, python_report, javascript=None, shell=
     files = sorted({path for pattern in policy['include'] for path in root.glob(pattern) if path.is_file()})
     for path in files:
         name = path.relative_to(root).as_posix()
+        # Vendored upstream sources inside an included tree are not first-party code.
+        if any(fnmatch.fnmatch(name, pattern) for pattern in policy.get('third_party', [])):
+            continue
         if any(fnmatch.fnmatch(name, pattern) for pattern in policy['test_only']):
             category = 'test-driver'
         elif name in policy['declaration_only'] and not any('fn ' in line or 'impl ' in line for line in path.read_text().splitlines() if not line.lstrip().startswith('//')):

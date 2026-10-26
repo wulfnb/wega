@@ -1,5 +1,6 @@
 /target
 /engines/target
+/engines/v8-spike/target
 
 __pycache__/
 *.pyc

@@ -61,3 +61,28 @@ newest frame. The native footer selects a tab's engine and reloads its page;
 URL/title/engine persistence and actual switching are integration tested. The
 existing default-free core remains independent of both rendering implementations.
 See [engine strategy](engine-strategy.md) for limitations and remaining work.
+
+## 25 October 2026: V8 via deno_core replaces QuickJS-ng in the Wega engine
+
+A spike (`engines/v8-spike`) showed that V8 (`v8` 150.4.0 through `deno_core` 0.413.0)
+and Blitz 0.3.0-beta.4 resolve and link in the engine's independent Cargo graph:
+V8 bundles its own C++ ICU, so the Servo ICU conflict does not recur. V8 ran the
+same script 8–15× faster than QuickJS-ng for about 12–20 MB more per tab, and Deno's
+MIT Web API crates (fetch, events, timers, streams, storage, WebSocket, crypto)
+replace bindings Wega would otherwise write. The engine therefore moves to V8 behind
+a `ScriptHost` trait, keeping QuickJS as a feature until V8 passes the compatibility
+gates. Wega keeps the single blitz-dom DOM and writes the DOM bindings itself.
+Cloudflare's acquisition of Deno ends upstream development in about 12 months, so the
+deno_core sources are vendored in `engines/vendor/deno/` and the V8 prebuilt libraries,
+crate sources and git history are mirrored locally; an offline build was verified.
+See [V8 engine plan](v8-engine-plan.md).
+
+## 26 October 2026: V8 is the only Wega JavaScript runtime
+
+Remove QuickJS from the engine and standalone spike, their dependency graphs,
+CI baseline/contracts and feature selection. The owner chose V8-only maintenance
+after the optional QuickJS Windows Angular fixture hit its native stack limit.
+V8 is now mandatory, including builds with default features disabled. Keep the
+framework fixtures, limits, error-isolation contracts and mutation proofs running
+against V8. Old benchmark records remain historical evidence. This decision does
+not change Servo's separate role or make Wega the default browser engine.

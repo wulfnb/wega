@@ -482,5 +482,5 @@ The experimental second engine is built separately because its ICU dependencies
 cannot be linked with the pinned Servo release. Run
 `python3 scripts/build-wega-engine.py --debug`, then use the bottom-right engine
 selector or start with `--engine wega`. It uses [Blitz](https://github.com/DioxusLabs/blitz)
-and QuickJS-ng; Servo remains the default for everyday browsing. See the
+and V8 through Deno; Servo remains the default for everyday browsing. See the
 [engine strategy and current limits](docs/engine-strategy.md#which-engine-should-we-use-now).

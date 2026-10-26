@@ -1,4 +1,4 @@
-//! A real page in the independently built Blitz/QuickJS worker. IPC never blocks the UI.
+//! A real page in the independently built Blitz/V8 worker. IPC never blocks the UI.
 use crate::engine::Wake;
 use std::{
     io::Read,
@@ -70,9 +70,14 @@ impl Page {
         url: &url::Url,
         policy: &Policy,
         proxy: EventLoopProxy<Wake>,
+        profile_dir: &std::path::Path,
     ) -> Result<Self, String> {
         let executable=executable().ok_or("Wega engine worker is not installed. Build it with python3 scripts/build-wega-engine.py --debug first.")?;
         let mut command = Command::new(executable);
+        // Workers are private to a view, so process-wide V8 flags stay per-view.
+        if std::env::var_os("WEGA_ENGINE_LITE").is_some_and(|value| value == "1") {
+            command.arg("--lite");
+        }
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -228,6 +233,12 @@ impl Page {
             offline: policy.offline,
             blocked_hosts: policy.blocked_hosts.clone(),
             allowed_hosts: policy.allowed_hosts.clone(),
+            storage_dir: Some(
+                profile_dir
+                    .join("wega-storage")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
         })?;
         Ok(page)
     }
@@ -237,6 +248,48 @@ impl Page {
             .ok_or("Worker is closed")?
             .try_send(request)
             .map_err(|_| "Wega engine is busy or stopped. Reload or switch to Servo.".into())
+    }
+    pub fn keyboard(
+        &self,
+        event: &winit::event::KeyEvent,
+        modifiers: winit::keyboard::ModifiersState,
+    ) -> Result<(), String> {
+        let key = match &event.logical_key {
+            winit::keyboard::Key::Character(value) => value.to_string(),
+            winit::keyboard::Key::Named(value) => format!("{value:?}"),
+            _ => "Unidentified".into(),
+        };
+        let code = match event.physical_key {
+            winit::keyboard::PhysicalKey::Code(code) => format!("{code:?}"),
+            _ => "Unidentified".into(),
+        };
+        let flags = u8::from(modifiers.shift_key())
+            | u8::from(modifiers.control_key()) << 1
+            | u8::from(modifiers.alt_key()) << 2
+            | u8::from(modifiers.super_key()) << 3;
+        self.send(Request::Key {
+            key,
+            code,
+            text: event.text.as_ref().map(ToString::to_string),
+            pressed: event.state.is_pressed(),
+            modifiers: flags,
+            repeat: event.repeat,
+        })
+    }
+    pub fn ime(&self, event: &winit::event::Ime) -> Result<(), String> {
+        match event {
+            winit::event::Ime::Preedit(text, cursor) => self.send(Request::Ime {
+                text: text.clone(),
+                preedit: true,
+                cursor: *cursor,
+            }),
+            winit::event::Ime::Commit(text) => self.send(Request::Ime {
+                text: text.clone(),
+                preedit: false,
+                cursor: None,
+            }),
+            _ => Ok(()),
+        }
     }
     pub fn command_sender(&self) -> Option<mpsc::SyncSender<Request>> {
         self.requests.clone()

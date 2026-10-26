@@ -1,0 +1,1 @@
+import React from 'react';import{createRoot}from'react-dom/client';import{flushSync}from'react-dom';function App(){const[n,set]=React.useState(0);return React.createElement('button',{id:'action',onClick:()=>flushSync(()=>set(n+1))},n)}flushSync(()=>createRoot(document.getElementById('mount')).render(React.createElement(App)));

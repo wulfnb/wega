@@ -1,0 +1,52 @@
+[
+  {
+    "mutation": "ordinary-error-isolation",
+    "test": "missing_api_names_source_and_keeps_the_next_script_alive",
+    "detected": true
+  },
+  {
+    "mutation": "listener-isolation",
+    "test": "one_listener_exception_does_not_block_other_listeners",
+    "detected": true
+  },
+  {
+    "mutation": "timer-isolation",
+    "test": "one_timer_exception_does_not_block_other_timers",
+    "detected": true
+  },
+  {
+    "mutation": "missing-api-tracker",
+    "test": "missing_api_names_source_and_keeps_the_next_script_alive",
+    "detected": true
+  },
+  {
+    "mutation": "source-diagnostics",
+    "test": "missing_api_names_source_and_keeps_the_next_script_alive",
+    "detected": true
+  },
+  {
+    "mutation": "window-onerror",
+    "test": "script_errors_fire_onerror_and_error_event",
+    "detected": true
+  },
+  {
+    "mutation": "error-event",
+    "test": "script_errors_fire_onerror_and_error_event",
+    "detected": true
+  },
+  {
+    "mutation": "evaluation-diagnostics",
+    "test": "evaluate_json_preserves_exception_text",
+    "detected": true
+  },
+  {
+    "mutation": "fatal-teardown",
+    "test": "deadline_remains_fatal_and_a_new_document_recovers",
+    "detected": true
+  },
+  {
+    "mutation": "heap-and-stack-classification",
+    "test": "heap_and_stack_exhaustion_remain_fatal",
+    "detected": true
+  }
+]

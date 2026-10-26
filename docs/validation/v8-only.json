@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-26",
+  "branch": "feature/wega-v8-spike",
+  "base_commit": "a5ac41f",
+  "platform": "macOS arm64",
+  "runtime": "V8 through deno_core only",
+  "backend_features": {},
+  "quickjs_packages_in_engine_graph": 0,
+  "quickjs_packages_in_spike_graph": 0,
+  "default_features_disabled_still_requires_v8": true,
+  "v8_tests_passed": 40,
+  "framework_fixtures_passed": 6,
+  "ignored_framework_fixtures": 0,
+  "p0_mutations": {
+    "backend": "v8",
+    "detected": 10,
+    "total": 10,
+    "sources_restored": true,
+    "results": [
+      {
+        "mutation": "ordinary-error-isolation",
+        "test": "missing_api_names_source_and_keeps_the_next_script_alive",
+        "detected": true
+      },
+      {
+        "mutation": "listener-isolation",
+        "test": "one_listener_exception_does_not_block_other_listeners",
+        "detected": true
+      },
+      {
+        "mutation": "timer-isolation",
+        "test": "one_timer_exception_does_not_block_other_timers",
+        "detected": true
+      },
+      {
+        "mutation": "missing-api-tracker",
+        "test": "missing_api_names_source_and_keeps_the_next_script_alive",
+        "detected": true
+      },
+      {
+        "mutation": "source-diagnostics",
+        "test": "missing_api_names_source_and_keeps_the_next_script_alive",
+        "detected": true
+      },
+      {
+        "mutation": "window-onerror",
+        "test": "script_errors_fire_onerror_and_error_event",
+        "detected": true
+      },
+      {
+        "mutation": "error-event",
+        "test": "script_errors_fire_onerror_and_error_event",
+        "detected": true
+      },
+      {
+        "mutation": "evaluation-diagnostics",
+        "test": "evaluate_json_preserves_exception_text",
+        "detected": true
+      },
+      {
+        "mutation": "fatal-teardown",
+        "test": "deadline_remains_fatal_and_a_new_document_recovers",
+        "detected": true
+      },
+      {
+        "mutation": "heap-and-stack-classification",
+        "test": "heap_and_stack_exhaustion_remain_fatal",
+        "detected": true
+      }
+    ]
+  },
+  "strict_clippy": {
+    "engine": "pass",
+    "spike_release": "pass"
+  },
+  "spike_dom_and_pixels": "pass",
+  "native_engine": {
+    "suite": "engine",
+    "exit_code": 0,
+    "seconds": 16.24,
+    "profile": "/private/tmp/wega-v8-only-native/engine-gquxtkyh"
+  },
+  "python_installer_tests_passed": 2,
+  "python_v8_mirror_tests_passed": 5,
+  "actionlint": "pass",
+  "formatting": "pass",
+  "vendored_sources_changed": false,
+  "dependency_cache_reused": true,
+  "remote_baseline": {
+    "commit": "a5ac41f",
+    "main_ci": {
+      "run": 40288197021,
+      "conclusion": "success"
+    },
+    "windows_engine": {
+      "run": 40288197041,
+      "job": 121456821920,
+      "v8_contracts": "success",
+      "quickjs_contracts": "failure - configuration now removed"
+    }
+  },
+  "remote_after_removal": "pending push and rerun",
+  "windows_runtime_after_removal_locally_verified": false
+}

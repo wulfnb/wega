@@ -10,7 +10,7 @@ impl Browser {
             .show_ui(ui,|ui|{
                 ui.selectable_value(&mut engine,EngineKind::Servo,"Servo").on_hover_text("Recommended for everyday browsing, interactive sites, media and developer tools.");
                 ui.add_enabled_ui(available,|ui|ui.selectable_value(&mut engine,EngineKind::Wega,"Wega (experimental)")).inner
-                    .on_hover_text(if available{"Uses a separate Blitz/QuickJS worker. Reloads this tab; cookies and sign-in state are separate. Forms, media and page tools currently need Servo."}else{"Build/install the wega-engine worker with python3 scripts/build-wega-engine.py --debug to enable this choice."});
+                    .on_hover_text(if available{"Uses a separate Blitz/V8 worker. Reloads this tab; cookies and sign-in state are separate. Forms, media and page tools currently need Servo."}else{"Build/install the wega-engine worker with python3 scripts/build-wega-engine.py --debug to enable this choice."});
             }).response.on_hover_text("Engine for this tab. Changing it reloads the page and loses unsaved page state.");
         response.widget_info(|| {
             egui::WidgetInfo::labeled(

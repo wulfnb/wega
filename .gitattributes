@@ -10,3 +10,6 @@
 *.icns binary
 *.webm binary
 *.wav binary
+
+# Pinned WPT checksums cover upstream LF bytes on every checkout platform.
+engines/wega/tests/fixtures/wpt/** text eol=lf

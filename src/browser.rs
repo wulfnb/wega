@@ -506,6 +506,7 @@ impl Browser {
                 &url,
                 &self.profile().policy,
                 self.event_proxy.clone(),
+                &self.profile_dir,
             ) {
                 Ok(page) => Some(page),
                 Err(error) => {
@@ -694,6 +695,7 @@ impl Browser {
                 &url,
                 &self.profile().policy,
                 self.event_proxy.clone(),
+                &self.profile_dir,
             ) {
                 Ok(page) => {
                     self.session.tabs_mut()[index].wega = Some(page);
@@ -1810,11 +1812,32 @@ impl Browser {
                 self.pump();
                 return;
             }
-            if self.chrome.page_focused && !self.modal() && !self.is_wega() {
-                input::keyboard(self.view(), event, self.chrome.modifiers);
+            if self.chrome.page_focused && !self.modal() {
+                if self.is_wega() {
+                    if let Some(page) = self.tab().wega.as_ref()
+                        && let Err(error) = page.keyboard(event, self.chrome.modifiers.state())
+                    {
+                        self.status = Some(error);
+                    }
+                } else {
+                    input::keyboard(self.view(), event, self.chrome.modifiers);
+                }
                 self.pump();
                 return;
             }
+        }
+        if let WindowEvent::Ime(ime) = &event
+            && self.is_wega()
+            && self.chrome.page_focused
+            && !self.modal()
+        {
+            if let Some(page) = self.tab().wega.as_ref()
+                && let Err(error) = page.ime(ime)
+            {
+                self.status = Some(error);
+            }
+            self.pump();
+            return;
         }
         let response = self
             .gui
