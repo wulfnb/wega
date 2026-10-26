@@ -121,13 +121,15 @@ worker, rather than forcing incompatible crates into one process.
 ### What the first worker actually supports
 
 Blitz 0.3.0-beta.4 supplies HTML/CSS, Stylo/Taffy/Parley and Vello CPU painting.
-Wega's QuickJS-ng/rquickjs 0.14 runtime operates on that same Rust DOM through
-checked generational node IDs. The initial bindings support queries, node
-identity, text/attributes, node creation/appending/removal, simple click listeners
-and timers. External HTML, CSS, images/fonts and classic scripts load through
-bounded asynchronous networking. Navigation, scroll, zoom, native capture and
-basic browser controls are connected. A local fixture verifies actual downloaded
-HTML/CSS/JavaScript, changed document title and rendered pixels.
+Wega now uses V8 through deno_core by default in its worker, retaining QuickJS
+behind an optional feature. Both operate on the same Rust DOM through checked
+generational node IDs. The P0–P3 migration adds DOM classes, scoped selectors,
+fragments/namespaces/live collections, native styles/layout, DOM events and
+observers, frame callbacks, history and native keyboard/IME editing. V8 also
+supplies Deno's Web APIs, bounded fetch/XHR, modules, origin-partitioned storage
+and cookie_store-backed HTTP/document cookies. The six offline framework fixtures
+and selected 31-case DOM WPT subset pass; see [v8-engine-plan.md](v8-engine-plan.md)
+for exact evidence and limits. Servo remains the everyday default.
 
 The native capture reports `engine: wega` and `servoInitialized: false`.
 Its reported `jsHeapBytes` is the VM's own accounting, **not process RSS or total
@@ -141,12 +143,13 @@ for actual input/resource/timer deadlines. These are component limits, not a
 hard total RSS limit or an OS sandbox. Decoded-image/cache budgets, total memory
 pressure and representative-site benchmarks remain work to do.
 
-**Still requires Servo:** full DOM/Web APIs, modules, fetch/XHR, forms, persistent
-storage/cookies and website sign-in, media, website accessibility and developer
-tools. Cookies and live page state do not transfer between engines. Unsupported
-APIs report errors; unsupported WebDriver page operations return
-UnsupportedOperation. WebIDL generation, detached-node collection semantics,
-comprehensive event/form behavior, Boa comparison and WPT coverage remain open.
+**Still requires Servo:** broad DOM/Web API compatibility, complete forms and
+FormData integration, CORS/CSP completeness, website sign-in validation, media,
+website accessibility and developer tools. Cookie/live-state synchronization
+between Wega workers needs the shared broker planned in P4; state does not transfer
+between engines. Unsupported APIs report errors; unsupported WebDriver operations
+return UnsupportedOperation. Full WPT coverage and real-site compatibility remain
+open; passing the selected subset does not certify a complete browser.
 
 ### Build and verification
 

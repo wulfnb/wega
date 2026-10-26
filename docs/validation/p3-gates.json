@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-26",
+  "branch": "feature/wega-v8-spike",
+  "base_commit": "c2bff46c09bebe5210000fafe5795c61a7d4091d",
+  "platform": "macOS arm64",
+  "fresh_target": "/tmp/wega-p3-target",
+  "rust_tests": {
+    "v8": 38,
+    "quickjs": 28,
+    "failed": 0,
+    "framework_fixtures_per_backend": 6,
+    "ignored_framework_fixtures": 0
+  },
+  "wpt": {
+    "revision": "68d964a5f292bc4b2c2eba2f21e2b916190b6ad2",
+    "passed": 31,
+    "total": 31,
+    "upstream_hashes_verified": true,
+    "windows_git_conversion_regression": "pass"
+  },
+  "p0_mutations": {
+    "detected": 10,
+    "total": 10,
+    "sources_restored": true
+  },
+  "strict_clippy": {
+    "v8": "pass",
+    "quickjs": "pass",
+    "desktop": "pass"
+  },
+  "formatting": "pass",
+  "actionlint": "pass",
+  "native_engine": {
+    "exit_code": 0,
+    "seconds": 23.28,
+    "extension_build_sources_readable": false,
+    "unicode_ime": "pass"
+  },
+  "debug_worker_bytes": 223386224,
+  "vendor_integrity": "exact documented patch only",
+  "ci_failures_addressed": {
+    "40223332478": [
+      "desktop Clippy",
+      "packaged Linux extension source paths"
+    ],
+    "40223332474": [
+      "engine Clippy",
+      "Windows WPT newline conversion"
+    ]
+  },
+  "remote_ci_after_fix": "pending push and rerun",
+  "full_docker_and_windows_local_rerun": false,
+  "whole_project_coverage_claim": false
+}

@@ -1,6 +1,6 @@
 # V8 engine plan: from QuickJS shim to a real-site engine
 
-Status: **P0–P2 implemented and locally validated; P3 in progress.** Written on 25 October 2026 after a
+Status: **P0–P3 implemented and locally validated; CI fixes ready for a remote rerun.** Written on 25 October 2026 after a
 successful spike. This document is the handover for whoever implements it, person or
 AI agent. Read it top to bottom before changing code. The background design is in
 [engine-strategy.md](engine-strategy.md), and the decision is recorded in
@@ -96,9 +96,10 @@ announcement, with monthly fixes until then. Our risks:
 
 Mitigation, already in place:
 
-- **In-repo:** `engines/vendor/deno/` holds the unmodified sources of `deno_core`
+- **In-repo:** `engines/vendor/deno/` holds the pinned published sources of `deno_core`
   0.413.0, `deno_ops` 0.289.0, `serde_v8` 0.322.0 and `deno_v8` 0.5.0, with Deno's MIT
-  license. The spike uses them through `[patch.crates-io]`. P1 moves that patch into
+  license. A documented embedding patch to deno_core is required by workers
+  without startup snapshots; see `engines/vendor/README.md`. The spike uses them through `[patch.crates-io]`. P1 moves that patch into
   `engines/Cargo.toml`.
 - **Local mirror** (outside git, ~2 GB): `/Users/noufalbabu/dev/personal/wega-mirrors/`.
   It contains full git mirrors of `denoland/deno`, `denoland/rusty_v8` and Deno's helper
@@ -111,7 +112,8 @@ Mitigation, already in place:
 Automated by `.github/workflows/v8-engine.yml`, which is separate from CI/CD:
 
 - **CI** (pull requests touching `engines/v8-spike`, `engines/vendor` or this document):
-  the vendored Deno sources must be byte-identical to crates.io, and the spike must pass
+  the vendored Deno sources must match crates.io plus the documented embedding patch,
+  and the spike must pass
   fmt and clippy, build and run with V8 and QuickJS on Linux, macOS and Windows. The
   `V8 Engine Gate` job summarizes the results.
 - **CD** (push to `main`, weekly on Mondays, manual): every prebuilt V8 file pinned in
@@ -368,3 +370,47 @@ cloning, tree mutations, namespaces and live collections) before the remaining P
 framework gate. Deno's current crates use a concrete PermissionsContainer; Wega's
 descriptor adapter checks the live NetworkPolicy on every URL, without a global
 network grant. Deno's optional telemetry state is explicitly disabled.
+
+
+P3 and CI follow-up — 26 October 2026:
+
+- Fresh `/tmp/wega-p3-target` dependency builds, then final source validation:
+  **38 V8 tests and 28 QuickJS tests pass**, including all six framework fixtures
+  without ignore flags. The pinned WPT subset passes **31/31 (100%)** on both
+  backends. Its original checksums and mechanical extraction are verified by the
+  runner; the test count is a ratchet, not a claim about all of WPT.
+- DOM wrappers use Blitz's single tree, native Stylo computed values and CSSOM
+  box/scroll metrics. Capture/bubble/inline events, mutation/frame observers,
+  history, keyboard/IME editing and cancellation have public-View regressions.
+  A forced-GC test creates/removes 480 listener-bearing nodes under a 256-node
+  budget while preserving a separately held detached wrapper.
+- Real HTTP tests cover static module graphs, dynamic import, top-level await,
+  live network policy, shared resource/fetch/document cookies, HttpOnly protection,
+  path/domain rules, redirect cookies, credential omission and profile persistence.
+- Strict Clippy passes for V8, QuickJS and the desktop browser. Formatting,
+  workflow lint, installer tests and V8 checksum-fallback tests pass. All **10 P0
+  mutations** are detected; original sources are restored and retested.
+- Native engine suite: **23.28 s, exit 0**, with access to registry sources and
+  Wega/Deno extension source directories denied by the macOS sandbox. It verifies
+  actual rendering, native click/Unicode IME input, switching, freezing and
+  discard/reload. Current macOS arm64 debug worker: **223,386,224 bytes**.
+  This is a packaging regression check, not a new process-RSS benchmark.
+
+The pushed run `40223332478` failed strict browser Clippy and the Linux Wega
+benchmark; `40223332474` failed engine Clippy and Windows WPT checksums. The fixes
+collapse the flagged conditionals, pin WPT checkout bytes to LF, and embed eager
+and lazy extension JavaScript. Deno 0.413's default macros otherwise retain
+absolute build-machine paths, causing packaged workers to show "No such file or
+directory". The documented vendor patch is applied to a pristine crates.io copy
+before CI compares every source file. A regression asserts that all extension
+sources are runtime-loadable without a build tree; a separate test simulates
+Windows Git CRLF conversion while checking the original WPT hashes.
+
+Remote CI must rerun after the follow-up is pushed. The complete Docker image and
+Windows runtime were not rerun locally. No whole-project line-coverage percentage
+is claimed; completeness/coverage reports remain subject to `coverage-policy.json`.
+P4–P6 remain pending. Broad DOM/Web API conformance, full forms/FormData integration,
+CORS/CSP completeness, cross-worker live cookie synchronization, observer edge cases,
+media and representative-site/RSS validation still need work. Classic scripts are
+queued while a static module graph loads. Keep Servo as the everyday default.
+Machine-readable local evidence: `docs/validation/p3-gates.json`.

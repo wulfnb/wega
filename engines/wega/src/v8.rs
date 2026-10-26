@@ -176,6 +176,24 @@ impl V8Host {
         // Do not enable lite mode per isolate: V8 flags are process-wide. Workers receive
         // their per-view option before initializing the platform.
         let document_url = dom.document.borrow().url().clone();
+        let mut extensions = crate::web::extensions(&dom);
+        extensions.push(wega_dom::init(dom.clone()));
+        for extension in &extensions {
+            for source in extension
+                .js_files
+                .iter()
+                .chain(extension.esm_files.iter())
+                .chain(extension.lazy_loaded_js_files.iter())
+                .chain(extension.lazy_loaded_esm_files.iter())
+            {
+                if !source.is_runtime_loadable() {
+                    return Err(format!(
+                        "Extension {} must be embedded in the worker binary",
+                        source.specifier
+                    ));
+                }
+            }
+        }
         let mut runtime = JsRuntime::try_new(RuntimeOptions {
             module_loader: Some(Rc::new(crate::module_loader::Loader::new(
                 dom.network.clone(),
@@ -187,11 +205,7 @@ impl V8Host {
                 deno_core::v8::CreateParams::default()
                     .heap_limits(0, limits.js_heap_bytes.saturating_add(32 * 1024 * 1024)),
             ),
-            extensions: {
-                let mut extensions = crate::web::extensions(&dom);
-                extensions.push(wega_dom::init(dom.clone()));
-                extensions
-            },
+            extensions,
             ..Default::default()
         })
         .map_err(|e| e.to_string())?;
@@ -586,11 +600,25 @@ impl ScriptHost for V8Host {
     }
     fn freeze(&mut self, frozen: bool) {
         self.frozen = frozen;
-        if frozen {
-            if let Some(runtime) = &mut self.runtime {
-                let _entered = self.executor.enter();
-                runtime.v8_isolate().low_memory_notification();
-            }
+        if frozen && let Some(runtime) = &mut self.runtime {
+            let _entered = self.executor.enter();
+            runtime.v8_isolate().low_memory_notification();
+        }
+    }
+}
+
+#[cfg(test)]
+mod packaging_tests {
+    #[test]
+    fn eager_and_lazy_sources_are_embedded_without_a_build_tree() {
+        let eager = deno_core::include_js_files!(wega_dom dir "src/dom", "bindings.js");
+        let lazy = deno_core::include_lazy_loaded_js_files!(wega_dom dir "src/dom", "web.js");
+        for source in eager.iter().chain(lazy.iter()) {
+            assert!(
+                source.is_runtime_loadable(),
+                "{} requires a build-machine path",
+                source.specifier
+            );
         }
     }
 }

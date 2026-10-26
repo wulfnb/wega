@@ -43,5 +43,10 @@
     "mutation": "fatal-teardown",
     "test": "deadline_remains_fatal_and_a_new_document_recovers",
     "detected": true
+  },
+  {
+    "mutation": "heap-and-stack-classification",
+    "test": "heap_and_stack_exhaustion_remain_fatal",
+    "detected": true
   }
 ]

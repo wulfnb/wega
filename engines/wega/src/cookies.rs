@@ -23,19 +23,15 @@ impl Cookies {
             .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Ok(file) = std::fs::File::open(directory.join("cookies.json")) {
-            if file.metadata().is_ok_and(|m| m.len() <= 4 * 1024 * 1024) {
-                if let Ok(store) = cookie_store::serde::json::load(std::io::BufReader::new(file)) {
-                    if store.iter_unexpired().count() <= 512 {
-                        state.store = store.with_suffix_list(
-                            publicsuffix::List::from_bytes(include_bytes!(
-                                "public_suffix_list.dat"
-                            ))
-                            .expect("pinned suffix list"),
-                        );
-                    }
-                }
-            }
+        if let Ok(file) = std::fs::File::open(directory.join("cookies.json"))
+            && file.metadata().is_ok_and(|m| m.len() <= 4 * 1024 * 1024)
+            && let Ok(store) = cookie_store::serde::json::load(std::io::BufReader::new(file))
+            && store.iter_unexpired().count() <= 512
+        {
+            state.store = store.with_suffix_list(
+                publicsuffix::List::from_bytes(include_bytes!("public_suffix_list.dat"))
+                    .expect("pinned suffix list"),
+            );
         }
         state.directory = Some(directory);
     }
@@ -97,14 +93,14 @@ impl Cookies {
         if state.store.insert(cookie, url).is_err() {
             return;
         }
-        if let Some(directory) = &state.directory {
-            if std::fs::create_dir_all(directory).is_ok() {
-                let temporary = directory.join(format!("cookies-{}.tmp", std::process::id()));
-                if let Ok(mut file) = std::fs::File::create(&temporary) {
-                    if cookie_store::serde::json::save(&state.store, &mut file).is_ok() {
-                        let _ = std::fs::rename(&temporary, directory.join("cookies.json"));
-                    }
-                }
+        if let Some(directory) = &state.directory
+            && std::fs::create_dir_all(directory).is_ok()
+        {
+            let temporary = directory.join(format!("cookies-{}.tmp", std::process::id()));
+            if let Ok(mut file) = std::fs::File::create(&temporary)
+                && cookie_store::serde::json::save(&state.store, &mut file).is_ok()
+            {
+                let _ = std::fs::rename(&temporary, directory.join("cookies.json"));
             }
         }
     }

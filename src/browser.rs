@@ -1814,10 +1814,10 @@ impl Browser {
             }
             if self.chrome.page_focused && !self.modal() {
                 if self.is_wega() {
-                    if let Some(page) = self.tab().wega.as_ref() {
-                        if let Err(error) = page.keyboard(event, self.chrome.modifiers.state()) {
-                            self.status = Some(error);
-                        }
+                    if let Some(page) = self.tab().wega.as_ref()
+                        && let Err(error) = page.keyboard(event, self.chrome.modifiers.state())
+                    {
+                        self.status = Some(error);
                     }
                 } else {
                     input::keyboard(self.view(), event, self.chrome.modifiers);
@@ -1826,16 +1826,18 @@ impl Browser {
                 return;
             }
         }
-        if let WindowEvent::Ime(ime) = &event {
-            if self.is_wega() && self.chrome.page_focused && !self.modal() {
-                if let Some(page) = self.tab().wega.as_ref() {
-                    if let Err(error) = page.ime(ime) {
-                        self.status = Some(error);
-                    }
-                }
-                self.pump();
-                return;
+        if let WindowEvent::Ime(ime) = &event
+            && self.is_wega()
+            && self.chrome.page_focused
+            && !self.modal()
+        {
+            if let Some(page) = self.tab().wega.as_ref()
+                && let Err(error) = page.ime(ime)
+            {
+                self.status = Some(error);
             }
+            self.pump();
+            return;
         }
         let response = self
             .gui

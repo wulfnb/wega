@@ -1,7 +1,7 @@
 name: V8 Engine (Deno)
 
 # Separate from CI/CD: guards the V8 migration (docs/v8-engine-plan.md).
-# CI  - vendored Deno sources are unmodified, the V8 spike builds and runs on all platforms.
+# CI  - pinned Deno sources plus the documented embedding patch build on every platform.
 # CD  - the pinned prebuilt V8 libraries are still published upstream, and a verified copy
 #       is kept as this repository's pre-release (Deno development ends ~October 2027).
 on:
@@ -40,7 +40,7 @@ env:
 
 jobs:
   vendor-integrity:
-    name: Vendored Deno sources are unmodified
+    name: Vendored Deno sources match pinned releases and embedding patch
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - name: Compare with the crates.io releases
+      - name: Compare with the crates.io releases and documented embedding patch
         run: |
           set -eu
           scratch="$RUNNER_TEMP/crates"
@@ -58,6 +58,9 @@ jobs:
             name=${spec%@*}; version=${spec#*@}
             test -s "engines/vendor/deno/$name/LICENSE.md"
             curl -fsSL --retry 3 "https://static.crates.io/crates/$name/$name-$version.crate" | tar -xz -C "$scratch"
+            if [ "$name" = deno_core ]; then
+              patch --batch --forward -d "$scratch/$name-$version" -p1 < "$GITHUB_WORKSPACE/engines/vendor/deno/patches/embed-extension-sources.patch"
+            fi
             if ! diff -r -x LICENSE.md "$scratch/$name-$version" "engines/vendor/deno/$name"; then
               echo "::error::engines/vendor/deno/$name differs from crates.io $name $version; document the change in engines/vendor/README.md"
               exit 1

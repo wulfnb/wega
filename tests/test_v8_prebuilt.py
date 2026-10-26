@@ -3,6 +3,9 @@ import hashlib
 import html
 import importlib.util
 import io
+import json
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,6 +19,24 @@ spec.loader.exec_module(helper)
 
 
 class MirrorTests(unittest.TestCase):
+    def test_pinned_wpt_bytes_survive_windows_checkout_conversion(self):
+        relative=Path('engines/wega/tests/fixtures/wpt')
+        upstream=json.loads((ROOT/relative/'UPSTREAM.json').read_text())
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout=Path(temporary)/'repository'
+            checkout.mkdir()
+            shutil.copy2(ROOT/'.gitattributes',checkout/'.gitattributes')
+            shutil.copytree(ROOT/relative,checkout/relative)
+            (checkout/'control.txt').write_bytes(b'first\nsecond\n')
+            subprocess.run(['git','init','--quiet',str(checkout)],check=True)
+            subprocess.run(['git','-C',str(checkout),'config','core.autocrlf','true'],check=True)
+            subprocess.run(['git','-C',str(checkout),'add','.'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            output=Path(temporary)/'converted'
+            subprocess.run(['git','-C',str(checkout),'checkout-index','--all',f'--prefix={output.as_posix()}/'],check=True)
+            self.assertIn(b'\r\n',(output/'control.txt').read_bytes())
+            for name,expected in upstream['files'].items():
+                self.assertEqual(hashlib.sha256((output/relative/name).read_bytes()).hexdigest(),expected,name)
+
     def test_binary_engine_license_is_in_distribution_template(self):
         license_text=(ROOT/'engines/vendor/v8-notices/LICENSE').read_text()
         self.assertIn(html.escape(license_text),(ROOT/'about.hbs').read_text())

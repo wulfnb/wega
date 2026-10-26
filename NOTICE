@@ -43,7 +43,7 @@ Deno Web APIs (MIT)
 The engine uses deno_webidl, deno_web, deno_fetch, deno_net, deno_tls,
 deno_webstorage, deno_websocket and deno_crypto. Wega's runtime source adapter
 adds the HTML Document-to-Window event parent rule to Deno's EventTarget. The
-original dependency source files remain unmodified; the adapter is in
+event/fetch dependency source files remain unmodified; the adapter is in
 engines/wega/src/web.rs and retains the original MIT source headers. Runtime
 telemetry collection/export is disabled.
 
@@ -57,3 +57,8 @@ Wega cookie storage uses cookie_store (MIT/Apache-2.0) and publicsuffix
 Public Suffix List snapshot bundled in publicsuffix 2.3.0; its header is retained.
 Deno fetch's pinned source is adapted at extension load to attach browser cookies
 and ingest Set-Cookie on every redirect hop. Original MIT sources are unchanged.
+
+Deno core extension embedding
+Modified by Wega contributors, 2026: engines/vendor/deno/patches/
+embed-extension-sources.patch embeds eager and lazy extension JavaScript into
+non-snapshot workers. The original MIT license is retained.
