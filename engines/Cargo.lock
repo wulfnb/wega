@@ -6288,6 +6288,7 @@ dependencies = [
  "deno_webidl",
  "deno_websocket",
  "deno_webstorage",
+ "encoding_rs",
  "html5ever",
  "keyboard-types",
  "publicsuffix",

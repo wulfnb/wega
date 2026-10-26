@@ -99,7 +99,7 @@ fn deadline_remains_fatal_and_a_new_document_recovers() {
 #[test]
 fn heap_and_stack_exhaustion_remain_fatal() {
     for source in [
-        "globalThis.leak=new Array(12000000).fill(7)",
+        "globalThis.leak=new Array(40000000).fill(0.5)",
         "function recurse(){return recurse()}recurse()",
     ] {
         let mut view = page("<title>bounded</title>");

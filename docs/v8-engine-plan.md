@@ -459,3 +459,47 @@ clean-dependency build or a Windows runtime rerun.
 For baseline commit `a5ac41f`, main CI run `40288197021` passed all jobs, and the
 Windows job in V8 run `40288197041` passed V8 contracts before failing QuickJS
 contracts. The removal itself still needs a push and remote rerun.
+
+Web correctness — 26 October 2026:
+
+The review of the engine against a full browser found nine defects and a set of
+missing browser rules. This change fixes them; what remains is listed in
+[wega-compatibility-roadmap.md](wega-compatibility-roadmap.md).
+
+- **Security:** CORS for fetch/XHR (Origin, preflight, Allow-Origin/Credentials,
+  opaque and filtered responses, request and credentials modes), SameSite cookies on
+  every hop (the reqwest cookie provider is replaced by explicit per-request cookies
+  so the site context is known), WebSocket Origin and cookies, CSP (`script-src` with
+  nonces/hashes/`'strict-dynamic'`/`'unsafe-eval'`, `connect-src`, subresource
+  directives), mixed-content blocking and Referrer-Policy. Redirects are followed by
+  Wega, re-checking policy, mixed content and cookies at each hop.
+- **Scripts:** an incremental parser (`parser.rs`, a per-operation tree sink over
+  Blitz's DOM) pauses at every `</script>`; a scheduler runs parser-blocking, deferred,
+  ordered and async scripts; script-inserted scripts, `document.write`,
+  `currentScript`, script `load`/`error`, and `load` waiting for subresources follow
+  HTML. Inserted inline scripts run synchronously through `core.evalContext`, so they
+  are real classic scripts even when CSP disables eval. Script responses may use the
+  8 MiB resource limit; the 64-script cap is gone (1,024 with a notice).
+- **Limits:** one watchdog thread per isolate (it used to be one thread per script
+  call); a soft 100 ms slow-script notice and a 5 s fatal deadline instead of a fatal
+  100 ms; a 128 MiB default heap. DOM text and node budgets are credited when content
+  is replaced or collected, and the bindings no longer pin replaced children unless a
+  MutationObserver needs them.
+- **Forms, documents, history, input:** see
+  [engine-strategy.md](engine-strategy.md#what-the-first-worker-actually-supports).
+  The worker protocol is version 3 (pointer, traverse, dialog, download, popup and
+  cursor messages; in-document history in `State`).
+- **Event dispatch fix:** Deno's EventTarget returned early when the target itself had
+  no listener, so events never reached ancestors or the window (breaking event
+  delegation). The pinned `02_event.js` adapter keeps the full path for DOM nodes,
+  and nodes get listener data when they are wrapped.
+
+Local validation (macOS ARM64): **82 engine tests** pass (12 unit, 1 protocol,
+6 framework fixtures, 31-case DOM WPT subset, and new suites `security`, `scripts`,
+`forms`, `documents`, `history`, `input` against real local HTTP servers, two origins
+and two sites); strict engine and desktop Clippy, rustfmt, 84 + 34 + 2 desktop unit
+tests, and the native `engine` suite (real browser and worker round trip) pass.
+`scripts/engine-web-mutations.py` breaks each new rule in turn and requires exactly
+its test to fail. The full run is not finished yet: 23 of 42 were confirmed detected before one survivor (`submit-event-is-cancelable`) was found and its test fixed; the remaining 18 still need a run (`python3 scripts/engine-web-mutations.py`).
+Not run locally: `cargo llvm-cov` coverage (not installed here), Docker, Linux and
+Windows runtimes. Real-site compatibility is not certified; Servo stays the default.
