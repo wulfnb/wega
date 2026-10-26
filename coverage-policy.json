@@ -39,6 +39,7 @@
     "engines/wega/tests/*.rs",
     "engines/v8-spike/**",
     "scripts/engine-p0-mutations.py",
+    "scripts/engine-web-mutations.py",
     "engines/wega/tests/fixtures/**"
   ],
   "declaration_only": [
