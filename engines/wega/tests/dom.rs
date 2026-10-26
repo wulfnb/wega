@@ -1,4 +1,4 @@
-//! DOM integration against the public View: both VM hosts exercise the same native tree.
+//! DOM integration against the public View: the V8 host exercises the native tree.
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::{sync::Arc, time::Duration};
 use wega_engine::{
@@ -136,7 +136,6 @@ fn newly_inserted_focused_input_accepts_keyboard_before_paint() {
 fn newly_inserted_focused_input_accepts_ime_before_paint() {
     inserted_input_before_paint(true);
 }
-#[cfg(feature = "v8")]
 #[test]
 fn detached_wrappers_and_listeners_release_the_native_node_budget() {
     let engine = Engine::new(

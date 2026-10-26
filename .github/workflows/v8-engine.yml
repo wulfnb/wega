@@ -138,26 +138,20 @@ jobs:
         run: cargo build --locked --release
       - name: V8 mutates and paints Blitz's DOM
         run: ./target/release/v8-spike v8 | tee "$RUNNER_TEMP/v8.txt"
-      - name: QuickJS baseline
-        run: ./target/release/v8-spike quickjs | tee "$RUNNER_TEMP/quickjs.txt"
       - name: Real engine V8 contracts
         working-directory: .
-        run: cargo test --locked --manifest-path engines/Cargo.toml --no-default-features --features v8 --target-dir target/v8-engine
-      - name: Real engine QuickJS contracts
-        working-directory: .
-        run: cargo test --locked --manifest-path engines/Cargo.toml --no-default-features --features quickjs --target-dir target/v8-engine
+        run: cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/v8-engine
       - name: Real engine formatting and lints
         working-directory: .
         run: |
           cargo fmt --manifest-path engines/Cargo.toml --check
-          cargo clippy --locked --manifest-path engines/Cargo.toml --all-targets --no-default-features --features v8 --target-dir target/v8-engine -- -D warnings
-          cargo clippy --locked --manifest-path engines/Cargo.toml --all-targets --no-default-features --features quickjs --target-dir target/v8-engine -- -D warnings
+          cargo clippy --locked --manifest-path engines/Cargo.toml --all-targets --target-dir target/v8-engine -- -D warnings
       - name: Report
         run: |
           {
             echo "### V8 spike on ${{ runner.os }}"
             echo '```'
-            cat "$RUNNER_TEMP/v8.txt" "$RUNNER_TEMP/quickjs.txt"
+            cat "$RUNNER_TEMP/v8.txt"
             du -h target/release/v8-spike target/release/v8-spike.exe 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

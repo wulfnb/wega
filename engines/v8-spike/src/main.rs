@@ -1,5 +1,5 @@
 //! Spike: does V8 (via deno_core) link and run against Blitz's DOM in one binary?
-//! Usage: `v8-spike v8` or `v8-spike quickjs` — run each in its own process so RSS is comparable.
+//! Usage: `v8-spike [v8]` — runs V8 in its own process for RSS measurements.
 use anyrender::ImageRenderer;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::{BaseDocument, DocumentConfig, NodeId};
@@ -12,7 +12,7 @@ type Doc = Rc<RefCell<BaseDocument>>;
 
 const PAGE: &str = r#"<!doctype html><title>Spike</title><style>body{margin:0}button{border:0;background:#00ff00;width:180px;height:80px}</style><button id="b">0</button>"#;
 
-// The same DOM wrapper for both VMs: only `__host(op, a, b)` differs.
+// Minimal DOM wrapper used by the standalone V8 probe.
 const SCRIPT: &str = r#"
 const document = { querySelector: s => { const id = __host('query', s, ''); return id === '' ? null : {
   get textContent() { return __host('text', id, ''); },
@@ -95,21 +95,6 @@ fn run_v8(doc: Doc) -> String {
     REPORT.with(|r| r.borrow().clone())
 }
 
-fn run_quickjs(doc: Doc) -> String {
-    let runtime = rquickjs::Runtime::new().unwrap();
-    let context = rquickjs::Context::full(&runtime).unwrap();
-    context.with(|ctx| {
-        let f = rquickjs::Function::new(ctx.clone(), move |o: String, a: String, b: String| {
-            host(&doc, &o, &a, &b)
-        })
-        .unwrap();
-        ctx.globals().set("__host", f).unwrap();
-        ctx.eval::<(), _>(SCRIPT.replace("'V8 works'", "'QuickJS works'"))
-            .expect("QuickJS script failed")
-    });
-    REPORT.with(|r| r.borrow().clone())
-}
-
 #[cfg(not(unix))]
 fn peak_rss_mb() -> f64 {
     f64::NAN // Not measured on Windows; the spike only checks linking and behaviour there.
@@ -142,7 +127,6 @@ fn main() {
     let t = Instant::now();
     let report = match engine.as_str() {
         "v8" => run_v8(doc.clone()),
-        "quickjs" => run_quickjs(doc.clone()),
         other => panic!("unknown engine {other}"),
     };
     println!(

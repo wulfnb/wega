@@ -1,4 +1,3 @@
-#![cfg(feature = "v8")]
 use std::{
     io::{Read, Write},
     net::TcpListener,

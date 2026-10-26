@@ -7,22 +7,16 @@ license = "MPL-2.0"
 publish = false
 description = "Wega's experimental Blitz-based page engine"
 
-[features]
-default = ["v8"]
-v8 = ["dep:deno_core", "dep:deno_error", "dep:tokio", "dep:deno_webidl", "dep:deno_web", "dep:deno_fetch", "dep:deno_net", "dep:deno_tls", "dep:deno_websocket", "dep:deno_webstorage", "dep:deno_crypto", "dep:deno_permissions", "dep:sys_traits", "dep:sha2"]
-quickjs = ["dep:rquickjs"]
-
 [dependencies]
-deno_core = {version="=0.413.0",optional=true}
-deno_error = {version="=0.7.1",optional=true}
-tokio = {version="1",features=["rt","time","net"],optional=true}
+deno_core = "=0.413.0"
+deno_error = "=0.7.1"
+tokio = {version="1",features=["rt","time","net"]}
 blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars"] }
 blitz-html = "=0.3.0-beta.4"
 blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
 blitz-traits = "=0.3.0-beta.4"
 anyrender = "=0.14.0"
 anyrender_vello_cpu = { version = "=0.18.0", default-features = false }
-rquickjs = {version="=0.14.0",optional=true}
 html5ever = "0.40.1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip", "brotli", "cookies"] }
 serde_json = "1"
@@ -30,19 +24,19 @@ serde = { version = "1", features = ["derive"] }
 url = "2.5"
 data-url = "0.3"
 
-deno_webidl = {version="=0.260.0",optional=true}
-deno_web = {version="=0.291.0",optional=true}
-deno_fetch = {version="=0.284.0",optional=true}
-deno_websocket = {version="=0.265.0",optional=true}
-deno_webstorage = {version="=0.255.0",optional=true}
-deno_crypto = {version="=0.274.0",optional=true}
-deno_permissions = {version="=0.119.0",optional=true}
-sys_traits = {version="=0.1.29",features=["real","libc","winapi"],optional=true}
-sha2 = {version="0.10",optional=true}
+deno_webidl = "=0.260.0"
+deno_web = "=0.291.0"
+deno_fetch = "=0.284.0"
+deno_websocket = "=0.265.0"
+deno_webstorage = "=0.255.0"
+deno_crypto = "=0.274.0"
+deno_permissions = "=0.119.0"
+sys_traits = {version="=0.1.29",features=["real","libc","winapi"]}
+sha2 = "0.10"
 
-deno_net = {version="=0.252.0",optional=true}
+deno_net = "=0.252.0"
 
-deno_tls = {version="=0.247.0",optional=true}
+deno_tls = "=0.247.0"
 
 style = {package="stylo",version="=0.22.0"}
 
@@ -53,6 +47,3 @@ style_traits = {package="stylo_traits",version="=0.22.0"}
 cookie_store = "=0.22.1"
 publicsuffix = "=2.3.0"
 keyboard-types = "=0.8.3"
-
-[dev-dependencies]
-sha2 = "0.10"

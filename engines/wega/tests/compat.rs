@@ -1,4 +1,4 @@
-//! Offline acceptance list shared by the QuickJS and V8 hosts.
+//! Offline acceptance list for the V8 host.
 use std::{
     sync::Arc,
     time::{Duration, Instant},

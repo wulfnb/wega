@@ -76,3 +76,13 @@ Cloudflare's acquisition of Deno ends upstream development in about 12 months, s
 deno_core sources are vendored in `engines/vendor/deno/` and the V8 prebuilt libraries,
 crate sources and git history are mirrored locally; an offline build was verified.
 See [V8 engine plan](v8-engine-plan.md).
+
+## 26 October 2026: V8 is the only Wega JavaScript runtime
+
+Remove QuickJS from the engine and standalone spike, their dependency graphs,
+CI baseline/contracts and feature selection. The owner chose V8-only maintenance
+after the optional QuickJS Windows Angular fixture hit its native stack limit.
+V8 is now mandatory, including builds with default features disabled. Keep the
+framework fixtures, limits, error-isolation contracts and mutation proofs running
+against V8. Old benchmark records remain historical evidence. This decision does
+not change Servo's separate role or make Wega the default browser engine.

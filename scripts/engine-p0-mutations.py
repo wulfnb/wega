@@ -51,22 +51,14 @@ def main():
     '            throw error;\n'
     '          }')],
   'one_listener_exception_does_not_block_other_listeners'),
+ # V8 isolates at both the callback and native poll-error boundary.
  ('timer-isolation',
-  [('engines/wega/src/dom/bindings.js',
-    '          try {\n'
-    '            typeof timer.fn === "function"\n'
-    '              ? timer.fn(...timer.args)\n'
-    '              : (0, eval)(String(timer.fn));\n'
-    '          } catch (error) {\n'
-    '            report(error);\n'
-    '          }',
-    '          try {\n'
-    '            typeof timer.fn === "function"\n'
-    '              ? timer.fn(...timer.args)\n'
-    '              : (0, eval)(String(timer.fn));\n'
-    '          } catch (error) {\n'
-    '            throw error;\n'
-    '          }')],
+  [('engines/wega/src/dom/web.js',
+    '        __wega_report(error);',
+    '        throw error;'),
+   ('engines/wega/src/v8.rs',
+    'fatal: self.oom.load(Ordering::Relaxed) || timed_out.load(Ordering::Relaxed),',
+    'fatal: true,')],
   'one_timer_exception_does_not_block_other_timers'),
  ('missing-api-tracker',
   [('engines/wega/src/dom/bindings.js',
@@ -80,37 +72,26 @@ def main():
   'missing_api_names_source_and_keeps_the_next_script_alive'),
  ('window-onerror',
   [('engines/wega/src/dom/bindings.js',
-    'entry.handler.call(\n'
-    '                    this,\n'
-    '                    event.message,\n'
-    '                    "",\n'
-    '                    0,\n'
-    '                    0,\n'
-    '                    event.error,\n'
-    '                  )',
-    'undefined')],
+    '      web.event.defineEventHandler(',
+    '      if (name !== "error" || target !== globalThis) web.event.defineEventHandler(')],
   'script_errors_fire_onerror_and_error_event'),
  ('error-event',
   [('engines/wega/src/dom/bindings.js', 'globalThis.dispatchEvent(event);', 'void 0;')],
   'script_errors_fire_onerror_and_error_event'),
  ('evaluation-diagnostics',
-  [('engines/wega/src/quickjs.rs',
-    'self.error(&ctx, e, "evaluate_json")',
-    'ScriptError { fatal:false, message:e.to_string() }')],
+  [('engines/wega/src/v8.rs',
+    'message: format!("{name}: {text}"),',
+    'message: format!("{name}: JavaScript exception"),')],
   'evaluate_json_preserves_exception_text'),
  ('fatal-teardown',
   [('engines/wega/src/view.rs', 'if error.fatal {', 'if false {')],
   'deadline_remains_fatal_and_a_new_document_recovers'),
  ('heap-and-stack-classification',
-  [('engines/wega/src/quickjs.rs',
-    'ScriptError {\n'
-    '            fatal,\n'
-    '            message: format!("{source}: {message}"),\n'
-    '        }',
-    'ScriptError {\n'
-    '            fatal:false,\n'
-    '            message: format!("{source}: {message}"),\n'
-    '        }')],
+  [('engines/wega/src/v8.rs',
+    'let fatal = timed_out.load(Ordering::Relaxed)\n'
+    '                    || self.oom.load(Ordering::Relaxed)\n'
+    '                    || text.contains("Maximum call stack size exceeded");',
+    'let fatal = false;')],
   'heap_and_stack_exhaustion_remain_fatal')]
     results=[]
     for name,patches,test in mutations:
@@ -120,7 +101,7 @@ def main():
                 path=ROOT/relative;source=path.read_text()
                 if before not in source:raise RuntimeError(f'{name}: mutation anchor missing')
                 path.write_text(source.replace(before,after,1))
-            run=subprocess.run(['cargo','test','--locked','--manifest-path',str(ROOT/'engines/Cargo.toml'),'--target-dir',args.target_dir,'--jobs','2','--no-default-features','--features','quickjs','--test','errors',test,'--','--exact'],cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+            run=subprocess.run(['cargo','test','--locked','--manifest-path',str(ROOT/'engines/Cargo.toml'),'--target-dir',args.target_dir,'--jobs','2','--test','errors',test,'--','--exact'],cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
             detected=run.returncode!=0 and f'test {test} ... FAILED' in run.stdout and '1 failed' in run.stdout
             results.append({'mutation':name,'test':test,'detected':detected})
             print(f'{name}: {"DETECTED" if detected else "FAILED TO PROVE"}',flush=True)
@@ -130,6 +111,6 @@ def main():
     output=Path(args.output);output.parent.mkdir(parents=True,exist_ok=True)
     output.write_text(json.dumps(results,indent=2)+'\n')
     # Rebuild original sources after the final mutation; mutant artifacts are never used for a gate.
-    subprocess.run(['cargo','test','--locked','--manifest-path',str(ROOT/'engines/Cargo.toml'),'--target-dir',args.target_dir,'--jobs','2','--no-default-features','--features','quickjs'],cwd=ROOT,check=True)
+    subprocess.run(['cargo','test','--locked','--manifest-path',str(ROOT/'engines/Cargo.toml'),'--target-dir',args.target_dir,'--jobs','2'],cwd=ROOT,check=True)
 
 if __name__=='__main__':main()

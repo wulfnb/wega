@@ -13,7 +13,7 @@ enum Work {
 }
 
 fn main() {
-    // Keep enough native stack headroom on Windows for either bounded VM.
+    // Keep enough native stack headroom on Windows for the bounded V8 host.
     let result = std::thread::Builder::new()
         .name("wega-dom".into())
         .stack_size(8 * 1024 * 1024)
@@ -30,7 +30,6 @@ fn main() {
     }
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(feature = "v8")]
     if std::env::args().any(|arg| arg == "--lite") {
         deno_core::v8_set_flags(vec![String::new(), "--lite-mode".into()]);
     }

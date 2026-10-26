@@ -6,19 +6,12 @@ pub use url::Url;
 
 mod cookies;
 mod dom;
-#[cfg(feature = "v8")]
 mod module_loader;
 mod network;
-#[cfg(feature = "quickjs")]
-mod quickjs;
 mod script;
-#[cfg(feature = "v8")]
 mod v8;
-#[cfg(feature = "v8")]
-mod web;
-#[cfg(not(any(feature = "v8", feature = "quickjs")))]
-compile_error!("Enable the v8 or quickjs engine feature");
 mod view;
+mod web;
 pub use network::NetworkPolicy;
 pub use view::{Frame, View};
 

@@ -121,8 +121,8 @@ worker, rather than forcing incompatible crates into one process.
 ### What the first worker actually supports
 
 Blitz 0.3.0-beta.4 supplies HTML/CSS, Stylo/Taffy/Parley and Vello CPU painting.
-Wega now uses V8 through deno_core by default in its worker, retaining QuickJS
-behind an optional feature. Both operate on the same Rust DOM through checked
+Wega now uses V8 through deno_core as its only worker JavaScript runtime. QuickJS
+was removed on 26 October 2026. The bindings operate on the Rust DOM through checked
 generational node IDs. The P0–P3 migration adds DOM classes, scoped selectors,
 fragments/namespaces/live collections, native styles/layout, DOM events and
 observers, frame callbacks, history and native keyboard/IME editing. V8 also
@@ -266,7 +266,7 @@ handwritten basic bindings; shared cookies and generated WebIDL are not implemen
 ```text
 Wega chrome ──PageView──▶ WegaView
                            ├─ blitz-dom Document (single DOM: style, layout, events)
-                           ├─ ScriptHost ── rquickjs runtime (one per tab, capped)
+                           ├─ ScriptHost ── V8 isolate (one per tab, capped)
                            ├─ NetProvider ── Wega networking (async, cookies shared)
                            └─ anyrender ── PaintTarget
 ```
@@ -309,8 +309,8 @@ Targets to verify in the spikes, not claims:
 
 Techniques built into the engine:
 
-- **Hard per-tab limits:** one `rquickjs` runtime per tab with
-  `set_memory_limit`, `set_gc_threshold` and an interrupt handler, so a heavy
+- **Hard per-tab limits:** one V8 isolate per tab with
+  a page heap budget, an OOM callback and watchdog termination, so a heavy
   page is stopped and reported instead of taking the container down.
 - **Freeze and discard:** background tabs drop paint surfaces, decoded images
   and layout caches; long-idle tabs are serialized and discarded (extending the
@@ -337,7 +337,7 @@ discarding.
 | 0. Measure | `about:memory`; Servo quick wins above; a reference-site memory benchmark | numbers for 10 reference pages; known split between JS heap, DOM/style/layout, images and surfaces |
 | 1. Boundary | New ADR; `PageEngine`/`PageView` with a Servo adapter; no behaviour change | all native suites pass on the Servo adapter |
 | 2. Static spike | `WegaView` on `blitz-dom` without JS, behind a developer flag | reference article pages render; memory and CPU measured against Servo |
-| 3. JS spike | `ScriptHost` on `rquickjs` and on Boa (from `blitz-vibey-script`); Preact TodoMVC plus 3 real sites | VM chosen on measured memory, speed and conformance |
+| 3. JS runtime | V8 through `deno_core`, with six offline framework fixtures and a DOM WPT subset | V8 selected; compatibility and memory measurements remain separate gates |
 | 4. First release | per-site engine choice, engine badge in the address bar, *Open in full engine*, automatic fallback on unsupported features | the Wega engine is the default for an allowlist of sites |
 | 5. Grow | WebIDL generator, async fetch, XHR, storage, `MutationObserver`; WPT subset in CI; compatibility dashboard | sites move from the allowlist to default-on as tests pass |
 
@@ -350,8 +350,8 @@ Servo for a long time).
 
 - **Web API breadth is the real cost,** not the VM or layout. Without
   prioritization by real sites, the engine stays a demo.
-- **No JIT:** script-heavy sites will be slow; the per-site choice keeps them
-  on Servo.
+- **Script-heavy sites:** V8 supplies a JIT, but DOM/Web API gaps can still
+  require Servo.
 - **Two engines to maintain** until the Wega engine is the default; the
   boundary keeps that cost contained.
 - **Security of a new engine:** parsing and scripting untrusted content. One
@@ -359,21 +359,20 @@ Servo for a long time).
   sandbox is a later phase.
 - **Upstream pace:** Blitz is beta and changes quickly; pin versions and
   upstream fixes.
-- **QuickJS-ng's lower test262 score** (83.5% against Bellard's QuickJS at
-  98.5%) is not explained yet; the JS spike must check it.
 
 ## Licensing
 
-Blitz is `MIT OR Apache-2.0`; Stylo and `stylo_taffy` are MPL-2.0; QuickJS,
-QuickJS-ng, `rquickjs` and Boa are MIT. All are compatible with Wega's MPL-2.0.
+Blitz is `MIT OR Apache-2.0`; Stylo and `stylo_taffy` are MPL-2.0; V8 is
+BSD-3-Clause, and rusty_v8/Deno crates are MIT. These are compatible with Wega's
+MPL-2.0.
 Copied Blitz code keeps its notices; [licensing.md](licensing.md) and the
 third-party notices cover the new dependencies.
 
 ## Open decisions
 
 1. The engine's name and whether it lives in this repository or its own.
-2. QuickJS-ng (memory controls) or Boa (pure Rust, better conformance): decide
-   after the phase 3 spike, or add heap limits to Boa upstream.
+2. JavaScript runtime decision resolved: V8 through deno_core; QuickJS removed
+   on 26 October 2026.
 3. How the per-site engine choice looks to users: automatic, visible badge,
    manual switch.
 4. GPU path for the Wega engine: Skia on the existing GL context, or move the
@@ -403,7 +402,8 @@ live reference-page captures and refreshed release-validation evidence. On its
 fixed article workload Wega uses more summed RSS as tabs increase; these results
 do not justify changing the default engine.
 
-The next step, replacing QuickJS-ng with V8 through deno_core, is planned in
+V8 through deno_core is implemented through P3; QuickJS has been removed.
+Remaining performance, CSS and rollout work is in
 [v8-engine-plan.md](v8-engine-plan.md).
 
 **Use Servo as the default for everyday browsing.** It remains the supported

@@ -3,7 +3,7 @@ name = "v8-spike"
 version = "0.0.0"
 edition = "2024"
 publish = false
-description = "Spike: Blitz DOM + V8 (deno_core) in one Cargo graph, compared with QuickJS"
+description = "Spike: Blitz DOM + V8 (deno_core) in one Cargo graph"
 
 # Standalone so the spike never touches the wega-engine lockfile.
 [workspace]
@@ -15,7 +15,6 @@ blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
 blitz-traits = "=0.3.0-beta.4"
 anyrender = "=0.14.0"
 anyrender_vello_cpu = { version = "=0.18.0", default-features = false }
-rquickjs = "=0.14.0"
 deno_core = "=0.413.0"
 tokio = { version = "1", features = ["rt", "time"] }
 

@@ -1,6 +1,7 @@
 # V8 engine plan: from QuickJS shim to a real-site engine
 
-Status: **P0–P3 implemented and locally validated; CI fixes ready for a remote rerun.** Written on 25 October 2026 after a
+Status: **P0–P3 implemented and locally validated; V8 is now the only runtime.
+QuickJS removal and CI fixes need a remote rerun.** Written on 25 October 2026 after a
 successful spike. This document is the handover for whoever implements it, person or
 AI agent. Read it top to bottom before changing code. The background design is in
 [engine-strategy.md](engine-strategy.md), and the decision is recorded in
@@ -9,19 +10,19 @@ AI agent. Read it top to bottom before changing code. The background design is i
 ## 1. Summary
 
 The Wega engine (`engines/wega`, a Blitz-based worker with one process per tab)
-replaces **QuickJS-ng** with **V8**, embedded through Deno's MIT-licensed `deno_core`
+uses **V8** exclusively, embedded through Deno's MIT-licensed `deno_core`
 crate. Deno's tested Web API crates supply `fetch`, events, timers, streams, URL,
 storage, WebSocket and crypto. Wega writes the DOM bindings onto Blitz's single
 Rust DOM.
 
 Order of work: **P0** safety net (needed whatever the VM) → **P1** V8 inside the
 engine → **P2** Deno Web APIs → **P3** DOM bindings → **P4** speed and RAM → **P5** CSS
-completeness → **P6** rollout. QuickJS stays available behind a cargo feature until V8
-passes every gate up to P3.
+completeness → **P6** rollout. QuickJS was removed on 26 October 2026 by owner
+decision; V8 is mandatory in the engine and standalone spike.
 
 ## 2. Why
 
-**Today's bug.** Real pages fail with
+**Original pre-migration bug (historical).** Real pages failed with
 `JavaScript failed or exceeded its limit: TypeError: not a function`. Two causes:
 
 1. `engines/wega/src/dom.js` is a 52-line hand-written DOM shim. Element-level
@@ -82,7 +83,8 @@ Gotchas found:
   `src_binding_<features>_<profile>_<target>.rs` from the mirror.
 
 Rerun: `cd engines/v8-spike && cargo build --release && ./target/release/v8-spike v8`
-(or `quickjs`; `V8_FLAGS="--lite-mode"` for V8 modes).
+(`V8_FLAGS="--lite-mode"` selects V8 modes). The QuickJS comparison above is
+historical; the current spike runs V8 only.
 
 ## 4. Deno, Cloudflare and our copies
 
@@ -114,7 +116,7 @@ Automated by `.github/workflows/v8-engine.yml`, which is separate from CI/CD:
 - **CI** (pull requests touching `engines/v8-spike`, `engines/vendor` or this document):
   the vendored Deno sources must match crates.io plus the documented embedding patch,
   and the spike must pass
-  fmt and clippy, build and run with V8 and QuickJS on Linux, macOS and Windows. The
+  fmt and clippy, build and run with V8 on Linux, macOS and Windows. The
   `V8 Engine Gate` job summarizes the results.
 - **CD** (push to `main`, weekly on Mondays, manual): every prebuilt V8 file pinned in
   `engines/vendor/deno/V8-PREBUILT-SHA256SUMS` must still download from
@@ -145,8 +147,7 @@ browser UI ──pipe (engine_protocol)──▶ wega-engine worker (one per tab
                                         ├─ blitz-dom BaseDocument   ← the only DOM (style, layout, paint)
                                         ├─ DOM bindings (JS classes) ──fast ops──▶ blitz-dom
                                         ├─ ScriptHost trait
-                                        │    ├─ v8.rs: deno_core JsRuntime (+ deno_web, fetch, …)
-                                        │    └─ quickjs.rs: existing rquickjs code (feature, temporary)
+                                        │    └─ v8.rs: deno_core JsRuntime (+ deno_web, fetch, …)
                                         ├─ event loop: tokio current-thread, driven by main.rs
                                         ├─ network: NetworkPolicy (later a shared broker, P4)
                                         └─ raster: Vello CPU → Skia (P5), own thread (P4)
@@ -188,8 +189,8 @@ Tasks:
    - `engines/wega/tests/compat.rs` with `engines/wega/tests/fixtures/`: offline
      framework pages using vendored minified builds of jQuery, React + ReactDOM, Vue,
      Preact, an Angular hello-world bundle, and an inline-SVG page. Each fixture clicks or
-     dispatches and asserts DOM text or pixels. Mark the fixtures that fail on QuickJS as
-     `#[ignore = "needs P3"]`. They are the acceptance list for later phases.
+     dispatches and asserts DOM text or pixels. All six fixtures now run
+     un-ignored on V8; they remain the acceptance list for later phases.
    - Prove every regression test by mutation: revert each rule and check that exactly its
      test fails.
 
@@ -205,8 +206,9 @@ Tasks:
    add `deno_core = "=0.413.0"`, and update `engines/Cargo.lock`. Never add Servo crates
    to this workspace.
 2. Add a `ScriptHost` trait in `engines/wega/src/script.rs`: `run`, `dispatch`,
-   `evaluate_json`, `tick`, `next_timer`, `heap_bytes`, `freeze`. Move today's code to
-   `quickjs.rs` and add `v8.rs`. Cargo features: `v8` (default) and `quickjs`.
+   `evaluate_json`, `tick`, `next_timer`, `heap_bytes`, `freeze`. Use `v8.rs` as the
+   sole host; V8 dependencies are mandatory. QuickJS and
+   backend-selection features were removed on 26 October 2026.
 3. The V8 host: a `JsRuntime` with the heap limit from `Limits::js_heap_bytes`
    (`CreateParams::heap_limits`), a near-heap-limit callback that terminates the isolate
    and reports OOM, and `terminate_execution` from a watchdog for the `script_time` budget.
@@ -223,9 +225,9 @@ Tasks:
    the engine third-party notices (`about.toml`/`about.hbs` and `NOTICE`) for V8 (BSD-3) and
    the Deno crates (MIT).
 
-Gate: all of `tests/pages.rs` and P0 pass with `--features v8` **and** `--features
-quickjs`; `python3 scripts/native-tests.py --suite engine` passes; worker binary size
-and idle RSS are recorded in this document.
+Gate: all of `tests/pages.rs` and P0 pass with the mandatory V8 host;
+`python3 scripts/native-tests.py --suite engine` passes; worker binary size and
+idle RSS are recorded in this document.
 
 ### P2: Deno Web APIs
 
@@ -336,8 +338,8 @@ are listed in `NOTICE`.
 - Mirror: `/Users/noufalbabu/dev/personal/wega-mirrors/` (README inside). Offline build:
   `RUSTY_V8_MIRROR=<mirror>/rusty_v8-prebuilt cargo build --offline --config
   "source.crates-io.replace-with='mirror'" --config "source.mirror.directory='<mirror>/graph/vendor'"`.
-- Owner decisions still open: whether QuickJS is removed after P3 or kept for very small
-  devices; where the offsite mirror lives; the per-site UI for P6.
+- QuickJS removal is decided and implemented. Owner decisions still open: where
+  the offsite mirror lives and the per-site UI for P6.
 - Update this document's status and record measured numbers at the end of each phase.
 
 ## Implementation evidence — 25 October 2026
@@ -431,3 +433,29 @@ CORS/CSP completeness, cross-worker live cookie synchronization, observer edge c
 media and representative-site/RSS validation still need work. Classic scripts are
 queued while a static module graph loads. Keep Servo as the everyday default.
 Machine-readable local evidence: `docs/validation/p3-gates.json`.
+
+QuickJS removal — 26 October 2026:
+
+- V8 is mandatory in `engines/wega`; the optional feature, host and `rquickjs`
+  dependencies are removed from both engine and spike lockfiles. No build selects
+  a QuickJS runtime. Upstream vendored Deno feature definitions are left intact;
+  Wega does not enable their alternative backends.
+- CI now runs V8-only spike/contracts/lints, retaining all six framework fixtures,
+  the DOM WPT subset and safety tests. The P0 mutation runner targets V8 source
+  diagnostics, timer isolation and exhaustion classification directly instead of
+  the deleted host.
+- Previous QuickJS timings and validation JSON files above are historical records,
+  not supported build configurations. Servo remains a separate browser engine.
+
+Local removal validation: **40 V8 tests**, all six framework fixtures, all **10
+V8 safety mutation proofs**, strict engine/spike Clippy, formatting, workflow lint,
+7 installer/mirror Python tests, the standalone V8 DOM/pixel probe and the native
+engine suite (**16.24 s**) pass. Mutated sources are restored and
+retested. Dependency graph checks find no QuickJS packages in either workspace;
+V8 remains mandatory with default features disabled. Evidence:
+`docs/validation/v8-only.json`. Dependency caches were reused; this is not a new
+clean-dependency build or a Windows runtime rerun.
+
+For baseline commit `a5ac41f`, main CI run `40288197021` passed all jobs, and the
+Windows job in V8 run `40288197041` passed V8 contracts before failing QuickJS
+contracts. The removal itself still needs a push and remote rerun.

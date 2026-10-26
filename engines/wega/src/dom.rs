@@ -1,4 +1,4 @@
-//! Checked native operations over Blitz's single DOM, shared by both VMs.
+//! Checked native operations over Blitz's single DOM, used by the V8 host.
 use crate::Limits;
 use blitz_dom::node::NodeData;
 use blitz_dom::{BaseDocument, NodeId};
