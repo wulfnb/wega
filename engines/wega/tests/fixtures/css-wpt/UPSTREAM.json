@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/web-platform-tests/wpt",
+  "revision": "68d964a5f292bc4b2c2eba2f21e2b916190b6ad2",
+  "paths": {
+    "inline-size-and-min-width.html": "css/css-conditional/container-queries/inline-size-and-min-width.html",
+    "query-content-box.html": "css/css-conditional/container-queries/query-content-box.html",
+    "cq-testcommon.js": "css/css-conditional/container-queries/support/cq-testcommon.js",
+    "clip-001.html": "css/css-overflow/clip-001.html",
+    "clip-001-ref.html": "css/css-overflow/clip-001-ref.html"
+  },
+  "files": {
+    "inline-size-and-min-width.html": "737bfaef935066f0ab1662caf0a19dd5de3027243796834c2f543bec5fdee8af",
+    "query-content-box.html": "7bdde1df28fca7c2bff73bbb187329f2db360341caf4f5577c52b22d8926d117",
+    "cq-testcommon.js": "bdae4fdbe4be8d83d6fcccf8ac408f13cd43ce6b27b65f884e7cb1662693cad4",
+    "clip-001.html": "61d0483e5563279eecaf582114279ca6b1fff327f6d8cd7ffb4197295229b4a0",
+    "clip-001-ref.html": "995aeece0cddf383f7d88d86f1e41a6b2d38dfb4ea1199cd1df94a02493b189b",
+    "LICENSE.md": "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570"
+  }
+}

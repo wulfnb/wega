@@ -514,6 +514,11 @@ impl Browser {
                                         .color(colors.muted),
                                 )
                                 .on_hover_text(self.resources.description());
+                                if let Some(page)=self.tab().wega.as_ref() {
+                                    let state=page.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                                    let rss=state.rss_bytes.map_or_else(||"—".into(),|bytes|format!("{} MiB",bytes/1_048_576));
+                                    ui.label(format!("Tab RAM {rss} · JS {:.1} MiB",state.js_heap as f64/1_048_576.0)).on_hover_text("Tab RAM is the worker's current resident memory. JS is its V8 heap, a subset of that memory. Shared pages may be counted by both browser and worker.");
+                                }
                             }
                         });
                     });
@@ -606,6 +611,7 @@ impl Browser {
             security.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Connection and site data"));
             ui.ctx().data_mut(|data| data.insert_temp(Id::unique("site-panel-anchor"), security.rect.left_bottom()));
             if security.clicked() { self.refresh_site_data(); self.features.site_info = !self.features.site_info; }
+            self.engine_badge(ui);
             let width = (ui.available_width() - 126.0).max(100.0);
             let hint = match self.profile().policy.search_engine {
                 wega::model::SearchEngine::Custom => "Search or enter address".to_owned(),

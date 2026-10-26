@@ -41,6 +41,7 @@ pub struct Tab {
     pub(crate) live: Option<Live>,
     pub(crate) wega: Option<crate::wega_page::Page>,
     pub(crate) engine: EngineKind,
+    pub(crate) fallback_origin: Option<String>,
     /// Stable for the life of the tab, across unloading and reloading.
     pub(crate) key: u64,
     pub(crate) initial_url: String,
@@ -380,16 +381,16 @@ impl Browser {
             if let Ok(url) = browser.resolve(address) {
                 let title = titles.get(index).cloned().unwrap_or_default();
                 let tab_index = browser.push_tab(None, url.to_string(), title, false);
-                browser.session.tabs_mut()[tab_index].engine =
-                    options.engine.unwrap_or_else(|| {
-                        browser
-                            .application
-                            .profile()
-                            .engines
-                            .get(index)
-                            .copied()
-                            .unwrap_or_default()
-                    });
+                let saved = restore
+                    .then(|| browser.profile().engines.get(index).copied())
+                    .flatten();
+                browser.session.tabs_mut()[tab_index].engine = wega::engine_choice::choose(
+                    &browser.profile().policy,
+                    &url,
+                    saved,
+                    options.engine,
+                    crate::wega_page::executable().is_some(),
+                );
             }
         }
         if browser.session.tabs().is_empty() {
@@ -427,8 +428,21 @@ impl Browser {
     pub(crate) fn apply(&mut self, command: AppCommand) {
         match self.application.apply(command) {
             AppEvent::PolicyChanged => {
+                let network_changed = {
+                    let old = self.delegate.policy.borrow();
+                    let new = &self.profile().policy;
+                    old.offline != new.offline
+                        || old.blocked_hosts != new.blocked_hosts
+                        || old.allowed_hosts != new.allowed_hosts
+                };
                 *self.delegate.policy.borrow_mut() = self.profile().policy.clone();
-                for page in self.session.tabs().iter().filter_map(|t| t.wega.as_ref()) {
+                for page in self
+                    .session
+                    .tabs()
+                    .iter()
+                    .filter_map(|t| t.wega.as_ref())
+                    .filter(|_| network_changed)
+                {
                     let policy = &self.profile().policy;
                     let _ = page.send(wega::engine_protocol::Command::Policy {
                         offline: policy.offline,
@@ -495,11 +509,22 @@ impl Browser {
         let url = self
             .current_url()
             .unwrap_or_else(|| url::Url::parse("about:blank").unwrap());
+        if self.replace_engine_confirmed(target, url, true) {
+            let active = self.session.active();
+            self.session.tabs_mut()[active].fallback_origin = None;
+        }
+    }
+    pub(crate) fn replace_engine_confirmed(
+        &mut self,
+        target: EngineKind,
+        url: url::Url,
+        remember: bool,
+    ) -> bool {
         if target == EngineKind::Wega
             && !matches!(url.scheme(), "http" | "https" | "file" | "about")
         {
             self.notify(crate::ux::Severity::Warning,"Open a web or HTML file page before choosing Wega. Internal browser pages use Servo.",None);
-            return;
+            return false;
         }
         let page = if target == EngineKind::Wega {
             match crate::wega_page::Page::new(
@@ -511,7 +536,7 @@ impl Browser {
                 Ok(page) => Some(page),
                 Err(error) => {
                     self.notify(crate::ux::Severity::Error, error, None);
-                    return;
+                    return false;
                 }
             }
         } else {
@@ -539,7 +564,16 @@ impl Browser {
         if target == EngineKind::Wega {
             self.notify(crate::ux::Severity::Info,"Wega is experimental: basic JavaScript and article rendering. Forms, media, site sign-in and page tools still need Servo. Switching engines reloads the page.",None);
         }
+        if remember
+            && let Some(key) = wega::engine_choice::site_key(&url)
+            && self.profile().policy.site_engines.contains_key(&key)
+        {
+            let mut policy = self.profile().policy.clone();
+            policy.site_engines.insert(key, target);
+            self.apply(AppCommand::Policy(policy));
+        }
         self.changed();
+        true
     }
     /// Engine resources of the selected tab, which is always loaded.
     pub(crate) fn live(&self) -> &Live {
@@ -599,8 +633,15 @@ impl Browser {
     }
 
     fn add_tab_url(&mut self, url: url::Url) {
-        let live = self.create_view(Some(&url));
-        let index = self.push_tab(Some(live), url.to_string(), String::new(), false);
+        let engine = wega::engine_choice::choose(
+            &self.profile().policy,
+            &url,
+            None,
+            None,
+            crate::wega_page::executable().is_some(),
+        );
+        let index = self.push_tab(None, url.to_string(), String::new(), false);
+        self.session.tabs_mut()[index].engine = engine;
         self.select_tab(index);
         self.changed();
     }
@@ -617,6 +658,7 @@ impl Browser {
             live,
             wega: None,
             engine: EngineKind::Servo,
+            fallback_origin: None,
             key: self.next_tab_key,
             initial_url: url,
             saved_title: title,
@@ -972,11 +1014,40 @@ impl Browser {
             }));
         }
     }
+    pub(crate) fn mark_fallback(&mut self, key: Option<String>) {
+        let active = self.session.active();
+        self.session.tabs_mut()[active].fallback_origin = key;
+    }
+    fn engine_for_navigation(&self, url: &url::Url) -> EngineKind {
+        if self.tab().engine == EngineKind::Servo
+            && self.tab().fallback_origin.is_some()
+            && self.tab().fallback_origin == wega::engine_choice::site_key(url)
+        {
+            return EngineKind::Servo;
+        }
+
+        let current = self
+            .current_url()
+            .and_then(|url| wega::engine_choice::site_key(&url));
+        let same = current.is_some() && current == wega::engine_choice::site_key(url);
+        wega::engine_choice::choose(
+            &self.profile().policy,
+            url,
+            same.then_some(self.tab().engine),
+            None,
+            crate::wega_page::executable().is_some(),
+        )
+    }
     pub(crate) fn dispatch_navigation(
         &mut self,
         command: wega::navigation::Command,
     ) -> Result<bool, String> {
-        if self.is_wega()
+        let changes_engine = match &command {
+            wega::navigation::Command::Load(address) => profile::resolve_address(address)
+                .is_ok_and(|url| self.engine_for_navigation(&url) != self.tab().engine),
+            _ => false,
+        };
+        if (self.is_wega() || changes_engine)
             && matches!(
                 command,
                 wega::navigation::Command::Load(_)
@@ -996,11 +1067,12 @@ impl Browser {
         &mut self,
         command: wega::navigation::Command,
     ) -> Result<bool, String> {
-        if self.is_wega()
-            && let wega::navigation::Command::Load(address) = &command
-            && profile::resolve_address(address)?.scheme() == "wega"
-        {
-            self.switch_engine_confirmed(EngineKind::Servo);
+        if let wega::navigation::Command::Load(address) = &command {
+            let url = profile::resolve_address(address)?;
+            let target = self.engine_for_navigation(&url);
+            if target != self.tab().engine {
+                return Ok(self.replace_engine_confirmed(target, url, false));
+            }
         }
         let active = self.session.active();
         if let Some(page) = &mut self.session.tabs_mut()[active].wega {

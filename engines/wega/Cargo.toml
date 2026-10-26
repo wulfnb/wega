@@ -9,14 +9,18 @@ description = "Wega's experimental Blitz-based page engine"
 
 [dependencies]
 deno_core = "=0.413.0"
+wega-network = {path="../network"}
+wega-platform = {path="../platform"}
 deno_error = "=0.7.1"
-tokio = {version="1",features=["rt","time","net"]}
+tokio = {version="1",features=["rt","time","net","sync"]}
 blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars"] }
 blitz-html = "=0.3.0-beta.4"
 blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
 blitz-traits = "=0.3.0-beta.4"
 anyrender = "=0.14.0"
-anyrender_vello_cpu = { version = "=0.18.0", default-features = false }
+anyrender_skia = "=0.12.0"
+skia-safe = "=0.153.3"
+kurbo = "=0.13.1"
 html5ever = "0.40.1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip", "brotli", "cookies"] }
 serde_json = "1"
@@ -47,3 +51,24 @@ style_traits = {package="stylo_traits",version="=0.22.0"}
 cookie_store = "=0.22.1"
 publicsuffix = "=2.3.0"
 keyboard-types = "=0.8.3"
+
+[build-dependencies]
+wega-network = {path="../network"}
+serde = {version="1",features=["derive"]}
+deno_core = "=0.413.0"
+deno_error = "=0.7.1"
+serde_json = "1"
+url = "2.5"
+deno_webidl = "=0.260.0"
+deno_web = "=0.291.0"
+deno_fetch = "=0.284.0"
+deno_websocket = "=0.265.0"
+deno_webstorage = "=0.255.0"
+deno_crypto = "=0.274.0"
+deno_permissions = "=0.119.0"
+deno_net = "=0.252.0"
+deno_tls = "=0.247.0"
+tokio = {version="1",features=["rt","time","net","sync"]}
+
+[dev-dependencies]
+tempfile = "3"

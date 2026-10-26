@@ -51,37 +51,57 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    let (url, policy, storage_dir) = match receiver.recv()? {
-        Work::Command(Command::Init {
-            version,
-            url,
-            offline,
-            blocked_hosts,
-            allowed_hosts,
-            storage_dir,
-        }) if version == protocol::VERSION => (
-            Url::parse(&url)?,
-            NetworkPolicy {
+    let (url, policy, storage_dir, broker_address, broker_token, frame_path) =
+        match receiver.recv()? {
+            Work::Command(Command::Init {
+                version,
+                url,
                 offline,
                 blocked_hosts,
                 allowed_hosts,
-            },
-            storage_dir,
-        ),
-        _ => return Err("Expected versioned Init as the first private command".into()),
-    };
+                storage_dir,
+                broker_address,
+                broker_token,
+                frame_path,
+            }) if version == protocol::VERSION => (
+                Url::parse(&url)?,
+                NetworkPolicy {
+                    offline,
+                    blocked_hosts,
+                    allowed_hosts,
+                },
+                storage_dir,
+                broker_address,
+                broker_token,
+                frame_path,
+            ),
+            _ => return Err("Expected versioned Init as the first private command".into()),
+        };
     let wake = sender.clone();
-    let mut engine = Engine::new(
-        Limits::default(),
-        policy,
-        Arc::new(move || {
-            let _ = wake.try_send(Work::Wake);
-        }),
-    )?;
+    let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        let _ = wake.try_send(Work::Wake);
+    });
+    let mut engine = if let (Some(address), Some(token)) = (broker_address, broker_token) {
+        Engine::brokered(Limits::default(), policy, wake, &address, token)?
+    } else {
+        Engine::new(Limits::default(), policy, wake)?
+    };
     if let Some(path) = storage_dir {
         engine = engine.with_storage_dir(path.into());
     }
     let mut view = engine.create_view(url)?;
+    let shared = frame_path.is_some();
+    if let Some(path) = frame_path {
+        view.configure_shared_frames(std::path::Path::new(&path))?;
+    }
+    let mut credits = [None, None];
+    let mut sequence = 0_u64;
+    let mut pending_target = None;
+    let mut serial = 0_u64;
+    let mut frozen = false;
+    let interval = std::time::Duration::from_secs(2);
+    let mut sampled = std::time::Instant::now();
+    let mut rss_bytes = wega_platform::resident_bytes();
     let mut output = std::io::stdout().lock();
     protocol::write(
         &mut output,
@@ -94,8 +114,63 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let frame_interval = std::time::Duration::from_millis(33);
     let mut last_frame = std::time::Instant::now() - std::time::Duration::from_secs(1);
     loop {
+        if sampled.elapsed() >= interval {
+            rss_bytes = wega_platform::resident_bytes();
+            sampled = std::time::Instant::now();
+        }
+        if let Some(result) = view.take_painted() {
+            let completed_target = pending_target.take();
+            match result {
+                Ok(frame) => {
+                    if frame.serial == serial && !frozen {
+                        match frame.pixels {
+                            wega_engine::Pixels::Shared { slot, sequence } => protocol::write(
+                                &mut output,
+                                &Event::SharedFrame {
+                                    serial: frame.serial,
+                                    width: frame.width,
+                                    height: frame.height,
+                                    slot,
+                                    sequence,
+                                },
+                            )?,
+                            wega_engine::Pixels::Owned(bytes) => {
+                                protocol::write(
+                                    &mut output,
+                                    &Event::Frame {
+                                        serial: frame.serial,
+                                        width: frame.width,
+                                        height: frame.height,
+                                    },
+                                )?;
+                                output.write_all(&bytes)?;
+                                output.flush()?;
+                            }
+                        }
+                    } else if let wega_engine::Pixels::Shared { slot, sequence } = frame.pixels
+                        && credits[slot as usize] == Some(sequence)
+                    {
+                        credits[slot as usize] = None;
+                    }
+                }
+                Err(error) => {
+                    if let Some((slot, _)) = completed_target {
+                        credits[slot as usize] = None;
+                    }
+                    protocol::write(
+                        &mut output,
+                        &Event::Compatibility {
+                            serial,
+                            reason: error,
+                        },
+                    )?;
+                }
+            }
+        }
         view.poll();
         let snapshot = Event::State {
+            serial,
+            rss_bytes,
             url: view.url.to_string(),
             title: view.title(),
             loading: view.loading,
@@ -113,34 +188,70 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &Event::Notice(notice.chars().take(4096).collect()),
             )?;
         }
+        if let Some(reason) = view.compatibility.take() {
+            protocol::write(
+                &mut output,
+                &Event::Compatibility {
+                    serial,
+                    reason: reason.chars().take(4096).collect(),
+                },
+            )?;
+        }
         while let Some(url) = view.next_navigation() {
             protocol::write(&mut output, &Event::Navigate(url.to_string()))?;
         }
-        if view.needs_paint() && last_frame.elapsed() >= frame_interval {
-            match view.paint(viewport.0, viewport.1, viewport.2, viewport.3, viewport.4) {
-                Ok(frame) => {
-                    protocol::write(
-                        &mut output,
-                        &Event::Frame {
-                            width: frame.width,
-                            height: frame.height,
-                        },
-                    )?;
-                    output.write_all(&frame.rgba)?;
-                    output.flush()?;
+        let slot = credits.iter().position(Option::is_none);
+        let can_paint = !view.paint_pending() && (!shared || slot.is_some());
+        if view.needs_paint() && can_paint && last_frame.elapsed() >= frame_interval {
+            let target = if shared {
+                let slot = slot.unwrap();
+                sequence = sequence.wrapping_add(1);
+                credits[slot] = Some(sequence);
+                Some((slot as u8, sequence))
+            } else {
+                None
+            };
+            match view.begin_paint(
+                wega_engine::Viewport {
+                    window_size: (viewport.0, viewport.1),
+                    hidpi_scale: viewport.2,
+                    zoom: viewport.3,
+                    color_scheme: if viewport.4 {
+                        wega_engine::ColorScheme::Dark
+                    } else {
+                        wega_engine::ColorScheme::Light
+                    },
+                },
+                serial,
+                target,
+            ) {
+                Ok(()) => {
+                    pending_target = target;
                     last_frame = std::time::Instant::now();
                 }
                 Err(error) => {
+                    if let Some((slot, _)) = target {
+                        credits[slot as usize] = None;
+                    }
+                    frozen = true;
                     view.freeze(true);
-                    protocol::write(&mut output, &Event::Notice(error))?;
+                    protocol::write(
+                        &mut output,
+                        &Event::Compatibility {
+                            serial,
+                            reason: error,
+                        },
+                    )?;
                 }
             }
         }
         let mut delay = view.next_wakeup();
-        if view.needs_paint() {
+        if view.needs_paint() && can_paint {
             let frame_delay = frame_interval.saturating_sub(last_frame.elapsed());
             delay = Some(delay.map_or(frame_delay, |d| d.min(frame_delay)));
         }
+        let resource_delay = interval.saturating_sub(sampled.elapsed());
+        delay = Some(delay.map_or(resource_delay, |delay| delay.min(resource_delay)));
         let work = if let Some(delay) = delay {
             match receiver.recv_timeout(delay) {
                 Ok(work) => work,
@@ -157,7 +268,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Work::Wake => {}
             Work::Command(command) => match command {
                 Command::Shutdown => break,
-                Command::Load(url) => {
+                Command::Load {
+                    url,
+                    serial: requested,
+                } => {
+                    serial = requested;
                     if let Err(error) = Url::parse(&url)
                         .map_err(|e| e.to_string())
                         .and_then(|url| view.load(url))
@@ -174,7 +289,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } => {
                     protocol::frame_bytes(width, height)?;
                     viewport = (width, height, scale, zoom, dark);
-                    view.freeze(false);
+                    view.request_redraw();
                 }
                 Command::Click { x, y } => view.click(x, y),
                 Command::Key {
@@ -222,8 +337,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     wega_engine::events::BlitzImeEvent::Commit(text)
                 }),
-                Command::Scroll { x, y } => view.scroll(x, y),
-                Command::Freeze(frozen) => view.freeze(frozen),
+                Command::Scroll {
+                    x,
+                    y,
+                    pointer_x,
+                    pointer_y,
+                } => view.scroll_at(x, y, pointer_x, pointer_y),
+                Command::FrameConsumed { slot, sequence } => {
+                    if let Some(credit) = credits.get_mut(slot as usize)
+                        && *credit == Some(sequence)
+                    {
+                        *credit = None;
+                    }
+                }
+                Command::Freeze(value) => {
+                    frozen = value;
+                    view.freeze(value);
+                    sampled = std::time::Instant::now() - interval;
+                }
                 Command::Stop => view.stop(),
                 Command::Redraw => view.request_redraw(),
                 Command::Policy {
@@ -236,9 +367,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         blocked_hosts,
                         allowed_hosts,
                     });
-                    if let Err(error) = view.load(view.url.clone()) {
-                        protocol::write(&mut output, &Event::Notice(error))?;
-                    }
+                    // Apply live permissions without discarding the current DOM/input state.
                 }
                 Command::Evaluate(source) => {
                     let result = view.evaluate_json(&source);

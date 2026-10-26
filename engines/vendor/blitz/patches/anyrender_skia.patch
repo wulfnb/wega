@@ -1,0 +1,12 @@
+--- a/src/scene.rs
++++ b/src/scene.rs
+@@ -92,7 +92,8 @@
+     }
+ 
+     fn set_paint_alpha(&mut self, alpha: f32) {
+-        self.cache.paint.set_alpha_f(alpha);
++        // Modified by Wega contributors, 2026: multiply brush and color alpha.
++        self.cache.paint.set_alpha_f(self.cache.paint.alpha_f() * alpha);
+     }
+ 
+     fn set_paint_filter(&mut self, filter: ImageFilter) {

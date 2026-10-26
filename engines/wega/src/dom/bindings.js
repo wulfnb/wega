@@ -1659,7 +1659,26 @@
   document.readyState = "loading";
   connected.set(document._id, document);
   const globalEvents = new BaseTarget();
-  Object.setPrototypeOf(globalThis, globalEvents);
+  // HTML named properties live behind Window's own properties and remain live
+  // when an element is renamed, removed, or shadowed by a script-owned property.
+  const namedWindow = (key) =>
+    typeof key === "string" && key.length ? host("windowNamed", key) : [];
+  Object.setPrototypeOf(
+    globalThis,
+    new Proxy(globalEvents, {
+      has(target, key) {
+        return Reflect.has(target, key) || namedWindow(key).length > 0;
+      },
+      get(target, key, receiver) {
+        if (Reflect.has(target, key)) return Reflect.get(target, key, receiver);
+        const ids = namedWindow(key);
+        if (!ids.length) return undefined;
+        return ids.length === 1
+          ? wrap(ids[0])
+          : nodeList(() => namedWindow(key).map((id) => wrap(id)), true);
+      },
+    }),
+  );
   for (const method of [
     "addEventListener",
     "removeEventListener",
@@ -1723,10 +1742,12 @@
     getComputedStyle: (element) => new CSSStyleDeclaration(element, true),
     CSS: {
       escape: cssEscape,
-      supports: (name, value) => {
-        const element = document.createElement("div");
-        element.style.setProperty(name, value);
-        return !!element.style.getPropertyValue(name);
+      supports: (...args) => {
+        if (!args.length)
+          throw new TypeError("CSS.supports requires an argument");
+        return args.length === 1
+          ? host("supports", String(args[0]))
+          : host("supportsProperty", String(args[0]), String(args[1]));
       },
     },
     console: {

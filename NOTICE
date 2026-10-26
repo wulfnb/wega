@@ -43,7 +43,7 @@ The engine uses deno_webidl, deno_web, deno_fetch, deno_net, deno_tls,
 deno_webstorage, deno_websocket and deno_crypto. Wega's runtime source adapter
 adds the HTML Document-to-Window event parent rule to Deno's EventTarget. The
 event/fetch dependency source files remain unmodified; the adapter is in
-engines/wega/src/web.rs and retains the original MIT source headers. Runtime
+engines/wega/src/extension_adapter.rs and retains the original MIT source headers. Runtime
 telemetry collection/export is disabled.
 
 Web Platform Tests
@@ -52,7 +52,7 @@ https://github.com/web-platform-tests/wpt under BSD-3-Clause. The revision,
 checksums and original license are included in engines/wega/tests/fixtures/wpt/.
 
 Wega cookie storage uses cookie_store (MIT/Apache-2.0) and publicsuffix
-(MIT/Apache-2.0). engines/wega/src/public_suffix_list.dat is the MPL-2.0
+(MIT/Apache-2.0). engines/network/src/public_suffix_list.dat is the MPL-2.0
 Public Suffix List snapshot bundled in publicsuffix 2.3.0; its header is retained.
 Deno fetch's pinned source is adapted at extension load to attach browser cookies
 and ingest Set-Cookie on every redirect hop. Original MIT sources are unchanged.
@@ -61,3 +61,11 @@ Deno core extension embedding
 Modified by Wega contributors, 2026: engines/vendor/deno/patches/
 embed-extension-sources.patch embeds eager and lazy extension JavaScript into
 non-snapshot workers. The original MIT license is retained.
+
+The P4-P6 engine uses anyrender_skia 0.12.0 (MIT OR Apache-2.0) and Skia
+m153-0.101.2 (BSD-3-Clause). The static Skia notice and original Blitz/anyrender
+license texts are shipped in WEGA-ENGINE-NATIVE-LICENSES. Checksummed published
+sources and the exact local Blitz, Stylo, Skia adapter and Deno patches are listed
+in engines/vendor/sources.json and engines/vendor/README.md.
+The pinned CSS WPT subset is licensed under the original WPT license included in
+engines/wega/tests/fixtures/css-wpt/LICENSE.md; upstream assertions are unchanged.

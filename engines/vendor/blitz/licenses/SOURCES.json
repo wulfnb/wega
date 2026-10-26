@@ -1,0 +1,22 @@
+{
+  "blitz-LICENSE-MIT": {
+    "url": "https://raw.githubusercontent.com/DioxusLabs/blitz/92b11f1bd8ab7975411328b0406a95a09445b4e7/LICENSE-MIT",
+    "sha256": "30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652"
+  },
+  "blitz-LICENSE-APACHE": {
+    "url": "https://raw.githubusercontent.com/DioxusLabs/blitz/92b11f1bd8ab7975411328b0406a95a09445b4e7/LICENSE-APACHE",
+    "sha256": "95bd3988beee069fa2848f648dab43cc6e0b2add2ad6bcb17360caf749802bcc"
+  },
+  "anyrender-LICENSE-MIT": {
+    "url": "https://raw.githubusercontent.com/DioxusLabs/anyrender/cf0f14776102ec775af61bcdcaac2ab345f4fafb/LICENSE-MIT",
+    "sha256": "30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652"
+  },
+  "anyrender-LICENSE-APACHE": {
+    "url": "https://raw.githubusercontent.com/DioxusLabs/anyrender/cf0f14776102ec775af61bcdcaac2ab345f4fafb/LICENSE-APACHE",
+    "sha256": "95bd3988beee069fa2848f648dab43cc6e0b2add2ad6bcb17360caf749802bcc"
+  },
+  "SKIA-BSD-3-Clause": {
+    "url": "https://raw.githubusercontent.com/rust-skia/skia/m153-0.101.2/LICENSE",
+    "sha256": "5f787c1dee3c56547f09ccc2906ab5f5293c4d8dd6c8654e573216c38e908dbd"
+  }
+}

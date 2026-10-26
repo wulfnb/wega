@@ -5,8 +5,7 @@ use crate::{
     script::{ScriptError, ScriptHost},
 };
 use blitz_dom::{BaseDocument, NodeId};
-use deno_core::{JsRuntime, OpState, RuntimeOptions, op2};
-use deno_error::JsErrorBox;
+use deno_core::{JsRuntime, RuntimeOptions};
 use serde_json::json;
 use std::{
     cell::RefCell,
@@ -20,104 +19,54 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[op2]
-#[serde]
-fn op_dom_read(
-    state: &mut OpState,
-    #[string] op: &str,
-    #[string] a: &str,
-    #[string] b: &str,
-    #[string] c: &str,
-) -> Result<serde_json::Value, JsErrorBox> {
-    state
-        .borrow::<Rc<Dom>>()
-        .call(&[json!(op), json!(a), json!(b), json!(c)])
-        .map_err(JsErrorBox::generic)
-}
-#[op2(fast)]
-fn op_dom_set_text(
-    state: &mut OpState,
-    #[string] id: &str,
-    #[string] text: &str,
-) -> Result<(), JsErrorBox> {
-    state
-        .borrow::<Rc<Dom>>()
-        .call(&[json!("setText"), json!(id), json!(text)])
-        .map(|_| ())
-        .map_err(JsErrorBox::generic)
-}
-#[op2(fast)]
-fn op_dom_set_attr(
-    state: &mut OpState,
-    #[string] id: &str,
-    #[string] name: &str,
-    #[string] value: &str,
-) -> Result<(), JsErrorBox> {
-    state
-        .borrow::<Rc<Dom>>()
-        .call(&[json!("setAttr"), json!(id), json!(name), json!(value)])
-        .map(|_| ())
-        .map_err(JsErrorBox::generic)
-}
-#[op2(fast)]
-fn op_dom_set_attr_ns(
-    state: &mut OpState,
-    #[string] id: &str,
-    #[string] namespace: &str,
-    #[string] name: &str,
-    #[string] value: &str,
-) -> Result<(), JsErrorBox> {
-    state
-        .borrow::<Rc<Dom>>()
-        .call(&[
-            json!("setAttrNS"),
-            json!(id),
-            json!(namespace),
-            json!(name),
-            json!(value),
-        ])
-        .map(|_| ())
-        .map_err(JsErrorBox::generic)
-}
-#[op2]
-#[string]
-fn op_wega_cookie_header(
-    state: &mut OpState,
-    #[string] address: &str,
-    #[string] mode: &str,
-) -> String {
-    let dom = state.borrow::<Rc<Dom>>();
-    let Ok(url) = url::Url::parse(address) else {
-        return String::new();
-    };
-    let origin = dom.document.borrow().url().origin();
-    if mode == "omit" || (mode != "include" && url.origin() != origin) {
-        return String::new();
-    }
-    dom.network.cookies.get(&url, false)
-}
-#[op2(fast)]
-fn op_wega_cookie_response(
-    state: &mut OpState,
-    #[string] address: &str,
-    #[string] mode: &str,
-    #[string] value: &str,
-) {
-    let dom = state.borrow::<Rc<Dom>>();
-    let Ok(url) = url::Url::parse(address) else {
-        return;
-    };
-    if mode == "omit" || (mode != "include" && url.origin() != dom.document.borrow().url().origin())
+impl crate::native_ops::NativeHost for Dom {
+    fn fetch(
+        &self,
+        mut request: wega_network::Request,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<wega_network::Response, String>>>>
     {
-        return;
+        request.origin = self.document.borrow().url().origin().ascii_serialization();
+        request.limit = self.limits.resource_bytes.min(wega_network::MAX_BODY);
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let queued = self.network.spawn(move |client| {
+            let _ = sender.send(client.response(&request));
+        });
+        Box::pin(async move {
+            queued?;
+            let mut response = receiver.await.map_err(|_| "Network dispatcher stopped")??;
+            response
+                .headers
+                .retain(|(name, _)| !name.eq_ignore_ascii_case("set-cookie"));
+            Ok(response)
+        })
     }
-    dom.network.cookies.set(&url, value, false);
+
+    fn call(&self, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
+        Dom::call(self, args)
+    }
+    fn cookie_header(&self, address: &str, mode: &str) -> String {
+        let Ok(url) = url::Url::parse(address) else {
+            return String::new();
+        };
+        if mode == "omit"
+            || (mode != "include" && url.origin() != self.document.borrow().url().origin())
+        {
+            return String::new();
+        }
+        self.network.cookies.get(&url, false)
+    }
+    fn cookie_response(&self, address: &str, mode: &str, value: &str) {
+        let Ok(url) = url::Url::parse(address) else {
+            return;
+        };
+        if mode != "omit"
+            && (mode == "include" || url.origin() == self.document.borrow().url().origin())
+        {
+            self.network.cookies.set(&url, value, false);
+        }
+    }
 }
-#[op2(fast)]
-fn op_result(state: &mut OpState, #[string] value: String) {
-    *state.borrow_mut::<String>() = value;
-}
-deno_core::extension!(wega_dom,ops=[op_dom_set_attr_ns,op_wega_cookie_header,op_wega_cookie_response,op_dom_read,op_dom_set_text,op_dom_set_attr,op_result],js=[dir "src/dom", "web.js", "v8-bridge.js", "bindings.js", "observers.js", "install-web.js", "xhr.js"],options={dom:Rc<Dom>},state=|state,options|{let policy=options.dom.network.policy.clone();state.put(options.dom);state.put(String::new());state.put(crate::web::permissions(policy));});
+use crate::native_ops::wega_dom;
 type ModuleLoad = std::pin::Pin<
     Box<
         dyn std::future::Future<
@@ -135,6 +84,14 @@ fn heap_bytes(runtime: &mut JsRuntime) -> usize {
     stats
         .used_heap_size()
         .saturating_add(stats.external_memory())
+}
+fn collect_garbage(runtime: &mut JsRuntime, critical: bool) {
+    // GC can invoke native/weak callbacks that allocate V8 handles.
+    deno_core::scope!(scope, runtime);
+    if critical {
+        scope.memory_pressure_notification(deno_core::v8::MemoryPressureLevel::Critical);
+    }
+    scope.low_memory_notification();
 }
 struct WakeLoop(Arc<dyn Fn() + Send + Sync>);
 impl Wake for WakeLoop {
@@ -177,7 +134,7 @@ impl V8Host {
         // their per-view option before initializing the platform.
         let document_url = dom.document.borrow().url().clone();
         let mut extensions = crate::web::extensions(&dom);
-        extensions.push(wega_dom::init(dom.clone()));
+        extensions.push(wega_dom::init());
         for extension in &extensions {
             for source in extension
                 .js_files
@@ -195,6 +152,10 @@ impl V8Host {
             }
         }
         let mut runtime = JsRuntime::try_new(RuntimeOptions {
+            startup_snapshot: Some(include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/wega-startup.bin"
+            ))),
             module_loader: Some(Rc::new(crate::module_loader::Loader::new(
                 dom.network.clone(),
                 &document_url,
@@ -210,9 +171,21 @@ impl V8Host {
         })
         .map_err(|e| e.to_string())?;
         // Deno's trusted bootstrap needs its own heap before page code starts.
-        let bootstrap_heap = heap_bytes(&mut runtime);
-        runtime.op_state().borrow_mut().put(dom.clone());
+        let host: Rc<dyn crate::native_ops::NativeHost> = dom.clone();
+        runtime.op_state().borrow_mut().put(host);
+        runtime
+            .op_state()
+            .borrow_mut()
+            .put(crate::web::permissions(dom.network.policy.clone()));
         runtime.op_state().borrow_mut().put(String::new());
+        runtime
+            .execute_script(
+                "ext:wega_dom/bootstrap.js",
+                include_str!("dom/bootstrap.js"),
+            )
+            .map_err(|error| error.to_string())?;
+        runtime.op_state().borrow_mut().put(String::new());
+        let bootstrap_heap = heap_bytes(&mut runtime);
         let oom = Arc::new(AtomicBool::new(false));
         let flag = oom.clone();
         let terminate = runtime.v8_isolate().thread_safe_handle();
@@ -278,11 +251,7 @@ impl V8Host {
         self.polled_at = Instant::now();
         self.heap = heap_bytes(self.runtime.as_mut().unwrap());
         if self.heap > self.heap_limit && !self.oom.load(Ordering::Relaxed) {
-            self.runtime
-                .as_mut()
-                .unwrap()
-                .v8_isolate()
-                .low_memory_notification();
+            collect_garbage(self.runtime.as_mut().unwrap(), false);
             self.heap = heap_bytes(self.runtime.as_mut().unwrap());
         }
         drop(entered);
@@ -602,7 +571,8 @@ impl ScriptHost for V8Host {
         self.frozen = frozen;
         if frozen && let Some(runtime) = &mut self.runtime {
             let _entered = self.executor.enter();
-            runtime.v8_isolate().low_memory_notification();
+            collect_garbage(runtime, true);
+            self.heap = heap_bytes(runtime);
         }
     }
 }

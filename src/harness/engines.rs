@@ -6,6 +6,7 @@ pub struct Test {
     stage: u8,
     start: Instant,
     first_pid: u32,
+    fixture_url: String,
 }
 impl Test {
     pub fn new() -> Self {
@@ -13,6 +14,7 @@ impl Test {
             stage: 0,
             start: Instant::now(),
             first_pid: 0,
+            fixture_url: String::new(),
         }
     }
 }
@@ -47,6 +49,7 @@ impl Browser {
                 ))
                 .unwrap();
                 self.harness.engine_test.as_mut().unwrap().first_pid = pid;
+                self.harness.engine_test.as_mut().unwrap().fixture_url = self.tab().url();
                 self.harness.engine_test.as_mut().unwrap().stage = 1;
             }
             1 => {
@@ -128,6 +131,39 @@ impl Browser {
                     "Counter clicked: 1",
                     "Cancellation preserves live JavaScript state"
                 );
+                // Preferences and live network policy must preserve the existing DOM.
+                let mut policy = self.profile().policy.clone();
+                policy.wega_rollout = false;
+                self.apply(wega::application::Command::Policy(policy));
+                assert_eq!(
+                    self.tab().wega.as_ref().unwrap().pid(),
+                    self.harness.engine_test.as_ref().unwrap().first_pid
+                );
+                assert_eq!(self.tab().title(), "Counter clicked: 1");
+                // The real missing-API reporter must offer fallback without silently
+                // replacing an edited page. Cancelling it must not prompt repeatedly.
+                self.tab()
+                    .wega
+                    .as_ref()
+                    .unwrap()
+                    .send(Command::Evaluate(
+                        "setTimeout(()=>document.body.unimplementedFallbackFixtureAPI(),0);'scheduled'".into(),
+                    ))
+                    .unwrap();
+                self.harness.engine_test.as_mut().unwrap().stage = 15;
+            }
+            15 => {
+                if !matches!(
+                    self.destructive_action,
+                    Some(crate::page_safety::Action::Fallback(_))
+                ) {
+                    return;
+                }
+                self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
+                assert!(self.is_wega());
+                assert_eq!(self.tab().title(), "Counter clicked: 1");
+                self.pump_wega();
+                assert!(self.destructive_action.is_none());
                 self.switch_engine(EngineKind::Servo);
                 self.coverage_click(&["Switch engine"], |b, ui| b.ui(ui));
                 assert_eq!(self.tab().engine, EngineKind::Servo);
@@ -197,8 +233,46 @@ impl Browser {
                 assert_eq!(self.tab().engine, EngineKind::Servo);
                 self.save();
                 assert_eq!(self.profile().engines, vec![EngineKind::Servo]);
+                let url = url::Url::parse(&self.harness.engine_test.as_ref().unwrap().fixture_url)
+                    .unwrap()
+                    .join("wega-fallback.html")
+                    .unwrap();
+                let mut policy = self.profile().policy.clone();
+                policy.site_engines.insert(
+                    wega::engine_choice::site_key(&url).unwrap(),
+                    EngineKind::Wega,
+                );
+                self.apply(wega::application::Command::Policy(policy));
+                assert!(self.replace_engine_confirmed(EngineKind::Wega, url, false));
+                self.harness.engine_test.as_mut().unwrap().stage = 16;
+            }
+            16 => {
+                if self.is_wega()
+                    || self.tab().loading()
+                    || self.tab().title() != "Wega fallback fixture"
+                {
+                    return;
+                }
+                assert!(
+                    self.destructive_action.is_none(),
+                    "An unedited failed initial page can fall back automatically"
+                );
+                let url = self.current_url().unwrap();
+                let key = wega::engine_choice::site_key(&url).unwrap();
+                assert_eq!(self.tab().fallback_origin.as_deref(), Some(key.as_str()));
+                assert_eq!(
+                    self.profile().policy.site_engines.get(&key),
+                    Some(&EngineKind::Wega),
+                    "Fallback preserves the explicit preference"
+                );
+                self.dispatch_navigation(wega::navigation::Command::Load(url.to_string()))
+                    .unwrap();
+                assert!(
+                    !self.is_wega(),
+                    "Same-site navigation must not create a fallback loop"
+                );
                 println!(
-                    "DUAL ENGINE TEST PASSED: lazy Servo, real Wega pixels, native JS click/IME input, footer selection both directions, persisted choice, freezing, discard/reload and closing"
+                    "DUAL ENGINE TEST PASSED: lazy Servo, real Wega pixels, native JS click/IME input, footer selection both directions, persisted choice, policy updates, freezing, discard/reload, edited fallback cancellation, automatic fallback and loop prevention"
                 );
                 self.harness.engine_test = None;
                 event_loop.exit();

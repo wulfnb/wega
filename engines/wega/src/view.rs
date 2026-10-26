@@ -1,6 +1,5 @@
 use crate::{Limits, network::Network, script::ScriptHost};
-use anyrender::ImageRenderer;
-use anyrender_vello_cpu::VelloCpuImageRenderer;
+
 use blitz_dom::{BaseDocument, DocumentConfig, NodeId, traversal::TreeTraverser};
 use blitz_html::HtmlDocument;
 use blitz_traits::{
@@ -52,7 +51,7 @@ impl NetProvider for Resources {
         let failed_url = request.url.to_string();
         let failed_wake = self.network.wake.clone();
         let failed_revision = self.revision.clone();
-        let task = move |client: &reqwest::blocking::Client| {
+        let task = move |client: &crate::network::Client| {
             if request.signal.as_ref().is_some_and(AbortSignal::aborted) {
                 return;
             }
@@ -123,8 +122,8 @@ pub struct View {
     navigation_rx: mpsc::Receiver<Url>,
     revision: Arc<AtomicU64>,
     last_revision: u64,
-    renderer: Option<VelloCpuImageRenderer>,
-    size: (u32, u32),
+    raster: crate::raster::Raster,
+    pub compatibility: Option<String>,
     started: Instant,
     dirty: bool,
     frozen: bool,
@@ -142,6 +141,7 @@ impl View {
         )
         .into_inner();
         let (_tx, navigation_rx) = mpsc::channel();
+        let raster = crate::raster::Raster::new(network.wake.clone())?;
         let mut view = Self {
             document: Rc::new(RefCell::new(document)),
             script: None,
@@ -156,8 +156,8 @@ impl View {
             navigation_rx,
             revision: Arc::new(AtomicU64::new(0)),
             last_revision: 0,
-            renderer: None,
-            size: (0, 0),
+            raster,
+            compatibility: None,
             started: Instant::now(),
             dirty: true,
             frozen: false,
@@ -198,6 +198,7 @@ impl View {
         self.stop();
         self.url = url.clone();
         self.loading = true;
+        self.compatibility = None;
         self.ready_event_sent = false;
         self.composing = false;
         if url.as_str() == "about:blank" {
@@ -386,6 +387,9 @@ impl View {
         }
         if let Some(script) = &mut self.script {
             for error in script.take_errors() {
+                if error.contains("; missing:") {
+                    self.compatibility.get_or_insert_with(|| error.clone());
+                }
                 self.notices.push_back(error);
             }
         }
@@ -416,6 +420,10 @@ impl View {
         self.notice(error);
     }
     fn script_error(&mut self, error: crate::script::ScriptError) {
+        if error.fatal || error.message.contains("; missing:") {
+            self.compatibility
+                .get_or_insert_with(|| error.message.clone());
+        }
         if error.fatal {
             self.script = None;
             self.scripts.clear();
@@ -515,8 +523,10 @@ impl View {
         if let Some(script) = &mut self.script {
             script.freeze(freeze);
         }
-        self.renderer = None;
-        self.size = (0, 0);
+        if freeze {
+            self.document.borrow_mut().release_image_cache();
+            self.raster.release();
+        }
         if !freeze {
             self.dirty = true;
         }
@@ -690,6 +700,18 @@ impl View {
         self.generated_events(generated, input_options);
         self.dirty = true;
     }
+    pub fn scroll_at(&mut self, x: f64, y: f64, pointer_x: f32, pointer_y: f32) {
+        let mut doc = self.document.borrow_mut();
+        let target = doc
+            .hit(pointer_x, pointer_y)
+            .map(|hit| hit.node_id)
+            .unwrap_or(doc.root_element().id);
+        let mut events = vec![];
+        doc.scroll_node_by(target, -x, -y, |event| events.push(event));
+        drop(doc);
+        self.generated_events(events, serde_json::json!({}));
+        self.dirty = true;
+    }
     pub fn scroll(&mut self, x: f64, y: f64) {
         let mut doc = self.document.borrow_mut();
         let p = doc.viewport_scroll();
@@ -699,14 +721,14 @@ impl View {
         });
         self.dirty = true;
     }
-    pub fn paint(
+    fn record_paint(
         &mut self,
         width: u32,
         height: u32,
         scale: f32,
         zoom: f32,
         dark: bool,
-    ) -> Result<Frame, String> {
+    ) -> Result<anyrender::Scene, String> {
         if width == 0
             || height == 0
             || width as usize * height as usize > self.limits.max_pixels
@@ -728,6 +750,12 @@ impl View {
                 ColorScheme::Light
             },
         });
+        let large = doc.tree().len() >= 512;
+        doc.set_style_threading(if large {
+            blitz_dom::StyleThreading::Parallel
+        } else {
+            blitz_dom::StyleThreading::Sequential
+        });
         doc.resolve(self.started.elapsed().as_secs_f64());
         drop(doc);
         let another_frame = if let Some(script) = &mut self.script {
@@ -743,33 +771,78 @@ impl View {
         };
         let mut doc = self.document.borrow_mut();
         doc.resolve(self.started.elapsed().as_secs_f64());
-        if self.size != (width, height) {
-            self.renderer = Some(VelloCpuImageRenderer::new(width, height));
-            self.size = (width, height);
-        }
-        let renderer = self.renderer.as_mut().unwrap();
-        renderer.reset();
-        let mut rgba = vec![];
-        renderer.render_to_vec(
-            |scene| {
-                blitz_paint::paint_scene(
-                    scene,
-                    &mut doc,
-                    (scale * zoom) as f64,
-                    width,
-                    height,
-                    0,
-                    0,
-                )
-            },
-            &mut rgba,
-        );
-        self.dirty = another_frame;
-        Ok(Frame {
+        let mut scene = anyrender::Scene::new();
+        blitz_paint::paint_scene(
+            &mut scene,
+            &mut doc,
+            (scale * zoom) as f64,
             width,
             height,
-            rgba,
-        })
+            0,
+            0,
+        );
+        self.dirty = another_frame;
+        Ok(scene)
+    }
+    pub fn configure_shared_frames(&mut self, path: &std::path::Path) -> Result<(), String> {
+        self.raster.set_store(
+            wega_platform::FrameStore::open(path, 4096 * 2160 * 4).map_err(|e| e.to_string())?,
+        )
+    }
+    pub fn paint_pending(&self) -> bool {
+        self.raster.pending()
+    }
+    pub fn begin_paint(
+        &mut self,
+        viewport: Viewport,
+        serial: u64,
+        target: Option<(u8, u64)>,
+    ) -> Result<(), String> {
+        let (width, height) = viewport.window_size;
+        let scene = self.record_paint(
+            width,
+            height,
+            viewport.hidpi_scale,
+            viewport.zoom,
+            matches!(viewport.color_scheme, ColorScheme::Dark),
+        )?;
+        self.raster.start(serial, width, height, scene, target)
+    }
+    pub fn take_painted(&mut self) -> Option<Result<crate::Painted, String>> {
+        self.raster.take()
+    }
+    pub fn paint(
+        &mut self,
+        width: u32,
+        height: u32,
+        scale: f32,
+        zoom: f32,
+        dark: bool,
+    ) -> Result<Frame, String> {
+        self.begin_paint(
+            Viewport {
+                window_size: (width, height),
+                hidpi_scale: scale,
+                zoom,
+                color_scheme: if dark {
+                    ColorScheme::Dark
+                } else {
+                    ColorScheme::Light
+                },
+            },
+            0,
+            None,
+        )?;
+        let result = self.raster.wait()?;
+        if let crate::Pixels::Owned(rgba) = result.pixels {
+            Ok(Frame {
+                width,
+                height,
+                rgba,
+            })
+        } else {
+            Err("Unexpected shared raster result".into())
+        }
     }
     pub fn text(&self, selector: &str) -> Option<String> {
         let doc = self.document.borrow();

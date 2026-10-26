@@ -140,3 +140,66 @@ fn failed_navigation_replaces_old_content_and_policy_updates_take_effect() {
             .any(|message| message.contains("policy"))
     );
 }
+
+#[test]
+fn startup_snapshot_is_private_per_document_and_freezing_preserves_live_state() {
+    let mut first = page(Limits::default());
+    first
+        .set_html("<input id=draft value=initial><script>globalThis.privateValue=42</script>")
+        .unwrap();
+    first.poll();
+    first
+        .evaluate("document.getElementById('draft').value='unsaved 文'")
+        .unwrap();
+    first.freeze(true);
+    first.poll();
+    first.freeze(false);
+    first.poll();
+    assert_eq!(
+        first
+            .evaluate_json("[privateValue,document.getElementById('draft').value]")
+            .unwrap(),
+        "[42,\"unsaved 文\"]"
+    );
+    // Production views own independent DOM threads/processes. Rusty V8 enters
+    // isolates at creation and requires nested isolates to be dropped in reverse
+    // creation order on a thread; do not reset an outer isolate while one is live.
+    let isolated = std::thread::spawn(|| {
+        let mut second = page(Limits::default());second.poll();
+        second.evaluate_json("[typeof privateValue,Object.getOwnPropertyNames(globalThis).filter(key=>key.startsWith('__wega_bootstrap_')).length]").unwrap()
+    }).join().unwrap();
+    assert_eq!(isolated, "[\"undefined\",0]");
+    first.set_html("<title>New document</title>").unwrap();
+    first.poll();
+    assert_eq!(
+        first.evaluate_json("typeof privateValue").unwrap(),
+        "\"undefined\""
+    );
+}
+
+#[test]
+fn parallel_style_threshold_preserves_updates_on_large_documents() {
+    let mut view = page(Limits::default());
+    view.set_html(&format!(
+        "<style>body{{margin:0}}#first{{height:16px;background:red}}</style><div id=first></div>{}",
+        "<div><span>large tree</span></div>".repeat(600)
+    ))
+    .unwrap();
+    view.poll();
+    assert!(view.node_count() > 512);
+    view.paint(64, 64, 1.0, 1.0, false).unwrap();
+    {
+        let pool = style::global_style_data::STYLE_THREAD_POOL.pool();
+        assert_eq!(
+            pool.as_ref().map(|pool| pool.current_num_threads()),
+            Some(2)
+        );
+    }
+    view.evaluate("document.getElementById('first').style.backgroundColor='lime'")
+        .unwrap();
+    let frame = view.paint(64, 64, 1.0, 1.0, false).unwrap();
+    assert_eq!(
+        &frame.rgba[(8 * 64 + 8) * 4..(8 * 64 + 8) * 4 + 4],
+        &[0, 255, 0, 255]
+    );
+}

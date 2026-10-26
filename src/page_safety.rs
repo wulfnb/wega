@@ -7,6 +7,7 @@ pub(crate) enum Action {
     Close(u64),
     Discard(u64),
     Switch(u64, EngineKind),
+    Fallback(u64),
     Navigate(u64, wega::navigation::Command),
     Quit,
 }
@@ -20,6 +21,7 @@ impl Browser {
         let key = match &action {
             Action::Close(key)
             | Action::Discard(key)
+            | Action::Fallback(key)
             | Action::Switch(key, _)
             | Action::Navigate(key, _) => Some(*key),
             Action::Quit => None,
@@ -59,6 +61,7 @@ impl Browser {
             }
             Action::Close(key)
             | Action::Discard(key)
+            | Action::Fallback(key)
             | Action::Switch(key, _)
             | Action::Navigate(key, _) => key,
         };
@@ -70,6 +73,15 @@ impl Browser {
             Action::Close(_) => self.close_tab_confirmed(index),
             Action::Discard(_) => {
                 self.discard_tab_confirmed(index);
+            }
+            Action::Fallback(_) => {
+                self.select_tab(index);
+                if let Some(url) = self.current_url() {
+                    let key = wega::engine_choice::site_key(&url);
+                    if self.replace_engine_confirmed(EngineKind::Servo, url, false) {
+                        self.mark_fallback(key);
+                    }
+                }
             }
             Action::Switch(_, engine) => {
                 self.select_tab(index);
@@ -91,7 +103,7 @@ impl Browser {
         let label = match self.destructive_action {
             Some(Action::Close(_)) => "Close tab",
             Some(Action::Discard(_)) => "Unload tab",
-            Some(Action::Switch(_, _)) => "Switch engine",
+            Some(Action::Switch(_, _)) | Some(Action::Fallback(_)) => "Switch engine",
             Some(Action::Navigate(_, _)) => "Leave page",
             _ => "Quit browser",
         };

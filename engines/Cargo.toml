@@ -1,5 +1,6 @@
 [workspace]
-members = ["wega"]
+members = ["wega", "network", "platform"]
+exclude = ["vendor", "v8-spike"]
 resolver = "2"
 
 [profile.dev]
@@ -11,3 +12,8 @@ deno_core = { path = "vendor/deno/deno_core" }
 deno_ops = { path = "vendor/deno/deno_ops" }
 serde_v8 = { path = "vendor/deno/serde_v8" }
 deno_v8 = { path = "vendor/deno/deno_v8" }
+
+blitz-dom = { path = "vendor/blitz/blitz-dom" }
+blitz-paint = { path = "vendor/blitz/blitz-paint" }
+stylo = { path = "vendor/blitz/stylo" }
+anyrender_skia = { path = "vendor/blitz/anyrender_skia" }

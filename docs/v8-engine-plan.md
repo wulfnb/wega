@@ -428,8 +428,9 @@ their own rerun. Evidence: `docs/validation/native-input-ci-followup.json`.
 Remote CI must rerun after the follow-up is pushed. The complete Docker image and
 Windows runtime were not rerun locally. No whole-project line-coverage percentage
 is claimed; completeness/coverage reports remain subject to `coverage-policy.json`.
-P4–P6 remain pending. Broad DOM/Web API conformance, full forms/FormData integration,
-CORS/CSP completeness, cross-worker live cookie synchronization, observer edge cases,
+The P4–P6 follow-up is recorded in [p4-p6-iteration.md](p4-p6-iteration.md).
+Broad DOM/Web API conformance, full forms/FormData integration,
+CORS/CSP completeness, observer edge cases,
 media and representative-site/RSS validation still need work. Classic scripts are
 queued while a static module graph loads. Keep Servo as the everyday default.
 Machine-readable local evidence: `docs/validation/p3-gates.json`.
@@ -459,3 +460,27 @@ clean-dependency build or a Windows runtime rerun.
 For baseline commit `a5ac41f`, main CI run `40288197021` passed all jobs, and the
 Windows job in V8 run `40288197041` passed V8 contracts before failing QuickJS
 contracts. The removal itself still needs a push and remote rerun.
+
+
+P4–P6 follow-up — 26 October 2026:
+
+The same iteration implements compiled startup factories, protocol v3 worker RSS,
+a bounded browser HTTP/cache/cookie broker, two-thread V8/Stylo pools, a separate
+Skia raster thread with owned display lists, two acknowledged shared frame slots,
+and non-destructive freeze collection/release. P5 adds documented upstream-ready
+Blitz/Stylo/Skia fixes and pinned CSS WPT/pixel regressions. P6 adds origin-scoped
+preferences, an address-bar badge, one-way compatibility fallback and an exact
+HTTPS rollout allowlist (`example.com`, `example.org`, `example.net`).
+
+Fallback is automatic only before input. Edited pages use the existing discard
+confirmation; cancellation keeps the live worker and does not repeatedly prompt.
+Live permissions update without reloading the DOM. A fallback never rewrites a
+saved site preference or switches the same tab back into a failing Wega page.
+
+The performance gates are measured separately from functional completion. Lite
+mode is chosen at process creation for simple pages; existing app isolates are
+paused/collected when hidden, preserving JIT/JS state. Live node images remain
+available offline after thaw; redundant caches, raster state and frame mappings
+are released. Do not describe this as full live-image eviction or a <10 MB frozen
+VM. See the iteration record for measurements, remaining targets and validation
+boundaries. Servo remains the general browsing engine.

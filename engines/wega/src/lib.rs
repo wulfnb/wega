@@ -1,18 +1,23 @@
 //! Owned page orchestration on Blitz, independent of Servo and SpiderMonkey.
 #![forbid(unsafe_code)]
 pub use blitz_traits::events;
-pub use blitz_traits::shell::ColorScheme;
+pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
 
 mod cookies;
 mod dom;
+mod extension_adapter;
 mod module_loader;
+mod native_ops;
 mod network;
+mod raster;
 mod script;
 mod v8;
 mod view;
 mod web;
+mod web_extensions;
 pub use network::NetworkPolicy;
+pub use raster::{Painted, Pixels};
 pub use view::{Frame, View};
 
 #[derive(Clone, Debug)]
@@ -55,12 +60,32 @@ impl Engine {
             limits,
         })
     }
+    /// Private tab workers delegate HTTP and cookies to the browser's shared broker.
+    pub fn brokered(
+        limits: Limits,
+        policy: NetworkPolicy,
+        wake: std::sync::Arc<dyn Fn() + Send + Sync>,
+        address: &str,
+        token: String,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            network: network::Network::brokered(
+                policy,
+                wake,
+                wega_network::Remote::new(address, token)?,
+            )?,
+            limits,
+        })
+    }
     /// Storage is always partitioned by the document's tuple origin by the host.
     pub fn with_storage_dir(mut self, path: std::path::PathBuf) -> Self {
         self.network.cookies.set_directory(path.clone());
         self.network.storage_dir = Some(path);
         self
     }
+    /// Keep each view on its owning DOM thread. As required by Rusty V8, nested
+    /// views on one thread must be destroyed/reset in reverse creation order.
+    /// Native browser tabs each have their own worker process and DOM thread.
     pub fn create_view(&self, url: Url) -> Result<View, String> {
         View::new(url, self.network.clone(), self.limits.clone())
     }

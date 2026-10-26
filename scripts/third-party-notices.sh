@@ -30,6 +30,8 @@ if [[ ! -s "$notices" ]]; then
   exit 1
 fi
 if [[ -f "$project_dir/engines/wega/Cargo.toml" ]]; then
+  mkdir -p "$out_dir/WEGA-ENGINE-NATIVE-LICENSES"
+  cp -R "$project_dir/engines/vendor/blitz/licenses/." "$out_dir/WEGA-ENGINE-NATIVE-LICENSES/"
   # The worker has a separate dependency graph. Root features do not apply to it.
   cargo about generate --locked --fail \
     --config "$project_dir/about.toml" \

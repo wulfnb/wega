@@ -1,41 +1,35 @@
 use std::{
     io::Read,
     sync::{Arc, Mutex, mpsc},
-    time::Duration,
 };
 use url::Url;
 
-#[derive(Clone, Default, Debug)]
-pub struct NetworkPolicy {
-    pub offline: bool,
-    pub blocked_hosts: String,
-    pub allowed_hosts: String,
+pub use wega_network::Policy as NetworkPolicy;
+#[derive(Clone)]
+pub(crate) enum Client {
+    Local {
+        http: wega_network::LocalClient,
+        policy: Arc<std::sync::RwLock<NetworkPolicy>>,
+        cookies: Arc<wega_network::Cookies>,
+    },
+    Remote(wega_network::Remote),
 }
-impl NetworkPolicy {
-    pub fn permits(&self, url: &Url) -> bool {
-        if self.offline {
-            return false;
+impl Client {
+    pub fn response(
+        &self,
+        request: &wega_network::Request,
+    ) -> Result<wega_network::Response, String> {
+        match self {
+            Self::Local {
+                http,
+                policy,
+                cookies,
+            } => http.fetch(request, policy, cookies),
+            Self::Remote(remote) => remote.fetch(request),
         }
-        let host = url
-            .host_str()
-            .unwrap_or_default()
-            .trim_end_matches('.')
-            .to_ascii_lowercase();
-        let matches = |rules: &str| {
-            rules.split_whitespace().any(|rule| {
-                let rule = rule
-                    .trim_start_matches("*.")
-                    .trim_end_matches('.')
-                    .to_ascii_lowercase();
-                !rule.is_empty() && (host == rule || host.ends_with(&format!(".{rule}")))
-            })
-        };
-        matches!(url.scheme(), "http" | "https")
-            && !matches(&self.blocked_hosts)
-            && (self.allowed_hosts.trim().is_empty() || matches(&self.allowed_hosts))
     }
 }
-type Task = Box<dyn FnOnce(&reqwest::blocking::Client) + Send>;
+type Task = Box<dyn FnOnce(&Client) + Send>;
 #[derive(Clone)]
 pub(crate) struct Network {
     jobs: mpsc::SyncSender<Task>,
@@ -46,32 +40,43 @@ pub(crate) struct Network {
 }
 impl Network {
     pub fn new(policy: NetworkPolicy, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
+        Self::create(policy, wake, None)
+    }
+    pub fn brokered(
+        policy: NetworkPolicy,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        remote: wega_network::Remote,
+    ) -> Result<Self, String> {
+        Self::create(policy, wake, Some(remote))
+    }
+    fn create(
+        policy: NetworkPolicy,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        remote: Option<wega_network::Remote>,
+    ) -> Result<Self, String> {
         let policy = Arc::new(std::sync::RwLock::new(policy));
-        let redirect_policy = policy.clone();
-        let cookies = Arc::new(crate::cookies::Cookies::default());
-        let client = reqwest::blocking::Client::builder()
-            .cookie_provider(cookies.clone())
-            .timeout(Duration::from_secs(15))
-            .connect_timeout(Duration::from_secs(5))
-            .pool_max_idle_per_host(2)
-            .user_agent("Wega/0.1 (experimental Blitz engine)")
-            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
-                if attempt.previous().len() >= 8
-                    || !redirect_policy
-                        .read()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .permits(attempt.url())
-                {
-                    attempt.error("Redirect blocked")
-                } else {
-                    attempt.follow()
-                }
-            }))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let brokered = remote.is_some();
+        let (client, cookies) = if let Some(remote) = remote {
+            (
+                Client::Remote(remote.clone()),
+                Arc::new(crate::cookies::Cookies::Remote(remote)),
+            )
+        } else {
+            let cookies = Arc::new(wega_network::Cookies::default());
+            (
+                Client::Local {
+                    http: wega_network::LocalClient::new()?,
+                    policy: policy.clone(),
+                    cookies: cookies.clone(),
+                },
+                Arc::new(crate::cookies::Cookies::Local(cookies)),
+            )
+        };
         let (jobs, receiver) = mpsc::sync_channel::<Task>(32);
         let receiver = Arc::new(Mutex::new(receiver));
-        for index in 0..4 {
+        // Tab workers have one lightweight broker dispatcher, no TLS/client pool.
+        // The standalone library retains a bounded local pool for in-process users.
+        for index in 0..if brokered { 1 } else { 4 } {
             let receiver = receiver.clone();
             let client = client.clone();
             std::thread::Builder::new()
@@ -88,7 +93,7 @@ impl Network {
                         job(&client);
                     }
                 })
-                .map_err(|e| e.to_string())?;
+                .map_err(|error| error.to_string())?;
         }
         Ok(Self {
             jobs,
@@ -98,16 +103,13 @@ impl Network {
             cookies,
         })
     }
-    pub fn spawn(
-        &self,
-        task: impl FnOnce(&reqwest::blocking::Client) + Send + 'static,
-    ) -> Result<(), String> {
+    pub fn spawn(&self, task: impl FnOnce(&Client) + Send + 'static) -> Result<(), String> {
         self.jobs
             .try_send(Box::new(task))
             .map_err(|_| "Network queue is full".into())
     }
     pub fn fetch(
-        client: &reqwest::blocking::Client,
+        client: &Client,
         policy: &NetworkPolicy,
         url: &Url,
         limit: usize,
@@ -118,12 +120,14 @@ impl Network {
                 if !policy.permits(url) {
                     return Err("Network request blocked by browsing policy".into());
                 }
-                let response = client
-                    .get(url.clone())
-                    .send()
-                    .and_then(|r| r.error_for_status())
-                    .map_err(|e| e.to_string())?;
-                (response.url().clone(), Box::new(response))
+                let response = client.response(&wega_network::Request::get(url, limit))?;
+                if !(200..300).contains(&response.status) {
+                    return Err(format!("HTTP {}", response.status));
+                }
+                return Ok((
+                    Url::parse(&response.url).map_err(|e| e.to_string())?,
+                    response.body,
+                ));
             }
             "file" => {
                 let path = url

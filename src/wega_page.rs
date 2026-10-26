@@ -29,6 +29,11 @@ pub(crate) fn executable() -> Option<PathBuf> {
 }
 #[derive(Default)]
 pub(crate) struct Snapshot {
+    pub serial: u64,
+    pub rss_bytes: Option<u64>,
+    pub interacted: bool,
+    pub compatibility: Option<String>,
+    pub fallback_reported: bool,
     pub url: String,
     pub title: String,
     pub loading: bool,
@@ -46,6 +51,8 @@ pub(crate) struct Snapshot {
 }
 pub(crate) struct Page {
     child: Child,
+    frames: Arc<Mutex<wega_platform::FrameStore>>,
+    broker: wega_network::SessionHandle,
     requests: Option<mpsc::SyncSender<Request>>,
     pub state: Arc<Mutex<Snapshot>>,
     pub texture: Option<egui::TextureHandle>,
@@ -58,12 +65,38 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
     let mut state = state
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    state.compatibility.get_or_insert_with(|| message.clone());
     state.failed = true;
     state.loading = false;
     if state.notices.len() < 16 {
         state.notices.push_back(message);
     }
     let _ = proxy.send_event(Wake::Ui);
+}
+fn accept_frame(shared: &Mutex<Snapshot>, serial: u64, width: u32, height: u32, bytes: Vec<u8>) {
+    let capture = {
+        let mut state = shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if serial != state.serial || state.frozen {
+            return;
+        }
+        state.capture.take()
+    };
+    // PNG encoding must not hold the UI's state lock.
+    let result = capture.map(|path| {
+        image::save_buffer(path, &bytes, width, height, image::ColorType::Rgba8)
+            .map_err(|e| e.to_string())
+    });
+    let mut state = shared
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if serial == state.serial && !state.frozen {
+        if let Some(result) = result {
+            state.capture_result = Some(result);
+        }
+        state.frame = Some((width, height, bytes));
+    }
 }
 impl Page {
     pub fn new(
@@ -73,9 +106,32 @@ impl Page {
         profile_dir: &std::path::Path,
     ) -> Result<Self, String> {
         let executable=executable().ok_or("Wega engine worker is not installed. Build it with python3 scripts/build-wega-engine.py --debug first.")?;
+        let broker = wega_network::Broker::shared()?.open_session(
+            profile_dir.join("wega-storage"),
+            wega_network::Policy {
+                offline: policy.offline,
+                blocked_hosts: policy.blocked_hosts.clone(),
+                allowed_hosts: policy.allowed_hosts.clone(),
+            },
+        )?;
+        let frames = Arc::new(Mutex::new(
+            wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4)
+                .map_err(|e| e.to_string())?,
+        ));
+        let frame_path = frames
+            .lock()
+            .unwrap()
+            .path()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let (broker_address, broker_token) = broker.endpoint();
         let mut command = Command::new(executable);
+        command.env("MALLOC_ARENA_MAX", "2");
         // Workers are private to a view, so process-wide V8 flags stay per-view.
-        if std::env::var_os("WEGA_ENGINE_LITE").is_some_and(|value| value == "1") {
+        if std::env::var_os("WEGA_ENGINE_LITE").is_some_and(|value| value == "1")
+            || wega::engine_choice::rollout_site(url)
+        {
             command.arg("--lite");
         }
         command
@@ -113,6 +169,8 @@ impl Page {
             }
         });
         let shared = state.clone();
+        let reader_frames = frames.clone();
+        let acknowledgements = sender.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<(), String> {
                 let mut ready = false;
@@ -132,41 +190,68 @@ impl Page {
                         continue;
                     }
                     match event {
-                        Event::Frame { width, height } => {
+                        Event::SharedFrame {
+                            serial,
+                            width,
+                            height,
+                            slot,
+                            sequence,
+                        } => {
+                            let size =
+                                protocol::frame_bytes(width, height).map_err(|e| e.to_string())?;
+                            // Acknowledge stale/frozen frames without faulting their pages back in.
+                            let bytes = {
+                                // Freeze takes these locks in the same order. Keep the
+                                // state lock through the copy so freeze cannot unmap and
+                                // then race with a reader remapping a hidden tab.
+                                let state = shared
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                if serial != state.serial || state.frozen {
+                                    None
+                                } else {
+                                    std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+                                    Some(
+                                        reader_frames
+                                            .lock()
+                                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                            .slot(slot as usize, size)
+                                            .map_err(|e| e.to_string())?
+                                            .to_vec(),
+                                    )
+                                }
+                            };
+                            acknowledgements
+                                .send(Request::FrameConsumed { slot, sequence })
+                                .map_err(|_| "Worker closed before frame acknowledgement")?;
+                            if let Some(bytes) = bytes {
+                                accept_frame(&shared, serial, width, height, bytes);
+                            }
+                        }
+                        Event::Compatibility { serial, reason } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if state.serial == serial && !state.fallback_reported {
+                                state.compatibility.get_or_insert(reason);
+                            }
+                        }
+                        Event::Frame {
+                            serial,
+                            width,
+                            height,
+                        } => {
                             let mut bytes = vec![
                                 0;
                                 protocol::frame_bytes(width, height)
                                     .map_err(|e| e.to_string())?
                             ];
                             stdout.read_exact(&mut bytes).map_err(|e| e.to_string())?;
-                            let capture = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .capture
-                                .take();
-                            if let Some(path) = capture {
-                                let result = image::save_buffer(
-                                    &path,
-                                    &bytes,
-                                    width,
-                                    height,
-                                    image::ColorType::Rgba8,
-                                )
-                                .map_err(|e| e.to_string());
-                                shared
-                                    .lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                    .capture_result = Some(result);
-                            }
-                            // Keep the newest frame only. A slow UI cannot grow a backlog.
-                            let mut state = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if !state.frozen {
-                                state.frame = Some((width, height, bytes));
-                            }
+                            accept_frame(&shared, serial, width, height, bytes);
                         }
                         Event::State {
+                            serial,
+                            rss_bytes,
                             url,
                             title,
                             loading,
@@ -176,6 +261,10 @@ impl Page {
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if serial != state.serial {
+                                continue;
+                            }
+                            state.rss_bytes = rss_bytes;
                             if state.loading && !loading {
                                 state.visited = Some((url.clone(), title.clone()));
                             }
@@ -219,6 +308,8 @@ impl Page {
         });
         let page = Self {
             child,
+            frames,
+            broker,
             requests: Some(sender),
             state,
             texture: None,
@@ -233,6 +324,9 @@ impl Page {
             offline: policy.offline,
             blocked_hosts: policy.blocked_hosts.clone(),
             allowed_hosts: policy.allowed_hosts.clone(),
+            broker_address: Some(broker_address),
+            broker_token: Some(broker_token),
+            frame_path: Some(frame_path),
             storage_dir: Some(
                 profile_dir
                     .join("wega-storage")
@@ -243,6 +337,30 @@ impl Page {
         Ok(page)
     }
     pub fn send(&self, request: Request) -> Result<(), String> {
+        if matches!(
+            &request,
+            Request::Click { .. }
+                | Request::Key { pressed: true, .. }
+                | Request::Ime { .. }
+                | Request::Evaluate(_)
+        ) {
+            self.state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .interacted = true;
+        }
+        if let Request::Policy {
+            offline,
+            blocked_hosts,
+            allowed_hosts,
+        } = &request
+        {
+            self.broker.set_policy(wega_network::Policy {
+                offline: *offline,
+                blocked_hosts: blocked_hosts.clone(),
+                allowed_hosts: allowed_hosts.clone(),
+            });
+        }
         self.requests
             .as_ref()
             .ok_or("Worker is closed")?
@@ -330,15 +448,35 @@ impl Page {
         if frozen {
             self.texture = None;
             state.frame = None;
+            self.frames
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .release_pages();
         }
         self.viewport = None;
     }
-    #[cfg(feature = "test-harness")]
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
+    fn request_load(&self, url: &url::Url) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let serial = state.serial.wrapping_add(1);
+        self.send(Request::Load {
+            url: url.to_string(),
+            serial,
+        })?;
+        state.serial = serial;
+        state.interacted = false;
+        state.compatibility = None;
+        state.fallback_reported = false;
+        drop(state);
+        Ok(())
+    }
     pub fn load_url(&mut self, url: url::Url) -> Result<(), String> {
-        self.send(Request::Load(url.to_string()))?;
+        self.request_load(&url)?;
         self.history.truncate(self.index + 1);
         self.history.push(url.to_string());
         self.index = self.history.len() - 1;
@@ -381,7 +519,9 @@ impl NavigationPort for Page {
         let _ = self.load_url(url);
     }
     fn reload(&mut self) {
-        let _ = self.send(Request::Load(self.url()));
+        if let Ok(url) = url::Url::parse(&self.url()) {
+            let _ = self.request_load(&url);
+        }
     }
     fn traverse(&mut self, forward: bool) -> bool {
         if (forward && !self.can_forward()) || (!forward && !self.can_back()) {
@@ -392,8 +532,9 @@ impl NavigationPort for Page {
         } else {
             self.index - 1
         };
-        if self
-            .send(Request::Load(self.history[next].clone()))
+        if url::Url::parse(&self.history[next])
+            .map_err(|e| e.to_string())
+            .and_then(|url| self.request_load(&url))
             .is_err()
         {
             return false;

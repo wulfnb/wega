@@ -163,9 +163,9 @@ jobs:
       - name: Build and test the independent Wega engine
         run: |
           python scripts/build-wega-engine.py --debug
-          cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine
-          cargo clippy --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets -- -D warnings
-          cargo fmt --manifest-path engines/Cargo.toml --check
+          cargo test --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine
+          cargo clippy --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets -- -D warnings
+          cargo fmt --manifest-path engines/Cargo.toml --all --check
       - name: Instrumented unit and real engine coverage
         run: python scripts/desktop-coverage.py
       - name: Native integration suite verification
