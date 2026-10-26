@@ -4,8 +4,11 @@ $version = '1.28.8'
 $installer = Join-Path $env:RUNNER_TEMP "gstreamer-msvc-$version.exe"
 $sdk = Join-Path $env:RUNNER_TEMP 'wega-gstreamer'
 $url = "https://gstreamer.freedesktop.org/pkg/windows/$version/msvc/gstreamer-1.0-msvc-x86_64-$version.exe"
-Invoke-WebRequest $url -OutFile $installer
 $expected = 'E4C41EE6EE9C6C32A45D198463EC08D79BAC3BD5FA58ADC93D13FE4A08ABC9D9'
+# CI restores the installer from actions/cache; download only when it is absent or stale.
+if (!(Test-Path $installer) -or (Get-FileHash $installer -Algorithm SHA256).Hash -ne $expected) {
+    Invoke-WebRequest $url -OutFile $installer
+}
 if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $expected) { throw 'GStreamer SDK checksum mismatch' }
 $process = Start-Process $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/portable=1', '/CURRENTUSER', '/TYPE=devel', "/DIR=`"$sdk`"" -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "GStreamer SDK installation failed: $($process.ExitCode)" }
@@ -13,7 +16,6 @@ if (!(Test-Path "$sdk\bin\gst-inspect-1.0.exe")) { throw 'GStreamer SDK has an u
 "GSTREAMER_1_0_ROOT_MSVC_X86_64=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 "PKG_CONFIG_PATH=$sdk\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 "$sdk\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-Remove-Item $installer
 $actualVersion = & "$sdk\bin\gst-inspect-1.0.exe" --version
 if ($LASTEXITCODE -ne 0 -or ($actualVersion -join ' ') -notmatch 'GStreamer 1\.28\.8(?:\s|$)') { throw 'Installed SDK version does not match the pinned release' }
 @{ version = $version; installer_sha256 = $expected; source = $url } | ConvertTo-Json | Set-Content "$sdk\WEGA-SDK-PROVENANCE.json" -Encoding utf8

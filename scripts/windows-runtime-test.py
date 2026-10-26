@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
@@ -66,7 +67,12 @@ def main():
                         current=request('GET',route+'/window/handles')
                         if len(current)==len(handles)+1:
                             request('POST',route+'/window',{'handle':current[-1]})
-                            if request('GET',route+'/title')==title:break
+                            # A new tab answers document.title with a JavaScript
+                            # error (HTTP 500) until its first document exists.
+                            try:
+                                if request('GET',route+'/title')==title:break
+                            except urllib.error.HTTPError as error:
+                                if error.code!=500:raise
                         if time.monotonic()>until:raise AssertionError('URL/file handoff did not load expected content')
                         time.sleep(.2)
                     assert primary.poll() is None,'Primary process exited'

@@ -8,14 +8,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
     CARGO_PROFILE_RELEASE_LTO=false \
     RUSTFLAGS="-C link-arg=-fuse-ld=lld"
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential clang libclang-dev lld cmake pkg-config python3 git curl ca-certificates \
-    autoconf automake libtool m4 gperf libdbus-1-dev libegl1-mesa-dev \
-    libfreetype6-dev libfontconfig1-dev libgles2-mesa-dev libglib2.0-dev \
-    libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
-    libharfbuzz-dev liblzma-dev \
-    libudev-dev libunwind-dev libx11-dev libxcb-render0-dev libxcb-shape0-dev \
-    libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev libxmu-dev \
+# Shared with the CI jobs that build the same binaries outside Docker.
+COPY docker/builder-packages.txt /tmp/builder-packages.txt
+RUN apt-get update && xargs -a /tmp/builder-packages.txt apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # Third-party license notices (cargo-about). Set LICENSE_NOTICES=0 to skip the
 # tool for quick local builds; the image then carries only LICENSE and NOTICE.
@@ -112,10 +107,18 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
     CMD /usr/local/bin/entrypoint.sh healthcheck
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 
-FROM desktop AS runtime
 LABEL org.opencontainers.image.title="Wega" \
       org.opencontainers.image.description="Native Rust browser powered by Servo, with a secure web viewer" \
       org.opencontainers.image.licenses="MPL-2.0" \
       org.opencontainers.image.source="https://github.com/wulfnb/wega"
+
+# CI target: binaries compiled outside Docker by scripts/build-linux-binaries.sh
+# in the same RUST_IMAGE, so the Cargo cache survives between workflow runs.
+# Keep it before `runtime`, which stays the default (last) target.
+FROM desktop AS runtime-prebuilt
+COPY dist/docker/notices/ /usr/share/doc/wega/
+COPY dist/docker/wega dist/docker/wega-engine /usr/local/bin/
+
+FROM desktop AS runtime
 COPY --from=builder /out/notices/ /usr/share/doc/wega/
 COPY --from=builder /out/wega /out/wega-engine /usr/local/bin/
