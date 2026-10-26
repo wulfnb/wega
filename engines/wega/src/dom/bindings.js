@@ -1090,11 +1090,25 @@
       this.replaceWith(...context.childNodes);
     }
     insertAdjacentHTML(position, html) {
-      const context = this.ownerDocument.createElement(
-        this.parentElement?.localName || "body",
+      position = String(position).toLowerCase();
+      const outside = position === "beforebegin" || position === "afterend";
+      if (!outside && position !== "afterbegin" && position !== "beforeend")
+        fail("SyntaxError", "Invalid insertion position");
+      let context = outside ? this.parentNode : this;
+      if (!context || context.nodeType === 9)
+        fail("NoModificationAllowedError", "Insertion needs a parent element");
+      if (
+        context.nodeType !== 1 ||
+        (context.namespaceURI === "http://www.w3.org/1999/xhtml" &&
+          context.localName === "html")
+      )
+        context = this.ownerDocument.createElement("body");
+      const fragment = this.ownerDocument.createElementNS(
+        context.namespaceURI,
+        context.localName,
       );
-      context.innerHTML = String(html);
-      this.insertAdjacentElementList(position, [...context.childNodes]);
+      fragment.innerHTML = String(html);
+      this.insertAdjacentElementList(position, [...fragment.childNodes]);
     }
     insertAdjacentElementList(position, nodes) {
       switch (String(position).toLowerCase()) {
@@ -1300,7 +1314,17 @@
   class HTMLIFrameElement extends HTMLElement {}
   Object.defineProperty(Element.prototype, "form", {
     get() {
-      if (!["input", "button", "select", "textarea", "fieldset", "output", "object"].includes(this.localName))
+      if (
+        ![
+          "input",
+          "button",
+          "select",
+          "textarea",
+          "fieldset",
+          "output",
+          "object",
+        ].includes(this.localName)
+      )
         return undefined;
       const owner = this.getAttribute("form");
       if (owner !== null)
@@ -1327,7 +1351,11 @@
         host("submitForm", this._id, submitter ? submitter._id : "");
     }
     reset() {
-      if (this.dispatchEvent(new Event("reset", { bubbles: true, cancelable: true })))
+      if (
+        this.dispatchEvent(
+          new Event("reset", { bubbles: true, cancelable: true }),
+        )
+      )
         for (const control of this.elements) {
           if (["checkbox", "radio"].includes(control.type))
             control.checked = control.defaultChecked;
@@ -1439,7 +1467,9 @@
   ])
     Object.defineProperty(HTMLScriptElement.prototype, key, {
       get() {
-        return this.getAttribute(attribute) ?? (key === "crossOrigin" ? null : "");
+        return (
+          this.getAttribute(attribute) ?? (key === "crossOrigin" ? null : "")
+        );
       },
       set(value) {
         this.setAttribute(attribute, value);
@@ -1984,7 +2014,13 @@
       if (url === "" || url === "about:blank") return null;
       if (!host("open", String(url))) return null;
       // The new page runs in its own engine; this handle cannot reach it.
-      return { closed: false, close() {}, focus() {}, blur() {}, postMessage() {} };
+      return {
+        closed: false,
+        close() {},
+        focus() {},
+        blur() {},
+        postMessage() {},
+      };
     },
     getComputedStyle: (element) => new CSSStyleDeclaration(element, true),
     CSS: {
@@ -2088,8 +2124,12 @@
     __wega_resources_done: {
       value: (done) => {
         const status = new Map(done);
-        for (const element of document.querySelectorAll("img[src], link[href]")) {
-          const raw = element.getAttribute(element.localName === "img" ? "src" : "href");
+        for (const element of document.querySelectorAll(
+          "img[src], link[href]",
+        )) {
+          const raw = element.getAttribute(
+            element.localName === "img" ? "src" : "href",
+          );
           let url;
           try {
             url = new URL(raw, document.URL).href;

@@ -64,7 +64,7 @@ mappings, requests V8 collection and trims glibc allocations. Existing app isola
 keep their JIT state; lite mode is chosen only at process creation.
 
 Skia/CSS tests cover demonstrated rendering gaps, seven pinned CSS WPT assertions,
-an overflow reftest and ten pixel/layout regressions. This is a tested subset of
+an overflow reftest and eleven pixel/layout regressions. This is a tested subset of
 CSS, not full conformance. Exact vendor patches and archive hashes are reviewable;
 upstream PRs have not been submitted. WebSocket still uses Deno's native transport.
 
@@ -74,3 +74,11 @@ functional compatibility for editors or applications. Servo remains the general
 default; only exact HTTPS origins example.com/org/net on port 443 are default-on. Preferences route
 address-bar, new-tab and supported browser navigations. In-page POST submissions
 and engine-owned history keep their method, payload and current engine.
+
+Reference-pixel review also exposed a fragment insertion bug inherited from the
+web-correctness merge: `body.insertAdjacentHTML("afterbegin", ...)` parsed through
+an HTML-root context, inserting nested head/body nodes and applying body padding
+twice. Insertion now chooses its context by position and preserves table/SVG
+namespaces, following the
+[HTML insertion algorithm](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#the-insertadjacenthtml()-method).
+Reverting the fix fails both a DOM context test and a rendered SVG position test.

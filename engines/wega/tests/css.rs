@@ -178,3 +178,25 @@ fn viewport_units_are_css_pixels_on_hidpi_displays() {
         "\"25px\""
     );
 }
+
+#[test]
+fn inserted_svg_does_not_duplicate_the_body_or_its_padding() {
+    let mut view = page(
+        "<style>body{padding-top:50px}p{margin:0}</style><p>reference text</p><script>document.body.insertAdjacentHTML('afterbegin',`<style>svg{display:block;margin:-44px auto 0}</style><svg width=44 height=44><rect width=44 height=44 fill=lime /></svg>`)</script>",
+    );
+    let frame = view.paint(200, 200, 1.0, 1.0, false).unwrap();
+    assert_eq!(
+        view.evaluate_json("document.querySelector('svg').getBoundingClientRect().y")
+            .unwrap(),
+        "6"
+    );
+    assert_eq!(
+        &frame.rgba[(8 * 200 + 100) * 4..(8 * 200 + 100) * 4 + 4],
+        &[0, 255, 0, 255]
+    );
+    assert_eq!(
+        view.evaluate_json("document.querySelectorAll('body').length")
+            .unwrap(),
+        "1"
+    );
+}

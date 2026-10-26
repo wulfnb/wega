@@ -21,3 +21,4 @@ engines/vendor/**/*.js text eol=lf
 engines/vendor/**/*.patch text eol=lf
 # A blank unified-diff context line is one space by definition.
 engines/vendor/**/*.patch whitespace=-blank-at-eol
+engines/vendor/blitz/licenses/** text eol=lf
