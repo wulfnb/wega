@@ -10729,6 +10729,7 @@ dependencies = [
  "egui-winit",
  "egui_glow",
  "euclid",
+ "getrandom 0.3.4",
  "http",
  "image",
  "libc",

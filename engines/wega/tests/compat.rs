@@ -58,6 +58,26 @@ fn jquery() {
     counter("jquery");
 }
 #[test]
+fn trak_in_jquery_363_browser_bundle_initializes_and_manipulates_dom() {
+    let engine = Engine::new(
+        Limits {
+            script_time: Duration::from_secs(2),
+            ..Limits::default()
+        },
+        NetworkPolicy::default(),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let mut view = engine
+        .create_view(Url::parse("about:blank").unwrap())
+        .unwrap();
+    view.set_html("<body><main id='mount'></main>").unwrap();
+    view.poll();
+    view.evaluate(include_str!("fixtures/jquery-3.6.3.min.js"))
+        .unwrap();
+    assert_eq!(view.evaluate_json("(()=>{const node=jQuery('<div><span>trak</span></div>');jQuery(document.body).append(node);return [jQuery.fn.jquery,node.find('span').text(),node[0].ownerDocument===document]})()").unwrap(), "[\"3.6.3\",\"trak\",true]");
+}
+#[test]
 fn react() {
     counter("react");
 }

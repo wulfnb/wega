@@ -362,6 +362,7 @@ impl Browser {
                 self.request_quit();
                 self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
                 assert!(!self.quit_requested);
+                self.check_containers_ui_contract();
                 println!(
                     "SMOKE TEST PASSED: Servo HTML/CSS/JS, native mouse routing, typing, scrolling, back/forward, popup tabs, top/side layouts, reorder, close, bookmarks, profile round-trip, console, toolbar reload, readable gradient text, unchanged regular gradients, aligned library panels, GPU pixels, unsaved textarea retained after cancelled close/quit"
                 );

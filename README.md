@@ -88,6 +88,17 @@ interaction and developer-tools integration tests in Docker. The Dockerfile
 supports AMD64 builds, but that architecture has not been runtime verified here.
 See the [Servo embedding guide](https://book.servo.org/embedding/overview.html).
 
+## Multi-account containers
+
+**Containers** is available by default beside the engine badge. Open Personal,
+Work, Banking or Shopping to keep separate sign-ins, or add your own names and
+colors in **Manage containers…**. **Open copy of this page in…** retains the
+original tab and opens its URL in the selected account space.
+
+Containers currently use **separate windows and isolated engine profiles** for
+both Servo and Wega. Every tab in a window shares that container. This is a native
+feature; Firefox's add-on is not installed. See [isolation, limitations and tests](docs/containers.md).
+
 ## Docker
 
 Run the [published Docker image](https://github.com/wulfnb/wega/pkgs/container/wega) through the HTTPS viewer with a persistent profile:

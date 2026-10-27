@@ -171,6 +171,13 @@ jobs:
         run: python scripts/desktop-coverage.py
       - name: Native integration suite verification
         run: python scripts/native-tests.py --suite all
+      - name: Native container account isolation and window handoff
+        run: python tests/containers_smoke.py --binary target/debug/wega --output target/containers-validation/${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: containers-macos
+          path: target/containers-validation/${{ github.run_id }}-${{ github.run_attempt }}/
       # Cargo caches can restore old reports; every workflow attempt needs a fresh output.
       - name: Two-engine compatibility and process-tree baseline
         if: github.event_name != 'pull_request'

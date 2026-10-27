@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-27",
+  "source_base": "eb7324417eb8fe06c1fc006d094babe7d7a4c43c",
+  "branch": "main",
+  "changes": "uncommitted alongside native containers",
+  "platform": "macOS ARM64",
+  "old_bundle": {
+    "path": "target/Wega.app/Contents/MacOS/wega-engine",
+    "size": 87920800,
+    "sha256": "bbfec00d0b9e0ef70f7117355f78f3cef8fa969b9b37e4bf8f5846bf62127d89",
+    "contains_reported_error_prefix": true,
+    "contains_QuickJS": true
+  },
+  "new_tab_before": {
+    "result": "reproduced Option::unwrap panic in focus_content while GUI is owned by redraw",
+    "log": "target/trak-debug/new-tab-before/engine-mxn0wjr5/browser.log"
+  },
+  "native_after": [
+    {
+      "suite": "smoke",
+      "exit_code": 0,
+      "seconds": 45.39,
+      "profile": "/Users/noufalbabu/dev/personal/lotse/target/trak-debug/native-after/smoke-apt33uno"
+    },
+    {
+      "suite": "engine",
+      "exit_code": 0,
+      "seconds": 21.46,
+      "profile": "/Users/noufalbabu/dev/personal/lotse/target/trak-debug/native-after/engine-cz05520e"
+    }
+  ],
+  "workspace_checkpoint": {
+    "passed": 112,
+    "failed": 0,
+    "ignored": 1,
+    "log": "target/trak-debug/engine-tests.log"
+  },
+  "final_engine_regressions": {
+    "passed": 30,
+    "failed": 0,
+    "ignored": 0,
+    "log": "target/trak-debug/final-engine-regressions.log"
+  },
+  "live_before": "target/trak-debug/live-worker-before.json",
+  "live_after": {
+    "log": "target/trak-debug/live-worker-final.json",
+    "reported_missing_api_errors_absent": true,
+    "full_functional_pass": false,
+    "remaining_notices": [
+      "https://load.sumome.com/sumome.js: slow script (431 ms); the page may be unresponsive",
+      "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js: slow script (2001 ms); the page may be unresponsive",
+      "https://www.googletagmanager.com/gtag/js?id=G-25JFMD18QP: slow script (100 ms); the page may be unresponsive",
+      "wega:resources: slow script (1194 ms); the page may be unresponsive",
+      "https://cdn.izooto.com/scripts/sdk/izooto.js: Uncaught undefined",
+      "Uncaught Error: execution terminated"
+    ],
+    "script_context_survives": false
+  },
+  "package": {
+    "path": "target/Wega.app",
+    "build_log": "target/trak-debug/package-macos.log",
+    "strict_signature_verification": "passed",
+    "signing": "ad hoc"
+  },
+  "source_sha256": {
+    "src/browser.rs": "d0d632dafb3be72cd13f170c662021f464e672fb3c59db0eb79db122654afaae",
+    "src/chrome.rs": "231b75276c24a4fb1732b7fc63bcb230d0a05693272db91e9d52e3d07818c7f8",
+    "src/ui.rs": "015533b82f1f693ef956ee4ebd6e1414f05a1431ad580d8b36840fc1e3804794",
+    "src/harness/engines.rs": "9018f94ecf57b5613c365e1509b3845272555d747d9c33bfd3f143db1df8cf54",
+    "engines/wega/src/dom/bindings.js": "5519ea77728756db601379be3882968eb1bdb85fd797904729fb2d16551a57c1",
+    "engines/wega/tests/dom.rs": "67472a593f640f64bf8ec70f064732d42c73bd990d666186da429b0d9127808f",
+    "engines/wega/tests/compat.rs": "7f0763083a151ba638ffb514a63c75bad606afb11682ac88143ecb1e216cf6fe",
+    "engines/wega/tests/fixtures/jquery-3.6.3.min.js": "a6f3f0faea4b3d48e03176341bef0ed3151ffbf226d4c6635f1c6039c0500575",
+    "docs/trak-and-new-tab-fixes.md": "0c0009da8b1e72ddacc04040f92b6b8eeec357c35d13e54c81bb8eaf9aa084d7"
+  },
+  "binary_sha256": {
+    "target/Wega.app/Contents/MacOS/wega": "d41f0195e0af94348cd44bfb17183fda5275a24a5f3b5976c93c02dc1262319d",
+    "target/Wega.app/Contents/MacOS/wega-engine": "40437e26cbf6f78a044de9773f1b10104aa69716e261b5c07d24ddbd93ddabae"
+  },
+  "pending": [
+    "Full trak.in functionality: third-party SDK exception and execution limit remain",
+    "Remote CI and Windows/Linux runtime verification"
+  ],
+  "strict_lints": {
+    "desktop_harness": "passed",
+    "engine_all_targets": "passed",
+    "logs": [
+      "target/trak-debug/desktop-clippy.log",
+      "target/trak-debug/engine-clippy.log"
+    ]
+  }
+}

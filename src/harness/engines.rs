@@ -19,6 +19,39 @@ impl Test {
     }
 }
 impl Browser {
+    fn check_new_tab_render_contract(&mut self) {
+        let original = self.session().active();
+        let original_key = self.tab().key;
+        let worker = self.tab().wega.as_ref().unwrap().pid();
+        let layout = self.profile().layout;
+        for layout in [
+            crate::profile::TabLayout::Side,
+            crate::profile::TabLayout::Top,
+        ] {
+            self.apply(wega::application::Command::Layout(layout));
+            let count = self.session().tabs().len();
+            // redraw() owns the GUI outside Browser while widgets run. The old
+            // focus_content unwrap crashed only on real UI clicks, not shortcuts
+            // or AccessKit contracts which left the GUI inside Browser.
+            let gui = self.gui.take().unwrap();
+            self.coverage_click(&["New tab"], |browser, ui| browser.ui(ui));
+            self.gui = Some(gui);
+            assert_eq!(self.session().tabs().len(), count + 1);
+            assert_eq!(self.tab().url(), "wega://newtab");
+            assert!(!self.is_wega());
+            self.handle_event(winit::event::WindowEvent::RedrawRequested);
+            assert!(!self.chrome.clear_address_focus);
+            assert!(self.chrome.page_focused);
+            self.close_tab(self.session().active());
+            self.select_tab(original);
+            assert_eq!(self.tab().key, original_key);
+            assert_eq!(self.tab().wega.as_ref().unwrap().pid(), worker);
+        }
+        self.apply(wega::application::Command::Layout(layout));
+        println!(
+            "NEW TAB RENDER TEST PASSED: sidebar/top click during GUI ownership, lazy Servo and preserved Wega worker"
+        );
+    }
     pub fn check_engine_test(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let Some(test) = &self.harness.engine_test else {
             return;
@@ -42,14 +75,34 @@ impl Browser {
                     !self.servo.initialized(),
                     "A Wega-only launch must not initialize Servo"
                 );
+                self.check_new_tab_render_contract();
                 let page = self.tab().wega.as_ref().unwrap();
-                let pid = page.pid();
+                self.harness.engine_test.as_mut().unwrap().first_pid = page.pid();
+                self.harness.engine_test.as_mut().unwrap().fixture_url = self.tab().url();
+                self.harness.engine_test.as_mut().unwrap().stage = 17;
+                // The AccessKit contract renders at a synthetic size and switches
+                // layouts/tabs. Restore the actual window viewport before asking
+                // the worker for coordinates; a queued resize is not a layout ack.
+                self.handle_event(winit::event::WindowEvent::RedrawRequested);
+            }
+            17 => {
+                let page = self.tab().wega.as_ref().unwrap();
+                let Some((width, height, ..)) = page.viewport else {
+                    return;
+                };
+                if page
+                    .texture
+                    .as_ref()
+                    .is_none_or(|texture| texture.size() != [width as usize, height as usize])
+                {
+                    return;
+                }
+                // Pixels at the restored dimensions prove the worker has laid
+                // out this viewport, rather than the preceding synthetic one.
                 page.send(Command::Evaluate(
                     "document.getElementById('counter').getBoundingClientRect()".into(),
                 ))
                 .unwrap();
-                self.harness.engine_test.as_mut().unwrap().first_pid = pid;
-                self.harness.engine_test.as_mut().unwrap().fixture_url = self.tab().url();
                 self.harness.engine_test.as_mut().unwrap().stage = 1;
             }
             1 => {
@@ -67,7 +120,15 @@ impl Browser {
                 let rect: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
                 let x = rect["x"].as_f64().unwrap() + rect["width"].as_f64().unwrap() / 2.0;
                 let y = rect["y"].as_f64().unwrap() + rect["height"].as_f64().unwrap() / 2.0;
+                println!(
+                    "ENGINE CLICK: button={rect}, page={:?}, viewport={:?}",
+                    self.chrome.page_rect,
+                    self.tab().wega.as_ref().unwrap().viewport
+                );
                 self.smoke_click(x, y);
+                // Deliver the queued move/down/up in this frame, before any
+                // later native events or layout changes can alter the target.
+                self.handle_event(winit::event::WindowEvent::RedrawRequested);
                 self.harness.engine_test.as_mut().unwrap().stage = 2;
             }
             2 => {

@@ -131,6 +131,7 @@ pub struct Browser {
     pub(crate) gui: Option<egui_glow::EguiGlow>,
     application: Application,
     pub(crate) profile_dir: PathBuf,
+    pub(crate) containers: crate::containers_ui::State,
     last_window_title: String,
     pub(crate) tool_window: Option<crate::tool_window::ToolWindow>,
     pub(crate) tools: crate::toolbox::Toolbox,
@@ -166,7 +167,11 @@ impl Browser {
             .profile_dir
             .clone()
             .unwrap_or_else(Profile::default_dir);
+        let containers = crate::containers_ui::State::new(options, &profile_dir)?;
         let mut downloads = crate::downloads::Manager::new(&profile_dir);
+        if options.container.is_some() {
+            downloads.directory = profile_dir.join("Downloads");
+        }
         if options.download_test {
             downloads.directory = profile_dir.join("test-downloads");
         }
@@ -317,6 +322,7 @@ impl Browser {
             gui: Some(gui),
             application,
             profile_dir,
+            containers,
             last_window_title: String::new(),
             resources: crate::resources::Monitor::new(),
             downloads,
@@ -367,6 +373,9 @@ impl Browser {
             vec!["http://127.0.0.1:8767/toolbox.html".into()]
         } else if let Some(url) = &options.url {
             vec![browser.resolve(url)?.to_string()]
+        } else if options.container.is_some() && !browser.profile_dir.join("browser.json").is_file()
+        {
+            vec!["wega://newtab".into()]
         } else {
             browser.profile().urls.clone()
         };
@@ -605,7 +614,6 @@ impl Browser {
         self.focus_content();
     }
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub(crate) fn open_launch_urls(&mut self, urls: Vec<url::Url>) {
         if urls.is_empty() {
             self.window.set_visible(true);
@@ -623,9 +631,13 @@ impl Browser {
 
     fn focus_content(&mut self) {
         self.chrome.focus_address = false;
-        self.gui.as_ref().unwrap().egui_ctx.memory_mut(|memory| {
-            memory.surrender_focus(egui::Id::unique("address"));
-        });
+        self.chrome.clear_address_focus = true;
+        if let Some(gui) = &self.gui {
+            gui.egui_ctx.memory_mut(|memory| {
+                memory.surrender_focus(egui::Id::unique("address"));
+            });
+            self.chrome.clear_address_focus = false;
+        }
         self.chrome.page_focused = true;
         if let Some(view) = self.tab().view() {
             view.set_focused(true);
@@ -1530,7 +1542,18 @@ impl Browser {
     fn sync_window_title(&mut self) {
         // Setting an unchanged X11 title emits property events. Doing it on
         // every pump feeds those events back into another title update.
-        let title = format!("{} — {}", self.tab().title(), crate::brand::APP_NAME);
+        let identity = self
+            .containers
+            .current
+            .as_ref()
+            .map(|c| format!(" [{}]", c.name))
+            .unwrap_or_default();
+        let title = format!(
+            "{}{} — {}",
+            self.tab().title(),
+            identity,
+            crate::brand::APP_NAME
+        );
         if title != self.last_window_title {
             self.window.set_title(&title);
             self.last_window_title = title;
@@ -2121,6 +2144,12 @@ impl Browser {
         let mut gui = self.gui.take().unwrap();
         let window = self.window.clone();
         gui.run(&window, |ui| self.ui(ui));
+        if std::mem::take(&mut self.chrome.clear_address_focus) {
+            gui.egui_ctx.memory_mut(|memory| {
+                memory.surrender_focus(egui::Id::unique("address"));
+            });
+            self.chrome.page_focused = true;
+        }
         self.flush_accessibility(&mut gui);
         // Servo may bind its framebuffer while painting. Restore the window target before egui.
         if self.tab().crash.is_none() && !self.is_wega() {

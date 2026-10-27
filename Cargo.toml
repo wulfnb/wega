@@ -43,6 +43,7 @@ dpi = { version = "0.1", optional = true }
 url = "2.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+getrandom = "0.3"
 directories = "6"
 rustls = { optional = true, version = "0.23", default-features = false, features = ["aws_lc_rs"] }
 arboard = { version = "3", optional = true }

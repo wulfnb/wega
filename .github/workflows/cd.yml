@@ -61,6 +61,13 @@ jobs:
       # Cargo caches can restore old reports; every workflow attempt needs a fresh output.
       - name: Verify both engines in the packaged app
         run: env -u WEGA_ENGINE_BINARY -u GST_PLUGIN_PATH -u GST_PLUGIN_SYSTEM_PATH python3 scripts/browser-bench.py --binary target/Wega.app/Contents/MacOS/wega --output target/packaged-compatibility/${{ github.run_id }}-${{ github.run_attempt }} --mode compatibility
+      - name: Verify container accounts in the packaged app
+        run: env -u WEGA_ENGINE_BINARY -u GST_PLUGIN_PATH -u GST_PLUGIN_SYSTEM_PATH python3 tests/containers_smoke.py --binary target/Wega.app/Contents/MacOS/wega --output target/packaged-containers/${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: packaged-containers-macos
+          path: target/packaged-containers/${{ github.run_id }}-${{ github.run_attempt }}/
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
@@ -325,6 +332,19 @@ jobs:
           Remove-Item Env:GST_PLUGIN_SYSTEM_PATH -ErrorAction SilentlyContinue
           python scripts/browser-bench.py --binary dist/wega-windows-x64/wega.exe --output target/packaged-compatibility/${{ github.run_id }}-${{ github.run_attempt }} --mode compatibility
           if ($LASTEXITCODE -ne 0) { throw "Packaged engine compatibility failed" }
+      - name: Verify container accounts in the packaged directory
+        shell: pwsh
+        run: |
+          Remove-Item Env:WEGA_ENGINE_BINARY -ErrorAction SilentlyContinue
+          Remove-Item Env:GST_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:GST_PLUGIN_SYSTEM_PATH -ErrorAction SilentlyContinue
+          python tests/containers_smoke.py --binary dist/wega-windows-x64/wega.exe --output target/packaged-containers/${{ github.run_id }}-${{ github.run_attempt }}
+          if ($LASTEXITCODE -ne 0) { throw "Packaged container isolation failed" }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: packaged-containers-windows
+          path: target/packaged-containers/${{ github.run_id }}-${{ github.run_attempt }}/
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:

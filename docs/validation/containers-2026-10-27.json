@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-27",
+  "source_base": "eb7324417eb8fe06c1fc006d094babe7d7a4c43c",
+  "changes": "uncommitted",
+  "platform": "Darwin arm64",
+  "source_sha256": {
+    ".github/workflows/cd.yml": "900381c8a84cb074ad9347808385f39e855ec965051af9232f21ba5b7dacc3bb",
+    ".github/workflows/ci.yml": "8bf1130c4b9bde8e70bd607f73395ac1e057b0b47aae36978f99866ae43af496",
+    "Cargo.lock": "3d6c3c1c2eb442f94e536b8cdcdcc45b0d87123594b93912c5e6744b93c937fb",
+    "Cargo.toml": "74fb870399b3c60c220fae4a1b3272e452a2951aeca37bfcc78043e4ee0b0005",
+    "README.md": "d758f65596d04c6659a94619003f8cbc9d0d34384154a3572caa8a99563c4356",
+    "docs/testing.md": "d07c2f396e907e924f348f70b5193c1d96c5dd34284b4fe69fb15f88edd67653",
+    "src/browser.rs": "7f3d28ae625db52496e4e48caf0f9b0f6d27d27947ea335c59ad134d1a973166",
+    "src/engine.rs": "fcab7dd50dd68025a1ab106fcb8bf4294270d149f325d81d05067b37da7bd918",
+    "src/harness/smoke.rs": "f741b1aa13621db7e04353517b65ea133361dfd695424ffc91939923e213454b",
+    "src/lib.rs": "aedc17ff589d6a995f44375406e2d112aa71aaf9f519bd5ac241f94979ecc298",
+    "src/main.rs": "6e2e8ed1a4cd8fa0e731666e5aefab2c3d5e3374eee7afdfda54879d7844f219",
+    "src/options.rs": "27c333c0a851e5ad94538db997d90a4ff303fe5db7336addd3b17f392fa28f46",
+    "src/options_tests.rs": "5cd6516358579d043d037ebd8f315f245d65382d2f87d4d0c18e4afc0453bed4",
+    "src/ui.rs": "5d26aab3b2167a691309ff39a55f3b928e1269e5b1324736e29bdeb832a3af4b",
+    "docs/containers.md": "d764607b758b02337a83c03620da1b350634bd6683afe5e0255d3bd388c8ea70",
+    "src/container_launch.rs": "f7a63213abddbcbc913146c87cbe219c36a9996e92c938d552ba956974cf4d05",
+    "src/container_launch_tests.rs": "97c18ab9d929ebcf0b6184538ead7c37e785e1bb942cf8e7a4ae34e1670cb0e7",
+    "src/containers.rs": "4320be975e34ec5ed2931db2aaa51833de4e656a28e77e9a3b23a4d4bd22a185",
+    "src/containers_tests.rs": "9a54a864e034ec41820eff29933b94a4bab9e40110ced58848ce5bb8a57e786f",
+    "src/containers_ui.rs": "5d9dd06d6b2bc4f798487a834f3c03642b847b9d786eff736bff5538527327b0",
+    "tests/containers_smoke.py": "7a0a776e7aa67e1cf2c748414f7e9520df83d7e5b80dcf050162d5a71abdb720"
+  },
+  "binary_sha256": {
+    "target/debug/wega": "1bb1ed2493ed05a4bf8d3e1caab2f340af5671f3b855ae2bf5873a8aaf8d403f",
+    "target/debug/wega-engine": "79e01b0453f3405d0462c321938656813ad783762ce0fcfb96f127f6ac680f4f"
+  },
+  "core_tests": 92,
+  "desktop_unit_tests": 34,
+  "core_line_coverage": {
+    "count": 2228,
+    "covered": 2118,
+    "percent": 95.06283662477558
+  },
+  "core_regression_gate_percent": 95,
+  "whole_project_100_percent": "not achieved",
+  "native_suites": [
+    {
+      "suite": "smoke",
+      "exit_code": 0,
+      "seconds": 36.5,
+      "profile": "/Users/noufalbabu/dev/personal/lotse/target/containers-native-final/smoke-2cr2co99"
+    },
+    {
+      "suite": "engine",
+      "exit_code": 0,
+      "seconds": 15.78,
+      "profile": "/Users/noufalbabu/dev/personal/lotse/target/containers-native-final/engine-u1mrcm9z"
+    }
+  ],
+  "container_isolation": {
+    "run": "/Users/noufalbabu/dev/personal/lotse/target/containers-validated/run-wjf3e78o",
+    "complete": true,
+    "checks": [
+      "servo: isolated regular/HttpOnly cookies, persistent localStorage, fresh sessionStorage, empty third identity, unchanged parent profile",
+      "wega: isolated regular/HttpOnly cookies, persistent localStorage, fresh sessionStorage, empty third identity, unchanged parent profile",
+      "simultaneous Servo accounts and authenticated existing-window URL handoff"
+    ]
+  },
+  "checks": [
+    "strict core and desktop/harness Clippy passed",
+    "formatting passed",
+    "workflow actionlint passed",
+    "whitespace checks passed",
+    "Python smoke-script compilation passed"
+  ],
+  "discarded_attempts": [
+    {
+      "path": "target/containers-validation/run-yy6gpppv",
+      "reason": "Initial script did not assert actual engine; Wega used Servo fallback. Not accepted as Wega evidence."
+    },
+    {
+      "path": "target/containers-native-smoke/smoke-6rmfa7ay",
+      "reason": "Existing smoke failed scroll assertion during concurrent builds. Final smoke and engine runs passed after builds completed; initial failure root cause is not proven."
+    }
+  ],
+  "pending": [
+    "Remote CI for these changes",
+    "Windows and Linux runtime checks for these changes",
+    "Full real-site account and sign-in compatibility",
+    "Same-window container tabs require Servo storage-context or worker-engine changes",
+    "Automatic site routing, Firefox Sync and Mozilla VPN integration"
+  ],
+  "followup_validation": "docs/validation/trak-new-tab-2026-10-27.json"
+}

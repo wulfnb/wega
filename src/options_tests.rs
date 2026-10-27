@@ -1,4 +1,55 @@
 use super::*;
+#[test]
+fn container_options_resolve_before_engine_startup_without_touching_default_data() {
+    let root = std::env::temp_dir().join(format!(
+        "wega-container-options-{}",
+        crate::containers::random_id().unwrap()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("browser.json"),
+        "parent profile is never loaded or rewritten",
+    )
+    .unwrap();
+    let mut options = Options::parse_from([
+        "--profile-dir".to_owned(),
+        root.to_string_lossy().into_owned(),
+        "--container".into(),
+        "work".into(),
+    ])
+    .unwrap();
+    options.prepare_container().unwrap();
+    assert_eq!(
+        options.profile_dir.as_ref().unwrap(),
+        &root.canonicalize().unwrap().join("containers/work")
+    );
+    assert_eq!(
+        options.container_root.as_ref().unwrap(),
+        &root.canonicalize().unwrap()
+    );
+    let once = options.profile_dir.clone();
+    options.prepare_container().unwrap();
+    assert_eq!(options.profile_dir, once);
+    assert_eq!(
+        std::fs::read_to_string(root.join("browser.json")).unwrap(),
+        "parent profile is never loaded or rewritten"
+    );
+    let mut unknown = Options {
+        profile_dir: Some(root.clone()),
+        container: Some("unknown".into()),
+        ..Options::default()
+    };
+    assert!(unknown.prepare_container().is_err());
+    assert!(!root.join("containers/unknown").exists());
+    for args in [
+        vec!["--container"],
+        vec!["--container", "../main"],
+        vec!["--container", ""],
+    ] {
+        assert!(parse(&args).is_err());
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
 fn parse(args: &[&str]) -> Result<Options, String> {
     Options::parse_from(args.iter().map(|value| (*value).into()))
 }

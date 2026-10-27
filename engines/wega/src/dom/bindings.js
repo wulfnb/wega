@@ -1570,6 +1570,12 @@
     get defaultView() {
       return this === document ? globalThis : null;
     }
+    get location() {
+      return this === document ? globalThis.location : null;
+    }
+    set location(value) {
+      if (this === document) globalThis.location.href = String(value);
+    }
     get URL() {
       return host("url");
     }
@@ -1630,6 +1636,13 @@
         ],
         true,
       );
+    }
+    getElementsByName(name) {
+      name = String(name);
+      return nodeList(() => [...this.querySelectorAll("[name]")].filter(
+        (element) => element.namespaceURI === "http://www.w3.org/1999/xhtml" &&
+          element.getAttribute("name") === name,
+      ));
     }
     createElement(name) {
       name = String(name).toLowerCase();
@@ -1897,6 +1910,13 @@
   document.readyState = "loading";
   connected.set(document._id, document);
   const globalEvents = new BaseTarget();
+  class Window extends BaseTarget {
+    constructor() {
+      throw new TypeError("Illegal constructor");
+    }
+  }
+  Object.setPrototypeOf(globalEvents, Window.prototype);
+  Object.defineProperty(Window.prototype, Symbol.toStringTag, { value: "Window" });
   // HTML named properties live behind Window's own properties and remain live
   // when an element is renamed, removed, or shadowed by a script-owned property.
   const namedWindow = (key) =>
@@ -1956,6 +1976,7 @@
     HTMLScriptElement,
     HTMLTemplateElement,
     Document,
+    HTMLDocument: Document,
     DocumentFragment,
     Text,
     Comment,
@@ -1965,6 +1986,7 @@
     MutationObserver,
     Event,
     EventTarget: BaseTarget,
+    Window,
     document,
     window: globalThis,
     self: globalThis,
