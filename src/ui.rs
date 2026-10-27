@@ -533,6 +533,7 @@ impl Browser {
             .show(ui, |ui| self.viewport(ui));
         let ctx = ui.ctx().clone();
         self.dialogs(&ctx);
+        self.containers_manager(&ctx);
         if !self.modal() {
             self.finish_dialog(&ctx);
         }
@@ -612,6 +613,7 @@ impl Browser {
             ui.ctx().data_mut(|data| data.insert_temp(Id::unique("site-panel-anchor"), security.rect.left_bottom()));
             if security.clicked() { self.refresh_site_data(); self.features.site_info = !self.features.site_info; }
             self.engine_badge(ui);
+            self.containers_menu(ui);
             let width = (ui.available_width() - 126.0).max(100.0);
             let hint = match self.profile().policy.search_engine {
                 wega::model::SearchEngine::Custom => "Search or enter address".to_owned(),
@@ -985,6 +987,9 @@ impl Browser {
             egui::vec2(if vertical { ui.available_width() } else { 36.0 }, 36.0),
             egui::Sense::click(),
         );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "New tab")
+        });
         if response.hovered() {
             ui.painter().rect_filled(rect, 18, colors.hover);
         }

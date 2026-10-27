@@ -8,6 +8,7 @@ mod capture;
 mod compat;
 mod console_model;
 mod console_ui;
+mod containers_ui;
 mod cookie_inspector;
 mod debug_driver;
 mod debug_model;
@@ -68,7 +69,6 @@ struct App {
     browser: Option<Browser>,
     proxy: winit::event_loop::EventLoopProxy<Wake>,
     failure: Option<String>,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pending_open: Vec<url::Url>,
     #[cfg(target_os = "macos")]
     open_events: mac_application::OpenEvents,
@@ -96,7 +96,6 @@ impl ApplicationHandler<Wake> for App {
         match result {
             Ok(browser) => {
                 self.browser = Some(browser);
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
                 self.browser
                     .as_mut()
                     .unwrap()
@@ -110,6 +109,23 @@ impl ApplicationHandler<Wake> for App {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Wake) {
+        if let Wake::ContainerLaunch(addresses) = &event {
+            let urls = wega::options::external_launch_urls(addresses);
+            if let Some(browser) = &mut self.browser {
+                browser.window.set_minimized(false);
+                browser.open_launch_urls(urls);
+            } else {
+                self.pending_open
+                    .extend(urls.into_iter().take(32 - self.pending_open.len()));
+            }
+            return;
+        }
+        if let Wake::ContainerError(message) = &event {
+            if let Some(browser) = &mut self.browser {
+                browser.notify(crate::ux::Severity::Error, message.clone(), None);
+            }
+            return;
+        }
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         if let Wake::OpenUrls(addresses) = &event {
             let urls = wega::options::external_launch_urls(addresses);
@@ -209,13 +225,46 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    let options = Options::parse_from(std::env::args().skip(1)).map_err(std::io::Error::other)?;
+    let mut options =
+        Options::parse_from(std::env::args().skip(1)).map_err(std::io::Error::other)?;
     if options.help {
         println!(
             "Wega Browser\nUsage: wega [--engine servo|wega] [--profile-dir PATH] [--capture FILE.png] [URL]\n  --remote-devtools PORT · --webdriver-port PORT\n    Both open UNAUTHENTICATED endpoints on 127.0.0.1. Any local process or user\n    can then read and control open pages (cookies, sessions, input). Use them\n    only on a trusted machine and with a disposable --profile-dir.\n  --multiprocess (requires --features multiprocess)\n  Native tests require --features test-harness and an isolated --profile-dir.\n  Test modes: --engine-test, --smoke-test, --download-test, --toolbox-test, --theme-test, --capabilities-test"
         );
+        println!(
+            "  --container ID: open Personal (personal), Work (work), Banking (banking),\n    Shopping (shopping), or a custom ID in an isolated container window.\n    --profile-dir selects the parent profile when used with --container."
+        );
         return Ok(());
     }
+    options.prepare_container().map_err(std::io::Error::other)?;
+    let mut container_server = if options.container.is_some() {
+        let urls = options
+            .url
+            .as_deref()
+            .map(wega::profile::resolve_address)
+            .transpose()?
+            .into_iter()
+            .map(|url| url.to_string())
+            .collect();
+        let may_forward = options.engine.is_none()
+            && !options.test_mode()
+            && options.capture.is_none()
+            && options.webdriver_port.is_none()
+            && options.remote_devtools.is_none()
+            && !options.multiprocess;
+        match wega::container_launch::Server::claim(
+            options.profile_dir.as_ref().unwrap(),
+            urls,
+            may_forward,
+        )
+        .map_err(std::io::Error::other)?
+        {
+            wega::container_launch::Claim::Primary(server) => Some(server),
+            wega::container_launch::Claim::Forwarded => return Ok(()),
+        }
+    } else {
+        None
+    };
     if (options.engine == Some(wega::engine_choice::EngineKind::Wega) || options.engine_test)
         && wega_page::executable().is_none()
     {
@@ -250,6 +299,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .install_default()
         .map_err(|_| std::io::Error::other("Cannot install TLS provider"))?;
     let event_loop = EventLoop::<Wake>::with_user_event().build()?;
+    if let Some(server) = &mut container_server {
+        let proxy = event_loop.create_proxy();
+        server
+            .start(move |urls| proxy.send_event(Wake::ContainerLaunch(urls)).is_ok())
+            .map_err(std::io::Error::other)?;
+    }
     #[cfg(target_os = "macos")]
     let open_events = mac_application::install(event_loop.create_proxy());
     #[cfg(target_os = "windows")]
@@ -259,7 +314,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         browser: None,
         proxy: event_loop.create_proxy(),
         failure: None,
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
         pending_open: Vec::new(),
         #[cfg(target_os = "macos")]
         open_events,

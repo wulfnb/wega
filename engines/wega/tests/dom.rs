@@ -24,6 +24,21 @@ fn page(html: &str) -> View {
     view
 }
 #[test]
+fn document_location_html_document_and_live_names_support_trak_scripts() {
+    let mut view = page(
+        "<input name='account'><input name='Account'><div name='account'></div><svg><g name='account'></g></svg>",
+    );
+    assert_eq!(view.evaluate_json("[document.location===window.location,document.location.protocol,document instanceof HTMLDocument,HTMLDocument.prototype===Document.prototype]").unwrap(), "[true,\"https:\",true,true]");
+    assert_eq!(view.evaluate_json("(()=>{Window.prototype.trakPrototypeProbe=function(){return this===window};let illegal=false;try{new Window()}catch(error){illegal=error instanceof TypeError}const result=[window instanceof Window,window instanceof EventTarget,window.trakPrototypeProbe(),Object.prototype.toString.call(window),illegal];delete Window.prototype.trakPrototypeProbe;return result})()").unwrap(), "[true,true,true,\"[object Window]\",true]");
+    assert_eq!(view.evaluate_json("(()=>{const names=document.getElementsByName('account');const input=document.createElement('input');input.name='account';document.body.append(input);const added=names.length;input.name='other';return [names instanceof NodeList,added,names.length,document.getElementsByName('Account').length,document.implementation.createHTMLDocument('Detached').location]})()").unwrap(), "[true,3,2,1,null]");
+    view.evaluate("document.location='#section'").unwrap();
+    assert_eq!(
+        view.evaluate_json("[location.hash,document.location.href===location.href]")
+            .unwrap(),
+        "[\"#section\",true]"
+    );
+}
+#[test]
 fn mutations_namespaces_collections_and_native_style_share_one_tree() {
     let mut view = page("<main id='root'></main>");
     assert_eq!(view.evaluate_json("(()=>{const root=document.getElementById('root'),live=root.children;root.innerHTML='<div class=one data-kind=test><b>hello</b></div><!-- kept -->';const first=root.firstElementChild;const clone=first.cloneNode(true);root.append(clone);clone.after(document.createTextNode('tail'));const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','#shape');root.prepend(svg);first.style.color='rgb(1, 2, 3)';return [live.length,root.querySelector('.one')===first,first.matches('.one'),first.closest('main')===root,first.dataset.kind,clone.textContent,svg.getAttributeNS('http://www.w3.org/1999/xlink','href'),getComputedStyle(first).color,root.innerHTML.includes('<!-- kept -->')];})()").unwrap(),"[3,true,true,true,\"test\",\"hello\",\"#shape\",\"rgb(1, 2, 3)\",true]");

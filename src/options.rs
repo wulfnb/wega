@@ -4,6 +4,9 @@ use std::path::PathBuf;
 pub struct Options {
     pub help: bool,
     pub profile_dir: Option<PathBuf>,
+    pub container: Option<String>,
+    /// Set by prepare_container before engine startup; never accepted from a URL.
+    pub container_root: Option<PathBuf>,
     pub url: Option<String>,
     pub engine: Option<crate::engine_choice::EngineKind>,
     pub engine_test: bool,
@@ -58,6 +61,13 @@ impl Options {
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
+                "--container" => {
+                    let id = args.next().ok_or("--container requires an ID")?;
+                    if !crate::containers::valid_id(&id) {
+                        return Err("Invalid container ID".into());
+                    }
+                    result.container = Some(id);
+                }
                 "--profile-dir" => {
                     result.profile_dir =
                         Some(args.next().ok_or("--profile-dir requires a path")?.into())
@@ -163,6 +173,26 @@ impl Options {
             return Err("These engine diagnostics require Servo; omit --engine wega".into());
         }
         Ok(result)
+    }
+
+    /// Resolve isolation before media registries, instance handoff or Servo can
+    /// touch a profile. Unknown/corrupt identities never fall back to default.
+    pub fn prepare_container(&mut self) -> Result<(), String> {
+        let Some(id) = &self.container else {
+            return Ok(());
+        };
+        if self.container_root.is_some() {
+            return Ok(());
+        }
+        let root = self
+            .profile_dir
+            .clone()
+            .unwrap_or_else(crate::profile::Profile::default_dir);
+        crate::containers::Registry::load(&root)?.find(id)?;
+        let directory = crate::containers::profile_directory(&root, id)?;
+        self.container_root = Some(std::fs::canonicalize(root).map_err(|e| e.to_string())?);
+        self.profile_dir = Some(directory);
+        Ok(())
     }
 }
 

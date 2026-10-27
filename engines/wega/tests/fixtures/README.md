@@ -4,6 +4,11 @@ Vendored bundles built from npm packages with esbuild 0.25.10, minified in produ
 IIFE format, ES2022 target. They do not download any code at test time.
 
 - jQuery 3.7.1
+- jQuery 3.6.3's unmodified browser bundle (`jquery-3.6.3.min.js`), downloaded
+  from `https://code.jquery.com/jquery-3.6.3.min.js` on 27 October 2026 to cover
+  trak.in's actual browser script. MIT license notice is retained in the file;
+  the full jQuery MIT license is already included alongside the other fixtures.
+  SHA-256: `a6f3f0faea4b3d48e03176341bef0ed3151ffbf226d4c6635f1c6039c0500575`.
 - React and ReactDOM 18.3.1
 - Vue 3.5.22
 - Preact 10.27.2

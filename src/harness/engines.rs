@@ -19,6 +19,39 @@ impl Test {
     }
 }
 impl Browser {
+    fn check_new_tab_render_contract(&mut self) {
+        let original = self.session().active();
+        let original_key = self.tab().key;
+        let worker = self.tab().wega.as_ref().unwrap().pid();
+        let layout = self.profile().layout;
+        for layout in [
+            crate::profile::TabLayout::Side,
+            crate::profile::TabLayout::Top,
+        ] {
+            self.apply(wega::application::Command::Layout(layout));
+            let count = self.session().tabs().len();
+            // redraw() owns the GUI outside Browser while widgets run. The old
+            // focus_content unwrap crashed only on real UI clicks, not shortcuts
+            // or AccessKit contracts which left the GUI inside Browser.
+            let gui = self.gui.take().unwrap();
+            self.coverage_click(&["New tab"], |browser, ui| browser.ui(ui));
+            self.gui = Some(gui);
+            assert_eq!(self.session().tabs().len(), count + 1);
+            assert_eq!(self.tab().url(), "wega://newtab");
+            assert!(!self.is_wega());
+            self.handle_event(winit::event::WindowEvent::RedrawRequested);
+            assert!(!self.chrome.clear_address_focus);
+            assert!(self.chrome.page_focused);
+            self.close_tab(self.session().active());
+            self.select_tab(original);
+            assert_eq!(self.tab().key, original_key);
+            assert_eq!(self.tab().wega.as_ref().unwrap().pid(), worker);
+        }
+        self.apply(wega::application::Command::Layout(layout));
+        println!(
+            "NEW TAB RENDER TEST PASSED: sidebar/top click during GUI ownership, lazy Servo and preserved Wega worker"
+        );
+    }
     pub fn check_engine_test(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let Some(test) = &self.harness.engine_test else {
             return;
@@ -42,6 +75,7 @@ impl Browser {
                     !self.servo.initialized(),
                     "A Wega-only launch must not initialize Servo"
                 );
+                self.check_new_tab_render_contract();
                 let page = self.tab().wega.as_ref().unwrap();
                 let pid = page.pid();
                 page.send(Command::Evaluate(

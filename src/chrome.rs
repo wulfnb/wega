@@ -9,6 +9,8 @@ pub(crate) struct Chrome {
     pub last_url: String,
     pub focus_address: bool,
     pub page_focused: bool,
+    /// Widgets can request focus while redraw owns the GUI outside Browser.
+    pub clear_address_focus: bool,
     pub page_rect: Rect,
     pub tab_rects: Vec<(u64, Rect)>,
     pub reload_rect: Rect,
@@ -43,6 +45,7 @@ impl Default for Chrome {
             last_url: String::new(),
             focus_address: false,
             page_focused: false,
+            clear_address_focus: false,
             page_rect: Rect::NOTHING,
             tab_rects: Vec::new(),
             reload_rect: Rect::NOTHING,

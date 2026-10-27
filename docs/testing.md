@@ -20,6 +20,20 @@ Download tests need permission to bind loopback sockets and `curl` in PATH.
 Gateway unit tests run on macOS/Linux (the gateway uses POSIX file permissions), use temporary accounts and invoke the real handler without
 opening sockets or starting WebSocket/VNC services.
 
+## Native container account checks
+
+Container account isolation uses disposable profiles and a local HTTP fixture:
+
+```sh
+python3 tests/containers_smoke.py --binary target/debug/wega
+```
+
+Build both the desktop and worker first. The test verifies the actual selected
+engine, ordinary/HttpOnly cookies, persistent localStorage, per-window
+sessionStorage, simultaneous accounts and existing-window handoff. The native
+smoke suite also exercises the default menu and create/edit/remove controls.
+See [native containers](containers.md).
+
 ## Coverage
 
 ```sh
@@ -202,6 +216,12 @@ prompt values, Escape cancellation, live internal-page theme updates, new-tab
 search and the 720×480 library overlay. Toolbar semantic labels and AccessKit
 schema conversion have Rust tests. Keyboard users can use F6 to move between the
 address bar and page.
+
+The native engine suite also clicks New tab in both tab layouts while redraw owns
+the GUI outside Browser, checks the deferred focus transfer, and retains the source
+Wega worker. This reproduces the macOS click-only panic that shortcut tests missed.
+See [trak.in and new-tab fixes](trak-and-new-tab-fixes.md) for before/after evidence
+and the remaining live-site script limit.
 
 `sh scripts/javascript-coverage.sh` also measures `site/site.js` at 100% lines and
 runs its clipboard success/failure checks. Docker viewer tests cover viewport
