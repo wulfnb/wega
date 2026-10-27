@@ -1009,12 +1009,13 @@ impl View {
                 }
                 self.run_program(&source, &script.name, script.module);
                 if let Some(node) = &node {
-                    let done = if script.external {
-                        format!("__wega_current_script(null);__wega_script_done({node}, true)")
-                    } else {
-                        "__wega_current_script(null)".into()
-                    };
-                    self.run(&done, "wega:current-script");
+                    self.run("__wega_current_script(null)", "wega:current-script");
+                    if script.external {
+                        self.run(
+                            &format!("__wega_script_done({node}, true)"),
+                            &format!("{} load event", script.name),
+                        );
+                    }
                 }
             }
             ScriptState::Failed(error) => {
@@ -1363,9 +1364,18 @@ impl View {
         self.dirty = true;
     }
     pub fn freeze(&mut self, freeze: bool) {
+        let changed = self.frozen != freeze;
         self.frozen = freeze;
         if let Some(script) = &mut self.script {
             script.freeze(freeze);
+        }
+        if changed {
+            // Pause timers before hiding; resume them before delivering the
+            // visible event so overdue callbacks are not postponed by this task.
+            self.run(
+                &format!("__wega_visibility({freeze})"),
+                "wega:visibilitychange",
+            );
         }
         if freeze {
             self.document.borrow_mut().release_image_cache();

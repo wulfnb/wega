@@ -346,3 +346,18 @@ fn broker_honors_fetch_cache_modes_and_live_engine_policy_without_reloading() {
         "\"unsaved\""
     );
 }
+
+#[test]
+fn contextual_fragment_scripts_obey_csp_nonce_checks() {
+    let page = Server::new(|_| {
+        Reply::html("<main></main>").header("Content-Security-Policy", "script-src 'nonce-allowed'")
+    });
+    let engine = engine();
+    let mut view = open(&engine, &page.url("127.0.0.1", "/"));
+    view.evaluate(r#"document.querySelector('main').append(document.createRange().createContextualFragment('<script>globalThis.blockedFragment=true</script><script nonce="allowed">globalThis.allowedFragment=true</script>'))"#).unwrap();
+    assert_eq!(
+        view.evaluate_json("[globalThis.blockedFragment??false,globalThis.allowedFragment??false]")
+            .unwrap(),
+        "[false,true]"
+    );
+}

@@ -205,3 +205,205 @@ fn adjacent_html_uses_the_insertion_position_and_namespace_context() {
     view.evaluate("const anchor=document.getElementById('anchor');anchor.insertAdjacentHTML('afterbegin','<span id=first>first</span>');anchor.insertAdjacentHTML('beforeend','<span id=last>last</span>');document.getElementById('rows').insertAdjacentHTML('beforeend','<tr><td>cell</td></tr>');document.getElementById('graphic').insertAdjacentHTML('beforeend','<circle id=dot r=5></circle>');document.body.insertAdjacentHTML('afterbegin','<style>p{color:green}</style><p id=intro>intro</p>')").unwrap();
     assert_eq!(view.evaluate_json("[anchor.firstElementChild.id,anchor.lastElementChild.id,document.getElementById('rows').firstElementChild.localName,document.getElementById('dot').namespaceURI,document.querySelectorAll('body').length,document.getElementById('intro').parentNode===document.body]").unwrap(), "[\"first\",\"last\",\"tr\",\"http://www.w3.org/2000/svg\",1,true]");
 }
+
+#[test]
+fn ranges_parse_contextual_html_svg_and_keep_live_boundary_points() {
+    let mut view =
+        page("<table><tbody id=rows></tbody></table><svg id=svg></svg><div id=mount>abcdef</div>");
+    assert_eq!(view.evaluate_json(r#"(()=>{
+      const range=document.createRange(), rows=document.getElementById('rows');
+      range.selectNodeContents(rows);
+      const fragment=range.createContextualFragment('<tr><td>row</td></tr>');
+      const result=[range instanceof Range,fragment instanceof DocumentFragment,fragment.ownerDocument===document];
+      rows.append(fragment);
+      range.selectNodeContents(document.getElementById('svg'));
+      document.getElementById('svg').append(range.createContextualFragment('<circle id="dot"/>'));
+      const text=document.getElementById('mount').firstChild;
+      range.setStart(text,1);range.setEnd(text,5);
+      text.insertData(0,'XY');
+      result.push(String(range),range.startOffset,range.endOffset);
+      const second=text.splitText(4);
+      result.push(String(range),range.endContainer===second,range.endOffset);
+      const clone=range.cloneRange();range.collapse(true);
+      result.push(range.collapsed,String(clone),clone.commonAncestorContainer.id,
+        rows.firstElementChild.localName,rows.firstElementChild.firstElementChild.localName,
+        document.getElementById('dot').namespaceURI);
+      return result;
+    })()"#).unwrap(), r#"[true,true,true,"bcde",3,7,"bcde",true,3,true,"bcde","mount","tr","td","http://www.w3.org/2000/svg"]"#);
+}
+
+#[test]
+fn contextual_fragment_scripts_run_once_while_inner_html_scripts_stay_inert() {
+    let mut view = page(
+        "<div id=mount></div><script>globalThis.fragmentRuns=0;globalThis.fragmentCurrent=null;</script>",
+    );
+    view.evaluate(r#"globalThis.fragment=document.createRange().createContextualFragment('<span id="inserted">ad content</span><script id="fragment-script">fragmentRuns++;fragmentCurrent=document.currentScript.id</script>');globalThis.beforeInsertion=fragmentRuns;document.getElementById('mount').append(fragment);"#).unwrap();
+    for _ in 0..8 {
+        view.poll();
+    }
+    assert_eq!(view.evaluate_json("[beforeInsertion,fragmentRuns,fragmentCurrent,document.getElementById('inserted').textContent]").unwrap(), r#"[0,1,"fragment-script","ad content"]"#);
+    view.evaluate("const script=document.getElementById('fragment-script');script.remove();document.head.append(script);document.getElementById('mount').innerHTML='<script>fragmentRuns=99</script>';").unwrap();
+    for _ in 0..8 {
+        view.poll();
+    }
+    assert_eq!(view.evaluate_json("fragmentRuns").unwrap(), "1");
+    assert!(view.compatibility.is_none(), "{:?}", view.notices);
+}
+
+#[test]
+fn range_insertion_removal_validation_and_document_ownership() {
+    let mut view = page("<div id=mount><b>one</b><i>two</i><u>three</u></div>");
+    assert_eq!(view.evaluate_json(r#"(()=>{
+      const root=document.getElementById('mount'), range=document.createRange();
+      range.setStart(root,1);range.setEnd(root,3);
+      root.insertBefore(document.createElement('em'),root.firstChild);
+      const shifted=[range.startOffset,range.endOffset];
+      root.removeChild(root.children[1]);
+      const removed=[range.startOffset,range.endOffset];
+      range.selectNodeContents(root.children[1]);root.children[1].remove();
+      const collapsed=[range.collapsed,range.startContainer===root,range.startOffset];
+      const detached=document.implementation.createHTMLDocument('detached');
+      const other=detached.createRange();
+      const errors=[];for(const [node,offset] of [[root,100],[root,-1]]) {try{range.setStart(node,offset)}catch(error){errors.push(error.name)}}
+      range.selectNodeContents(root);range.collapse(true);
+      range.insertNode(range.createContextualFragment('<strong>inserted</strong>'));
+      return [shifted,removed,collapsed,other.startContainer===detached,
+        other.createContextualFragment('<p>detached</p>').ownerDocument===detached,errors,
+        range.startOffset,range.endOffset,root.firstElementChild.localName];
+    })()"#).unwrap(), r#"[[2,4],[1,3],[true,true,1],true,true,["IndexSizeError","IndexSizeError"],0,1,"strong"]"#);
+}
+
+#[test]
+fn visibility_tracks_freezing_and_domain_never_relaxes_profile_origin() {
+    let mut view = page("<p>visible</p>");
+    view.evaluate("globalThis.visibility=[];document.onvisibilitychange=()=>visibility.push(document.visibilityState);document.domain='other.test';").unwrap();
+    assert_eq!(view.evaluate_json("[document.domain,location.hostname,document.visibilityState,document.hidden,document.namespaceURI===undefined,'namespaceURI' in document,document.implementation.createHTMLDocument('').visibilityState]").unwrap(), r#"["fixture.test","fixture.test","visible",false,true,false,"hidden"]"#);
+    view.freeze(true);
+    view.freeze(true);
+    assert_eq!(
+        view.evaluate_json("[document.visibilityState,document.hidden,visibility]")
+            .unwrap(),
+        r#"["hidden",true,["hidden"]]"#
+    );
+    view.freeze(false);
+    assert_eq!(
+        view.evaluate_json("[document.visibilityState,document.hidden,visibility]")
+            .unwrap(),
+        r#"["visible",false,["hidden","visible"]]"#
+    );
+}
+
+#[test]
+fn wide_dom_traversal_and_live_child_lists_finish_within_the_script_budget() {
+    let mut html = String::from("<main id=wide>");
+    for index in 0..3000 {
+        html.push_str(&format!("<span id=n{index}>item</span>"));
+    }
+    html.push_str("</main>");
+    let mut view = page(&html);
+    assert_eq!(view.evaluate_json("(()=>{let count=0;for(let node=document.getElementById('wide').firstChild;node;node=node.nextSibling)count++;return count})()").unwrap(),"3000");
+    assert_eq!(view.evaluate_json("(()=>{const root=document.getElementById('wide'),list=root.childNodes,iterator=list.values();const first=iterator.next().value.id;root.firstChild.remove();return [list instanceof NodeList,list.length,first,iterator.next().value.id,root.lastChild.id,root.lastChild.previousSibling.id]})()").unwrap(),r#"[true,2999,"n0","n2","n2999","n2998"]"#);
+}
+
+#[test]
+fn live_query_collections_finish_in_budget_and_invalidate_after_mutation() {
+    let mut html = String::from("<main id=wide>");
+    for index in 0..1500 {
+        html.push_str(&format!("<span class=item name=entry id=n{index}></span>"));
+    }
+    html.push_str("</main>");
+    let mut view = page(&html);
+    assert_eq!(view.evaluate_json("(()=>{const tags=document.getElementsByTagName('span'),classes=document.getElementById('wide').getElementsByClassName('item'),names=document.getElementsByName('entry');let count=0;for(const list of [tags,classes,names])for(let i=0;i<list.length;i++)if(list[i].id)count++;classes[0].className='other';names[0].setAttribute('name','other');tags[0].remove();return [count,tags.length,classes.length,names.length,classes[0].id]})()").unwrap(),"[4500,1499,1499,1499,\"n1\"]");
+    view.evaluate("document.getElementById('wide').appendChild(document.createElement('span'))")
+        .unwrap();
+    assert_eq!(
+        view.evaluate_json("document.getElementsByTagName('span').length")
+            .unwrap(),
+        "1500"
+    );
+}
+
+#[test]
+fn repeated_style_and_geometry_reads_share_layout_until_a_mutation() {
+    let mut html = String::from("<style>span{display:block;width:32px;height:4px}</style><main>");
+    for _ in 0..1500 {
+        html.push_str("<span></span>");
+    }
+    html.push_str("</main>");
+    let mut view = page(&html);
+    assert_eq!(view.evaluate_json("(()=>{const nodes=document.querySelectorAll('span');let total=0;for(const node of nodes){total+=node.offsetWidth;total+=parseFloat(getComputedStyle(node).width)}const first=nodes[0];first.style.width='80px';const changed=[first.offsetWidth,getComputedStyle(first).width,first.getBoundingClientRect().width];first.style.width='96px';return [total,changed,first.clientWidth]})()").unwrap(),"[96000,[80,\"80px\",80],96]");
+    view.evaluate("document.querySelector('span').style.width='120px'")
+        .unwrap();
+    assert_eq!(
+        view.evaluate_json("document.querySelector('span').offsetWidth")
+            .unwrap(),
+        "120"
+    );
+}
+
+#[test]
+fn range_fragment_limits_preserve_existing_dom_and_boundary_points() {
+    let engine = Engine::new(
+        Limits {
+            dom_nodes: 64,
+            html_bytes: 4096,
+            script_time: Duration::from_secs(2),
+            ..Limits::default()
+        },
+        NetworkPolicy::default(),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let mut view = engine
+        .create_view(Url::parse("about:blank").unwrap())
+        .unwrap();
+    view.set_html("<main id=root>original</main>").unwrap();
+    view.poll();
+    assert_eq!(view.evaluate_json(r#"(()=>{const root=document.getElementById('root'),text=root.firstChild,range=document.createRange();range.setStart(text,2);range.setEnd(text,5);let failures=0;for(const change of [()=>range.createContextualFragment('<b></b>'.repeat(70)),()=>range.createContextualFragment('x'.repeat(4097)),()=>root.innerHTML='<b></b>'.repeat(70),()=>text.data='x'.repeat(1024*1024+1),()=>root.textContent='x'.repeat(1024*1024+1)]){try{change()}catch(error){failures++}}return [failures,root.textContent,range.startContainer===text,range.startOffset,range.endOffset,range.toString()]})()"#).unwrap(),r#"[5,"original",true,2,5,"igi"]"#);
+}
+
+#[test]
+fn live_collections_refresh_when_the_parser_adds_nodes_between_scripts() {
+    let mut view = page(
+        "<span></span><script>globalThis.parsed=document.getElementsByTagName('span');globalThis.firstCount=parsed.length</script><span></span><script>globalThis.secondCount=parsed.length</script>",
+    );
+    assert_eq!(
+        view.evaluate_json("[firstCount,secondCount,parsed.length]")
+            .unwrap(),
+        "[1,2,2]"
+    );
+}
+
+#[test]
+fn live_collection_caches_do_not_keep_removed_nodes_charged() {
+    let engine = Engine::new(
+        Limits {
+            dom_nodes: 256,
+            script_time: Duration::from_secs(2),
+            ..Limits::default()
+        },
+        NetworkPolicy::default(),
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let mut view = engine
+        .create_view(Url::parse("about:blank").unwrap())
+        .unwrap();
+    view.set_html("<main></main>").unwrap();
+    view.poll();
+    view.evaluate("globalThis.liveButtons=document.getElementsByTagName('button');for(let i=0;i<140;i++)document.body.appendChild(document.createElement('button'));if(liveButtons.length!==140)throw Error('collection');document.body.replaceChildren()").unwrap();
+    view.freeze(true);
+    view.freeze(false);
+    view.poll();
+    view.evaluate(
+        "for(let i=0;i<140;i++)document.body.appendChild(document.createElement('button'))",
+    )
+    .unwrap();
+    assert_eq!(view.evaluate_json("liveButtons.length").unwrap(), "140");
+}
+
+#[test]
+fn document_scripts_is_a_live_collection_for_ad_loader_inspection() {
+    let mut view = page("<script type='application/json' id=data>{}</script>");
+    assert_eq!(view.evaluate_json("(()=>{const scripts=document.scripts,script=document.createElement('script');script.type='application/json';script.id='later';document.body.append(script);const added=[scripts instanceof HTMLCollection,scripts.length,scripts[0].id,scripts[1].type];script.remove();return [added,scripts.length]})()").unwrap(),"[[true,2,\"data\",\"application/json\"],1]");
+}
