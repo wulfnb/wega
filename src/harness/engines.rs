@@ -77,13 +77,32 @@ impl Browser {
                 );
                 self.check_new_tab_render_contract();
                 let page = self.tab().wega.as_ref().unwrap();
-                let pid = page.pid();
+                self.harness.engine_test.as_mut().unwrap().first_pid = page.pid();
+                self.harness.engine_test.as_mut().unwrap().fixture_url = self.tab().url();
+                self.harness.engine_test.as_mut().unwrap().stage = 17;
+                // The AccessKit contract renders at a synthetic size and switches
+                // layouts/tabs. Restore the actual window viewport before asking
+                // the worker for coordinates; a queued resize is not a layout ack.
+                self.handle_event(winit::event::WindowEvent::RedrawRequested);
+            }
+            17 => {
+                let page = self.tab().wega.as_ref().unwrap();
+                let Some((width, height, ..)) = page.viewport else {
+                    return;
+                };
+                if page
+                    .texture
+                    .as_ref()
+                    .is_none_or(|texture| texture.size() != [width as usize, height as usize])
+                {
+                    return;
+                }
+                // Pixels at the restored dimensions prove the worker has laid
+                // out this viewport, rather than the preceding synthetic one.
                 page.send(Command::Evaluate(
                     "document.getElementById('counter').getBoundingClientRect()".into(),
                 ))
                 .unwrap();
-                self.harness.engine_test.as_mut().unwrap().first_pid = pid;
-                self.harness.engine_test.as_mut().unwrap().fixture_url = self.tab().url();
                 self.harness.engine_test.as_mut().unwrap().stage = 1;
             }
             1 => {
@@ -101,7 +120,15 @@ impl Browser {
                 let rect: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
                 let x = rect["x"].as_f64().unwrap() + rect["width"].as_f64().unwrap() / 2.0;
                 let y = rect["y"].as_f64().unwrap() + rect["height"].as_f64().unwrap() / 2.0;
+                println!(
+                    "ENGINE CLICK: button={rect}, page={:?}, viewport={:?}",
+                    self.chrome.page_rect,
+                    self.tab().wega.as_ref().unwrap().viewport
+                );
                 self.smoke_click(x, y);
+                // Deliver the queued move/down/up in this frame, before any
+                // later native events or layout changes can alter the target.
+                self.handle_event(winit::event::WindowEvent::RedrawRequested);
                 self.harness.engine_test.as_mut().unwrap().stage = 2;
             }
             2 => {

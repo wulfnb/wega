@@ -93,6 +93,12 @@ fixture disables caching and delays subsequent interaction-page responses by
 When a suite fails, coverage export retains the failed measurement status and
 prints the failed suite and native log directory after the coverage table.
 
+The engine suite's new-tab check renders both layouts through AccessKit at a
+synthetic size. Before testing a native page click, it redraws the real window
+and waits for Wega pixels matching the restored viewport dimensions. This keeps
+the queried DOM coordinates aligned with the displayed page. The move/down/up
+events are then consumed in one redraw; the counter must increment exactly once.
+
 For optional, informational Rust core branch measurement:
 
 ```sh
