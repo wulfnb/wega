@@ -65,9 +65,13 @@ impl State {
         }
     }
 }
-fn colored(container: &Container) -> RichText {
+fn colored(container: &Container) -> (egui::Atom<'static>, RichText) {
     let [r, g, b] = container.color.rgb();
-    RichText::new(format!("● {}", container.name)).color(Color32::from_rgb(r, g, b))
+    let color = Color32::from_rgb(r, g, b);
+    (
+        crate::ui::icon_atom("container-dot", Some(color)),
+        RichText::new(&container.name).color(color),
+    )
 }
 impl Browser {
     pub(crate) fn containers_menu(&mut self, ui: &mut egui::Ui) {
@@ -82,7 +86,12 @@ impl Browser {
                 }
                 colored(&label)
             })
-            .unwrap_or_else(|| RichText::new("Containers"));
+            .unwrap_or_else(|| {
+                (
+                    crate::ui::icon_atom("containers", None),
+                    RichText::new("Containers"),
+                )
+            });
         ui.menu_button(label, |ui| {
             // Load only while this popup is open; other windows may have renamed
             // an identity. Never read JSON on every closed-menu redraw.
@@ -183,7 +192,8 @@ impl Browser {
             let rows = self.containers.registry.containers.clone();
             for container in rows {
                 ui.horizontal(|ui| {
-                    ui.label(colored(&container));
+                    let label = egui::WidgetAtom::new(colored(&container)).show(ui).response;
+                    label.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, ui.is_enabled(), &container.name));
                     if ui.small_button("Open").clicked() { self.open_container(&container.id, None); }
                     if ui.small_button("Edit").clicked() { self.containers.editing = Some(container.id.clone()); self.containers.name = container.name.clone(); self.containers.color = container.color; }
                     if ui.small_button("Remove…").clicked() { self.containers.remove = Some(container.id.clone()); }

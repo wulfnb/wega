@@ -181,11 +181,82 @@ fn paint_icon(painter: &egui::Painter, center: egui::Pos2, symbol: &str, color: 
                 painter.circle_filled(point(x, 0.0), 1.8, color);
             }
         }
+        "lock" => {
+            line(&[
+                (-4.5, -1.0),
+                (-4.5, -5.0),
+                (-2.5, -8.0),
+                (2.5, -8.0),
+                (4.5, -5.0),
+                (4.5, -1.0),
+            ]);
+            painter.rect_stroke(
+                egui::Rect::from_min_max(point(-7.0, -1.0), point(7.0, 9.0)),
+                2,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            line(&[(0.0, 3.0), (0.0, 5.5)]);
+        }
+        "warning" => {
+            line(&[(0.0, -8.0), (9.0, 8.0), (-9.0, 8.0), (0.0, -8.0)]);
+            line(&[(0.0, -2.0), (0.0, 2.0)]);
+            painter.circle_filled(point(0.0, 5.0), 0.9, color);
+        }
+        "containers" => {
+            for (x, y) in [(-8.0, -7.0), (1.0, -7.0), (-8.0, 2.0), (1.0, 2.0)] {
+                painter.rect_stroke(
+                    egui::Rect::from_min_size(point(x, y), egui::vec2(7.0, 7.0)),
+                    1,
+                    stroke,
+                    egui::StrokeKind::Inside,
+                );
+            }
+        }
+        "container-dot" => {
+            painter.circle_filled(center, 4.0, color);
+        }
         _ => {
             painter.circle_stroke(center, 8.0, stroke);
             painter.circle_filled(center, 3.0, color);
         }
     }
+}
+
+// Paint symbols directly instead of relying on emoji/system font fallback.
+// Atoms keep the icon inside the button/menu's layout and accessible text label.
+pub(crate) fn icon_atom(symbol: &'static str, color: Option<Color32>) -> egui::Atom<'static> {
+    egui::Atom::paint(egui::vec2(20.0, 20.0), move |ui, args| {
+        paint_icon(
+            ui.painter(),
+            args.rect.center(),
+            symbol,
+            color.unwrap_or(args.fallback_text_color),
+        );
+    })
+}
+
+fn site_info_button(ui: &mut Ui, protocol: &str) -> egui::Response {
+    let colors = crate::theme::palette(ui.ctx());
+    let button = match protocol {
+        "https" => egui::Button::new(icon_atom("lock", None)),
+        "http" => egui::Button::new((
+            icon_atom("warning", Some(colors.amber)),
+            RichText::new("Not secure").color(colors.amber),
+        )),
+        "wega" => egui::Button::new("Wega"),
+        "file" => egui::Button::new("File"),
+        _ => egui::Button::new("Site"),
+    };
+    let response = ui.add(button).on_hover_text("Connection and site data");
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::Role::Button,
+            ui.is_enabled(),
+            "Connection and site data",
+        )
+    });
+    response
 }
 
 fn brand_icon(ui: &mut Ui) {
@@ -605,11 +676,7 @@ impl Browser {
             }
             let url = self.current_url();
             let protocol = url.as_ref().map(|u| u.scheme()).unwrap_or("");
-            let security = ui.button(RichText::new(match protocol {
-                "https" => "🔒", "http" => "⚠ Not secure", "wega" => "Wega", "file" => "File", _ => "Site",
-            }).color(if protocol == "http" { colors.amber } else { colors.text }))
-                .on_hover_text("Connection and site data");
-            security.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Connection and site data"));
+            let security = site_info_button(ui, protocol);
             ui.ctx().data_mut(|data| data.insert_temp(Id::unique("site-panel-anchor"), security.rect.left_bottom()));
             if security.clicked() { self.refresh_site_data(); self.features.site_info = !self.features.site_info; }
             self.engine_badge(ui);
