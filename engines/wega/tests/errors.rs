@@ -18,7 +18,7 @@ fn page(html: &str) -> View {
 #[test]
 fn missing_api_names_source_and_keeps_the_next_script_alive() {
     let mut view = page(
-        "<p id=out>before</p><script>document.body.unimplementedFixtureAPI()</script><script>document.getElementById('out').textContent='after'</script>",
+        "<p id=out>before</p><script>for(let i=0;i<64;i++)void document.body['featureProbe'+i];document.body.unimplementedFixtureAPI()</script><script>document.getElementById('out').textContent='after'</script>",
     );
     assert_eq!(view.text("#out").as_deref(), Some("after"));
     let errors = view.notices.iter().cloned().collect::<Vec<_>>().join("\n");
@@ -110,4 +110,60 @@ fn heap_and_stack_exhaustion_remain_fatal() {
                 .contains("No script context")
         );
     }
+}
+
+#[test]
+fn event_loop_deadlines_are_named_and_remain_fatal() {
+    let mut view = Engine::new(
+        Limits {
+            script_time: Duration::from_millis(100),
+            ..Limits::default()
+        },
+        NetworkPolicy::default(),
+        Arc::new(|| {}),
+    )
+    .unwrap()
+    .create_view(Url::parse("about:blank").unwrap())
+    .unwrap();
+    view.set_html("<script>setTimeout(()=>{while(true){}},0)</script>")
+        .unwrap();
+    for _ in 0..12 {
+        view.poll();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        view.notices
+            .iter()
+            .any(|notice| notice.contains("Event loop script deadline exceeded")),
+        "{:?}",
+        view.notices
+    );
+    assert!(
+        view.evaluate_json("1")
+            .unwrap_err()
+            .contains("No script context")
+    );
+}
+
+#[test]
+fn unrelated_type_errors_do_not_turn_feature_probes_into_servo_fallbacks() {
+    let view = page(
+        "<p id=out>before</p><script>void document.body.jQueryPrivateFixture;void document.optionalFeatureFixture;let absent;absent.length</script><script>document.getElementById('out').textContent='still running'</script>",
+    );
+    assert_eq!(view.text("#out").as_deref(), Some("still running"));
+    assert!(
+        view.notices
+            .iter()
+            .any(|notice| notice.contains("TypeError")),
+        "{:?}",
+        view.notices
+    );
+    assert!(view.compatibility.is_none(), "{:?}", view.compatibility);
+    assert!(
+        view.notices
+            .iter()
+            .all(|notice| !notice.contains("; missing:")),
+        "{:?}",
+        view.notices
+    );
 }

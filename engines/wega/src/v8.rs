@@ -368,6 +368,7 @@ impl V8Host {
     }
     /// Run one bounded step of script; reports a notice when it is slow.
     fn bounded<T>(&mut self, name: &str, run: impl FnOnce(&mut Self) -> T) -> (T, bool) {
+        self.dom.begin_task();
         let started = Instant::now();
         self.watchdog.arm(self.budget);
         let result = run(self);
@@ -585,6 +586,12 @@ impl ScriptHost for V8Host {
             .unwrap()
             .v8_isolate()
             .clear_kept_objects();
+        if timed_out {
+            return Err(ScriptError {
+                fatal: true,
+                message: "Event loop script deadline exceeded".into(),
+            });
+        }
         match result {
             Poll::Pending => {
                 self.pending = true;
@@ -598,12 +605,6 @@ impl ScriptHost for V8Host {
                     message: e.to_string(),
                 });
             }
-        }
-        if timed_out {
-            return Err(ScriptError {
-                fatal: true,
-                message: "Microtask deadline exceeded".into(),
-            });
         }
         let mut index = 0;
         while index < self.evaluating_modules.len() {

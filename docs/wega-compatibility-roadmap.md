@@ -1,6 +1,6 @@
 # Wega compatibility roadmap
 
-Status: 26 October 2026. This lists what the Wega engine (Blitz + V8 worker) still
+Status: 27 October 2026. This lists what the Wega engine (Blitz + V8 worker) still
 lacks compared with a full browser engine, after the web-correctness work described
 in [engine-strategy.md](engine-strategy.md#what-the-first-worker-actually-supports).
 Each item says how we intend to build it and roughly how large it is. Sizes are
@@ -33,7 +33,7 @@ use, then iframes and components, then storage and workers.
 | Media (`<video>`, `<audio>`, MSE) | A separate media worker using the platform decoders; frames as textures. EME/DRM stays on Servo. | 8+ |
 | Web Workers | A second V8 isolate per worker in the same process with its own event loop and `postMessage`; SharedWorker and Service Workers after that (Service Workers need the shared network broker for interception). | 3 (Workers), 6+ (SW) |
 | IndexedDB, Cache API | Deno has no IndexedDB extension; build on SQLite in the per-origin storage directory with quotas. | 4 |
-| Selection, Range, clipboard, find in page | Blitz has text selection only inside inputs. Page selection needs Blitz support (upstream); `Selection`/`Range` in the bindings; clipboard through the browser with a permission check. | 4–6 (upstream) |
+| Selection, Range, clipboard, find in page | Blitz has text selection only inside inputs. Page selection needs Blitz support (upstream); `Selection` and the remaining Range editing/geometry methods in the bindings; clipboard through the browser with a permission check. | 4–6 (upstream) |
 | `contentEditable` / rich editing | After selection and Range. | 4+ |
 | Generated bindings | WebIDL-to-JS generation for the remaining DOM interfaces (the strategy's plan); grow the WPT subset as interfaces land. | ongoing |
 
@@ -67,3 +67,34 @@ use, then iframes and components, then storage and workers.
   stub window object.
 - Script-held wrappers keep replaced DOM text charged against the budget until the
   wrapper is garbage collected.
+
+## Trak.in compatibility regression (27 October 2026)
+
+The bindings now provide live Range boundary points, contextual HTML/SVG fragments,
+text insertion and selection-to-string. Contextual fragment scripts execute on
+insertion under CSP; innerHTML scripts remain inert. Document visibility follows
+tab freezing, and legacy document.domain assignment cannot relax the origin.
+Document.namespaceURI is absent, as in browsers, and is no longer misreported as a
+missing API during feature detection. document.scripts is a live HTMLCollection.
+Fallback diagnostics only identify missing methods named by the failing call;
+unrelated TypeErrors no longer inherit earlier jQuery/private-property probes.
+
+Live collections cache a query within each script step until a DOM mutation.
+Sibling and child indexing avoid materializing whole child lists. Synchronous
+style and geometry reads reuse layout until a mutation; the next script step
+invalidates both caches so parser, input, viewport and resource changes are seen.
+Script deadlines and DOM allocation limits remain enforced. Regressions cover
+wide trees, live collection mutations, layout invalidation, contextual fragment
+CSP and budgets, and event-loop deadline diagnostics.
+
+Local validation: 126 workspace tests and 26 broker integration checks passed,
+plus strict workspace Clippy and formatting. A direct 60-second trak.in worker
+run completed with three successful periodic script probes, 28 headings and no
+compatibility fallback, createRange error or script deadline. Optional third-party
+ad scripts still report ordinary exceptions; their success is not claimed. The
+local macOS development bundle was updated and its signature verified; this does
+not validate a new distributed or notarized DMG.
+
+Range cloneContents, extractContents, deleteContents, surroundContents and geometry
+methods, plus window Selection and rich editing, remain unsupported. These changes
+do not imply full DOM Range conformance or complete third-party widget support.

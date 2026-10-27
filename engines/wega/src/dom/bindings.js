@@ -20,12 +20,24 @@
       /Maximum call stack size exceeded/.test(error.message));
   function report(error) {
     if (fatal(error)) throw error;
-    const text = String(error) + "\n" + String(error?.stack || "");
+    const message = String(error);
+    // Undefined expando reads and feature detection are normal. Only name an
+    // API as missing when the failing call actually identifies that property.
+    const absent = [...missing].filter((name) => {
+      const key = name.slice(name.indexOf(".") + 1)
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const called = new RegExp(
+        "(?:^|[^\\w$])" + key +
+        "(?:['\"]\\s*\\])?\\s+is not a (?:function|constructor)",
+      );
+      return called.test(message);
+    });
+    const text = message + "\n" + String(error?.stack || "");
     host(
       "error",
       text +
-        (text.includes("TypeError") && missing.size
-          ? "; missing: " + [...missing].join(", ")
+        (message.includes("TypeError") && absent.length
+          ? "; missing: " + absent.join(", ")
           : ""),
     );
     if (report.active) return;
@@ -215,9 +227,11 @@
           value === undefined &&
           typeof key === "string" &&
           !key.startsWith("_") &&
-          missing.size < 32
-        )
+          !(key === "namespaceURI" && info.nodeType !== 1)
+        ) {
+          if (missing.size >= 32) missing.delete(missing.values().next().value);
           missing.add((info.nodeType === 9 ? "Document." : "Element.") + key);
+        }
         return value;
       },
     });
@@ -255,39 +269,71 @@
       else connected.delete(id);
     }
   }
-  function nodeList(read, collection = false) {
+  function nodeList(
+    read,
+    collection = false,
+    indexed = null,
+    live = collection,
+  ) {
+    if (live && !indexed) {
+      const query = read;
+      let revision = -1, nodes = [];
+      const entries = () => {
+        const current = host("revision");
+        if (revision !== current) {
+          // Cache identities, not wrappers: a live collection must not retain
+          // removed subtrees and their allocation budget until its next read.
+          nodes = query().map((node) => [node._id, node.ownerDocument]);
+          revision = current;
+        }
+        return nodes;
+      };
+      read = () => entries().map(([id, owner]) => wrap(id, owner));
+      indexed = {
+        length: () => entries().length,
+        at: (index) => {
+          const entry = entries()[index];
+          return entry ? wrap(entry[0], entry[1]) : undefined;
+        },
+      };
+    }
+    const length = () => indexed ? indexed.length() : read().length;
+    const at = (index) => indexed ? indexed.at(index) : read()[index];
     const target = collection ? new HTMLCollection() : new NodeList();
     return new Proxy(target, {
       get(target, key, receiver) {
-        if (key === "length") return read().length;
-        if (typeof key === "string" && /^\d+$/.test(key))
-          return read()[Number(key)];
+        if (key === "length") return length();
+        if (typeof key === "string" && /^\d+$/.test(key)) {
+          return at(Number(key));
+        }
         const value = Reflect.get(target, key, receiver);
-        if (value === undefined && collection && typeof key === "string")
+        if (value === undefined && collection && typeof key === "string") {
           return read().find(
             (n) => n.id === key || n.getAttribute("name") === key,
           );
+        }
         return value;
       },
       has(target, key) {
         return typeof key === "string" && /^\d+$/.test(key)
-          ? Number(key) < read().length
+          ? Number(key) < length()
           : Reflect.has(target, key);
       },
       ownKeys() {
-        return read().map((_, i) => String(i));
+        return Array.from({ length: length() }, (_, i) => String(i));
       },
       getOwnPropertyDescriptor(target, key) {
         if (
           typeof key === "string" &&
           /^\d+$/.test(key) &&
-          Number(key) < read().length
-        )
+          Number(key) < length()
+        ) {
           return {
             enumerable: true,
             configurable: true,
-            value: read()[Number(key)],
+            value: at(Number(key)),
           };
+        }
         return Reflect.getOwnPropertyDescriptor(target, key);
       },
     });
@@ -356,10 +402,21 @@
     get childNodes() {
       return (
         this._childNodes ||
-        (this._childNodes = nodeList(() =>
-          host("children", this._id).map((id) =>
-            wrap(id, this.ownerDocument || this),
-          ),
+        (this._childNodes = nodeList(
+          () =>
+            host("children", this._id).map((id) =>
+              wrap(id, this.ownerDocument || this)
+            ),
+          false,
+          {
+            length: () => host("childCount", this._id),
+            at: (index) => {
+              const id = host("childAt", this._id, String(index));
+              return id === null
+                ? undefined
+                : wrap(id, this.ownerDocument || this);
+            },
+          },
         ))
       );
     }
@@ -373,10 +430,10 @@
       );
     }
     get firstChild() {
-      return this.childNodes[0] || null;
+      return wrap(host("firstChild", this._id), this.ownerDocument || this);
     }
     get lastChild() {
-      return this.childNodes[this.childNodes.length - 1] || null;
+      return wrap(host("lastChild", this._id), this.ownerDocument || this);
     }
     get firstElementChild() {
       return this.children[0] || null;
@@ -388,14 +445,13 @@
       return this.children.length;
     }
     get previousSibling() {
-      const nodes = this.parentNode?.childNodes;
-      if (!nodes) return null;
-      return nodes[[...nodes].indexOf(this) - 1] || null;
+      return wrap(
+        host("previousSibling", this._id),
+        this.ownerDocument || this,
+      );
     }
     get nextSibling() {
-      const nodes = this.parentNode?.childNodes;
-      if (!nodes) return null;
-      return nodes[[...nodes].indexOf(this) + 1] || null;
+      return wrap(host("nextSibling", this._id), this.ownerDocument || this);
     }
     get previousElementSibling() {
       let node = this.previousSibling;
@@ -411,13 +467,20 @@
       return host("text", this._id);
     }
     set textContent(value) {
+      const text = String(value === null ? "" : value);
+      const oldLength = this instanceof CharacterData ? this.length : 0;
+      const children = liveRanges.size ? [...this.childNodes] : [];
       const old = detachChildren(this);
-      host("setText", this._id, String(value === null ? "" : value));
-      if (mutationObservers.size)
+      host("setText", this._id, text);
+      if (this instanceof CharacterData) {
+        changedRangeData(this, 0, oldLength, text.length);
+      } else replacedRangeChildren(this, children);
+      if (mutationObservers.size) {
         notify(this, "childList", {
           removedNodes: old,
           addedNodes: [...this.childNodes],
         });
+      }
       if (isScript(this) && this.isConnected) prepareScript(this);
     }
     get nodeValue() {
@@ -426,7 +489,9 @@
     set nodeValue(value) {
       if ([3, 8].includes(this.nodeType)) {
         const old = this.textContent;
-        host("setText", this._id, String(value === null ? "" : value));
+        const text = String(value === null ? "" : value);
+        host("setText", this._id, text);
+        changedRangeData(this, 0, old.length, text.length);
         notify(this, "characterData", { oldValue: old });
       }
     }
@@ -490,24 +555,35 @@
     }
     insertBefore(child, reference) {
       if (!(child instanceof Node)) throw new TypeError("Expected a Node");
-      if (reference !== null && reference?.parentNode !== this)
+      if (reference !== null && reference?.parentNode !== this) {
         fail("NotFoundError", "Reference is not a child");
-      if (child.contains(this))
+      }
+      if (child.contains(this)) {
         fail("HierarchyRequestError", "Cannot create a DOM cycle");
+      }
       if (child.nodeType === 11) {
-        for (const node of [...child.childNodes])
+        for (const node of [...child.childNodes]) {
           this.insertBefore(node, reference);
+        }
         return child;
       }
       const oldParent = child.parentNode;
+      if (child === reference) return child;
+      if (oldParent) removedRangeNode(child);
+      const index = reference
+        ? nodeIndex(reference) -
+          Number(oldParent === this && nodeIndex(child) < nodeIndex(reference))
+        : this.childNodes.length - Number(oldParent === this);
+      insertedRangeNode(this, index);
       host("insert", this._id, child._id, reference ? reference._id : "");
       child._owner = this.ownerDocument || this;
       retainTree(child, this.getRootNode() === document);
-      if (oldParent)
+      if (oldParent) {
         notify(oldParent, "childList", {
           removedNodes: [child],
           addedNodes: [],
         });
+      }
       notify(this, "childList", { removedNodes: [], addedNodes: [child] });
       if (this.getRootNode() === document) {
         prepareInserted(child);
@@ -516,8 +592,10 @@
       return child;
     }
     removeChild(child) {
-      if (child?.parentNode !== this)
+      if (child?.parentNode !== this) {
         fail("NotFoundError", "Node is not a child");
+      }
+      removedRangeNode(child);
       retainTree(child, false);
       host("remove", child._id);
       notify(this, "childList", { removedNodes: [child], addedNodes: [] });
@@ -670,7 +748,7 @@
       return this.data.substring(offset, offset + count);
     }
     appendData(value) {
-      this.data += String(value);
+      this.replaceData(this.length, 0, value);
     }
     insertData(offset, value) {
       this.replaceData(offset, 0, value);
@@ -680,18 +758,37 @@
     }
     replaceData(offset, count, value) {
       if (offset > this.length) fail("IndexSizeError", "Offset exceeds data");
-      this.data =
-        this.data.slice(0, offset) +
-        String(value) +
-        this.data.slice(offset + count);
+      value = String(value);
+      count = Math.min(Number(count) >>> 0, this.length - offset);
+      const old = this.data;
+      host(
+        "setText",
+        this._id,
+        old.slice(0, offset) + value + old.slice(offset + count),
+      );
+      changedRangeData(this, offset, count, value.length);
+      notify(this, "characterData", { oldValue: old });
     }
   }
   class Text extends CharacterData {
     splitText(offset) {
       if (offset > this.length) fail("IndexSizeError", "Offset exceeds text");
       const next = this.ownerDocument.createTextNode(this.data.slice(offset));
-      this.data = this.data.slice(0, offset);
+      const old = this.data;
       if (this.parentNode) this.parentNode.insertBefore(next, this.nextSibling);
+      eachRange((range) => {
+        for (const point of [range._start, range._end]) {
+          if (point[0] === this && point[1] > offset) {
+            point[0] = next;
+            point[1] -= offset;
+          } else if (
+            this.parentNode && point[0] === this.parentNode &&
+            point[1] === nodeIndex(this) + 1
+          ) point[1]++;
+        }
+      });
+      host("setText", this._id, old.slice(0, offset));
+      notify(this, "characterData", { oldValue: old });
       return next;
     }
     get wholeText() {
@@ -1070,13 +1167,16 @@
         .join("");
     }
     set innerHTML(value) {
+      const children = liveRanges.size ? [...this.childNodes] : [];
       const old = detachChildren(this);
       host("innerHTML", this._id, String(value));
-      if (mutationObservers.size)
+      replacedRangeChildren(this, children);
+      if (mutationObservers.size) {
         notify(this, "childList", {
           removedNodes: old,
           addedNodes: [...this.childNodes],
         });
+      }
     }
     get outerHTML() {
       return host("serialize", this._id);
@@ -1549,6 +1649,288 @@
     script: HTMLScriptElement,
     template: HTMLTemplateElement,
   };
+
+  // Ranges hold real DOM boundary points. Fragment parsing uses the start
+  // element's HTML/SVG context and retains executable fragment scripts.
+  const liveRanges = new Set();
+  function eachRange(update) {
+    for (const reference of liveRanges) {
+      const range = weak ? reference.deref() : reference;
+      if (range) update(range);
+      else liveRanges.delete(reference);
+    }
+  }
+  const nodeIndex = (node) => [...node.parentNode.childNodes].indexOf(node);
+  const nodeLength = (node) =>
+    node instanceof CharacterData ? node.length : node.childNodes.length;
+  function boundary(node, offset) {
+    if (!(node instanceof Node)) throw new TypeError("Expected a Node");
+    if (node.nodeType === 10) {
+      fail("InvalidNodeTypeError", "A doctype cannot be a range boundary");
+    }
+    offset = Number(offset) >>> 0;
+    if (offset > nodeLength(node)) {
+      fail("IndexSizeError", "Offset exceeds node length");
+    }
+    return [node, offset];
+  }
+  function comparePoints(a, b) {
+    if (a[0] === b[0]) return Math.sign(a[1] - b[1]);
+    if (a[0].contains(b[0])) {
+      let child = b[0];
+      while (child.parentNode !== a[0]) child = child.parentNode;
+      return nodeIndex(child) < a[1] ? 1 : -1;
+    }
+    if (b[0].contains(a[0])) return -comparePoints(b, a);
+    return a[0].compareDocumentPosition(b[0]) & 4 ? -1 : 1;
+  }
+  function removedRangeNode(node) {
+    if (!liveRanges.size) return;
+    const parent = node.parentNode, index = nodeIndex(node);
+    eachRange((range) => {
+      for (const key of ["_start", "_end"]) {
+        const point = range[key];
+        if (node.contains(point[0])) range[key] = [parent, index];
+        else if (point[0] === parent && point[1] > index) point[1]--;
+      }
+    });
+  }
+  function insertedRangeNode(parent, index) {
+    if (!liveRanges.size) return;
+    eachRange((range) => {
+      for (const point of [range._start, range._end]) {
+        if (point[0] === parent && point[1] > index) point[1]++;
+      }
+    });
+  }
+  function changedRangeData(node, offset, count, length) {
+    if (!liveRanges.size) return;
+    eachRange((range) => {
+      for (const point of [range._start, range._end]) {
+        if (point[0] === node && point[1] > offset) {
+          point[1] = point[1] <= offset + count
+            ? offset
+            : point[1] + length - count;
+        }
+      }
+    });
+  }
+  function replacedRangeChildren(parent, children) {
+    eachRange((range) => {
+      for (const key of ["_start", "_end"]) {
+        if (
+          range[key][0] === parent ||
+          children.some((child) => child.contains(range[key][0]))
+        ) {
+          range[key] = [parent, 0];
+        }
+      }
+    });
+  }
+  class Range {
+    constructor() {
+      this._start = [document, 0];
+      this._end = [document, 0];
+      liveRanges.add(weak ? new WeakRef(this) : this);
+    }
+    get startContainer() {
+      return this._start[0];
+    }
+    get startOffset() {
+      return this._start[1];
+    }
+    get endContainer() {
+      return this._end[0];
+    }
+    get endOffset() {
+      return this._end[1];
+    }
+    get collapsed() {
+      return this.startContainer === this.endContainer &&
+        this.startOffset === this.endOffset;
+    }
+    get commonAncestorContainer() {
+      let node = this.startContainer;
+      while (!node.contains(this.endContainer)) node = node.parentNode;
+      return node;
+    }
+    setStart(node, offset) {
+      const point = boundary(node, offset);
+      if (
+        node.getRootNode() !== this.endContainer.getRootNode() ||
+        comparePoints(point, this._end) > 0
+      ) {
+        this._end = [...point];
+      }
+      this._start = point;
+    }
+    setEnd(node, offset) {
+      const point = boundary(node, offset);
+      if (
+        node.getRootNode() !== this.startContainer.getRootNode() ||
+        comparePoints(point, this._start) < 0
+      ) {
+        this._start = [...point];
+      }
+      this._end = point;
+    }
+    _relative(node, after, end) {
+      if (!(node instanceof Node)) throw new TypeError("Expected a Node");
+      if (!node.parentNode) {
+        fail("InvalidNodeTypeError", "The node needs a parent");
+      }
+      this[end ? "setEnd" : "setStart"](
+        node.parentNode,
+        nodeIndex(node) + Number(after),
+      );
+    }
+    setStartBefore(node) {
+      this._relative(node, false, false);
+    }
+    setStartAfter(node) {
+      this._relative(node, true, false);
+    }
+    setEndBefore(node) {
+      this._relative(node, false, true);
+    }
+    setEndAfter(node) {
+      this._relative(node, true, true);
+    }
+    selectNode(node) {
+      this.setStartBefore(node);
+      this.setEndAfter(node);
+    }
+    selectNodeContents(node) {
+      const end = boundary(node, nodeLength(node));
+      this._start = [node, 0];
+      this._end = end;
+    }
+    collapse(toStart = false) {
+      const point = toStart ? this._start : this._end;
+      this._start = [...point];
+      this._end = [...point];
+    }
+    cloneRange() {
+      const clone = new Range();
+      clone._start = [...this._start];
+      clone._end = [...this._end];
+      return clone;
+    }
+    detach() {} // Specified no-op; it must not disable a live range.
+    compareBoundaryPoints(how, other) {
+      how = Number(how) >>> 0;
+      if (how > 3) fail("NotSupportedError", "Invalid comparison mode");
+      if (!(other instanceof Range)) throw new TypeError("Expected a Range");
+      if (
+        this.startContainer.getRootNode() !== other.startContainer.getRootNode()
+      ) {
+        fail("WrongDocumentError", "Ranges have different roots");
+      }
+      return comparePoints(
+        how === 1 || how === 2 ? this._end : this._start,
+        how === 2 || how === 3 ? other._end : other._start,
+      );
+    }
+    comparePoint(node, offset) {
+      const point = boundary(node, offset);
+      if (node.getRootNode() !== this.startContainer.getRootNode()) {
+        fail("WrongDocumentError", "Different roots");
+      }
+      return comparePoints(point, this._start) < 0
+        ? -1
+        : comparePoints(point, this._end) > 0
+        ? 1
+        : 0;
+    }
+    isPointInRange(node, offset) {
+      const point = boundary(node, offset);
+      return node.getRootNode() === this.startContainer.getRootNode() &&
+        comparePoints(point, this._start) >= 0 &&
+        comparePoints(point, this._end) <= 0;
+    }
+    intersectsNode(node) {
+      if (!(node instanceof Node)) throw new TypeError("Expected a Node");
+      if (node.getRootNode() !== this.startContainer.getRootNode()) {
+        return false;
+      }
+      if (!node.parentNode) return true;
+      const index = nodeIndex(node);
+      return comparePoints([node.parentNode, index], this._end) < 0 &&
+        comparePoints([node.parentNode, index + 1], this._start) > 0;
+    }
+    insertNode(node) {
+      if (!(node instanceof Node)) throw new TypeError("Expected a Node");
+      if (node.nodeType === 9 || node.contains(this.startContainer)) {
+        fail("HierarchyRequestError", "Invalid range insertion");
+      }
+      const collapsed = this.collapsed;
+      let parent = this.startContainer,
+        reference = parent.childNodes[this.startOffset] || null;
+      if (parent.nodeType === 3) {
+        if (!parent.parentNode) {
+          fail(
+            "HierarchyRequestError",
+            "Detached text has no insertion parent",
+          );
+        }
+        reference = parent.splitText(this.startOffset);
+        parent = reference.parentNode;
+      } else if (parent instanceof CharacterData) {
+        fail("HierarchyRequestError", "Cannot insert into character data");
+      }
+      const count = node.nodeType === 11 ? node.childNodes.length : 1;
+      if (node === reference) reference = reference.nextSibling;
+      if (node.parentNode) node.parentNode.removeChild(node);
+      const offset = reference
+        ? nodeIndex(reference)
+        : parent.childNodes.length;
+      parent.insertBefore(node, reference);
+      if (collapsed) this._end = [parent, offset + count];
+    }
+    createContextualFragment(html) {
+      let context = this.startContainer;
+      const owner = context.ownerDocument || context;
+      if (context.nodeType !== 1) context = context.parentElement;
+      if (
+        !context ||
+        (context.namespaceURI === HTML_NS && context.localName === "html")
+      ) {
+        context = owner.createElement("body");
+      }
+      return wrap(host("contextualFragment", context._id, String(html)), owner);
+    }
+    toString() {
+      let result = "";
+      const walk = (node) => {
+        if (node.nodeType === 3) {
+          if (
+            comparePoints([node, node.length], this._start) <= 0 ||
+            comparePoints([node, 0], this._end) >= 0
+          ) return;
+          result += node.data.slice(
+            node === this.startContainer ? this.startOffset : 0,
+            node === this.endContainer ? this.endOffset : node.length,
+          );
+        } else for (const child of node.childNodes) walk(child);
+      };
+      if (!this.collapsed) walk(this.commonAncestorContainer);
+      return result;
+    }
+  }
+  for (
+    const [name, value] of Object.entries({
+      START_TO_START: 0,
+      START_TO_END: 1,
+      END_TO_END: 2,
+      END_TO_START: 3,
+    })
+  ) {
+    Object.defineProperty(Range, name, { value });
+    Object.defineProperty(Range.prototype, name, { value });
+  }
+  Object.defineProperty(Range.prototype, Symbol.toStringTag, {
+    value: "Range",
+  });
   class Document extends Node {
     constructor(id, info) {
       if (id === undefined) return wrap(host("createDocument"));
@@ -1566,6 +1948,29 @@
     set body(value) {
       if (this.body) this.body.replaceWith(value);
       else this.documentElement.appendChild(value);
+    }
+    get scripts() {
+      return this.getElementsByTagName("script");
+    }
+    get visibilityState() {
+      return this === document ? this._visibility || "visible" : "hidden";
+    }
+    get hidden() {
+      return this.visibilityState === "hidden";
+    }
+    get domain() {
+      return new URL(this.URL).hostname;
+    }
+    set domain(value) {
+      // Each Wega tab is origin-keyed; legacy domain relaxation is disabled.
+      // Keep the origin used by cookies, storage, fetch and other tabs intact.
+      host("documentDomain", String(value));
+    }
+    createRange() {
+      const range = new Range();
+      range._start = [this, 0];
+      range._end = [this, 0];
+      return range;
     }
     get defaultView() {
       return this === document ? globalThis : null;
@@ -1639,10 +2044,17 @@
     }
     getElementsByName(name) {
       name = String(name);
-      return nodeList(() => [...this.querySelectorAll("[name]")].filter(
-        (element) => element.namespaceURI === "http://www.w3.org/1999/xhtml" &&
-          element.getAttribute("name") === name,
-      ));
+      return nodeList(
+        () =>
+          [...this.querySelectorAll("[name]")].filter(
+            (element) =>
+              element.namespaceURI === "http://www.w3.org/1999/xhtml" &&
+              element.getAttribute("name") === name,
+          ),
+        false,
+        null,
+        true,
+      );
     }
     createElement(name) {
       name = String(name).toLowerCase();
@@ -1768,6 +2180,7 @@
       defineHandler(Element.prototype, name);
   }
   Object.defineProperty(globalThis, "__wega_node", { value: (id) => wrap(id) });
+  defineHandler(Document.prototype, "visibilitychange");
   Object.defineProperty(Document.prototype, "cookie", {
     get() {
       return host("cookie");
@@ -1978,6 +2391,7 @@
     Document,
     HTMLDocument: Document,
     DocumentFragment,
+    Range,
     Text,
     Comment,
     NodeList,
@@ -2130,6 +2544,16 @@
         if (!target) return false;
         return !target.dispatchEvent(
           event || new Event(type, { bubbles: true, cancelable: true }),
+        );
+      },
+    },
+    __wega_visibility: {
+      value: (hidden) => {
+        const state = hidden ? "hidden" : "visible";
+        if (document.visibilityState === state) return;
+        document._visibility = state;
+        document.dispatchEvent(
+          new Event("visibilitychange", { bubbles: true }),
         );
       },
     },

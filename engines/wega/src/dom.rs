@@ -50,6 +50,10 @@ pub(crate) struct Dom {
     used: Cell<usize>,
     start: Instant,
     retained: RefCell<HashSet<NodeId>>,
+    // The DOM thread cannot receive parser/input mutations during script. Start
+    // a fresh epoch at each host step, then invalidate synchronously on writes.
+    revision: Cell<u64>,
+    layout_dirty: Cell<bool>,
 }
 impl Dom {
     pub fn new(context: crate::script::HostContext, limits: &Limits, initial_bytes: usize) -> Self {
@@ -72,10 +76,59 @@ impl Dom {
             used: Cell::new(initial_bytes),
             start: Instant::now(),
             retained: Default::default(),
+            revision: Cell::new(0),
+            layout_dirty: Cell::new(true),
+        }
+    }
+    pub fn begin_task(&self) {
+        self.invalidate();
+    }
+    fn invalidate(&self) {
+        self.revision.set(self.revision.get().wrapping_add(1));
+        self.layout_dirty.set(true);
+    }
+    fn resolve(&self, doc: &mut BaseDocument) {
+        if self.layout_dirty.replace(false) {
+            doc.resolve(self.start.elapsed().as_secs_f64());
         }
     }
     pub fn call(&self, args: &[Value]) -> Result<Value, String> {
         let text = |index: usize| args.get(index).and_then(Value::as_str).unwrap_or_default();
+        if text(0) == "revision" {
+            return Ok(json!(self.revision.get()));
+        }
+        if matches!(
+            text(0),
+            "templateContent"
+                | "scrollViewport"
+                | "scrollNode"
+                | "scrollIntoView"
+                | "history"
+                | "innerHTML"
+                | "contextualFragment"
+                | "clone"
+                | "insert"
+                | "createNS"
+                | "createComment"
+                | "createFragment"
+                | "createDocument"
+                | "setAttrNS"
+                | "styleSet"
+                | "focus"
+                | "setText"
+                | "setAttr"
+                | "removeAttr"
+                | "create"
+                | "createText"
+                | "append"
+                | "remove"
+                | "activate"
+                | "write"
+                | "fragment"
+                | "submitForm"
+        ) {
+            self.invalidate();
+        }
         if text(0) == "error" {
             let mut reports = self.errors.borrow_mut();
             if reports.len() < 16 {
@@ -151,7 +204,7 @@ impl Dom {
             "setAttr" => text(2).len() + text(3).len() + 32,
             "create" | "createText" | "createComment" | "createFragment" => text(1).len() + 32,
             "createNS" => text(1).len() + text(2).len() + 32,
-            "innerHTML" => text(2).len() + 32,
+            "innerHTML" | "contextualFragment" => text(2).len() + 32,
             "write" => text(1).len(),
             "styleSet" => text(2).len() + text(3).len() + 32,
             _ => 0,
@@ -197,6 +250,10 @@ impl Dom {
                 json!(media.evaluate(doc.stylist_device(),selectors::matching::QuirksMode::NoQuirks,&mut style::stylesheets::CustomMediaEvaluator::none()))
             },
             "subtree"=>json!(Self::subtree(&doc,node_id()?).iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
+            "documentDomain"=>{
+                if doc.url().origin().is_tuple() { Value::Null }
+                else {return Err("SecurityError: opaque documents have no domain".into());}
+            },
             "resolveURL"=>{let base=url::Url::parse(text(2)).map_err(|e|e.to_string())?;let url=base.join(text(1)).map_err(|e|e.to_string())?;json!({"href":url.as_str(),"origin":url.origin().ascii_serialization(),"protocol":format!("{}:",url.scheme()),"host":url.host_str().map_or(String::new(),|host|url.port().map_or_else(||host.to_owned(),|port|format!("{host}:{port}"))),"hostname":url.host_str().unwrap_or_default(),"port":url.port().map(|p|p.to_string()).unwrap_or_default(),"pathname":url.path(),"search":url.query().map(|q|format!("?{q}")).unwrap_or_default(),"hash":url.fragment().map(|f|format!("#{f}")).unwrap_or_default()})},
             "connected"=>{let mut root=node_id()?;while let Some(parent)=doc.get_node(root).and_then(|n|n.parent){root=parent;}json!(root==doc.root_node().id)},
             "retain" => {let id=node_id()?;self.retained.borrow_mut().insert(id);Value::Null},
@@ -222,7 +279,7 @@ impl Dom {
             "closest"=>json!(doc.closest(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
             "getById"=>json!(doc.get_element_by_id(text(1)).map(|id|id.as_u64().to_string())),
             "outerHTML"=>json!(doc.get_node(node_id()?).unwrap().outer_html()),
-            "innerHTML"=>{
+            "innerHTML" | "contextualFragment"=>{
                 let target=node_id()?;
                 if text(2).len()>self.limits.html_bytes{return Err("HTML fragment exceeds the size limit".into());}
                 // Parse into a detached same-context element first; reject budgets before
@@ -231,10 +288,17 @@ impl Dom {
                 let name=element.name.clone();let staging=doc.mutate().create_element(name,vec![]);
                 {let mut mutation=doc.mutate();blitz_html::DocumentHtmlParser::parse_inner_html_into_mutator(&mut mutation,staging,text(2));}
                 let parsed=Self::subtree(&doc,staging);
-                // Fragment-parsed scripts are "already started" and never run (HTML).
-                for id in &parsed {if doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e|&*e.name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}
+                // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
+                if text(0)=="innerHTML" {for id in &parsed {if doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e|&*e.name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
                 if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {doc.mutate().remove_and_drop_node(staging);return Err("DOM node limit exceeded".into());}
-                let old=doc.get_node(target).unwrap().children.to_vec();let children=doc.get_node(staging).unwrap().children.to_vec();
+                let children=doc.get_node(staging).unwrap().children.to_vec();
+                if text(0)=="contextualFragment" {
+                    let fragment=doc.mutate().create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),vec![]);
+                    doc.mutate().replace_children(fragment,&children);doc.mutate().remove_and_drop_node(staging);
+                    self.allocated.set(self.allocated.get()+parsed.len());
+                    return Ok(json!(fragment.as_u64().to_string()));
+                }
+                let old=doc.get_node(target).unwrap().children.to_vec();
                 doc.mutate().replace_children(target,&children);doc.mutate().remove_and_drop_node(staging);
                 self.allocated.set(self.allocated.get()+parsed.len()-1);
                 for id in old {self.collect_detached(&mut doc,id);}
@@ -296,10 +360,10 @@ impl Dom {
             // Blitz creates native text editors during layout. Initialize a
             // newly inserted input before focus so immediate key/IME commands
             // cannot be silently dropped while waiting for the next paint.
-            "focus"=>{let target=node_id()?;doc.resolve(self.start.elapsed().as_secs_f64());doc.set_focus_to(target);Value::Null},
+            "focus"=>{let target=node_id()?;self.resolve(&mut doc);doc.set_focus_to(target);self.invalidate();Value::Null},
             "serialize"=>{let mut html=String::new();Self::serialize(&doc,node_id()?,&mut html);json!(html)},
             "computed"=>{
-                let target=node_id()?;doc.resolve(self.start.elapsed().as_secs_f64());
+                let target=node_id()?;self.resolve(&mut doc);
                 let property=style::properties::PropertyId::parse_enabled_for_all_content(text(2));
                 let value=doc.get_node(target).unwrap().primary_styles().and_then(|computed|match property {
                     Ok(style::properties::PropertyId::Custom(ref name))=>Some(computed.computed_value_to_string(style::properties::PropertyDeclarationId::Custom(name))),
@@ -335,6 +399,26 @@ impl Dom {
                     .to_string()
                     .to_uppercase())
             ),
+            "firstChild" | "lastChild" | "nextSibling" | "previousSibling" => {
+                let target=node_id()?;
+                let node=doc.get_node(target).unwrap();
+                let related=match text(0) {
+                    "firstChild"=>node.children.first().copied(),
+                    "lastChild"=>node.children.last().copied(),
+                    _=>node.parent.and_then(|parent| {
+                        let children=&doc.get_node(parent)?.children;
+                        let index=children.iter().position(|id| *id==target)?;
+                        let next=if text(0)=="nextSibling" {index.checked_add(1)} else {index.checked_sub(1)}?;
+                        children.get(next).copied()
+                    })
+                };
+                json!(related.map(|id| id.as_u64().to_string()))
+            },
+            "childCount" => json!(doc.get_node(node_id()?).unwrap().children.len()),
+            "childAt" => {
+                let index=text(2).parse::<usize>().unwrap_or(usize::MAX);
+                json!(doc.get_node(node_id()?).unwrap().children.get(index).map(|id| id.as_u64().to_string()))
+            },
             "children" => json!(
                 doc.get_node(node_id()?)
                     .unwrap()
@@ -350,12 +434,12 @@ impl Dom {
                     .map(|id| id.as_u64().to_string())
             ),
             "box"=>{
-                let target=node_id()?;doc.resolve(self.start.elapsed().as_secs_f64());let node=doc.get_node(target).unwrap();let layout=node.final_layout();let offset=node.offset_top_left();
+                let target=node_id()?;self.resolve(&mut doc);let node=doc.get_node(target).unwrap();let layout=node.final_layout();let offset=node.offset_top_left();
                 json!({"hasBoxes":node.has_boxes(),"clientWidth":node.client_width(),"clientHeight":node.client_height(),"clientLeft":layout.border.left,"clientTop":layout.border.top,"offsetWidth":layout.size.width,"offsetHeight":layout.size.height,"offsetLeft":offset.x,"offsetTop":offset.y,"offsetParent":node.offset_parent().map(|node|node.id.as_u64().to_string()),"scrollWidth":node.scroll_width(),"scrollHeight":node.scroll_height(),"contentWidth":layout.content_box_width(),"contentHeight":layout.content_box_height(),"paddingLeft":layout.padding.left,"paddingTop":layout.padding.top})
             },
             "rect" => {
                 let id = node_id()?;
-                doc.resolve(self.start.elapsed().as_secs_f64());
+                self.resolve(&mut doc);
                 let node = doc.get_node(id).unwrap();
                 if node.element_data().is_none() {return Ok(json!({"x":0,"y":0,"width":0,"height":0,"left":0,"right":0,"top":0,"bottom":0}));}
                 let p = node.absolute_position(0.0, 0.0);
@@ -517,7 +601,7 @@ impl Dom {
                 }
                 doc.set_base_url(url.as_str());
                 let fragment = url.fragment().unwrap_or_default().to_owned();
-                doc.resolve(self.start.elapsed().as_secs_f64());
+                self.resolve(&mut doc);
                 if fragment.is_empty() {
                     doc.set_viewport_scroll(blitz_dom::Point { x: 0.0, y: 0.0 });
                 } else {
