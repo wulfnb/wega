@@ -43,6 +43,8 @@ loopback endpoint. A private profile file holds a random capability, and the
 endpoint accepts only focus or one validated web/file URL. Test and diagnostic
 launches refuse to attach to an existing process. Closing the parent window does
 not close container windows or discard their live pages.
+Shutdown stops the listener and removes its endpoint before explicitly releasing
+its launch lock, so a briefly duplicated or inherited handle cannot delay reopening.
 
 ## Scope
 

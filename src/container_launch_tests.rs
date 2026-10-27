@@ -127,3 +127,27 @@ fn a_live_but_unavailable_container_never_falls_back_to_another_profile() {
     drop(server);
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn shutdown_releases_the_launch_lock_with_a_surviving_handle() {
+    let directory = std::env::temp_dir().join(format!(
+        "wega-container-shutdown-{}",
+        crate::containers::random_id().unwrap()
+    ));
+    let Claim::Primary(mut server) = Server::claim(&directory, vec![], true).unwrap() else {
+        panic!("new profile must own its listener")
+    };
+    server.start(|_| true).unwrap();
+    // A duplicated descriptor models one retained by a concurrent process
+    // launch. Closing the server's File alone need not release its lock.
+    let duplicate = server.lock.try_clone().unwrap();
+    drop(server);
+    assert!(!directory.join("container-launch.json").exists());
+    let Claim::Primary(reopened) = Server::claim(&directory, vec![], true).unwrap() else {
+        panic!("shutdown must allow immediate profile reclamation")
+    };
+    drop(duplicate);
+    assert!(Server::claim(&directory, vec![], false).is_err());
+    drop(reopened);
+    fs::remove_dir_all(directory).unwrap();
+}

@@ -31,7 +31,7 @@ pub struct Server {
     path: PathBuf,
     stop: Option<mpsc::Sender<()>>,
     worker: Option<thread::JoinHandle<()>>,
-    _lock: File,
+    lock: File,
 }
 impl Server {
     /// A held profile-launch lock distinguishes a stale endpoint from a live
@@ -84,7 +84,7 @@ impl Server {
             path,
             stop: None,
             worker: None,
-            _lock: lock,
+            lock,
         }))
     }
     pub fn start(
@@ -136,6 +136,10 @@ impl Drop for Server {
         // The lock is still held: another process cannot publish a new endpoint
         // between this removal and releasing ownership.
         let _ = fs::remove_file(&self.path);
+        // Closing one descriptor does not release a flock while a duplicated
+        // or inherited descriptor survives (e.g. during a concurrent spawn).
+        // Release ownership explicitly, after the listener and endpoint are gone.
+        let _ = self.lock.unlock();
     }
 }
 fn validate_urls(urls: &[String]) -> Result<(), String> {
