@@ -33,6 +33,23 @@
   const crypto = load("ext:deno_crypto/00_crypto.js");
   const location = load("ext:deno_web/12_location.js");
   const console = load("ext:deno_web/01_console.js");
+  // Consume each runtime exception before Deno's default first-error abort can
+  // discard other callbacks in the same turn. Browser error handlers remain live.
+  core.setReportExceptionCallback((error) => globalThis.__wega_report(error));
+  core.setUnhandledPromiseRejectionHandler((promise, reason) => {
+    core.ops.op_dom_read(
+      "error", String(reason) + "\n" + String(reason?.stack || ""), "", "",
+    );
+    globalThis.dispatchEvent(new event.PromiseRejectionEvent("unhandledrejection", {
+      promise, reason, cancelable: true,
+    }));
+    return true;
+  });
+  core.setHandledPromiseRejectionHandler((promise, reason) => {
+    globalThis.dispatchEvent(new event.PromiseRejectionEvent("rejectionhandled", {
+      promise, reason,
+    }));
+  });
   location.setLocationHref(core.ops.op_dom_read("url", "", "", ""));
   const websocket = core.createLazyLoader(
     "ext:deno_websocket/01_websocket.js",
@@ -42,6 +59,7 @@
     Event: event.Event,
     EventTarget: event.EventTarget,
     ErrorEvent: event.ErrorEvent,
+    PromiseRejectionEvent: event.PromiseRejectionEvent,
     CustomEvent: event.CustomEvent,
     MessageEvent: event.MessageEvent,
     ProgressEvent: event.ProgressEvent,
@@ -159,8 +177,8 @@
     activeTimers.delete(id);
     timers.clearInterval.call(globalThis, id);
   };
-  globals.console = new console.Console((message) =>
-    core.ops.op_dom_read("log", message, "", ""),
+  globals.console = new console.Console((message, level) =>
+    core.ops.op_dom_read("log", message, String(level), ""),
   );
   Object.defineProperty(globalThis, "__wega_web", {
     value: { ...globals, event },

@@ -165,6 +165,8 @@ impl crate::browser::Browser {
         message: impl Into<String>,
         path: Option<PathBuf>,
     ) {
+        let message = message.into();
+        wega::diagnostics::record("browser:notice", &message);
         self.status = None;
         self.chrome.notice = Some(Notice::new(severity, message, path));
         self.window.request_redraw();

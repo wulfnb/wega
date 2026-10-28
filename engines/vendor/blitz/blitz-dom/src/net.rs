@@ -1,3 +1,4 @@
+// Modified by Wega contributors, 2026: opt-in CSS parse-error diagnostics.
 use blitz_traits::node_id::NodeId;
 use selectors::context::QuirksMode;
 use std::sync::atomic::Ordering as Ao;
@@ -163,7 +164,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
                 abort_signal: self.data.abort_signal.clone(),
                 import_depth: 0,
             }),
-            None, // error_reporter
+            crate::error_diagnostics::reporter(), // error_reporter
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );
@@ -273,7 +274,7 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
             self.data.media.clone(),
             self.data.lock.clone(),
             Some(&self.data.loader),
-            None, // error_reporter
+            crate::error_diagnostics::reporter(), // error_reporter
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         ));

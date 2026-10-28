@@ -7,10 +7,10 @@ pub const MAX_DISCARD_MINUTES: u32 = 24 * 60;
 /// Ineligible tabs (playing media, open dialogs, …) are re-examined at most this often.
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Only browser-owned, non-editable documents can be discarded without asking.
-/// Neither engine currently exposes an acknowledged safe-to-close operation.
-/// A DOM probe cannot see all editor state, cross-origin frames or pending saves.
-pub fn needs_confirmation(loaded: bool, address: &str) -> bool {
+/// Loaded website/local documents need an edit-state check before a manual
+/// destructive action. Automatic idle discarding remains disabled for these
+/// documents: a probe cannot acknowledge saves or inspect every embedded editor.
+pub fn requires_state_check(loaded: bool, address: &str) -> bool {
     loaded && !url::Url::parse(address).is_ok_and(|url| url.scheme() == "wega")
 }
 

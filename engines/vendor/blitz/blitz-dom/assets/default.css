@@ -149,6 +149,16 @@ option {
     display: none;
 }
 
+/* The selected label is shaped as anonymous control content, not option boxes. */
+select {
+    display: inline-block;
+    white-space: nowrap;
+    border: 1px solid GrayText;
+    padding: 1px 2px;
+    color: CanvasText;
+    background: Canvas;
+}
+
 picture {
     display: contents;
 }

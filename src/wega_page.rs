@@ -36,6 +36,7 @@ pub(crate) struct Dialog {
 }
 #[derive(Default)]
 pub(crate) struct Snapshot {
+    pub page_checks: Vec<(u64, bool)>,
     pub serial: u64,
     pub rss_bytes: Option<u64>,
     pub interacted: bool,
@@ -85,6 +86,14 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
     let mut state = state
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    wega::diagnostics::report(
+        "worker:failure",
+        wega::diagnostic_event::Diagnostic::error(
+            wega::diagnostic_event::Category::Browser,
+            message.clone(),
+            None,
+        ),
+    );
     state.compatibility.get_or_insert_with(|| message.clone());
     state.failed = true;
     state.loading = false;
@@ -157,7 +166,7 @@ impl Page {
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -166,6 +175,16 @@ impl Page {
         let mut child = command
             .spawn()
             .map_err(|e| format!("Cannot start Wega engine: {e}"))?;
+        let worker_id = child.id();
+        wega::diagnostics::record(
+            &format!("worker:{worker_id}"),
+            &format!("Started for {}", url),
+        );
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || {
+                wega::diagnostics::drain(&format!("worker:{worker_id}:stderr"), stderr)
+            });
+        }
         let mut stdin = child.stdin.take().ok_or("Missing worker input")?;
         let mut stdout = child.stdout.take().ok_or("Missing worker output")?;
         let state = Arc::new(Mutex::new(Snapshot {
@@ -210,6 +229,13 @@ impl Page {
                         continue;
                     }
                     match event {
+                        Event::PageState { request, dirty } => {
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .page_checks
+                                .push((request, dirty));
+                        }
                         Event::SharedFrame {
                             serial,
                             width,
@@ -249,6 +275,10 @@ impl Page {
                             }
                         }
                         Event::Compatibility { serial, reason } => {
+                            wega::diagnostics::record(
+                                &format!("worker:{worker_id}:compatibility"),
+                                &reason,
+                            );
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -299,6 +329,10 @@ impl Page {
                             state.js_heap = js_heap;
                         }
                         Event::Notice(message) => {
+                            wega::diagnostics::record(
+                                &format!("worker:{worker_id}:notice"),
+                                &message,
+                            );
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);

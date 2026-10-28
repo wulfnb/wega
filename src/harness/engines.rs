@@ -19,6 +19,40 @@ impl Test {
     }
 }
 impl Browser {
+    fn engine_edit_fixture(&mut self) {
+        self.tab()
+            .wega
+            .as_ref()
+            .unwrap()
+            .state
+            .lock()
+            .unwrap()
+            .evaluated = None;
+        self.tab().wega.as_ref().unwrap().send(Command::Evaluate("var draft=document.createElement('textarea');document.body.append(draft);draft.focus();draft.value='Unsaved work';draft.dispatchEvent(new Event('input',{bubbles:true}));true".into())).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            self.pump();
+            if let Some(value) = self
+                .tab()
+                .wega
+                .as_ref()
+                .unwrap()
+                .state
+                .lock()
+                .unwrap()
+                .evaluated
+                .take()
+            {
+                assert_eq!(value.unwrap(), "true");
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "edit fixture evaluation timed out"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
     fn check_new_tab_render_contract(&mut self) {
         let original = self.session().active();
         let original_key = self.tab().key;
@@ -168,7 +202,8 @@ impl Browser {
                     .as_ref()
                     .unwrap()
                     .send(Command::Evaluate(
-                        "nativeEdit.remove();document.title='Counter clicked: 1'".into(),
+                        "nativeEdit.style.display='none';document.title='Counter clicked: 1'"
+                            .into(),
                     ))
                     .unwrap();
                 self.harness.engine_test.as_mut().unwrap().stage = 14;
@@ -236,7 +271,11 @@ impl Browser {
                     return;
                 }
                 self.coverage_click(&["Engine: Servo", "Wega (experimental)"], |b, ui| b.ui(ui));
-                self.coverage_click(&["Switch engine"], |b, ui| b.ui(ui));
+                self.settle_page_check();
+                assert!(
+                    self.destructive_action.is_none(),
+                    "unedited page switches without a prompt"
+                );
                 assert!(self.is_wega());
                 self.harness.engine_test.as_mut().unwrap().stage = 4;
             }
@@ -248,6 +287,7 @@ impl Browser {
                 assert_ne!(pid, self.harness.engine_test.as_ref().unwrap().first_pid);
                 self.save();
                 assert_eq!(self.profile().engines[0], EngineKind::Wega);
+                self.engine_edit_fixture();
                 self.add_tab("about:blank");
                 assert!(
                     self.session().tabs()[0]
@@ -282,6 +322,7 @@ impl Browser {
                 if self.tab().loading() || self.tab().title() != "Wega engine ready" {
                     return;
                 }
+                self.engine_edit_fixture();
                 self.close_tab(0);
                 assert_eq!(self.session().tabs().len(), 2);
                 self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));

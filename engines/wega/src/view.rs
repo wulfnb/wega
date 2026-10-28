@@ -350,6 +350,7 @@ pub struct View {
     completed: Arc<Mutex<Vec<(String, bool)>>>,
     started: Instant,
     dirty: bool,
+    reported_frames: bool,
     frozen: bool,
     ready_event_sent: bool,
     load_event_sent: bool,
@@ -403,6 +404,7 @@ impl View {
             completed: Arc::new(Mutex::new(Vec::new())),
             started: Instant::now(),
             dirty: true,
+            reported_frames: false,
             frozen: false,
             ready_event_sent: false,
             load_event_sent: false,
@@ -519,6 +521,7 @@ impl View {
         let (sender, receiver) = mpsc::channel();
         self.navigation_rx = receiver;
         self.showing_error = false;
+        self.reported_frames = false;
         let mut csp = Csp::default();
         if let Some(response) = response {
             for value in response.headers.get_all("content-security-policy") {
@@ -584,6 +587,11 @@ impl View {
             html.len(),
         )?;
         host.allow_eval(self.csp().allows_eval());
+        host.run(
+            include_str!("../../../src/page_state.js"),
+            "wega:page-state",
+        )
+        .map_err(|e| e.to_string())?;
         self.script = Some(host);
         if xml {
             // XML documents are parsed in one pass; their scripts run in order afterwards.
@@ -1228,6 +1236,12 @@ impl View {
         self.notice(error);
     }
     fn script_error(&mut self, error: crate::script::ScriptError) {
+        crate::diagnostics::Diagnostic::error(
+            crate::diagnostics::Category::Javascript,
+            error.to_string(),
+            Some(self.url.to_string()),
+        )
+        .emit();
         if error.fatal || error.message.contains("; missing:") {
             self.compatibility
                 .get_or_insert_with(|| error.message.clone());
@@ -1272,6 +1286,12 @@ impl View {
         if let Err(error) = &result
             && error.fatal
         {
+            crate::diagnostics::Diagnostic::error(
+                crate::diagnostics::Category::Javascript,
+                error.to_string(),
+                Some(self.url.to_string()),
+            )
+            .emit();
             self.script = None;
         }
         self.drain_requests();
@@ -1282,12 +1302,22 @@ impl View {
             .script
             .as_mut()
             .ok_or("No script context")?
-            .evaluate_json(source);
+            .evaluate_json(source)
+            .and_then(|value| {
+                self.script.as_mut().unwrap().tick()?;
+                Ok(value)
+            });
         self.dirty = true;
-        if let Err(error) = &result
-            && error.fatal
-        {
-            self.script = None;
+        if let Err(error) = &result {
+            crate::diagnostics::Diagnostic::error(
+                crate::diagnostics::Category::Javascript,
+                error.to_string(),
+                Some(self.url.to_string()),
+            )
+            .emit();
+            if error.fatal {
+                self.script = None;
+            }
         }
         self.drain_requests();
         result.map_err(|e| e.to_string())
@@ -1298,7 +1328,12 @@ impl View {
             .ok()
             .flatten()
             .and_then(|id| doc.get_node(id))
-            .map(|n| n.text_content())
+            .map(|n| {
+                n.text_content()
+                    .split_ascii_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
             .unwrap_or_default()
     }
     pub fn next_navigation(&mut self) -> Option<Url> {
@@ -2042,6 +2077,25 @@ impl View {
         };
         let mut doc = self.document.borrow_mut();
         doc.resolve(self.started.elapsed().as_secs_f64());
+        if !self.reported_frames
+            && doc.query_selector_all("iframe").is_ok_and(|ids| {
+                ids.iter().any(|id| {
+                    doc.get_node(*id).is_some_and(|node| {
+                        let layout = node.final_layout();
+                        layout.content_box_width() > 1.0
+                            && layout.content_box_height() > 1.0
+                            && node.has_boxes()
+                            && node.primary_styles().is_some_and(|style| {
+                                style.clone_visibility()
+                                    == style::computed_values::visibility::T::Visible
+                            })
+                    })
+                })
+            })
+        {
+            self.reported_frames = true;
+            self.compatibility.get_or_insert_with(||"Visible embedded frames require Servo; Wega does not yet render frame documents".into());
+        }
         let mut scene = anyrender::Scene::new();
         blitz_paint::paint_scene(
             &mut scene,
@@ -2052,7 +2106,7 @@ impl View {
             0,
             0,
         );
-        self.dirty = another_frame;
+        self.dirty = another_frame || doc.is_animating();
         Ok(scene)
     }
     pub fn configure_shared_frames(&mut self, path: &std::path::Path) -> Result<(), String> {

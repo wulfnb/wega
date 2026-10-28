@@ -38,6 +38,7 @@ mod accessibility;
 #[cfg(feature = "test-harness")]
 mod harness;
 mod resources;
+mod runtime_logging;
 mod theme;
 mod tool_window;
 mod toolbox;
@@ -265,6 +266,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     } else {
         None
     };
+    runtime_logging::init(
+        &options
+            .profile_dir
+            .clone()
+            .unwrap_or_else(profile::Profile::default_dir),
+    );
     if (options.engine == Some(wega::engine_choice::EngineKind::Wega) || options.engine_test)
         && wega_page::executable().is_none()
     {

@@ -145,6 +145,8 @@ pub struct Browser {
     pub(crate) fullscreen: bool,
     pub(crate) quit_requested: bool,
     pub(crate) destructive_action: Option<crate::page_safety::Action>,
+    pub(crate) page_check: Option<crate::page_safety::Check>,
+    pub(crate) page_check_id: u64,
     pub(crate) repaint_deadline: Arc<std::sync::Mutex<Option<Instant>>>,
     pub(crate) pending_save: Option<Instant>,
     pub(crate) capture: Option<crate::capture::Capture>,
@@ -340,6 +342,8 @@ impl Browser {
             fullscreen: false,
             quit_requested: false,
             destructive_action: None,
+            page_check: None,
+            page_check_id: 0,
             repaint_deadline,
             pending_save: None,
             next_tab_key: 0,
@@ -881,7 +885,7 @@ impl Browser {
                         idle: tab.last_selected.elapsed(),
                     },
                     timeout,
-                ) && !wega::lifecycle::needs_confirmation(tab.loaded(), &tab.url())
+                ) && !wega::lifecycle::requires_state_check(tab.loaded(), &tab.url())
             })
             .map(|(index, _)| index)
             .collect();
@@ -900,7 +904,7 @@ impl Browser {
                 .filter(|(index, tab)| {
                     *index != active
                         && tab.loaded()
-                        && !wega::lifecycle::needs_confirmation(tab.loaded(), &tab.url())
+                        && !wega::lifecycle::requires_state_check(tab.loaded(), &tab.url())
                 })
                 .map(|(_, tab)| tab.last_selected),
             timeout,
@@ -1268,8 +1272,20 @@ impl Browser {
         let events: Vec<_> = self.delegate.events.borrow_mut().drain(..).collect();
         for event in events {
             match event {
+                Event::PageState(request, key, dirty) => {
+                    self.page_state_result(request, key, dirty)
+                }
                 Event::Download(url, name) => self.offer_download(&url, &name),
                 Event::Load(owner, status) => {
+                    if status != servo::LoadStatus::Started
+                        && let Some(view) = self
+                            .session()
+                            .tabs()
+                            .iter()
+                            .find_map(|tab| tab.view().filter(|view| view.id() == owner))
+                    {
+                        view.evaluate_javascript(include_str!("page_state.js"), |_| {});
+                    }
                     self.automation_load_status(owner, status);
                     if status == servo::LoadStatus::Complete
                         && self.tab().id() == Some(owner)
@@ -1473,6 +1489,7 @@ impl Browser {
                     .controls
                     .retain(|(_, control)| control.id() != id),
                 Event::Console(id, text) => {
+                    wega::diagnostics::record(&format!("servo:{id:?}:console"), &text);
                     let owner = crate::network::owner(id);
                     if !self.tools.debug.contains_key(&owner) {
                         let (level, message) = text.split_once(": ").unwrap_or(("Log", &text));
@@ -1587,6 +1604,7 @@ impl Browser {
     /// tick rate: `next_wakeup` schedules the next call for every pending deadline.
     pub(crate) fn tick(&mut self) {
         self.pump();
+        self.expire_page_check();
         if self.resources_visible() && self.resources.refresh() {
             self.window.request_redraw();
         }
@@ -1628,6 +1646,9 @@ impl Browser {
         let mut at = |when: Instant| {
             next = Some(next.map_or(when, |current| current.min(when)));
         };
+        if let Some(check) = &self.page_check {
+            at(check.deadline);
+        }
         if let Some(when) = *self
             .repaint_deadline
             .lock()
@@ -1691,6 +1712,7 @@ impl Browser {
 
     pub(crate) fn modal(&self) -> bool {
         self.destructive_action.is_some()
+            || self.page_check.is_some()
             || self.features.settings
             || self.features.clear_data
             || self.features.delete_site.is_some()

@@ -222,11 +222,14 @@ impl crate::document::BaseDocument {
             shared: &shared,
             thread_local: &mut thread_local,
         };
-        let styles = resolve_style(&mut context, node, RuleInclusion::All, None, None);
-
+        let styles = resolve_style(&mut context, node, RuleInclusion::All, None, None).primary().clone();
+        // The thread-local context flushes layout work when dropped. Its Drop
+        // implementation must still see LAYOUT, including hidden-style probes.
+        drop(context);
+        drop(thread_local);
         style::thread_state::exit(ThreadState::LAYOUT);
 
-        Some(styles.primary().clone())
+        Some(styles)
     }
 }
 

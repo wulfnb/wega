@@ -1208,7 +1208,7 @@ impl BaseDocument {
                 abort_signal: self.abort_signal.clone(),
                 import_depth: 0,
             }),
-            None,
+            crate::error_diagnostics::reporter(),
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );

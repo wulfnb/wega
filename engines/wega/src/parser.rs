@@ -26,6 +26,7 @@ pub(crate) struct Sink {
     /// stops building: new nodes become one detached placeholder.
     created: Cell<usize>,
     limit: usize,
+    line: Cell<u64>,
     overflow: Cell<Option<NodeId>>,
 }
 fn attribute(attr: html5ever::Attribute) -> Attribute {
@@ -74,7 +75,19 @@ impl TreeSink for Sink {
     where
         Self: 'a;
     fn finish(self) {}
-    fn parse_error(&self, _msg: Cow<'static, str>) {}
+    fn parse_error(&self, msg: Cow<'static, str>) {
+        let mut event = crate::diagnostics::Diagnostic::error(
+            crate::diagnostics::Category::Html,
+            msg.into_owned(),
+            Some(self.document.borrow().url().to_string()),
+        );
+        event.severity = "warning".into();
+        event.line = Some(self.line.get());
+        event.emit();
+    }
+    fn set_current_line(&self, line_number: u64) {
+        self.line.set(line_number);
+    }
     fn get_document(&self) -> NodeId {
         self.document.borrow().root_node().id
     }
@@ -226,6 +239,7 @@ impl Parser {
             Sink {
                 document,
                 created: Cell::new(0),
+                line: Cell::new(1),
                 limit: node_limit,
                 overflow: Cell::new(None),
             },
@@ -275,5 +289,47 @@ impl Parser {
         if !self.finished && !text.is_empty() {
             self.input.push_front(StrTendril::from_slice(text));
         }
+    }
+}
+
+/// Use Blitz's fragment sink while retaining its otherwise-discarded HTML errors.
+/// Tree construction and fragment-root transfer match blitz-html exactly.
+pub(crate) fn parse_fragment(
+    mutation: &mut blitz_dom::DocumentMutator<'_>,
+    element: NodeId,
+    html: &str,
+) {
+    use html5ever::{ParseOpts, tendril::TendrilSink};
+    let url = mutation.doc.url().to_string();
+    let sink = blitz_html::DocumentHtmlParser::new(mutation);
+    let options = ParseOpts {
+        tree_builder: TreeBuilderOpts {
+            exact_errors: false,
+            scripting_enabled: false,
+            iframe_srcdoc: false,
+            drop_doctype: true,
+            quirks_mode: QuirksMode::NoQuirks,
+        },
+        ..Default::default()
+    };
+    let mut parser =
+        html5ever::driver::parse_fragment_for_element(sink, options, element, false, None);
+    parser.process(StrTendril::from_slice(html));
+    parser.tokenizer.end();
+    for message in parser.tokenizer.sink.sink.errors.borrow().iter() {
+        let mut event = crate::diagnostics::Diagnostic::error(
+            crate::diagnostics::Category::Html,
+            message.to_string(),
+            Some(url.clone()),
+        );
+        event.severity = "warning".into();
+        event.emit();
+    }
+    drop(parser);
+    let document = mutation.doc.root_node().id;
+    if let Some(fragment) = mutation.last_child_id(document) {
+        let children = mutation.child_ids(fragment);
+        mutation.append_children(element, &children);
+        mutation.remove_and_drop_node(fragment);
     }
 }

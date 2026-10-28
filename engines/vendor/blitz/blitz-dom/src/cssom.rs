@@ -1,3 +1,4 @@
+// Modified by Wega contributors, 2026: opt-in CSS parse-error diagnostics.
 //! CSSOM stylesheet access (`document.styleSheets`, `CSSStyleSheet`,
 //! `CSSRuleList`, `CSSRule` and friends) backed by stylo's stylesheet objects.
 //!
@@ -949,7 +950,7 @@ impl BaseDocument {
         let new_block = style::properties::declaration_block::parse_style_attribute(
             css,
             &self.url.url_extra_data(),
-            None,
+            crate::error_diagnostics::reporter(),
             QuirksMode::NoQuirks,
             rule_type,
         );

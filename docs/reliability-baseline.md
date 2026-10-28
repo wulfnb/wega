@@ -5,30 +5,50 @@ pushed. Published-release evidence below refers to `ab9b2b9`, not these changes.
 
 ## Unsaved page state
 
-Both engines now require a browser-owned confirmation before closing a loaded
-website/local document, manually unloading it, changing engines or quitting.
-Cancel/Escape defaults to keeping the page. Repeated requests cannot replace the
-pending decision, and confirmation follows a stable tab identity after reordering.
-Unloaded restored tabs and browser-owned internal documents do not need a prompt.
-Wega also confirms navigation, reload and history traversal because it has no
-engine beforeunload integration. Servo keeps its existing navigation responder.
+Updated 27 October 2026: manual close, unload, engine switch and quit now ask
+for confirmation only when a page reports edits, or its state check fails or
+times out. Clean loaded tabs close directly. Wega applies the same check to
+navigation, reload and history traversal; Servo retains its navigation responder.
+Checks are asynchronous, have request IDs and a two-second conservative timeout,
+and follow stable tab identities. Cancel/Escape keeps the page. A quit checks all
+loaded documents before deciding whether a prompt is needed.
 
-Automatic idle unloading now applies only to browser-owned internal documents.
-Website/local-file tabs remain loaded, including editors that keep state outside
-form controls or inside cross-origin frames. This intentionally increases memory
-retention. Manual unloading still frees resources after explicit confirmation.
-Restored tabs continue to load lazily.
+Both engines track input/change events for text fields, textareas, checkboxes,
+radio buttons, selects and editable content. Reverting a value or resetting a form
+clears that edit; cancelled resets retain it. Tracking resets on document
+replacement. Servo reattaches the tracker at head/load completion, because its
+initial user script can belong to the previous document. Wega uses a dedicated
+state-check IPC response so automation evaluations cannot consume the result.
 
-This is conservative confirmation, not detection that a document is dirty. The
-pinned engine does not expose an acknowledged safe-close check. No claim is made
-that page state survives an engine crash, forced process termination or OS shutdown.
-The remaining engine work is a trusted beforeunload/close handshake, including
-nested frames and completion acknowledgement, before relaxing these safeguards.
+This is best-effort edit detection, not an acknowledged engine close handshake.
+Arbitrary application state, saved-state acknowledgements and cross-origin frame
+editors are not fully observable. A live tab's DOM does not survive a crash,
+forced termination or OS shutdown. Automatic idle unloading remains restricted to
+browser-owned internal documents; website/local tabs remain loaded, and restored
+tabs still load lazily.
 
-Native regression checks use an actual textarea and verify that its value and
-Servo view survive cancelled close/quit. Wega checks preserve live JS state on
-cancellation, confirm both engine switches and manual unload, and follow the
-intended tab when it moves while confirmation is pending.
+Native regressions preserve textarea/native-input values after cancelled close,
+quit, navigation, switch and unload, follow a reordered tab's identity, and close
+ten loaded clean Servo tabs without confirmations. Engine tests cover native IME,
+reverts, checkboxes, editable content, form reset and navigation reset.
+
+## Diagnostic logs
+
+Logs are enabled at startup, including Finder launches. **Menu → Open browser
+logs** opens the profile's `logs/` folder. The active file is `browser.jsonl`;
+three numbered backups retain earlier output, with a five-MiB limit per file.
+Each JSON line includes a UTC timestamp, process ID, source/worker ID and message.
+The browser records console messages, compatibility reports, notices, worker
+stderr and (on Unix) native browser stderr. The worker reports JavaScript errors
+before its short UI-status queue is capped. It does not record IPC evaluation
+commands or keystrokes. Website console messages and errors can contain private
+page data; logs belong to the private profile.
+
+CPU/RAM is visible by default, including existing profiles after a one-time
+migration. Later opt-outs in Settings persist. The browser counter excludes
+separate content workers; Wega displays the active worker's RAM/JS heap separately.
+Both update every two seconds. Worker node/heap updates are also sampled, avoiding
+continuous IPC and UI wakeups as V8's heap fluctuates.
 
 ## Repeatable measurements
 

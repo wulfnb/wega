@@ -72,6 +72,35 @@ jobs:
       - name: JavaScript line coverage (100% required)
         run: sh scripts/javascript-coverage.sh
 
+  error-collector:
+    name: Error collector and signed HTTP contract
+    needs: [changes, lint]
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: error-collector
+          shared-key: wega-error-collector
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Formatting, lints and regressions
+        run: |
+          cargo fmt --manifest-path error-collector/Cargo.toml --check
+          cargo clippy --locked --manifest-path error-collector/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path error-collector/Cargo.toml
+      - name: Static image and authenticated HTTP contract
+        run: |
+          docker build -f error-collector/Dockerfile -t wega-error-collector:ci .
+          python3 -m venv /tmp/wega-collector-tests
+          /tmp/wega-collector-tests/bin/pip install cryptography==46.0.7
+          /tmp/wega-collector-tests/bin/python error-collector/tests/container_smoke.py --image wega-error-collector:ci
+
   core-matrix:
     name: Core Suite (${{ matrix.os }})
     needs: [changes, lint]

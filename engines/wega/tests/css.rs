@@ -24,6 +24,41 @@ fn page(html: &str) -> View {
 fn pixels(html: &str) -> Vec<u8> {
     page(html).paint(64, 64, 1.0, 1.0, false).unwrap().rgba
 }
+#[test]
+fn floated_navigation_items_share_a_row_and_clear_starts_below() {
+    let mut view = page(
+        "<style>nav{width:240px;display:flow-root}a{float:left;width:60px;height:30px}footer{clear:both;height:10px}</style><nav><a id=a>A</a><a id=b>B</a><a id=c>C</a><footer id=f></footer></nav>",
+    );
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    assert_eq!(view.evaluate_json("['a','b','c','f'].map(id=>{const r=document.getElementById(id).getBoundingClientRect();return [r.x,r.y]})").unwrap(), "[[0,0],[60,0],[120,0],[0,30]]");
+}
+
+#[test]
+fn css_transition_keeps_painting_until_finished_then_idles() {
+    let mut view = page(
+        "<style>#cursor{width:20px;height:20px;background:lime;transition:transform .08s linear}</style><div id=cursor></div>",
+    );
+    view.paint(100, 100, 1.0, 1.0, false).unwrap();
+    assert!(!view.needs_paint());
+    view.evaluate("document.getElementById('cursor').style.transform='translate3d(60px,0,0)'")
+        .unwrap();
+    let first = view.paint(100, 100, 1.0, 1.0, false).unwrap().rgba;
+    assert!(
+        view.needs_paint(),
+        "CSS-only transitions must request another frame"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    let last = view.paint(100, 100, 1.0, 1.0, false).unwrap().rgba;
+    assert_ne!(first, last);
+    assert!(
+        !view.needs_paint(),
+        "completed transitions must stop rendering"
+    );
+    assert_eq!(
+        &last[(10 * 100 + 70) * 4..(10 * 100 + 70) * 4 + 4],
+        &[0, 255, 0, 255]
+    );
+}
 fn same(actual: Vec<u8>, reference: Vec<u8>) {
     let diff = actual
         .iter()
@@ -198,5 +233,35 @@ fn inserted_svg_does_not_duplicate_the_body_or_its_padding() {
         view.evaluate_json("document.querySelectorAll('body').length")
             .unwrap(),
         "1"
+    );
+}
+
+#[test]
+fn collapsed_select_paints_only_the_selected_label_and_preserves_dom() {
+    let mut view = page(
+        "<style>select{font:16px/20px monospace;border:0;padding:0;background:transparent}</style><select id=s><option>Other</option><optgroup label=group><option selected>English (en-US)</option><option>French</option></optgroup></select>",
+    );
+    let first = view.paint(180, 40, 1.0, 1.0, false).unwrap().rgba;
+    let mut reference = page(
+        "<span style='display:inline-block;white-space:nowrap;font:16px/20px monospace'>English (en-US)</span>",
+    );
+    same(
+        first,
+        reference.paint(180, 40, 1.0, 1.0, false).unwrap().rgba,
+    );
+    drop(reference);
+    assert_eq!(
+        view.evaluate_json("document.querySelectorAll('option').length")
+            .unwrap(),
+        "3"
+    );
+    view.evaluate("document.querySelectorAll('option')[1].selected=false;document.querySelectorAll('option')[2].selected=true").unwrap();
+    let last = view.paint(180, 40, 1.0, 1.0, false).unwrap().rgba;
+    let mut reference = page(
+        "<span style='display:inline-block;white-space:nowrap;font:16px/20px monospace'>French</span>",
+    );
+    same(
+        last,
+        reference.paint(180, 40, 1.0, 1.0, false).unwrap().rgba,
     );
 }

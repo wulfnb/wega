@@ -166,3 +166,54 @@ fn events_reach_ancestors_when_the_target_has_no_listeners() {
         "[\"window\",\"document:leaf\"]"
     );
 }
+
+#[test]
+fn unsaved_state_tracks_edits_reverts_checkboxes_resets_and_removed_controls() {
+    let mut view = page(
+        "<form id=f><input id=t value=initial><textarea id=a>draft</textarea><input id=c type=checkbox><select id=s><option>A</option><option>B</option></select></form><div id=e contenteditable=true>original</div>",
+    );
+    let probe = |v: &mut View| v.evaluate_json("__wega_page_has_edits()").unwrap();
+    assert_eq!(probe(&mut view), "false");
+    view.evaluate("var t=document.getElementById('t');t.focus();t.value='changed';t.dispatchEvent(new Event('input',{bubbles:true}))").unwrap();
+    assert_eq!(probe(&mut view), "true");
+    view.evaluate("t.value='initial';t.dispatchEvent(new Event('input',{bubbles:true}))")
+        .unwrap();
+    assert_eq!(probe(&mut view), "false");
+    view.evaluate("var c=document.getElementById('c');c.focus();c.checked=true;c.dispatchEvent(new Event('change',{bubbles:true}))").unwrap();
+    assert_eq!(probe(&mut view), "true");
+    assert_eq!(view.evaluate_json("c.defaultChecked").unwrap(), "false");
+    view.evaluate("document.getElementById('f').addEventListener('reset',e=>e.preventDefault(),{once:true});document.getElementById('f').reset()").unwrap();
+    assert_eq!(
+        probe(&mut view),
+        "true",
+        "a cancelled reset must retain edit protection"
+    );
+    view.evaluate("document.getElementById('f').reset()")
+        .unwrap();
+    assert_eq!(probe(&mut view), "false");
+    view.evaluate("var e=document.getElementById('e');e.focus();e.textContent='edited';e.dispatchEvent(new Event('input',{bubbles:true}))").unwrap();
+    assert_eq!(probe(&mut view), "true");
+    view.evaluate("e.remove()").unwrap();
+    assert_eq!(probe(&mut view), "false");
+    view.evaluate("var a=document.getElementById('a');a.focus();a.value='new draft';a.dispatchEvent(new Event('input',{bubbles:true}))").unwrap();
+    assert_eq!(probe(&mut view), "true");
+    view.set_html("<p>A new document</p>").unwrap();
+    assert_eq!(probe(&mut view), "false");
+}
+
+#[test]
+fn native_text_input_sets_unsaved_state_but_hover_and_links_do_not() {
+    let mut view = page("<input id=t><a href='#section'>jump</a><div id=section>section</div>");
+    view.pointer(Pointer::new(PointerKind::Move, 20.0, 20.0));
+    assert_eq!(
+        view.evaluate_json("__wega_page_has_edits()").unwrap(),
+        "false"
+    );
+    view.evaluate("document.getElementById('t').focus()")
+        .unwrap();
+    view.ime(wega_engine::events::BlitzImeEvent::Commit("draft".into()));
+    assert_eq!(
+        view.evaluate_json("__wega_page_has_edits()").unwrap(),
+        "true"
+    );
+}

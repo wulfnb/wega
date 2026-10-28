@@ -10,6 +10,45 @@ fn page(limits: Limits) -> wega_engine::View {
         .unwrap()
 }
 #[test]
+fn document_titles_collapse_html_whitespace_but_preserve_nonbreaking_spaces() {
+    let mut view = page(Limits::default());
+    view.set_html("<title>\n    Rust\t Programming\r\n Language&nbsp;!  </title>")
+        .unwrap();
+    assert_eq!(view.title(), "Rust Programming Language\u{a0}!");
+    assert_eq!(
+        view.evaluate_json("document.title").unwrap(),
+        "\"Rust Programming Language\u{a0}!\""
+    );
+    view.evaluate("document.title='  Updated\\n title  '")
+        .unwrap();
+    assert_eq!(view.title(), "Updated title");
+}
+#[test]
+fn visible_frames_report_compatibility_once_but_hidden_feature_probes_do_not() {
+    let mut view = page(Limits::default());
+    view.set_html("<iframe id=f style='display:none'></iframe><iframe width=1 height=1></iframe>")
+        .unwrap();
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    assert!(view.compatibility.is_none());
+    view.evaluate("document.getElementById('f').style.display='block'")
+        .unwrap();
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    assert!(
+        view.compatibility
+            .take()
+            .unwrap()
+            .contains("embedded frames")
+    );
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    assert!(view.compatibility.is_none());
+    view.set_html("<iframe></iframe>").unwrap();
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    assert!(
+        view.compatibility.is_some(),
+        "new documents get their own compatibility report"
+    );
+}
+#[test]
 fn real_dom_javascript_and_cpu_pixels_share_one_document() {
     let mut view = page(Limits::default());
     view.set_html(r#"<!doctype html><title>Before</title><style>body{margin:0}button{border:0;background:#00ff00;width:180px;height:80px}</style><button id="counter">0</button><script>
