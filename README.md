@@ -60,7 +60,7 @@ Modern web browsing has largely converged into a monoculture of memory-hungry, c
 ### Why This Project Matters for the Web
 
 * **Breaking the Chromium Monoculture**: With almost every modern browser (Chrome, Edge, Brave, Opera, Vivaldi, Arc) now relying on Google's Blink engine, web standards are increasingly dictated by a single advertising company. Fostering a viable Servo-based browser is crucial for long-term open web diversity.
-* **Radical Privacy with Zero Telemetry**: Modern commercial browsers constantly phone home with user profiling, diagnostic metrics, and search telemetry. Wega has zero telemetry, zero analytics tracking, and no hidden network calls.
+* **Privacy and controlled diagnostics**: Wega has no analytics tracking or default remote telemetry. Browser diagnostics stay in the local profile. Optional error reporting sends signed reports only after you configure a collector URL and approve the installation's public key.
 * **More Memory Safety, Honestly Scoped**: Many historical browser vulnerabilities stem from C/C++ memory corruption (use-after-free, buffer overruns). Wega's own code is Rust: the platform-independent library crate is compiled with `#![forbid(unsafe_code)]`, and the desktop binary keeps its `unsafe` to a few small, reviewed blocks (OpenGL context, AppKit/macOS APIs, native media, process resource queries and environment setup before threads start). Memory safety is **not** end-to-end, though: the Servo engine embeds SpiderMonkey (C++ with a JIT compiler) and GStreamer's C media stack, and by default everything runs in a single process without a sandbox. A bug in those components can still compromise the browser.
 
 ## Run
@@ -346,6 +346,16 @@ The default profile uses the OS application data directory:
 atomically and does not overwrite an unreadable existing profile. Treat the
 profile as private browsing data. Startup restoration reloads URLs; it does not
 serialize DOM state or navigation stacks. The browser locks each profile to prevent concurrent writes; use separate profile directories for multiple instances.
+
+Browser diagnostics are enabled for desktop launches. **Menu → Open browser logs**
+opens `<profile>/logs/browser.jsonl`, with three rotated backups. JavaScript errors,
+console output, worker failures and native stderr remain available after the
+status banner changes. CPU/RAM is shown by default; Settings can hide it. See the
+[diagnostics and edit-protection details](docs/reliability-baseline.md#diagnostic-logs).
+
+HTML/CSS parse errors, JavaScript exceptions and console warnings/errors also enter
+a durable local outbox. A configured collector receives signed reports with retry
+and replay protection. See [collector setup and installation enrollment](error-collector/README.md).
 
 ## Verification
 

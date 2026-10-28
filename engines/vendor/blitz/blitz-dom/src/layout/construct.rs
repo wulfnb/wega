@@ -1,3 +1,5 @@
+// Modified by Wega contributors, 2026: render collapsed select labels without
+// adding author-visible text nodes or exposing the hidden option list.
 use blitz_traits::node_id::NodeId;
 use core::str;
 use std::sync::Arc;
@@ -597,6 +599,10 @@ fn collect_layout_children_with_wrap(
             let mut classification = FlowClassification::default();
             classify_flow_children(doc, container_node_id, &mut classification);
 
+            if is_collapsed_select(&doc.nodes[container_node_id]) {
+                classification.all_out_of_flow = false;
+                classification.all_inline = true;
+            }
             if classification.all_out_of_flow {
                 // Contents-transparent: a display:contents child may be
                 // holding the out-of-flow elements (otherwise the contents
@@ -1105,14 +1111,18 @@ pub(crate) fn build_inline_layout_into(
             &text_transform,
         );
     }
-    for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(
-            &mut builder,
-            &mut text_transformer,
-            nodes,
-            child_id,
-            &text_transform,
-        );
+    if is_collapsed_select(root_node) {
+        builder.push_text(&collapsed_select_label(root_node));
+    } else {
+        for child_id in root_node.children.iter().copied() {
+            build_inline_layout_recursive(
+                &mut builder,
+                &mut text_transformer,
+                nodes,
+                child_id,
+                &text_transform,
+            );
+        }
     }
     if let Some(after_id) = root_node.after() {
         build_inline_layout_recursive(
@@ -1311,4 +1321,47 @@ pub(crate) fn build_inline_layout_into(
             NodeData::Document(_) => unreachable!(),
         }
     }
+}
+
+fn is_collapsed_select(node: &Node) -> bool {
+    node.element_data().is_some_and(|element| {
+        element.name.local == local_name!("select")
+            && !element.has_attr(local_name!("multiple"))
+            && element
+                .attr(local_name!("size"))
+                .and_then(|size| size.parse::<u32>().ok())
+                .unwrap_or(1)
+                <= 1
+    })
+}
+
+fn collapsed_select_label(node: &Node) -> String {
+    let mut stack: Vec<_> = node.children.iter().rev().copied().collect();
+    let mut first = None;
+    let mut selected = None;
+    while let Some(id) = stack.pop() {
+        let child = node.with(id);
+        if let Some(element) = child.element_data() {
+            if element.name.local == local_name!("option") {
+                let label = element
+                    .attr(local_name!("label"))
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| child.text_content());
+                if first.is_none() {
+                    first = Some(label.clone());
+                }
+                if element.has_attr(local_name!("selected")) {
+                    selected = Some(label);
+                }
+            } else {
+                stack.extend(child.children.iter().rev().copied());
+            }
+        }
+    }
+    selected
+        .or(first)
+        .unwrap_or_default()
+        .split_ascii_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }

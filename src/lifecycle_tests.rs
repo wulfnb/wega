@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn unknown_page_state_is_never_silently_discarded() {
+fn loaded_documents_require_a_state_check_before_manual_destruction() {
     for address in [
         "https://example.org/editor",
         "file:///tmp/draft.html",
@@ -10,11 +10,11 @@ fn unknown_page_state_is_never_silently_discarded() {
         "about:blank#editor",
         "about:blank",
     ] {
-        assert!(needs_confirmation(true, address), "{address}");
-        assert!(!needs_confirmation(false, address));
+        assert!(requires_state_check(true, address), "{address}");
+        assert!(!requires_state_check(false, address));
     }
     for address in ["wega://newtab", "wega://settings"] {
-        assert!(!needs_confirmation(true, address));
+        assert!(!requires_state_check(true, address));
     }
 }
 

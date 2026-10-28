@@ -12,6 +12,41 @@ struct Worker {
     input: ChildStdin,
     events: mpsc::Receiver<Event>,
 }
+#[test]
+fn page_state_requests_are_identified_and_reset_on_navigation() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    worker.send(Command::CheckPageState(11));
+    assert!(matches!(
+        worker.until(|e| matches!(e, Event::PageState { .. })),
+        Event::PageState {
+            request: 11,
+            dirty: false
+        }
+    ));
+    worker.send(Command::Evaluate("var field=document.createElement('textarea');document.body.append(field);field.focus();field.value='draft';field.dispatchEvent(new Event('input',{bubbles:true}));true".into()));
+    worker.until(|e| matches!(e, Event::Evaluated { .. }));
+    worker.send(Command::CheckPageState(12));
+    assert!(matches!(
+        worker.until(|e| matches!(e, Event::PageState { .. })),
+        Event::PageState {
+            request: 12,
+            dirty: true
+        }
+    ));
+    worker.send(Command::Load {
+        url: "about:blank".into(),
+        serial: 1,
+    });
+    worker.send(Command::CheckPageState(13));
+    assert!(matches!(
+        worker.until(|e| matches!(e, Event::PageState { .. })),
+        Event::PageState {
+            request: 13,
+            dirty: false
+        }
+    ));
+}
 impl Drop for Worker {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -20,10 +55,16 @@ impl Drop for Worker {
 }
 impl Worker {
     fn start(path: &std::path::Path) -> Self {
+        Self::start_with_stderr(path, Stdio::inherit())
+    }
+    fn start_with_stderr(path: &std::path::Path, stderr: Stdio) -> Self {
+        Self::start_version(path, stderr, protocol::VERSION)
+    }
+    fn start_version(path: &std::path::Path, stderr: Stdio, version: u32) -> Self {
         let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_wega-engine"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(stderr)
             .spawn()
             .unwrap();
         let input = child.stdin.take().unwrap();
@@ -42,7 +83,7 @@ impl Worker {
             events,
         };
         worker.send(Command::Init {
-            version: protocol::VERSION,
+            version,
             url: "about:blank".into(),
             offline: true,
             blocked_hosts: String::new(),
@@ -52,14 +93,7 @@ impl Worker {
             broker_token: None,
             frame_path: Some(path.to_string_lossy().into_owned()),
         });
-        worker.until(|event| {
-            matches!(
-                event,
-                Event::Ready {
-                    version: protocol::VERSION
-                }
-            )
-        });
+        worker.until(|event| matches!(event,Event::Ready{version:actual} if *actual==version));
         worker
     }
     fn send(&mut self, command: Command) {
@@ -106,6 +140,59 @@ impl Worker {
                 break;
             }
         }
+    }
+}
+#[test]
+fn running_v4_browsers_can_still_start_and_use_an_updated_worker() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start_version(store.path().unwrap(), Stdio::inherit(), 4);
+    let _ = worker.frame();
+    worker.send(Command::Evaluate(
+        "document.title='legacy client';document.title".into(),
+    ));
+    assert!(
+        matches!(worker.until(|event|matches!(event,Event::Evaluated{..})),Event::Evaluated{value,error:None} if value=="\"legacy client\"")
+    );
+}
+#[test]
+fn error_bursts_reach_stderr_before_the_status_queue_is_capped() {
+    use std::io::{Read, Seek, SeekFrom};
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut log = tempfile::tempfile().unwrap();
+    let mut worker =
+        Worker::start_with_stderr(store.path().unwrap(), Stdio::from(log.try_clone().unwrap()));
+    worker.send(Command::Evaluate(
+        "for(let i=0;i<40;i++)__wega_report(new Error('burst:'+i));for(let i=0;i<300;i++)Promise.reject('unhandled:'+i);true".into(),
+    ));
+    let event = worker.until(|e| matches!(e, Event::Evaluated { .. }));
+    assert!(matches!(event, Event::Evaluated { error: None, .. }));
+    worker.send(Command::Evaluate("true".into()));
+    worker.until(|e| matches!(e, Event::Evaluated { .. }));
+    log.seek(SeekFrom::Start(0)).unwrap();
+    let mut text = String::new();
+    log.read_to_string(&mut text).unwrap();
+    let reports: Vec<wega_engine::diagnostics::Diagnostic> = text
+        .lines()
+        .filter_map(|line| line.strip_prefix(wega_engine::diagnostics::PREFIX))
+        .map(|json| serde_json::from_str(json).unwrap())
+        .collect();
+    for i in 0..40 {
+        assert!(
+            reports
+                .iter()
+                .any(|r| r.message.contains(&format!("Error: burst:{i}\n"))),
+            "missing error {i}"
+        );
+    }
+    for i in 0..300 {
+        assert!(
+            reports
+                .iter()
+                .any(|r| r.message == format!("unhandled:{i}\n")),
+            "missing rejection {i}; reports={} sample={:?}",
+            reports.len(),
+            reports.iter().rev().take(3).collect::<Vec<_>>()
+        );
     }
 }
 #[test]
@@ -162,4 +249,100 @@ fn shared_frames_wait_for_exact_credits_and_resize_cannot_unfreeze_a_tab() {
     });
     worker
         .until(|event| matches!(event,Event::State{serial:9,rss_bytes:Some(bytes),..} if *bytes>0));
+}
+
+mod support;
+#[test]
+fn css_html_and_javascript_errors_are_structured_with_urls_before_ui_queue_limits() {
+    use std::io::{Read, Seek, SeekFrom};
+    use support::{Reply, Server};
+    let server = Server::new(|request| {
+        if request.path == "/bad.css" {
+            Reply::ok(
+                "text/css",
+                b"@import '/nested.css';p { color: invalid-color; no-such-property: 42; }".to_vec(),
+            )
+        } else if request.path == "/nested.css" {
+            Reply::ok("text/css", b"p{import-no-property:1}".to_vec())
+        } else {
+            Reply::html(
+                "<!doctype html><title>diagnostic fixture</title><link rel=stylesheet href=/bad.css><style>p{inline-no-property:1}</style><p style='attribute-no-property:1'></div><script>document.body.innerHTML += '<p></div>';console.warn('post-warning');console.error('post-console');throw Error('post-js')</script>",
+            )
+        }
+    });
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut log = tempfile::tempfile().unwrap();
+    let mut worker =
+        Worker::start_with_stderr(store.path().unwrap(), Stdio::from(log.try_clone().unwrap()));
+    worker.send(Command::Policy {
+        offline: false,
+        blocked_hosts: String::new(),
+        allowed_hosts: "127.0.0.1".into(),
+    });
+    worker.send(Command::Load {
+        url: server.url("127.0.0.1", "/"),
+        serial: 1,
+    });
+    worker.until(|e| matches!(e,Event::Notice(s) if s.contains("post-js")));
+    worker.until(|e| {
+        matches!(
+            e,
+            Event::State {
+                serial: 1,
+                loading: false,
+                ..
+            }
+        )
+    });
+    log.seek(SeekFrom::Start(0)).unwrap();
+    let mut text = String::new();
+    log.read_to_string(&mut text).unwrap();
+    let reports: Vec<wega_engine::diagnostics::Diagnostic> = text
+        .lines()
+        .filter_map(|line| line.strip_prefix(wega_engine::diagnostics::PREFIX))
+        .map(|json| serde_json::from_str(json).unwrap())
+        .collect();
+    for category in [
+        wega_engine::diagnostics::Category::Css,
+        wega_engine::diagnostics::Category::Html,
+        wega_engine::diagnostics::Category::Javascript,
+    ] {
+        assert!(
+            reports.iter().any(|r| r.category == category
+                && r.url
+                    .as_ref()
+                    .is_some_and(|u| u.starts_with("http://127.0.0.1:"))),
+            "missing {category:?}: {reports:?}"
+        );
+    }
+    assert!(
+        reports
+            .iter()
+            .any(|r| r.category == wega_engine::diagnostics::Category::Css
+                && r.url.as_ref().unwrap().ends_with("/bad.css")
+                && r.line == Some(1))
+    );
+    for marker in [
+        "import-no-property",
+        "inline-no-property",
+        "attribute-no-property",
+    ] {
+        assert!(
+            reports
+                .iter()
+                .any(|r| r.category == wega_engine::diagnostics::Category::Css
+                    && r.message.contains(marker)),
+            "missing CSS diagnostic for {marker}: {reports:?}"
+        );
+    }
+    assert!(
+        reports
+            .iter()
+            .any(|r| r.message.contains("post-warning") && r.severity == "warning")
+    );
+    assert!(
+        reports
+            .iter()
+            .any(|r| r.message.contains("post-console") && r.severity == "error")
+    );
 }

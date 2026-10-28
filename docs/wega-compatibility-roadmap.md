@@ -98,3 +98,31 @@ not validate a new distributed or notarized DMG.
 Range cloneContents, extractContents, deleteContents, surroundContents and geometry
 methods, plus window Selection and rich editing, remain unsupported. These changes
 do not imply full DOM Range conformance or complete third-party widget support.
+
+## Desktop site regressions (27 October 2026)
+
+The worker now enables Blitz's float layout, collapses title whitespace like HTML,
+and shapes the selected label of a collapsed select without changing the author
+DOM. Select popups/listbox interaction are still not implemented. CSS transitions
+keep requesting frames until they finish, including the custom cursor on
+noufalbabu.com. Inline geometry uses actual line fragments and DOMRect objects;
+computed styles expose used sizes rather than unresolved `auto`/percentages.
+Hidden-element style queries retain the layout context through its destruction.
+
+Trak.in's script-free navigation now lays out horizontally. Its live auto-ad code
+still inserts embedded frames into the navigation bar. Wega reports visible frame
+content as unsupported and the existing compatibility policy opens the page in
+Servo. Hidden/one-pixel feature-probe frames do not trigger fallback, and the
+report is emitted once per document. This is an explicit fallback, not native
+frame rendering or a claim that Trak's ad scripts are fully compatible with Wega.
+
+Resource/node/heap snapshots are sampled every two seconds; V8 heap fluctuations
+no longer generate hundreds of browser UI wakeups per second. Errors reach the
+worker's stderr before the status queue is capped, and desktop diagnostics retain
+that stream in rotating profile logs. See [diagnostics](reliability-baseline.md#diagnostic-logs).
+
+Validation artifacts for this change are under `target/site-fixes/`: isolated
+native smoke/engine runs, live worker probes and signed-bundle Rust/Trak captures.
+The latter confirms Rust stays on Wega and Trak selects Servo. Live page images,
+ads and timings can vary; these are local macOS development checks, not a new
+notarized release or cross-platform certification.

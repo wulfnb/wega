@@ -1,7 +1,7 @@
 //! Versioned, bounded private pipe protocol shared with the independent engine worker.
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 
@@ -65,6 +65,7 @@ pub enum Command {
         allowed_hosts: String,
     },
     Evaluate(String),
+    CheckPageState(u64),
     /// Pointer input in viewport CSS pixels. `kind` is move, down, up, leave or wheel;
     /// `button` and `buttons` follow the DOM; modifiers: 1 shift, 2 control, 4 alt, 8 meta.
     Pointer {
@@ -87,6 +88,10 @@ pub enum Command {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
+    PageState {
+        request: u64,
+        dirty: bool,
+    },
     Ready {
         version: u32,
     },

@@ -55,7 +55,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    let (url, policy, storage_dir, broker_address, broker_token, frame_path) =
+    let (version, url, policy, storage_dir, broker_address, broker_token, frame_path) =
         match receiver.recv()? {
             Work::Command(Command::Init {
                 version,
@@ -67,7 +67,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 broker_address,
                 broker_token,
                 frame_path,
-            }) if version == protocol::VERSION => (
+                // v5 only adds the requested PageState exchange. Existing v4
+                // commands/events keep their exact shape, allowing a running older
+                // browser to finish its session after an atomic worker update.
+            }) if version == protocol::VERSION || version == 4 => (
+                version,
                 Url::parse(&url)?,
                 NetworkPolicy {
                     offline,
@@ -104,8 +108,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut serial = 0_u64;
     let mut frozen = false;
     let interval = std::time::Duration::from_secs(2);
-    let mut sampled = std::time::Instant::now();
+    let mut sampled = std::time::Instant::now() - interval;
     let mut rss_bytes = wega_platform::resident_bytes();
+    let mut metrics = (0, 0);
     let output = Rc::new(RefCell::new(std::io::stdout().lock()));
     let receiver = Rc::new(receiver);
     // Commands that arrive while a dialog waits for its answer run afterwards.
@@ -145,9 +150,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }));
     }
     let write = |event: &Event| protocol::write(&mut *output.borrow_mut(), event);
-    write(&Event::Ready {
-        version: protocol::VERSION,
-    })?;
+    write(&Event::Ready { version })?;
     let mut viewport = (1000, 700, 1.0, 1.0, false);
     let mut state = String::new();
     let frame_interval = std::time::Duration::from_millis(33);
@@ -155,6 +158,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         if sampled.elapsed() >= interval {
             rss_bytes = wega_platform::resident_bytes();
+            metrics = (view.node_count(), view.heap_bytes());
             sampled = std::time::Instant::now();
         }
         if let Some(result) = view.take_painted() {
@@ -207,8 +211,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             url: view.url.to_string(),
             title: view.title(),
             loading: view.loading,
-            nodes: view.node_count(),
-            js_heap: view.heap_bytes(),
+            nodes: metrics.0,
+            js_heap: metrics.1,
             back: view.document_history().0,
             forward: view.document_history().1,
         };
@@ -308,6 +312,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Work::Wake => {}
             Work::Command(command) => match command {
                 Command::Shutdown => break,
+                Command::CheckPageState(request) => {
+                    let dirty =
+                        view.evaluate_json("__wega_page_has_edits()").as_deref() != Ok("false");
+                    write(&Event::PageState { request, dirty })?;
+                }
                 Command::Load {
                     url,
                     serial: requested,

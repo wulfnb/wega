@@ -1,4 +1,4 @@
-//! Conservative protection until both engines can acknowledge a safe close.
+//! Confirm destructive actions when the document reports edits, or cannot be queried.
 use crate::browser::Browser;
 use wega::engine_choice::EngineKind;
 
@@ -12,10 +12,18 @@ pub(crate) enum Action {
     Quit,
 }
 
+pub(crate) struct Check {
+    action: Action,
+    request: u64,
+    waiting: std::collections::HashSet<u64>,
+    dirty: bool,
+    pub deadline: std::time::Instant,
+}
+
 impl Browser {
     pub(crate) fn confirm_page_action(&mut self, action: Action) -> bool {
         // Repeated close requests must not replace a pending decision.
-        if self.destructive_action.is_some() {
+        if self.destructive_action.is_some() || self.page_check.is_some() {
             return true;
         }
         let key = match &action {
@@ -26,15 +34,95 @@ impl Browser {
             | Action::Navigate(key, _) => Some(*key),
             Action::Quit => None,
         };
-        let needs_confirmation = self.session().tabs().iter().any(|tab| {
-            key.is_none_or(|key| tab.key == key)
-                && wega::lifecycle::needs_confirmation(tab.loaded(), &tab.url())
-        });
-        if needs_confirmation {
-            self.destructive_action = Some(action);
-            self.window.request_redraw();
+        let tabs: Vec<_> = self
+            .session()
+            .tabs()
+            .iter()
+            .filter(|tab| {
+                key.is_none_or(|key| tab.key == key)
+                    && wega::lifecycle::requires_state_check(tab.loaded(), &tab.url())
+            })
+            .map(|tab| tab.key)
+            .collect();
+        if tabs.is_empty() {
+            return false;
         }
-        needs_confirmation
+        self.page_check_id = self.page_check_id.wrapping_add(1);
+        let request = self.page_check_id;
+        self.page_check = Some(Check {
+            action,
+            request,
+            waiting: tabs.iter().copied().collect(),
+            dirty: false,
+            deadline: std::time::Instant::now() + std::time::Duration::from_secs(2),
+        });
+        for key in tabs {
+            let tab = self
+                .session()
+                .tabs()
+                .iter()
+                .find(|tab| tab.key == key)
+                .unwrap();
+            if let Some(page) = &tab.wega {
+                if page
+                    .send(wega::engine_protocol::Command::CheckPageState(request))
+                    .is_err()
+                {
+                    self.page_state_result(request, key, true);
+                }
+            } else if let Some(view) = tab.view() {
+                let delegate = self.delegate.clone();
+                let window = self.window.clone();
+                view.evaluate_javascript(
+                    "typeof __wega_page_has_edits==='function' ? __wega_page_has_edits() : true",
+                    move |result| {
+                        let dirty = !matches!(result, Ok(servo::JSValue::Boolean(false)));
+                        delegate
+                            .events
+                            .borrow_mut()
+                            .push_back(crate::engine::Event::PageState(request, key, dirty));
+                        window.request_redraw();
+                    },
+                );
+            } else {
+                self.page_state_result(request, key, true);
+            }
+        }
+        true
+    }
+
+    pub(crate) fn page_state_result(&mut self, request: u64, key: u64, dirty: bool) {
+        let Some(check) = &mut self.page_check else {
+            return;
+        };
+        if request != check.request || !check.waiting.remove(&key) {
+            return;
+        }
+        check.dirty |= dirty;
+        if !check.waiting.is_empty() {
+            return;
+        }
+        self.finish_page_check();
+    }
+
+    fn finish_page_check(&mut self) {
+        let Some(check) = self.page_check.take() else {
+            return;
+        };
+        self.destructive_action = Some(check.action);
+        if !check.dirty {
+            self.answer_page_action(true);
+        }
+        self.window.request_redraw();
+    }
+
+    pub(crate) fn expire_page_check(&mut self) {
+        if let Some(check) = &mut self.page_check
+            && check.deadline <= std::time::Instant::now()
+        {
+            check.dirty = true;
+            self.finish_page_check();
+        }
     }
 
     pub(crate) fn request_quit(&mut self) {

@@ -1,3 +1,4 @@
+// Modified by Wega contributors, 2026: select controls establish an atomic inline box.
 use markup5ever::{LocalName, local_name};
 use taffy::{
     AvailableSpace, BoxSizing, CoreStyle, LayoutInput, LayoutOutput, MaybeMath, MaybeResolve,
@@ -436,4 +437,5 @@ pub(crate) fn is_inline_box_element(tag_name: &LocalName) -> bool {
         || *tag_name == local_name!("input")
         || *tag_name == local_name!("textarea")
         || *tag_name == local_name!("button")
+        || *tag_name == local_name!("select")
 }

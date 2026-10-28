@@ -117,6 +117,9 @@ pub struct Policy {
     pub offline: bool,
     pub allow_window_changes: bool,
     pub show_performance: bool,
+    /// Migrate the original hidden-by-default counter once; later opt-outs persist.
+    #[serde(default)]
+    pub performance_visibility_version: u8,
     /// Exact canonical HTTP(S) origins; no wildcard or credential/path matching.
     pub site_engines: std::collections::BTreeMap<String, crate::engine_choice::EngineKind>,
     pub wega_rollout: bool,
@@ -136,7 +139,8 @@ impl Default for Policy {
             allowed_hosts: String::new(),
             offline: false,
             allow_window_changes: false,
-            show_performance: false,
+            show_performance: true,
+            performance_visibility_version: 1,
             site_engines: Default::default(),
             wega_rollout: true,
             wega_fallback: true,

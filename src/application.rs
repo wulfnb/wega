@@ -34,7 +34,7 @@ pub struct Application {
 }
 impl Application {
     pub fn load(mut store: Box<dyn ProfileStore>) -> (Self, Option<String>) {
-        let (profile, warning, writable) = match store.load() {
+        let (mut profile, warning, writable) = match store.load() {
             Ok(profile) => (profile, None, true),
             Err(error) => (
                 Profile::default(),
@@ -44,6 +44,10 @@ impl Application {
                 false,
             ),
         };
+        if profile.policy.performance_visibility_version == 0 {
+            profile.policy.show_performance = true;
+            profile.policy.performance_visibility_version = 1;
+        }
         (
             Self {
                 profile,

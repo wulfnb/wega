@@ -407,3 +407,39 @@ fn document_scripts_is_a_live_collection_for_ad_loader_inspection() {
     let mut view = page("<script type='application/json' id=data>{}</script>");
     assert_eq!(view.evaluate_json("(()=>{const scripts=document.scripts,script=document.createElement('script');script.type='application/json';script.id='later';document.body.append(script);const added=[scripts instanceof HTMLCollection,scripts.length,scripts[0].id,scripts[1].type];script.remove();return [added,scripts.length]})()").unwrap(),"[[true,2,\"data\",\"application/json\"],1]");
 }
+
+#[test]
+fn inline_geometry_uses_line_fragments_and_dom_rect_objects() {
+    let mut view = page(
+        "<style>body{margin:0}p{width:70px;font:20px/24px monospace;margin:0}</style><p><a id=link>one two three</a></p>",
+    );
+    view.paint(200, 200, 1.0, 1.0, false).unwrap();
+    assert_eq!(view.evaluate_json("(()=>{const a=document.getElementById('link'),r=a.getBoundingClientRect(),rs=a.getClientRects();return [r instanceof DOMRect,r.width>0,r.height>=48,a.offsetWidth>0,rs.length>=2,rs.every(x=>x.width>0),r.toJSON().width===r.width]})()").unwrap(),"[true,true,true,true,true,true,true]");
+}
+
+#[test]
+fn computed_style_returns_used_auto_and_percentage_sizes_for_layout_consumers() {
+    let mut view = page(
+        "<style>body{margin:0}main{width:200px}#box{width:50%;height:20px;padding:5px;margin-left:10%;box-sizing:content-box}</style><main><div id=box></div></main>",
+    );
+    view.paint(300, 100, 1.0, 1.0, false).unwrap();
+    assert_eq!(view.evaluate_json("(()=>{const box=document.getElementById('box'),s=getComputedStyle(box);return [s.width,s.height,s.marginLeft,s.paddingLeft,getComputedStyle(document.body).width]})()").unwrap(),"[\"100px\",\"20px\",\"20px\",\"5px\",\"300px\"]");
+}
+
+#[test]
+fn computed_styles_inside_display_none_do_not_panic_the_worker() {
+    let mut view = page(
+        "<div style='display:none'><span id=hidden style='color:rgb(0,255,0);width:50%'>hidden</span></div>",
+    );
+    view.paint(200, 100, 1.0, 1.0, false).unwrap();
+    assert_eq!(
+        view.evaluate_json("getComputedStyle(document.getElementById('hidden')).color")
+            .unwrap(),
+        "\"rgb(0, 255, 0)\""
+    );
+    assert_eq!(
+        view.evaluate_json("document.title='alive';document.title")
+            .unwrap(),
+        "\"alive\""
+    );
+}

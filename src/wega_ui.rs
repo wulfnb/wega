@@ -123,12 +123,19 @@ impl Browser {
         let mut downloads = vec![];
         let mut windows = vec![];
         let mut traversals = vec![];
+        let mut checks = vec![];
         for (index, tab) in self.session().tabs().iter().enumerate() {
             let Some(page) = &tab.wega else { continue };
             let mut state = page
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            checks.extend(
+                state
+                    .page_checks
+                    .drain(..)
+                    .map(|(request, dirty)| (request, tab.key, dirty)),
+            );
             if let Some(visit) = state.visited.take() {
                 visits.push(visit);
             }
@@ -139,6 +146,9 @@ impl Browser {
                 traversals.extend(state.traversals.drain(..));
             }
             downloads.extend(state.downloads.drain(..));
+        }
+        for (request, key, dirty) in checks {
+            self.page_state_result(request, key, dirty);
         }
         for (url, cookies) in downloads {
             let connections = self.download_ui.connections;

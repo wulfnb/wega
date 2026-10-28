@@ -673,7 +673,7 @@ impl ElementData {
             ServoArc::new(guard.wrap(parse_style_attribute(
                 style_str,
                 url_extra_data,
-                None,
+                crate::error_diagnostics::reporter(),
                 QuirksMode::NoQuirks,
                 CssRuleType::Style,
             )))

@@ -46,7 +46,11 @@ Published `blitz-dom`/`blitz-paint` 0.3.0-beta.4, `stylo` 0.22.0 and
 - `blitz-dom.patch`: two-thread Stylo pool, sequential traversal below the
   embedder's 512-node threshold, redundant image-cache release, scheme-aware UA
   text color, content-box container sizes and bounded query restyle convergence,
-  visual sticky offsets without cumulative drift, and clamped line-box height.
+  visual sticky offsets without cumulative drift, clamped line-box height,
+  collapsed select labels without author-DOM mutations, and keeping the hidden
+  style-query context alive until its layout work has been flushed. The optional
+  `error-diagnostics` feature reports external, imported, inline and CSSOM parse
+  errors as structured JSON for the browser diagnostic outbox.
 - `blitz-paint.patch`: CSS blend compositing, inherited text/shadow colors,
   back-to-front text shadows, and font-measured horizontal ellipsis/clamp painting.
 - `stylo.patch`: expose the existing line-clamp/-webkit-line-clamp parsers and

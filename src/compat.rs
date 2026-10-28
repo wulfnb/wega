@@ -21,6 +21,10 @@ pub const READABLE_GRADIENT_TEXT: &str = r#"
 
 pub fn content_manager(servo: &servo::Servo) -> Rc<servo::UserContentManager> {
     let manager = Rc::new(servo::UserContentManager::new(servo));
+    manager.add_script(Rc::new(servo::UserScript::new(
+        include_str!("page_state.js").into(),
+        None,
+    )));
     manager.add_stylesheet(Rc::new(servo::user_contents::UserStyleSheet::new(
         READABLE_GRADIENT_TEXT.into(),
         url::Url::parse("about:wega-readability").unwrap(),

@@ -39,6 +39,7 @@ impl servo::EventLoopWaker for Waker {
 }
 
 pub enum Event {
+    PageState(u64, u64, bool),
     Download(String, String),
     Changed,
     Load(servo::WebViewId, servo::LoadStatus),
@@ -363,6 +364,17 @@ impl servo::WebViewDelegate for Delegate {
         self.push(Event::HideControl(id));
     }
     fn show_console_message(&self, view: WebView, level: servo::ConsoleLogLevel, message: String) {
+        if matches!(format!("{level:?}").as_str(), "Error" | "Warn" | "Assert") {
+            let mut diagnostic = wega::diagnostic_event::Diagnostic::error(
+                wega::diagnostic_event::Category::Javascript,
+                message.clone(),
+                view.url().map(|u| u.to_string()),
+            );
+            if format!("{level:?}") == "Warn" {
+                diagnostic.severity = "warning".into();
+            }
+            wega::diagnostics::report(&format!("servo:{:?}:console", view.id()), diagnostic);
+        }
         self.push(Event::Console(view.id(), format!("{level:?}: {message}")));
     }
     fn notify_fullscreen_state_changed(&self, _: WebView, fullscreen: bool) {
@@ -400,6 +412,14 @@ impl servo::ServoDelegate for Delegate {
         }
     }
     fn notify_error(&self, error: servo::ServoError) {
+        wega::diagnostics::report(
+            "servo:engine",
+            wega::diagnostic_event::Diagnostic::error(
+                wega::diagnostic_event::Category::Browser,
+                format!("{error:?}"),
+                None,
+            ),
+        );
         self.push(Event::Status(format!("Servo error: {error:?}")));
     }
     fn notify_devtools_server_started(&self, port: u16, _: String) {
@@ -419,6 +439,17 @@ impl servo::ServoDelegate for Delegate {
         crate::capabilities::intercept(&self.policy.borrow(), load);
     }
     fn show_console_message(&self, level: servo::ConsoleLogLevel, message: String) {
+        if matches!(format!("{level:?}").as_str(), "Error" | "Warn" | "Assert") {
+            let mut diagnostic = wega::diagnostic_event::Diagnostic::error(
+                wega::diagnostic_event::Category::Javascript,
+                message.clone(),
+                None,
+            );
+            if format!("{level:?}") == "Warn" {
+                diagnostic.severity = "warning".into();
+            }
+            wega::diagnostics::report("servo:console", diagnostic);
+        }
         self.push(Event::Status(format!("{level:?}: {message}")));
     }
 }

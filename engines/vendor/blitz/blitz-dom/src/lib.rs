@@ -1,3 +1,4 @@
+// Modified by Wega contributors, 2026: opt-in CSS parse-error diagnostics.
 //! The core DOM abstraction in Blitz
 //!
 //! This crate implements a flexible headless DOM ([`BaseDocument`]), which is designed to emebedded in and "driven" by external code. Most users will want
@@ -43,6 +44,7 @@ mod config;
 /// CSSOM stylesheet access (`document.styleSheets`, `CSSStyleSheet`, `CSSRule`)
 mod cssom;
 mod debug;
+mod error_diagnostics;
 mod events;
 mod font_metrics;
 mod form;

@@ -59,21 +59,6 @@
       report.active = false;
     }
   }
-  const rejections = new Map();
-  Object.defineProperties(globalThis, {
-    __wega_reject: {
-      value: (promise, reason, handled) => {
-        if (handled) rejections.delete(promise);
-        else if (rejections.size < 256) rejections.set(promise, reason);
-      },
-    },
-    __wega_rejections: {
-      value: () => {
-        for (const reason of rejections.values()) report(reason);
-        rejections.clear();
-      },
-    },
-  });
   Object.defineProperties(globalThis, {
     __wega_report: { value: report },
     __wega_missing: {
@@ -1238,12 +1223,10 @@
       ]);
     }
     getBoundingClientRect() {
-      return host("rect", this._id);
+      return DOMRect.fromRect(host("rect", this._id));
     }
     getClientRects() {
-      return host("box", this._id).hasBoxes
-        ? [this.getBoundingClientRect()]
-        : [];
+      return host("clientRects", this._id).map(rect=>DOMRect.fromRect(rect));
     }
     get clientWidth() {
       return Math.round(host("box", this._id).clientWidth);
@@ -1299,7 +1282,7 @@
       return host("checked", this._id);
     }
     set checked(value) {
-      this.toggleAttribute("checked", !!value);
+      host("setChecked", this._id, String(!!value));
     }
     get defaultChecked() {
       return this.hasAttribute("checked");
@@ -2000,7 +1983,7 @@
       return "CSS1Compat";
     }
     get title() {
-      return this.querySelector("title")?.textContent || "";
+      return (this.querySelector("title")?.textContent || "").replace(/[\t\n\f\r ]+/g, " ").replace(/^ | $/g, "");
     }
     set title(value) {
       let title = this.querySelector("title");
@@ -2471,8 +2454,8 @@
     },
     console: {
       log: (...v) => host("log", v.map(String).join(" ")),
-      warn: (...v) => host("log", v.map(String).join(" ")),
-      error: (...v) => host("log", v.map(String).join(" ")),
+      warn: (...v) => host("log", v.map(String).join(" "), "2"),
+      error: (...v) => host("log", v.map(String).join(" "), "3"),
     },
     setTimeout: (fn, delay, ...args) => schedule(fn, delay, false, args),
     setInterval: (fn, delay, ...args) => schedule(fn, delay, true, args),

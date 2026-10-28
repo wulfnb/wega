@@ -1,11 +1,24 @@
 //! Native contracts use a real Browser/Servo and drive widgets through AccessKit.
 use crate::browser::Browser;
 impl Browser {
+    pub(crate) fn settle_page_check(&mut self) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while self.page_check.is_some() && std::time::Instant::now() < deadline {
+            self.pump();
+            self.expire_page_check();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(
+            self.page_check.is_none(),
+            "page-state check did not complete"
+        );
+    }
     pub(crate) fn coverage_click(
         &mut self,
         labels: &[&str],
         render: impl FnMut(&mut Self, &mut egui::Ui),
     ) {
+        self.settle_page_check();
         let actions: Vec<_> = labels
             .iter()
             .map(|label| (accesskit::Action::Click, *label))
@@ -314,6 +327,7 @@ impl Browser {
         self.chrome.modifiers = command.into();
         assert!(!self.shortcut_key(&Key::Character("z".into()), ElementState::Pressed));
         key(self, "q", command);
+        self.settle_page_check();
         if self.destructive_action.is_some() {
             assert!(!self.quit_requested);
             self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));

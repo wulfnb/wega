@@ -6,6 +6,8 @@ pub use url::Url;
 
 mod cookies;
 mod csp;
+#[path = "../../../src/diagnostic_event.rs"]
+pub mod diagnostics;
 mod dom;
 mod encoding;
 mod extension_adapter;

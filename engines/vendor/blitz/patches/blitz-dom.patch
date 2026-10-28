@@ -1,3 +1,24 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -30,6 +30,7 @@
+ resolver = "2"
+ 
+ [features]
++error-diagnostics = ["dep:serde_json"]
+ accessibility = ["accesskit"]
+ autofocus = []
+ complex-scripts = ["parley/complex-scripts"]
+@@ -94,6 +95,10 @@
+ 
+ [dependencies.color]
+ version = "0.3"
++
++[dependencies.serde_json]
++version = "1"
++optional = true
+ 
+ [dependencies.cssparser]
+ version = "0.38.0"
 --- a/assets/default.css
 +++ b/assets/default.css
 @@ -1,6 +1,8 @@
@@ -9,7 +30,24 @@
  
  @namespace url(http://www.w3.org/1999/xhtml);
  /* set default namespace to HTML */
-@@ -260,6 +262,12 @@
+@@ -145,6 +147,16 @@
+ 
+ option {
+     display: none;
++}
++
++/* The selected label is shaped as anonymous control content, not option boxes. */
++select {
++    display: inline-block;
++    white-space: nowrap;
++    border: 1px solid GrayText;
++    padding: 1px 2px;
++    color: CanvasText;
++    background: Canvas;
+ }
+ 
+ picture {
+@@ -260,6 +272,12 @@
      display: block;
  }
  
@@ -22,6 +60,22 @@
  body {
      display: block;
      margin: 8px;
+--- a/src/cssom.rs
++++ b/src/cssom.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: opt-in CSS parse-error diagnostics.
+ //! CSSOM stylesheet access (`document.styleSheets`, `CSSStyleSheet`,
+ //! `CSSRuleList`, `CSSRule` and friends) backed by stylo's stylesheet objects.
+ //!
+@@ -949,7 +950,7 @@
+         let new_block = style::properties::declaration_block::parse_style_attribute(
+             css,
+             &self.url.url_extra_data(),
+-            None,
++            crate::error_diagnostics::reporter(),
+             QuirksMode::NoQuirks,
+             rule_type,
+         );
 --- a/src/document.rs
 +++ b/src/document.rs
 @@ -1,3 +1,4 @@
@@ -53,6 +107,138 @@
  
          let viewport = config.viewport.unwrap_or_default();
          let media_type = config.media_type.unwrap_or_else(MediaType::screen);
+@@ -1199,7 +1208,7 @@
+                 abort_signal: self.abort_signal.clone(),
+                 import_depth: 0,
+             }),
+-            None,
++            crate::error_diagnostics::reporter(),
+             QuirksMode::NoQuirks,
+             AllowImportRules::Yes,
+         );
+--- a/src/error_diagnostics.rs
++++ b/src/error_diagnostics.rs
+@@ -0,0 +1,27 @@
++// Modified by Wega contributors, 2026: opt-in CSS parse-error diagnostics.
++use style::error_reporting::ParseErrorReporter;
++pub(crate) fn reporter() -> Option<&'static dyn ParseErrorReporter> {
++    #[cfg(feature = "error-diagnostics")]
++    {
++        Some(&Reporter)
++    }
++    #[cfg(not(feature = "error-diagnostics"))]
++    {
++        None
++    }
++}
++#[cfg(feature = "error-diagnostics")]
++struct Reporter;
++#[cfg(feature = "error-diagnostics")]
++impl ParseErrorReporter for Reporter {
++    fn report_error(
++        &self,
++        url: &style::stylesheets::UrlExtraData,
++        location: cssparser::SourceLocation,
++        error: style::error_reporting::ContextualParseError,
++    ) {
++        let message = error.to_string();
++        let event = serde_json::json!({"category":"css","severity":"warning","message":message.chars().take(16384).collect::<String>(),"url":url.as_str().chars().take(8192).collect::<String>(),"line":location.line as u64+1,"column":location.column,"truncated":message.chars().count()>16384});
++        eprintln!("WEGA_DIAGNOSTIC\t{event}");
++    }
++}
+--- a/src/layout/construct.rs
++++ b/src/layout/construct.rs
+@@ -1,3 +1,5 @@
++// Modified by Wega contributors, 2026: render collapsed select labels without
++// adding author-visible text nodes or exposing the hidden option list.
+ use blitz_traits::node_id::NodeId;
+ use core::str;
+ use std::sync::Arc;
+@@ -597,6 +599,10 @@
+             let mut classification = FlowClassification::default();
+             classify_flow_children(doc, container_node_id, &mut classification);
+ 
++            if is_collapsed_select(&doc.nodes[container_node_id]) {
++                classification.all_out_of_flow = false;
++                classification.all_inline = true;
++            }
+             if classification.all_out_of_flow {
+                 // Contents-transparent: a display:contents child may be
+                 // holding the out-of-flow elements (otherwise the contents
+@@ -1105,14 +1111,18 @@
+             &text_transform,
+         );
+     }
+-    for child_id in root_node.children.iter().copied() {
+-        build_inline_layout_recursive(
+-            &mut builder,
+-            &mut text_transformer,
+-            nodes,
+-            child_id,
+-            &text_transform,
+-        );
++    if is_collapsed_select(root_node) {
++        builder.push_text(&collapsed_select_label(root_node));
++    } else {
++        for child_id in root_node.children.iter().copied() {
++            build_inline_layout_recursive(
++                &mut builder,
++                &mut text_transformer,
++                nodes,
++                child_id,
++                &text_transform,
++            );
++        }
+     }
+     if let Some(after_id) = root_node.after() {
+         build_inline_layout_recursive(
+@@ -1312,3 +1322,46 @@
+         }
+     }
+ }
++
++fn is_collapsed_select(node: &Node) -> bool {
++    node.element_data().is_some_and(|element| {
++        element.name.local == local_name!("select")
++            && !element.has_attr(local_name!("multiple"))
++            && element
++                .attr(local_name!("size"))
++                .and_then(|size| size.parse::<u32>().ok())
++                .unwrap_or(1)
++                <= 1
++    })
++}
++
++fn collapsed_select_label(node: &Node) -> String {
++    let mut stack: Vec<_> = node.children.iter().rev().copied().collect();
++    let mut first = None;
++    let mut selected = None;
++    while let Some(id) = stack.pop() {
++        let child = node.with(id);
++        if let Some(element) = child.element_data() {
++            if element.name.local == local_name!("option") {
++                let label = element
++                    .attr(local_name!("label"))
++                    .map(str::to_owned)
++                    .unwrap_or_else(|| child.text_content());
++                if first.is_none() {
++                    first = Some(label.clone());
++                }
++                if element.has_attr(local_name!("selected")) {
++                    selected = Some(label);
++                }
++            } else {
++                stack.extend(child.children.iter().rev().copied());
++            }
++        }
++    }
++    selected
++        .or(first)
++        .unwrap_or_default()
++        .split_ascii_whitespace()
++        .collect::<Vec<_>>()
++        .join(" ")
++}
 --- a/src/layout/inline.rs
 +++ b/src/layout/inline.rs
 @@ -1,3 +1,4 @@
@@ -86,6 +272,60 @@
          }
  
          // Note: `width` and `height` are content-box measurements of the inline content.
+--- a/src/layout/replaced.rs
++++ b/src/layout/replaced.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: select controls establish an atomic inline box.
+ use markup5ever::{LocalName, local_name};
+ use taffy::{
+     AvailableSpace, BoxSizing, CoreStyle, LayoutInput, LayoutOutput, MaybeMath, MaybeResolve,
+@@ -436,4 +437,5 @@
+         || *tag_name == local_name!("input")
+         || *tag_name == local_name!("textarea")
+         || *tag_name == local_name!("button")
+-}
++        || *tag_name == local_name!("select")
++}
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: opt-in CSS parse-error diagnostics.
+ //! The core DOM abstraction in Blitz
+ //!
+ //! This crate implements a flexible headless DOM ([`BaseDocument`]), which is designed to emebedded in and "driven" by external code. Most users will want
+@@ -43,6 +44,7 @@
+ /// CSSOM stylesheet access (`document.styleSheets`, `CSSStyleSheet`, `CSSRule`)
+ mod cssom;
+ mod debug;
++mod error_diagnostics;
+ mod events;
+ mod font_metrics;
+ mod form;
+--- a/src/net.rs
++++ b/src/net.rs
+@@ -1,3 +1,4 @@
++// Modified by Wega contributors, 2026: opt-in CSS parse-error diagnostics.
+ use blitz_traits::node_id::NodeId;
+ use selectors::context::QuirksMode;
+ use std::sync::atomic::Ordering as Ao;
+@@ -163,7 +164,7 @@
+                 abort_signal: self.data.abort_signal.clone(),
+                 import_depth: 0,
+             }),
+-            None, // error_reporter
++            crate::error_diagnostics::reporter(), // error_reporter
+             QuirksMode::NoQuirks,
+             AllowImportRules::Yes,
+         );
+@@ -273,7 +274,7 @@
+             self.data.media.clone(),
+             self.data.lock.clone(),
+             Some(&self.data.loader),
+-            None, // error_reporter
++            crate::error_diagnostics::reporter(), // error_reporter
+             QuirksMode::NoQuirks,
+             AllowImportRules::Yes,
+         ));
 --- a/src/node/element.rs
 +++ b/src/node/element.rs
 @@ -1,3 +1,4 @@
@@ -109,6 +349,15 @@
              scrollable_overflow: KurboRect::ZERO,
              #[cfg(feature = "writing-mode")]
              writing_mode: stylo_taffy::WritingMode::empty(),
+@@ -670,7 +673,7 @@
+             ServoArc::new(guard.wrap(parse_style_attribute(
+                 style_str,
+                 url_extra_data,
+-                None,
++                crate::error_diagnostics::reporter(),
+                 QuirksMode::NoQuirks,
+                 CssRuleType::Style,
+             )))
 --- a/src/node/node.rs
 +++ b/src/node/node.rs
 @@ -1,3 +1,4 @@
@@ -263,7 +512,25 @@
  //! Enable the dom to participate in styling by servo
  //!
  
-@@ -1211,8 +1212,11 @@
+@@ -221,11 +222,14 @@
+             shared: &shared,
+             thread_local: &mut thread_local,
+         };
+-        let styles = resolve_style(&mut context, node, RuleInclusion::All, None, None);
+-
++        let styles = resolve_style(&mut context, node, RuleInclusion::All, None, None).primary().clone();
++        // The thread-local context flushes layout work when dropped. Its Drop
++        // implementation must still see LAYOUT, including hidden-style probes.
++        drop(context);
++        drop(thread_local);
+         style::thread_state::exit(ThreadState::LAYOUT);
+ 
+-        Some(styles.primary().clone())
++        Some(styles)
+     }
+ }
+ 
+@@ -1211,8 +1215,11 @@
          &self,
          _display: &style::values::specified::Display,
      ) -> euclid::default::Size2D<Option<app_units::Au>> {

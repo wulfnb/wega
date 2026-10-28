@@ -13,7 +13,7 @@ wega-network = {path="../network"}
 wega-platform = {path="../platform"}
 deno_error = "=0.7.1"
 tokio = {version="1",features=["rt","time","net","sync"]}
-blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars"] }
+blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars", "floats", "error-diagnostics"] }
 blitz-html = "=0.3.0-beta.4"
 blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
 blitz-traits = "=0.3.0-beta.4"
@@ -48,6 +48,7 @@ style = {package="stylo",version="=0.22.0"}
 cssparser = "=0.38.0"
 selectors = "=0.41.0"
 style_traits = {package="stylo_traits",version="=0.22.0"}
+style_dom = {package="stylo_dom",version="=0.22.0"}
 
 cookie_store = "=0.22.1"
 publicsuffix = "=2.3.0"

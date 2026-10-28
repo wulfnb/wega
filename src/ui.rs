@@ -515,7 +515,8 @@ impl Browser {
                 )
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        let status_width = (ui.available_width() - 470.0).max(24.0);
+                        let reserved=if self.profile().policy.show_performance {if self.is_wega() {740.0} else {530.0}} else {370.0};
+                        let status_width = (ui.available_width() - reserved).max(0.0);
                         ui.allocate_ui_with_layout(
                             egui::vec2(status_width, 20.0),
                             egui::Layout::left_to_right(egui::Align::Center),
@@ -821,6 +822,7 @@ impl Browser {
                     ui.close();
                 }
                 if ui.button("Browser settings").clicked() {self.features.settings=true;ui.close();}
+                if ui.button("Open browser logs").clicked() {if let Err(error)=crate::ux::open_path(&self.profile_dir.join("logs"),false) {self.status=Some(error);}ui.close();}
                 if ui.button("About Wega").clicked(){self.navigate("wega://about");ui.close();}
                 if ui.button("Site information").clicked() {self.refresh_site_data();self.features.site_info=true;ui.close();}
                 if ui.button("Save page as image").clicked() {self.screenshot_page();ui.close();}

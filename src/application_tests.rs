@@ -329,3 +329,30 @@ fn visit_frequency_survives_reload_saturates_and_clears_with_history() {
         app.profile.bookmarks.len()
     );
 }
+
+#[test]
+fn performance_counter_migrates_once_and_preserves_later_opt_out() {
+    struct Existing(Policy);
+    impl ProfileStore for Existing {
+        fn load(&mut self) -> Result<Profile, String> {
+            Ok(Profile {
+                policy: self.0.clone(),
+                ..Profile::default()
+            })
+        }
+        fn save(&self, _: &Profile) -> Result<(), String> {
+            Ok(())
+        }
+    }
+    let old: Policy = serde_json::from_str(r#"{"show_performance":false}"#).unwrap();
+    assert_eq!(old.performance_visibility_version, 0);
+    let (app, _) = Application::load(Box::new(Existing(old)));
+    assert!(app.profile().policy.show_performance);
+    assert_eq!(app.profile().policy.performance_visibility_version, 1);
+    let opted_out = Policy {
+        show_performance: false,
+        ..Policy::default()
+    };
+    let (app, _) = Application::load(Box::new(Existing(opted_out)));
+    assert!(!app.profile().policy.show_performance);
+}

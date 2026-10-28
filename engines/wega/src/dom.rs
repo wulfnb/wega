@@ -115,6 +115,7 @@ impl Dom {
                 | "setAttrNS"
                 | "styleSet"
                 | "focus"
+                | "setChecked"
                 | "setText"
                 | "setAttr"
                 | "removeAttr"
@@ -130,6 +131,12 @@ impl Dom {
             self.invalidate();
         }
         if text(0) == "error" {
+            crate::diagnostics::Diagnostic::error(
+                crate::diagnostics::Category::Javascript,
+                text(1),
+                Some(self.document.borrow().url().to_string()),
+            )
+            .emit();
             let mut reports = self.errors.borrow_mut();
             if reports.len() < 16 {
                 reports.push(text(1).chars().take(4096).collect());
@@ -286,7 +293,7 @@ impl Dom {
                 // replacing live children, and retain removed nodes held by JS wrappers.
                 let element=doc.get_node(target).unwrap().element_data().ok_or("innerHTML needs an element")?;
                 let name=element.name.clone();let staging=doc.mutate().create_element(name,vec![]);
-                {let mut mutation=doc.mutate();blitz_html::DocumentHtmlParser::parse_inner_html_into_mutator(&mut mutation,staging,text(2));}
+                {let mut mutation=doc.mutate();crate::parser::parse_fragment(&mut mutation,staging,text(2));}
                 let parsed=Self::subtree(&doc,staging);
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
                 if text(0)=="innerHTML" {for id in &parsed {if doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e|&*e.name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
@@ -357,6 +364,16 @@ impl Dom {
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
             "checked"=>json!(doc.get_node(node_id()?).unwrap().element_data().and_then(|e|e.checkbox_input_checked()).unwrap_or(false)),
+            "setChecked"=>{
+                let target=node_id()?;
+                self.resolve(&mut doc);
+                let checked=text(2)=="true";
+                doc.snapshot_node_and(target,style_dom::ElementState::CHECKED,|node|{
+                    if let Some(element)=node.element_data_mut(){element.set_checkbox_input_checked(checked);}
+                    node.mark_ancestors_dirty();
+                });
+                Value::Null
+            },
             // Blitz creates native text editors during layout. Initialize a
             // newly inserted input before focus so immediate key/IME commands
             // cannot be silently dropped while waiting for the next paint.
@@ -364,12 +381,7 @@ impl Dom {
             "serialize"=>{let mut html=String::new();Self::serialize(&doc,node_id()?,&mut html);json!(html)},
             "computed"=>{
                 let target=node_id()?;self.resolve(&mut doc);
-                let property=style::properties::PropertyId::parse_enabled_for_all_content(text(2));
-                let value=doc.get_node(target).unwrap().primary_styles().and_then(|computed|match property {
-                    Ok(style::properties::PropertyId::Custom(ref name))=>Some(computed.computed_value_to_string(style::properties::PropertyDeclarationId::Custom(name))),
-                    Ok(ref id)=>id.longhand_id().map(|id|computed.computed_value_to_string(style::properties::PropertyDeclarationId::Longhand(id))),
-                    _=>None,
-                }).unwrap_or_default();json!(value)
+                json!(doc.resolved_style_value(target,text(2)))
             },
             "limits" => json!({"resourceBytes":self.limits.resource_bytes}),
             "windowNamed" => json!(blitz_dom::traversal::TreeTraverser::new(&doc).filter(|id| {
@@ -434,20 +446,20 @@ impl Dom {
                     .map(|id| id.as_u64().to_string())
             ),
             "box"=>{
-                let target=node_id()?;self.resolve(&mut doc);let node=doc.get_node(target).unwrap();let layout=node.final_layout();let offset=node.offset_top_left();
-                json!({"hasBoxes":node.has_boxes(),"clientWidth":node.client_width(),"clientHeight":node.client_height(),"clientLeft":layout.border.left,"clientTop":layout.border.top,"offsetWidth":layout.size.width,"offsetHeight":layout.size.height,"offsetLeft":offset.x,"offsetTop":offset.y,"offsetParent":node.offset_parent().map(|node|node.id.as_u64().to_string()),"scrollWidth":node.scroll_width(),"scrollHeight":node.scroll_height(),"contentWidth":layout.content_box_width(),"contentHeight":layout.content_box_height(),"paddingLeft":layout.padding.left,"paddingTop":layout.padding.top})
+                let target=node_id()?;self.resolve(&mut doc);let node=doc.get_node(target).unwrap();let layout=node.final_layout();let offset=doc.offset_rect(target).unwrap_or(blitz_dom::BoundingRect{x:0.0,y:0.0,width:0.0,height:0.0});
+                json!({"hasBoxes":node.has_boxes(),"clientWidth":node.client_width(),"clientHeight":node.client_height(),"clientLeft":layout.border.left,"clientTop":layout.border.top,"offsetWidth":offset.width,"offsetHeight":offset.height,"offsetLeft":offset.x,"offsetTop":offset.y,"offsetParent":node.offset_parent().map(|node|node.id.as_u64().to_string()),"scrollWidth":node.scroll_width(),"scrollHeight":node.scroll_height(),"contentWidth":layout.content_box_width(),"contentHeight":layout.content_box_height(),"paddingLeft":layout.padding.left,"paddingTop":layout.padding.top})
+            },
+            "clientRects"=>{
+                let target=node_id()?;self.resolve(&mut doc);
+                json!(doc.node_client_rects(target).into_iter().map(|r|json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height})).collect::<Vec<_>>())
             },
             "rect" => {
                 let id = node_id()?;
                 self.resolve(&mut doc);
                 let node = doc.get_node(id).unwrap();
                 if node.element_data().is_none() {return Ok(json!({"x":0,"y":0,"width":0,"height":0,"left":0,"right":0,"top":0,"bottom":0}));}
-                let p = node.absolute_position(0.0, 0.0);
-                let scroll = doc.viewport_scroll();
-                let size = node.final_layout().size;
-                let x = p.x + node.scroll_offset().x as f32 - scroll.x as f32;
-                let y = p.y + node.scroll_offset().y as f32 - scroll.y as f32;
-                json!({"x":x,"y":y,"width":size.width,"height":size.height,"left":x,"top":y,"right":x+size.width,"bottom":y+size.height})
+                let r=doc.get_client_bounding_rect(id).unwrap_or(blitz_dom::BoundingRect{x:0.0,y:0.0,width:0.0,height:0.0});
+                json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height,"left":r.x,"top":r.y,"right":r.x+r.width,"bottom":r.y+r.height})
             }
             "attr" => json!(
                 doc.get_node(node_id()?)
@@ -639,6 +651,17 @@ impl Dom {
             }
             "now" => json!(self.start.elapsed().as_secs_f64() * 1000.0),
             "log" => {
+                if matches!(text(2), "2" | "3") {
+                    let mut diagnostic = crate::diagnostics::Diagnostic::error(
+                        crate::diagnostics::Category::Javascript,
+                        text(1),
+                        Some(doc.url().to_string()),
+                    );
+                    if text(2) == "2" {
+                        diagnostic.severity = "warning".into();
+                    }
+                    diagnostic.emit();
+                }
                 eprintln!(
                     "Wega JavaScript: {}",
                     text(1).chars().take(4096).collect::<String>()
