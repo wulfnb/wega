@@ -443,3 +443,41 @@ fn computed_styles_inside_display_none_do_not_panic_the_worker() {
         "\"alive\""
     );
 }
+
+#[test]
+fn canvas_and_screen_support_speedtest_and_lottie() {
+    let mut view = page("<canvas id='c' width='400' height='200'></canvas>");
+    let result = view.evaluate_json(
+        "(()=>{
+            const c = document.getElementById('c');
+            const created = document.createElement('canvas');
+            const ctx = c.getContext('2d');
+            ctx.save();
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(0, 0, 10, 10);
+            ctx.restore();
+            const metrics = ctx.measureText('Speedtest');
+            const url = c.toDataURL();
+            return [
+                c instanceof HTMLCanvasElement,
+                created instanceof HTMLCanvasElement,
+                ctx instanceof CanvasRenderingContext2D,
+                c.width,
+                c.height,
+                created.width,
+                created.height,
+                metrics.width > 0,
+                url.startsWith('data:image/png'),
+                typeof window.screen === 'object',
+                screen.width > 0,
+                screen.height > 0,
+                screen.colorDepth === 24,
+                screen.orientation.type === 'landscape-primary'
+            ];
+        })()",
+    ).unwrap();
+    assert_eq!(
+        result,
+        "[true,true,true,400,200,300,150,true,true,true,true,true,true,true]"
+    );
+}

@@ -1619,6 +1619,215 @@
       return wrap(host("templateContent", this._id), this.ownerDocument);
     }
   }
+  class CanvasRenderingContext2D {
+    constructor(canvas) {
+      this._canvas = canvas;
+      this.fillStyle = "#000000";
+      this.strokeStyle = "#000000";
+      this.lineWidth = 1;
+      this.lineCap = "butt";
+      this.lineJoin = "miter";
+      this.miterLimit = 10;
+      this.lineDashOffset = 0;
+      this.globalAlpha = 1.0;
+      this.globalCompositeOperation = "source-over";
+      this.font = "10px sans-serif";
+      this.textAlign = "start";
+      this.textBaseline = "alphabetic";
+      this.direction = "inherit";
+      this.shadowBlur = 0;
+      this.shadowColor = "rgba(0, 0, 0, 0)";
+      this.shadowOffsetX = 0;
+      this.shadowOffsetY = 0;
+      this.imageSmoothingEnabled = true;
+      this.imageSmoothingQuality = "low";
+      this.filter = "none";
+    }
+    get canvas() {
+      return this._canvas;
+    }
+    save() {}
+    restore() {}
+    reset() {}
+    scale(_x, _y) {}
+    rotate(_angle) {}
+    translate(_x, _y) {}
+    transform(_a, _b, _c, _d, _e, _f) {}
+    setTransform(_a, _b, _c, _d, _e, _f) {}
+    resetTransform() {}
+    getTransform() {
+      return {
+        a: 1,
+        b: 0,
+        c: 0,
+        d: 1,
+        e: 0,
+        f: 0,
+        m11: 1,
+        m12: 0,
+        m21: 0,
+        m22: 1,
+        m41: 0,
+        m42: 0,
+      };
+    }
+    clearRect(_x, _y, _w, _h) {}
+    fillRect(_x, _y, _w, _h) {}
+    strokeRect(_x, _y, _w, _h) {}
+    beginPath() {}
+    fill(_fillRule) {}
+    stroke() {}
+    clip(_fillRule) {}
+    isPointInPath(_x, _y) {
+      return false;
+    }
+    isPointInStroke(_x, _y) {
+      return false;
+    }
+    fillText(_text, _x, _y, _maxWidth) {}
+    strokeText(_text, _x, _y, _maxWidth) {}
+    measureText(text) {
+      const len = String(text ?? "").length;
+      return {
+        width: len * 8,
+        actualBoundingBoxLeft: 0,
+        actualBoundingBoxRight: len * 8,
+        fontBoundingBoxAscent: 10,
+        fontBoundingBoxDescent: 2,
+        actualBoundingBoxAscent: 10,
+        actualBoundingBoxDescent: 2,
+        emHeightAscent: 10,
+        emHeightDescent: 2,
+        hangingBaseline: 8,
+        alphabeticBaseline: 0,
+        ideographicBaseline: -2,
+      };
+    }
+    drawImage() {}
+    createImageData(w, h) {
+      const width = Math.max(0, w | 0);
+      const height = Math.max(0, h | 0);
+      return {
+        width,
+        height,
+        data: new Uint8ClampedArray(Math.max(0, (width * height * 4) | 0)),
+      };
+    }
+    getImageData(_sx, _sy, sw, sh) {
+      const width = Math.max(0, sw | 0);
+      const height = Math.max(0, sh | 0);
+      return {
+        width,
+        height,
+        data: new Uint8ClampedArray(Math.max(0, (width * height * 4) | 0)),
+      };
+    }
+    putImageData(_imagedata, _dx, _dy) {}
+    createLinearGradient(_x0, _y0, _x1, _y1) {
+      return { addColorStop() {} };
+    }
+    createRadialGradient(_x0, _y0, _r0, _x1, _y1, _r1) {
+      return { addColorStop() {} };
+    }
+    createConicGradient(_startAngle, _x, _y) {
+      return { addColorStop() {} };
+    }
+    createPattern(_image, _repetition) {
+      return { setTransform() {} };
+    }
+    setLineDash(_segments) {}
+    getLineDash() {
+      return [];
+    }
+    closePath() {}
+    moveTo(_x, _y) {}
+    lineTo(_x, _y) {}
+    quadraticCurveTo(_cpx, _cpy, _x, _y) {}
+    bezierCurveTo(_cp1x, _cp1y, _cp2x, _cp2y, _x, _y) {}
+    arcTo(_x1, _y1, _x2, _y2, _radius) {}
+    rect(_x, _y, _w, _h) {}
+    roundRect(_x, _y, _w, _h, _radii) {}
+    arc(_x, _y, _radius, _startAngle, _endAngle, _counterclockwise) {}
+    ellipse(
+      _x,
+      _y,
+      _radiusX,
+      _radiusY,
+      _rotation,
+      _startAngle,
+      _endAngle,
+      _counterclockwise,
+    ) {}
+  }
+  class HTMLCanvasElement extends HTMLElement {
+    get width() {
+      const v = this.getAttribute("width");
+      return v === null ? 300 : parseInt(v, 10) || 0;
+    }
+    set width(value) {
+      this.setAttribute("width", String(value >>> 0));
+    }
+    get height() {
+      const v = this.getAttribute("height");
+      return v === null ? 150 : parseInt(v, 10) || 0;
+    }
+    set height(value) {
+      this.setAttribute("height", String(value >>> 0));
+    }
+    getContext(type) {
+      if (type === "2d") {
+        if (!this._context2d) {
+          this._context2d = new CanvasRenderingContext2D(this);
+        }
+        return this._context2d;
+      }
+      return null;
+    }
+    toDataURL() {
+      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    }
+    toBlob(callback) {
+      if (typeof callback === "function") {
+        setTimeout(() => callback(null), 0);
+      }
+    }
+  }
+  class Screen {
+    get width() {
+      try {
+        return Math.round(host("viewport")?.width || 1920);
+      } catch {
+        return 1920;
+      }
+    }
+    get height() {
+      try {
+        return Math.round(host("viewport")?.height || 1080);
+      } catch {
+        return 1080;
+      }
+    }
+    get availWidth() {
+      return this.width;
+    }
+    get availHeight() {
+      return this.height;
+    }
+    get colorDepth() {
+      return 24;
+    }
+    get pixelDepth() {
+      return 24;
+    }
+    get orientation() {
+      return {
+        type: "landscape-primary",
+        angle: 0,
+        onchange: null,
+      };
+    }
+  }
+  const screen = new Screen();
   const htmlConstructors = {
     iframe: HTMLIFrameElement,
     input: HTMLInputElement,
@@ -1629,6 +1838,7 @@
     form: HTMLFormElement,
     a: HTMLAnchorElement,
     img: HTMLImageElement,
+    canvas: HTMLCanvasElement,
     script: HTMLScriptElement,
     template: HTMLTemplateElement,
   };
@@ -2369,8 +2579,10 @@
     HTMLFormElement,
     HTMLAnchorElement,
     HTMLImageElement,
+    HTMLCanvasElement,
     HTMLScriptElement,
     HTMLTemplateElement,
+    CanvasRenderingContext2D,
     Document,
     HTMLDocument: Document,
     DocumentFragment,
@@ -2384,6 +2596,8 @@
     Event,
     EventTarget: BaseTarget,
     Window,
+    Screen,
+    screen,
     document,
     window: globalThis,
     self: globalThis,
