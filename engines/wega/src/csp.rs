@@ -277,16 +277,19 @@ impl Csp {
         if self.policies.is_empty() {
             return true;
         }
-        let extension = url
-            .path()
-            .rsplit_once('.')
-            .map(|(_, e)| e.to_ascii_lowercase())
-            .unwrap_or_default();
-        let directives: &[&str] = match extension.as_str() {
+        let path = url.path().to_ascii_lowercase();
+        let extension = path.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
+        let directives: &[&str] = match extension {
             "css" => &["style-src-elem"],
             "woff" | "woff2" | "ttf" | "otf" | "eot" => &["font-src"],
             "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "svg" | "ico" | "bmp" => {
                 &["img-src"]
+            }
+            _ if path.contains("/css/")
+                || path.ends_with("/css")
+                || path.contains("stylesheet") =>
+            {
+                &["style-src-elem"]
             }
             _ => &["img-src", "style-src-elem", "font-src"],
         };
@@ -397,5 +400,16 @@ mod tests {
         assert!(strict.allows_dynamic_script(&url("https://b.example/x.js"), &doc));
         assert_eq!(base64(b"abc"), "YWJj");
         assert_eq!(base64(b"ab"), "YWI=");
+    }
+    #[test]
+    fn subresource_css_paths_match_style_src() {
+        let doc = url("https://trak.in/stories/");
+        let mut csp = Csp::default();
+        csp.add("default-src 'none'; style-src-elem https://trak.in; img-src 'none'");
+        assert!(csp.allows_subresource(
+            &url("https://trak.in/stories/site-skin/css/awesome-css"),
+            &doc
+        ));
+        assert!(!csp.allows_subresource(&url("https://trak.in/images/photo.png"), &doc));
     }
 }
