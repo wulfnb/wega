@@ -61,7 +61,7 @@ http = { version = "1", optional = true }
 chrono = "0.4.45"
 libc = { version = "0.2", optional = true }
 # Servo's RSA prerelease requires rc.4; rc.5 changes its public key representation.
-pkcs1 = { version = "=0.8.0-rc.4", optional = true }
+pkcs1 = { version = "=0.8.0-rc.5", optional = true }
 
 [profile.dev]
 debug = 0
