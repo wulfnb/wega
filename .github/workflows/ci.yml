@@ -56,8 +56,13 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - name: Install workflow and shell linters
+      - name: Install workflow, shell, and secret analysis tools
         run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v8.24.0/gitleaks_8.24.0_linux_x64.tar.gz"
+          echo "cb49b7de5ee986510fe8666ca0273a6cc15eb82571f2f14832c9e8920751f3a4  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/bin" gitleaks
+          rm -f "$RUNNER_TEMP/gitleaks.tar.gz"
           GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Validate workflows, shell scripts, and Python syntax
@@ -83,7 +88,7 @@ jobs:
       - name: Install security analysis tools
         uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
-          tool: cargo-audit@0.22.2,gitleaks@8.24.0
+          tool: cargo-audit@0.22.2
       - name: Audit crate dependencies for security vulnerabilities
         run: cargo audit
       - name: Scan repository for secret and credential leaks
@@ -319,7 +324,7 @@ jobs:
           tags: wega-quality:local
           cache-from: type=registry,ref=ghcr.io/wulfnb/wega:buildcache
       - name: Scan test Docker image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # 0.29.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: wega-quality:local
           format: 'table'
