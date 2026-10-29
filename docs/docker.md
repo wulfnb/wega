@@ -393,3 +393,18 @@ python3 scripts/docker-ux-test.py wega:local
 
 This creates and removes its own container and temporary profile. CI runs the
 same check against the image it has just built.
+
+
+## Future Plans & Roadmap
+
+### Multi-Architecture Container Images (`linux/amd64` & `linux/arm64`)
+* **Current Status**: CI/CD publishes `linux/amd64` images to GHCR using GitHub-hosted x86_64 runners. Local builds natively compile and run on Apple Silicon / Linux ARM64 hosts (`docker compose up --build`).
+* **Why not QEMU cross-compilation in CI?**: Compiling the full native Rust/Servo browser engine under QEMU emulation in GitHub Actions is extremely CPU-intensive and exceeds GitHub Actions' 6-hour job timeout.
+* **Planned Implementation**:
+  1. Leverage native GitHub-hosted Linux ARM64 runners (`ubuntu-24.04-arm64`) once available for the repository.
+  2. Build native `linux/amd64` and `linux/arm64` container layers in parallel.
+  3. Merge manifests via `docker buildx imagetools create` into a unified multi-arch image tag (`ghcr.io/wulfnb/wega:latest`) with cryptographically attested provenance.
+
+### Code Signing & Distribution Integrity
+* **macOS Gatekeeper Notarization**: Ad-hoc code signing is used currently. Automated notarization without Gatekeeper warnings requires an active Apple Developer Program membership (\$99/year) and automated submission via `xcrun notarytool`.
+* **Windows Defender SmartScreen**: Eliminating SmartScreen untrusted publisher warnings requires an Authenticode EV (Extended Validation) code-signing certificate (from CAs such as DigiCert, Sectigo, or SSL.com, or Microsoft Azure Trusted Signing), which typically costs \$200–\$450/year and requires hardware security module (HSM) key storage. Free open-source alternatives like [SignPath Foundation](https://about.signpath.io/) may be evaluated once the project reaches public beta.
