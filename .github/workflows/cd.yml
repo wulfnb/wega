@@ -32,7 +32,7 @@ jobs:
 
   build-macos:
     name: Package macOS Bundle (ARM64)
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 90
     permissions:
       contents: read
@@ -102,7 +102,7 @@ jobs:
 
   build-linux-binaries:
     name: Build Linux Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Same RUST_IMAGE as the Dockerfile builder, so the binaries match the trixie runtime.
     container: rust:1.98.0-slim-trixie
     timeout-minutes: 90
@@ -135,7 +135,7 @@ jobs:
   build-linux-and-docker:
     needs: build-linux-binaries
     name: Build Linux Package & Docker (GHCR)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read
@@ -180,6 +180,14 @@ jobs:
           # GHCR, not the 10 GB Actions cache.
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+      - name: Scan production Docker image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # 0.29.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
       - name: Install license notice generator
         uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
@@ -239,7 +247,7 @@ jobs:
 
   build-windows:
     name: Package Windows (x64)
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 90
     permissions:
       contents: read
@@ -365,7 +373,7 @@ jobs:
   publish-release:
     name: Publish GitHub Test Release
     needs: [ci-validation, build-macos, build-linux-and-docker, build-windows]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
@@ -408,24 +416,37 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: release-files/SHA256SUMS.txt
-      - name: Determine Release Tag
+      - name: Determine Release Tag and validate version
         id: tag
         env:
           RELEASE_INPUT: ${{ github.event.inputs.release_tag }}
+        shell: python
         run: |
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ -n "$RELEASE_INPUT" ]; then
-            release_tag="$RELEASE_INPUT"
-          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            release_tag="${GITHUB_REF#refs/tags/}"
-          else
-            release_tag=test-preview
-          fi
-          git check-ref-format "refs/tags/$release_tag"
-          printf 'RELEASE_TAG=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
-          # The moving test-preview also gets an immutable per-commit prerelease.
-          if [ "$release_tag" = test-preview ]; then
-            printf 'COMMIT_TAG=test-preview-%s\n' "${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
-          fi
+          import os, re, tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path('Cargo.toml').read_text())['package']['version']
+          ref = os.environ.get('GITHUB_REF', '')
+          event_name = os.environ.get('GITHUB_EVENT_NAME', '')
+          release_input = os.environ.get('RELEASE_INPUT', '')
+
+          if event_name == 'workflow_dispatch' and release_input:
+              release_tag = release_input
+              commit_tag = ''
+          elif ref.startswith('refs/tags/'):
+              release_tag = ref.removeprefix('refs/tags/')
+              if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?', release_tag) or release_tag != 'v' + version:
+                  raise SystemExit(f"Release tag '{release_tag}' must equal 'v' + Cargo.toml version ('v{version}')")
+              commit_tag = ''
+          else:
+              release_tag = 'test-preview'
+              sha = os.environ.get('GITHUB_SHA', '')[:12]
+              commit_tag = f'test-preview-{sha}'
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'RELEASE_TAG={release_tag}\n')
+              if commit_tag:
+                  output.write(f'COMMIT_TAG={commit_tag}\n')
       - name: Write release notes
         env:
           IMAGE_NAME: ${{ env.IMAGE_NAME }}

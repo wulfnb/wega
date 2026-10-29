@@ -16,7 +16,7 @@ concurrency:
 jobs:
   changes:
     name: Select CI scope
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       full: ${{ steps.scope.outputs.full }}
@@ -50,12 +50,21 @@ jobs:
     name: Code Quality & Lints
     needs: changes
     if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+      - name: Install workflow and shell linters
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Validate workflows, shell scripts, and Python syntax
+        run: |
+          actionlint
+          shellcheck scripts/*.sh
+          python3 -m compileall -q scripts tests
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -71,12 +80,20 @@ jobs:
           node-version: '26'
       - name: JavaScript line coverage (100% required)
         run: sh scripts/javascript-coverage.sh
+      - name: Install security analysis tools
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-audit@0.22.2,gitleaks@8.24.0
+      - name: Audit crate dependencies for security vulnerabilities
+        run: cargo audit
+      - name: Scan repository for secret and credential leaks
+        run: gitleaks detect --verbose --config .gitleaks.toml
 
   error-collector:
     name: Error collector and signed HTTP contract
     needs: [changes, lint]
     if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -108,7 +125,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -124,6 +141,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Core unit tests
         run: cargo test --locked --no-default-features --lib
+      - name: Core documentation tests
+        run: cargo test --locked --no-default-features --doc
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
@@ -153,7 +172,7 @@ jobs:
     name: Desktop Native & Engine Suite (macOS)
     needs: [changes, lint]
     if: needs.changes.outputs.full == 'true'
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: 4
@@ -230,7 +249,7 @@ jobs:
     name: Linux Binaries for Docker (test harness)
     needs: [changes, lint]
     if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Same RUST_IMAGE as compose.quality.yaml, so the binaries match the trixie runtime.
     container: rust:1.98.0-slim-trixie
     timeout-minutes: 60
@@ -258,7 +277,7 @@ jobs:
     name: Docker & Web Gateway Integration (Linux)
     needs: [changes, linux-binaries]
     if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       COMPOSE_FILE: compose.quality.yaml
@@ -299,6 +318,14 @@ jobs:
           provenance: false
           tags: wega-quality:local
           cache-from: type=registry,ref=ghcr.io/wulfnb/wega:buildcache
+      - name: Scan test Docker image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # 0.29.0
+        with:
+          image-ref: wega-quality:local
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
       - name: Launch test environment
         run: docker compose up -d --wait --wait-timeout 180
       - name: Test authentication gateway & WebSocket revocation
@@ -377,7 +404,7 @@ jobs:
     name: Desktop Build & Launch (Windows)
     needs: [changes, lint]
     if: needs.changes.outputs.full == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -436,7 +463,7 @@ jobs:
     name: CI Completion Gate
     if: always()
     needs: [changes, lint, core-matrix, desktop-macos, desktop-windows, linux-binaries, docker-integration]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Verify all checks passed
         env:
