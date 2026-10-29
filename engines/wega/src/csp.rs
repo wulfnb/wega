@@ -278,17 +278,17 @@ impl Csp {
             return true;
         }
         let path = url.path().to_ascii_lowercase();
-        let extension = path
-            .rsplit_once('.')
-            .map(|(_, e)| e)
-            .unwrap_or_default();
+        let extension = path.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
         let directives: &[&str] = match extension {
             "css" => &["style-src-elem"],
             "woff" | "woff2" | "ttf" | "otf" | "eot" => &["font-src"],
             "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "svg" | "ico" | "bmp" => {
                 &["img-src"]
             }
-            _ if path.contains("/css/") || path.ends_with("/css") || path.contains("stylesheet") => {
+            _ if path.contains("/css/")
+                || path.ends_with("/css")
+                || path.contains("stylesheet") =>
+            {
                 &["style-src-elem"]
             }
             _ => &["img-src", "style-src-elem", "font-src"],
@@ -410,9 +410,6 @@ mod tests {
             &url("https://trak.in/stories/site-skin/css/awesome-css"),
             &doc
         ));
-        assert!(!csp.allows_subresource(
-            &url("https://trak.in/images/photo.png"),
-            &doc
-        ));
+        assert!(!csp.allows_subresource(&url("https://trak.in/images/photo.png"), &doc));
     }
 }

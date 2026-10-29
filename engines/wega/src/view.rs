@@ -120,10 +120,7 @@ struct Resources {
 }
 fn destination(url: &Url) -> Destination {
     let path = url.path().to_ascii_lowercase();
-    let extension = path
-        .rsplit_once('.')
-        .map(|(_, e)| e)
-        .unwrap_or_default();
+    let extension = path.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
     match extension {
         "css" => Destination::Style,
         "woff" | "woff2" | "ttf" | "otf" | "eot" => Destination::Font,

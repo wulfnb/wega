@@ -447,8 +447,9 @@ fn computed_styles_inside_display_none_do_not_panic_the_worker() {
 #[test]
 fn canvas_and_screen_support_speedtest_and_lottie() {
     let mut view = page("<canvas id='c' width='400' height='200'></canvas>");
-    let result = view.evaluate_json(
-        "(()=>{
+    let result = view
+        .evaluate_json(
+            "(()=>{
             const c = document.getElementById('c');
             const created = document.createElement('canvas');
             const ctx = c.getContext('2d');
@@ -475,7 +476,8 @@ fn canvas_and_screen_support_speedtest_and_lottie() {
                 screen.orientation.type === 'landscape-primary'
             ];
         })()",
-    ).unwrap();
+        )
+        .unwrap();
     assert_eq!(
         result,
         "[true,true,true,400,200,300,150,true,true,true,true,true,true,true]"
