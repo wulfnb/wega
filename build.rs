@@ -4,6 +4,7 @@ fn main() {
     // fontsan/ots uses C++ standard algorithms whose MSVC vectorized helpers reside in msvcprt.lib.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+            println!("cargo:rustc-link-arg=msvcprt.lib");
             println!("cargo:rustc-link-lib=msvcprt");
         }
         #[cfg(windows)]

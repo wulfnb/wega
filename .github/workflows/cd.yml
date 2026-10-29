@@ -279,6 +279,8 @@ jobs:
       - name: Build the independent Wega engine
         run: python scripts/build-wega-engine.py
       - name: Build Windows release executable
+        env:
+          RUSTFLAGS: "-C link-arg=msvcprt.lib"
         run: cargo build --release --locked --no-default-features --features desktop,brotli-streams,media
       - name: Install license notice generator
         uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27

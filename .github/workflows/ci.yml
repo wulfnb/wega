@@ -438,6 +438,8 @@ jobs:
       - name: Build the independent Wega engine
         run: python scripts/build-wega-engine.py --debug
       - name: Build the desktop browser
+        env:
+          RUSTFLAGS: "-C link-arg=msvcprt.lib"
         run: cargo build --locked --no-default-features --features desktop,brotli-streams,media
       - name: Launch the browser
         shell: pwsh
