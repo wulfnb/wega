@@ -1,0 +1,10 @@
+# Gitleaks configuration for wega
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore standard RFC 6455 WebSocket sample test nonce"
+regexes = [
+    '''dGhlIHNhbXBsZSBub25jZQ==''',
+]
