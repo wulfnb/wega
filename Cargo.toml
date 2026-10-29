@@ -55,7 +55,7 @@ servo-devtools-traits = { version = "=0.7.0", optional = true }
 servo-base = { version = "=0.7.0", optional = true }
 crossbeam-channel = { version = "0.5", optional = true }
 webdriver = { version = "=0.54.0", optional = true }
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.23", optional = true }
 image = { optional = true,version="0.25",default-features=false,features=["png"]}
 http = { version = "1", optional = true }
 chrono = "0.4.45"

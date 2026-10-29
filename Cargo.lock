@@ -10719,7 +10719,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "accesskit 0.25.1",
  "arboard",
- "base64 0.22.1",
+ "base64 0.23.1",
  "block2 0.6.2",
  "chrono",
  "crossbeam-channel",
