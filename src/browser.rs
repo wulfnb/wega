@@ -2384,6 +2384,7 @@ impl Browser {
         self.dialogs.clear();
         self.session.clear();
         self.delegate.events.borrow_mut().clear();
+        self.content_manager.take();
         if self.servo.initialized() {
             self.servo.spin_event_loop();
         }

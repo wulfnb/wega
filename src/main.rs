@@ -329,7 +329,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(error) = app.failure {
         return Err(std::io::Error::other(error).into());
     }
-    Ok(())
+    std::process::exit(0);
 }
 
 mod chrome;
