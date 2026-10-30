@@ -898,8 +898,18 @@ impl Drop for ServoInner {
         self.constellation_proxy
             .send(EmbedderToConstellationMessage::Exit);
         self.shutdown_state.set(ShutdownState::ShuttingDown);
+        let start = std::time::Instant::now();
+        const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(1000);
         while self.spin_event_loop() {
-            std::thread::sleep(Duration::from_micros(500));
+            if start.elapsed() >= SHUTDOWN_TIMEOUT {
+                warn!(
+                    "Servo Constellation shutdown timed out after {:?}; forcing exit",
+                    SHUTDOWN_TIMEOUT
+                );
+                self.finish_shutting_down();
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 }
