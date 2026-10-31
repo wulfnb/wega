@@ -114,6 +114,42 @@ fn oversized_scoped_evaluation_reports_an_error_and_worker_remains_usable() {
         matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { result: Ok(value), .. } if value == "42")
     );
 }
+
+#[test]
+fn a_cancelled_command_waiting_behind_a_dialog_never_executes() {
+    use protocol::{DocumentId, ErrorCode, RequestContext, RequestId};
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    worker.send(Command::Evaluate(
+        "alert('hold the DOM thread');true".into(),
+    ));
+    worker.until(|event| matches!(event, Event::Dialog { .. }));
+    let cancelled = RequestContext {
+        document: DocumentId(0),
+        revision: worker.revision,
+        request: RequestId(10),
+    };
+    worker.send(Command::EvaluateDocument {
+        context: cancelled,
+        source: "globalThis.cancelledSideEffect=true".into(),
+    });
+    worker.send(Command::CancelRequest(cancelled));
+    worker.send(Command::DialogReply(None));
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::RequestFailed { .. })), Event::RequestFailed { context, error } if context == cancelled && error.code == ErrorCode::Cancelled)
+    );
+    let next = RequestContext {
+        request: RequestId(11),
+        ..cancelled
+    };
+    worker.send(Command::EvaluateDocument {
+        context: next,
+        source: "typeof globalThis.cancelledSideEffect".into(),
+    });
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { context, result: Ok(value) } if context == next && value == "\"undefined\"")
+    );
+}
 #[test]
 fn page_state_requests_are_identified_and_reset_on_navigation() {
     let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
@@ -197,7 +233,7 @@ impl Worker {
             frame_path: Some(path.to_string_lossy().into_owned()),
         });
         worker.until(|event| matches!(event,Event::Ready{version:actual} if *actual==version));
-        if version == protocol::VERSION {
+        if version >= 7 {
             worker.revision =
                 match worker.until(|event| matches!(event, Event::DocumentCommitted { .. })) {
                     Event::DocumentCommitted { revision, .. } => revision,

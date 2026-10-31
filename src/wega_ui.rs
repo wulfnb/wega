@@ -130,7 +130,7 @@ impl Browser {
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            state.expire_requests();
+            let expired = state.expire_requests();
             checks.extend(
                 state
                     .take_page_checks()
@@ -147,6 +147,8 @@ impl Browser {
                 traversals.extend(state.traversals.drain(..));
             }
             downloads.extend(state.downloads.drain(..));
+            drop(state);
+            page.cancel_queued(expired);
         }
         for (request, key, dirty) in checks {
             self.page_state_result(request, key, dirty);

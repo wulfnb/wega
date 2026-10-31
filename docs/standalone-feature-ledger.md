@@ -151,5 +151,14 @@ must be reported explicitly; do not silently discard the old data.
   acceptance check the same revision. Mutations and fragments keep the existing
   DOM revision. The updated worker preserves v4–v6 sessions at their previous
   protocol behavior; commit/revision protection requires the v7 host.
+- 02.c2: protocol v8 adds negotiated queued-request cancellation. The host writer
+  discards expired/stale scoped requests before serialization. The worker input
+  thread records cancellation independently of a blocked DOM thread; bounded queue
+  admission, pre-execution deadlines and RAII completion prevent unbounded request
+  bookkeeping. Dialog-queue overflow explicitly rejects scoped work and releases
+  its admission entry. Cancellation cannot roll back already-running script effects.
+  Capabilities are filtered by protocol version for running older hosts.
+- Explicit document lifecycle/close acknowledgement, scoped native events and
+  trusted frame/service identities remain pending. No full step is marked complete.
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.

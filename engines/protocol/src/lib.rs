@@ -2,11 +2,14 @@
 #![forbid(unsafe_code)]
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
+pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 7;
+pub const VERSION: u32 = 8;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
+pub const EVALUATION_TIMEOUT_MS: u64 = 5_000;
+pub const PAGE_STATE_TIMEOUT_MS: u64 = 2_000;
 
 /// A generation within one private content-process session. Zero is its initial document.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -23,7 +26,7 @@ pub struct DocumentRevision(pub u64);
 #[serde(transparent)]
 pub struct RequestId(pub u64);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct RequestContext {
     pub document: DocumentId,
     #[serde(default)]
@@ -36,6 +39,7 @@ pub enum Capability {
     ScopedEvaluation,
     ScopedPageState,
     DocumentCommitTracking,
+    QueuedCancellation,
     SharedFrames,
 }
 
@@ -43,6 +47,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::ScopedEvaluation,
     Capability::ScopedPageState,
     Capability::DocumentCommitTracking,
+    Capability::QueuedCancellation,
     Capability::SharedFrames,
 ];
 
@@ -76,6 +81,31 @@ pub fn supports_version(version: u32) -> bool {
     matches!(version, 4..=VERSION)
 }
 
+pub fn capabilities(version: u32) -> Vec<Capability> {
+    CAPABILITIES
+        .iter()
+        .copied()
+        .filter(|capability| {
+            version
+                >= match capability {
+                    Capability::SharedFrames => 4,
+                    Capability::ScopedEvaluation | Capability::ScopedPageState => 6,
+                    Capability::DocumentCommitTracking => 7,
+                    Capability::QueuedCancellation => 8,
+                }
+        })
+        .collect()
+}
+
+pub fn scoped_context(command: &Command) -> Option<RequestContext> {
+    match command {
+        Command::EvaluateDocument { context, .. } | Command::CheckDocumentState(context) => {
+            Some(*context)
+        }
+        _ => None,
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Command {
     Capabilities,
@@ -84,6 +114,8 @@ pub enum Command {
         source: String,
     },
     CheckDocumentState(RequestContext),
+    /// Cancels a queued operation. Already-running script side effects cannot be rolled back.
+    CancelRequest(RequestContext),
     Init {
         version: u32,
         url: String,
@@ -292,6 +324,34 @@ pub fn read<T: for<'a> Deserialize<'a>>(stream: &mut impl Read) -> io::Result<Op
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capabilities_remain_decodable_by_running_v6_hosts() {
+        #[derive(Debug, Deserialize)]
+        enum LegacyCapability {
+            ScopedEvaluation,
+            ScopedPageState,
+            SharedFrames,
+        }
+        #[derive(Debug, Deserialize)]
+        enum LegacyEvent {
+            Capabilities {
+                version: u32,
+                supported: Vec<LegacyCapability>,
+            },
+        }
+        let packet = serde_json::to_vec(&Event::Capabilities {
+            version: 6,
+            supported: capabilities(6),
+        })
+        .unwrap();
+        let LegacyEvent::Capabilities { version, supported } =
+            serde_json::from_slice(&packet).unwrap();
+        assert_eq!(version, 6);
+        assert_eq!(supported.len(), 3);
+        assert!(!capabilities(7).contains(&Capability::QueuedCancellation));
+        assert!(capabilities(7).contains(&Capability::DocumentCommitTracking));
+        assert!(capabilities(VERSION).contains(&Capability::QueuedCancellation));
+    }
     #[test]
     fn packets_reject_truncation_and_oversized_messages_before_allocation() {
         assert!(read::<Event>(&mut &((MAX_MESSAGE as u32 + 1).to_le_bytes())[..]).is_err());

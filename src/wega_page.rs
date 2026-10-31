@@ -119,13 +119,16 @@ impl Snapshot {
         }
     }
 
-    pub fn expire_requests(&mut self) {
-        for request in self.requests.expired(std::time::Instant::now()) {
+    pub fn expire_requests(&mut self) -> Vec<RequestContext> {
+        let expired = self.requests.expired(std::time::Instant::now());
+        let contexts = expired.iter().map(|request| request.context).collect();
+        for request in expired {
             self.request_failed(
                 request,
                 ProtocolError::new(ErrorCode::Timeout, "Document request timed out"),
             );
         }
+        contexts
     }
 }
 pub(crate) struct Page {
@@ -273,7 +276,40 @@ impl Page {
         let shared = state.clone();
         let writer_proxy = proxy.clone();
         std::thread::spawn(move || {
-            while let Ok(request) = receiver.recv() {
+            'commands: while let Ok(request) = receiver.recv() {
+                if let Some(context) = protocol::scoped_context(&request) {
+                    let (admitted, expired, cancellation) = {
+                        let mut state = shared
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        let expired = state.expire_requests();
+                        (
+                            state.requests.contains(context),
+                            expired,
+                            state
+                                .capabilities
+                                .contains(&protocol::Capability::QueuedCancellation),
+                        )
+                    };
+                    if cancellation {
+                        for context in expired {
+                            if let Err(error) =
+                                protocol::write(&mut stdin, &Request::CancelRequest(context))
+                            {
+                                failed(
+                                    &shared,
+                                    format!("Wega engine cancellation failed: {error}"),
+                                    &writer_proxy,
+                                );
+                                break 'commands;
+                            }
+                        }
+                    }
+                    if !admitted {
+                        let _ = writer_proxy.send_event(Wake::Ui);
+                        continue;
+                    }
+                }
                 if let Err(error) = protocol::write(&mut stdin, &request) {
                     failed(
                         &shared,
@@ -613,31 +649,67 @@ impl Page {
         page.send(Request::Capabilities)?;
         Ok(page)
     }
+    pub fn cancel_queued(&self, contexts: Vec<RequestContext>) {
+        if contexts.is_empty() {
+            return;
+        }
+        let supported = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .capabilities
+            .contains(&protocol::Capability::QueuedCancellation);
+        self.send_cancellations(supported, contexts);
+    }
+
+    fn send_cancellations(
+        &self,
+        supported: bool,
+        contexts: impl IntoIterator<Item = RequestContext>,
+    ) {
+        if !supported {
+            return;
+        }
+        if let Some(sender) = &self.requests {
+            for context in contexts {
+                // Queue deadlines still apply if the bounded writer queue is full.
+                let _ = sender.try_send(Request::CancelRequest(context));
+            }
+        }
+    }
+
     pub fn send(&self, request: Request) -> Result<(), String> {
-        let (request, scoped) = match request {
+        let (request, scoped, expired) = match request {
             Request::Evaluate(source) => {
                 let mut state = self
                     .state
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                state.expire_requests();
+                let expired = state.expire_requests();
                 if state.failed {
                     return Err("Content worker is stopped".into());
                 }
                 let context = state
                     .requests
-                    .begin(RequestKind::Evaluate, std::time::Duration::from_secs(5))
+                    .begin(
+                        RequestKind::Evaluate,
+                        std::time::Duration::from_millis(protocol::EVALUATION_TIMEOUT_MS),
+                    )
                     .map_err(|error| error.message)?;
                 state.interacted = true;
                 state.evaluated = None;
-                (Request::EvaluateDocument { context, source }, Some(context))
+                (
+                    Request::EvaluateDocument { context, source },
+                    Some(context),
+                    expired,
+                )
             }
             Request::CheckPageState(browser_request) => {
                 let mut state = self
                     .state
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                state.expire_requests();
+                let expired = state.expire_requests();
                 if state.failed {
                     return Err("Content worker is stopped".into());
                 }
@@ -645,13 +717,14 @@ impl Page {
                     .requests
                     .begin(
                         RequestKind::PageState(browser_request),
-                        std::time::Duration::from_secs(2),
+                        std::time::Duration::from_millis(protocol::PAGE_STATE_TIMEOUT_MS),
                     )
                     .map_err(|error| error.message)?;
-                (Request::CheckDocumentState(context), Some(context))
+                (Request::CheckDocumentState(context), Some(context), expired)
             }
-            request => (request, None),
+            request => (request, None, Vec::new()),
         };
+        self.cancel_queued(expired);
         if matches!(
             &request,
             Request::Click { .. } | Request::Key { pressed: true, .. } | Request::Ime { .. }
@@ -844,6 +917,12 @@ impl Page {
             .navigate(document)
             .map_err(|error| error.message)?
         {
+            self.send_cancellations(
+                state
+                    .capabilities
+                    .contains(&protocol::Capability::QueuedCancellation),
+                [request.context],
+            );
             state.request_failed(
                 request,
                 ProtocolError::new(ErrorCode::StaleDocument, "Document navigated"),

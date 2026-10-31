@@ -81,6 +81,12 @@ impl DocumentRequests {
         self.pending.remove(&context.request)
     }
 
+    pub fn contains(&self, context: RequestContext) -> bool {
+        context.document == self.document
+            && context.revision == self.revision
+            && self.pending.contains_key(&context.request)
+    }
+
     pub fn expired(&mut self, now: Instant) -> Vec<PendingRequest> {
         let ids: Vec<_> = self
             .pending

@@ -5,14 +5,29 @@ use std::{
     collections::VecDeque,
     io::Write,
     rc::Rc,
-    sync::{Arc, mpsc},
+    sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant},
 };
 use wega_engine::{Engine, Limits, NetworkPolicy, PageEvent, Pointer, PointerKind, Url};
 use wega_protocol as protocol;
 enum Work {
     Command(Command),
+    Rejected(protocol::RequestContext, ProtocolError),
     Wake,
+}
+
+struct RunningRequest {
+    queue: Arc<Mutex<protocol::queue::CommandQueue>>,
+    context: protocol::RequestContext,
+}
+
+impl Drop for RunningRequest {
+    fn drop(&mut self) {
+        self.queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .finish(self.context);
+    }
 }
 
 fn main() {
@@ -37,12 +52,38 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         deno_core::v8_set_flags(vec![String::new(), "--lite-mode".into()]);
     }
     let (sender, receiver) = mpsc::sync_channel(32);
+    let queue: Arc<Mutex<protocol::queue::CommandQueue>> = Default::default();
+    let input_queue = queue.clone();
     let reader = sender.clone();
     std::thread::spawn(move || {
         let mut stdin = std::io::stdin().lock();
         loop {
             match protocol::read::<Command>(&mut stdin) {
                 Ok(Some(command)) => {
+                    if let Command::CancelRequest(context) = command {
+                        input_queue
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .cancel(context);
+                        continue;
+                    }
+                    if let Some(context) = protocol::scoped_context(&command) {
+                        let timeout = if matches!(&command, Command::CheckDocumentState(_)) {
+                            protocol::PAGE_STATE_TIMEOUT_MS
+                        } else {
+                            protocol::EVALUATION_TIMEOUT_MS
+                        };
+                        let admitted = input_queue
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .admit(context, Instant::now(), Duration::from_millis(timeout));
+                        if let Err(error) = admitted {
+                            if reader.send(Work::Rejected(context, error)).is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                    }
                     if reader.send(Work::Command(command)).is_err() {
                         break;
                     }
@@ -118,6 +159,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let output = output.clone();
         let receiver = receiver.clone();
         let deferred = deferred.clone();
+        let admission = queue.clone();
         view.set_dialog_handler(Box::new(move |kind, message, default| {
             let event = Event::Dialog {
                 kind: kind.into(),
@@ -141,6 +183,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let mut queue = deferred.borrow_mut();
                         if queue.len() < 64 {
                             queue.push_back(work);
+                        } else {
+                            let rejection = match work {
+                                Work::Command(command) => {
+                                    protocol::scoped_context(&command).map(|context| {
+                                        admission
+                                            .lock()
+                                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                            .finish(context);
+                                        Event::RequestFailed {
+                                            context,
+                                            error: ProtocolError::new(
+                                                ErrorCode::ResourceLimit,
+                                                "Dialog command queue is full",
+                                            ),
+                                        }
+                                    })
+                                }
+                                Work::Rejected(context, error) => {
+                                    Some(Event::RequestFailed { context, error })
+                                }
+                                Work::Wake => None,
+                            };
+                            if let Some(event) = rejection
+                                && protocol::write(&mut *output.borrow_mut(), &event).is_err()
+                            {
+                                return None;
+                            }
                         }
                     }
                     Err(_) => return None,
@@ -153,7 +222,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut report_commit = |view: &wega_engine::View, serial| -> std::io::Result<()> {
         let revision = DocumentRevision(view.document_revision());
         if reported_commit != Some((serial, revision)) {
-            if version == protocol::VERSION {
+            if version >= 7 {
                 write(&Event::DocumentCommitted { serial, revision })?;
             }
             reported_commit = Some((serial, revision));
@@ -327,26 +396,40 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Err(_) => break,
             }
         };
+        let context = match &work {
+            Work::Command(command) => protocol::scoped_context(command),
+            _ => None,
+        };
+        let _running = if let Some(context) = context {
+            let started = queue
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .start(context, Instant::now());
+            if let Err(error) = started {
+                write(&Event::RequestFailed { context, error })?;
+                continue;
+            }
+            Some(RunningRequest {
+                queue: queue.clone(),
+                context,
+            })
+        } else {
+            None
+        };
         match work {
             Work::Wake => {}
+            Work::Rejected(context, error) => write(&Event::RequestFailed { context, error })?,
             Work::Command(command) => match command {
+                Command::CancelRequest(_) => {} // Consumed by the input thread.
                 Command::Capabilities => {
                     write(&Event::Capabilities {
                         version,
-                        supported: protocol::CAPABILITIES
-                            .iter()
-                            .copied()
-                            .filter(|capability| {
-                                version == protocol::VERSION
-                                    || *capability != protocol::Capability::DocumentCommitTracking
-                            })
-                            .collect(),
+                        supported: protocol::capabilities(version),
                     })?;
                 }
                 Command::EvaluateDocument { context, source } => {
                     if context.document != DocumentId(serial)
-                        || (version == protocol::VERSION
-                            && context.revision.0 != view.document_revision())
+                        || (version >= 7 && context.revision.0 != view.document_revision())
                     {
                         write(&Event::RequestFailed {
                             context,
@@ -381,8 +464,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Command::CheckDocumentState(context) => {
                     if context.document != DocumentId(serial)
-                        || (version == protocol::VERSION
-                            && context.revision.0 != view.document_revision())
+                        || (version >= 7 && context.revision.0 != view.document_revision())
                     {
                         write(&Event::RequestFailed {
                             context,
@@ -564,7 +646,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     write(&event)?;
                 }
-                Command::Init { .. } => return Err("Worker was initialized more than once".into()),
+                Command::Init { .. } => {
+                    return Err("Worker was initialized more than once".into());
+                }
             },
         }
     }
