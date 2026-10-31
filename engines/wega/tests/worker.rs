@@ -2,7 +2,7 @@
 use protocol::{Command, Event};
 use std::{
     process::{Child, ChildStdin, Stdio},
-    sync::mpsc,
+    sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant},
 };
 use wega_protocol as protocol;
@@ -11,6 +11,99 @@ struct Worker {
     input: ChildStdin,
     events: mpsc::Receiver<Event>,
     revision: protocol::DocumentRevision,
+    identity: Option<protocol::identity::SessionIdentity>,
+    context: Arc<Mutex<protocol::DocumentContext>>,
+    next_request: u64,
+}
+
+#[test]
+fn a_completed_evaluation_id_cannot_execute_again() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    worker.evaluate("globalThis.replays=1;true".into());
+    let original = match worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })) {
+        Event::DocumentEvaluated { context, .. } => context,
+        _ => unreachable!(),
+    };
+    worker.send(Command::EvaluateDocument {
+        context: original,
+        source: "globalThis.replays=100".into(),
+    });
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::RequestFailed { .. })), Event::RequestFailed { context, error } if context == original && error.code == protocol::ErrorCode::InvalidRequest)
+    );
+    worker.evaluate("globalThis.replays".into());
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { result: Ok(value), .. } if value == "1")
+    );
+}
+
+#[test]
+fn modern_sessions_cannot_bypass_scope_or_reuse_navigation_identity() {
+    for command in [
+        Command::Evaluate("alert('must never run')".into()),
+        Command::CheckPageState(1),
+        Command::Load {
+            url: "about:blank".into(),
+            serial: 0,
+        },
+    ] {
+        let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+        let mut worker = Worker::start(store.path().unwrap());
+        worker.send(command);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if let Some(status) = worker.child.try_wait().unwrap() {
+                assert!(!status.success());
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Invalid scoped operation entered the VM"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+#[test]
+fn a_foreign_process_session_is_rejected_before_entering_the_vm() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    let mut wrong = worker.identity.unwrap();
+    wrong.process = protocol::identity::ProcessSessionId([8; 16]);
+    let context = protocol::RequestContext {
+        document: protocol::DocumentId(0),
+        revision: worker.revision,
+        request: protocol::RequestId(1),
+    };
+    protocol::write(
+        &mut worker.input,
+        &wrong.command(Command::EvaluateDocument {
+            context,
+            source: "alert('must never run')".into(),
+        }),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(status) = worker.child.try_wait().unwrap() {
+            assert!(!status.success());
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Foreign session reached the blocking VM operation"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!worker.events.try_iter().any(|event| matches!(
+        event,
+        Event::Content {
+            event: protocol::ContentEvent::Dialog { .. },
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -81,14 +174,17 @@ fn scoped_requests_cannot_read_or_execute_in_a_replacement_document() {
         }
         _ => unreachable!(),
     }
-    worker.send(Command::CheckDocumentState(old));
+    worker.send(Command::CheckDocumentState(RequestContext {
+        request: RequestId(2),
+        ..old
+    }));
     assert!(
         matches!(worker.until(|event| matches!(event, Event::RequestFailed { .. })), Event::RequestFailed { error, .. } if error.code == ErrorCode::StaleDocument)
     );
     let current = RequestContext {
         document: DocumentId(1),
         revision,
-        request: RequestId(2),
+        request: RequestId(3),
     };
     worker.send(Command::EvaluateDocument {
         context: current,
@@ -98,7 +194,7 @@ fn scoped_requests_cannot_read_or_execute_in_a_replacement_document() {
         matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { context, result: Ok(value) } if context == current && value == "\"undefined\"")
     );
     worker.send(Command::CheckDocumentState(RequestContext {
-        request: RequestId(3),
+        request: RequestId(4),
         ..current
     }));
     assert!(
@@ -140,9 +236,7 @@ fn a_cancelled_command_waiting_behind_a_dialog_never_executes() {
     use protocol::{DocumentId, ErrorCode, RequestContext, RequestId};
     let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
     let mut worker = Worker::start(store.path().unwrap());
-    worker.send(Command::Evaluate(
-        "alert('hold the DOM thread');true".into(),
-    ));
+    worker.evaluate("alert('hold the DOM thread');true".into());
     let (dialog_context, id) = match worker.until(|event| {
         matches!(
             event,
@@ -193,9 +287,7 @@ fn a_cancelled_command_waiting_behind_a_dialog_never_executes() {
 fn dialog_answers_are_bound_to_the_prompt_that_created_them() {
     let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
     let mut worker = Worker::start(store.path().unwrap());
-    worker.send(Command::Evaluate(
-        "[confirm('first'),confirm('second')]".into(),
-    ));
+    worker.evaluate("[confirm('first'),confirm('second')]".into());
     let (context, first) = match worker.until(|event| {
         matches!(
             event,
@@ -247,7 +339,7 @@ fn dialog_answers_are_bound_to_the_prompt_that_created_them() {
         value: Some("true".into()),
     });
     assert!(
-        matches!(worker.until(|event| matches!(event, Event::Evaluated { .. })), Event::Evaluated { value, error: None } if value == "[true,true]")
+        matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { result: Ok(value), .. } if value == "[true,true]")
     );
 }
 
@@ -255,7 +347,7 @@ fn dialog_answers_are_bound_to_the_prompt_that_created_them() {
 fn navigation_unblocks_a_dialog_without_applying_its_reply_to_the_replacement_page() {
     let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
     let mut worker = Worker::start(store.path().unwrap());
-    worker.send(Command::Evaluate("alert('old');true".into()));
+    worker.evaluate("alert('old');true".into());
     let (context, id) = match worker.until(|event| {
         matches!(
             event,
@@ -291,15 +383,15 @@ fn navigation_unblocks_a_dialog_without_applying_its_reply_to_the_replacement_pa
         id,
         value: Some("true".into()),
     });
-    worker.send(Command::Evaluate("42".into()));
+    worker.evaluate("42".into());
     assert!(
-        matches!(worker.until(|event| matches!(event, Event::Evaluated { .. })), Event::Evaluated { value, error: None } if value == "42")
+        matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { result: Ok(value), .. } if value == "42")
     );
 }
 #[test]
 fn page_state_requests_are_identified_and_reset_on_navigation() {
     let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
-    let mut worker = Worker::start(store.path().unwrap());
+    let mut worker = Worker::start_version(store.path().unwrap(), Stdio::inherit(), 10);
     worker.send(Command::CheckPageState(11));
     assert!(matches!(
         worker.until(|e| matches!(e, Event::PageState { .. })),
@@ -354,8 +446,34 @@ impl Worker {
         let input = child.stdin.take().unwrap();
         let mut output = child.stdout.take().unwrap();
         let (tx, events) = mpsc::channel();
+        let context = Arc::new(Mutex::new(protocol::DocumentContext {
+            document: protocol::DocumentId(0),
+            revision: protocol::DocumentRevision(0),
+        }));
+        let committed = context.clone();
+        use protocol::identity::{FrameId, ProcessSessionId, SessionIdentity, TabId};
+        let identity = (version >= 11).then_some(SessionIdentity {
+            tab: TabId(7),
+            frame: FrameId(1),
+            process: ProcessSessionId([7; 16]),
+            service: None,
+        });
         std::thread::spawn(move || {
             while let Ok(Some(event)) = protocol::read::<Event>(&mut output) {
+                let event = if let Some(identity) = identity {
+                    identity.receive_event(event).expect("worker event session")
+                } else {
+                    event
+                };
+                if let Event::DocumentCommitted {
+                    serial, revision, ..
+                } = &event
+                {
+                    *committed.lock().unwrap() = protocol::DocumentContext {
+                        document: protocol::DocumentId(*serial),
+                        revision: *revision,
+                    };
+                }
                 if tx.send(event).is_err() {
                     break;
                 }
@@ -366,8 +484,12 @@ impl Worker {
             input,
             events,
             revision: Default::default(),
+            identity,
+            context,
+            next_request: 0,
         };
         worker.send(Command::Init {
+            identity,
             version,
             url: "about:blank".into(),
             offline: true,
@@ -389,7 +511,33 @@ impl Worker {
         worker
     }
     fn send(&mut self, command: Command) {
+        if let Some(context) = protocol::scoped_context(&command) {
+            self.next_request = self.next_request.max(context.request.0);
+        }
+        let command = if !matches!(command, Command::Init { .. })
+            && let Some(identity) = self.identity
+        {
+            identity.command(command)
+        } else {
+            command
+        };
         protocol::write(&mut self.input, &command).unwrap();
+    }
+    fn evaluate(&mut self, source: String) {
+        if self.identity.is_none() {
+            self.send(Command::Evaluate(source));
+            return;
+        }
+        self.next_request = self.next_request.checked_add(1).unwrap();
+        let owner = *self.context.lock().unwrap();
+        self.send(Command::EvaluateDocument {
+            context: protocol::RequestContext {
+                document: owner.document,
+                revision: owner.revision,
+                request: protocol::RequestId(self.next_request),
+            },
+            source,
+        });
     }
     fn until(&self, test: impl Fn(&Event) -> bool) -> Event {
         let until = Instant::now() + Duration::from_secs(10);
@@ -476,13 +624,16 @@ fn error_bursts_reach_stderr_before_the_status_queue_is_capped() {
     let mut log = tempfile::tempfile().unwrap();
     let mut worker =
         Worker::start_with_stderr(store.path().unwrap(), Stdio::from(log.try_clone().unwrap()));
-    worker.send(Command::Evaluate(
+    worker.evaluate(
         "for(let i=0;i<40;i++)__wega_report(new Error('burst:'+i));for(let i=0;i<300;i++)Promise.reject('unhandled:'+i);true".into(),
+    );
+    let event = worker.until(|e| matches!(e, Event::DocumentEvaluated { .. }));
+    assert!(matches!(
+        event,
+        Event::DocumentEvaluated { result: Ok(_), .. }
     ));
-    let event = worker.until(|e| matches!(e, Event::Evaluated { .. }));
-    assert!(matches!(event, Event::Evaluated { error: None, .. }));
-    worker.send(Command::Evaluate("true".into()));
-    worker.until(|e| matches!(e, Event::Evaluated { .. }));
+    worker.evaluate("true".into());
+    worker.until(|e| matches!(e, Event::DocumentEvaluated { .. }));
     log.seek(SeekFrom::Start(0)).unwrap();
     let mut text = String::new();
     log.read_to_string(&mut text).unwrap();

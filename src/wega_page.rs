@@ -10,6 +10,8 @@ use wega::{
     engine_protocol::{
         self as protocol, Command as Request, ContentEvent, DialogId, DocumentContext, ErrorCode,
         Event, ProtocolError, RequestContext,
+        authority::{FrameAuthority, Principal, TrustedRequest},
+        identity::{FrameId, ProcessSessionId, SessionIdentity, TabId},
         lifecycle::Lifecycle,
         requests::{DocumentRequests, PendingRequest, RequestKind},
     },
@@ -35,6 +37,7 @@ pub(crate) fn executable() -> Option<PathBuf> {
 /// A blocking `alert`, `confirm` or `prompt` the page is waiting on.
 #[derive(Clone, Debug)]
 pub(crate) struct Dialog {
+    pub requester: TrustedRequest,
     pub context: DocumentContext,
     pub id: DialogId,
     pub kind: String,
@@ -43,8 +46,9 @@ pub(crate) struct Dialog {
 }
 #[derive(Default)]
 pub(crate) struct Snapshot {
+    pub authority: Option<FrameAuthority>,
     pub lifecycle: Lifecycle,
-    pub native: std::collections::VecDeque<(DocumentContext, ContentEvent)>,
+    pub native: std::collections::VecDeque<(TrustedRequest, ContentEvent)>,
     last_dialog: u64,
     pub page_checks: Vec<(RequestContext, u64, bool)>,
     pub requests: DocumentRequests,
@@ -72,16 +76,53 @@ pub(crate) struct Snapshot {
 }
 
 impl Snapshot {
+    pub fn accepts_requester(&self, requester: &TrustedRequest) -> bool {
+        self.accepts_context(requester.document)
+            && self
+                .authority
+                .as_ref()
+                .and_then(|authority| authority.resolve(requester.document))
+                .as_ref()
+                == Some(requester)
+    }
+
+    fn queue_native(&mut self, context: DocumentContext, event: ContentEvent) {
+        if self.native.len() < 32
+            && let Some(requester) = self
+                .authority
+                .as_ref()
+                .and_then(|authority| authority.resolve(context))
+        {
+            self.native.push_back((requester, event));
+        }
+    }
     pub fn accepts_context(&self, context: DocumentContext) -> bool {
         self.lifecycle.accepts_content()
             && context.document == self.requests.document()
             && context.revision == self.requests.revision()
     }
 
+    #[cfg(test)]
     fn bind_document(
         &mut self,
         serial: u64,
         revision: protocol::DocumentRevision,
+    ) -> Result<(), String> {
+        self.bind_principal(
+            serial,
+            revision,
+            Principal {
+                origin: protocol::authority::Origin::Opaque,
+                top_level_site: None,
+            },
+        )
+    }
+
+    fn bind_principal(
+        &mut self,
+        serial: u64,
+        revision: protocol::DocumentRevision,
+        principal: Principal,
     ) -> Result<(), String> {
         if serial != self.requests.document().0 || !self.lifecycle.accepts_requests() {
             return Ok(());
@@ -94,6 +135,15 @@ impl Snapshot {
             .commit(revision)
             .map_err(|error| error.message)?;
         self.lifecycle.commit();
+        if let Some(authority) = &mut self.authority {
+            authority.bind(
+                DocumentContext {
+                    document: self.requests.document(),
+                    revision,
+                },
+                principal,
+            );
+        }
         self.native.clear();
         self.evaluated = None;
         self.frame = None;
@@ -130,6 +180,13 @@ impl Snapshot {
                 message,
                 default,
             } => {
+                let Some(requester) = self
+                    .authority
+                    .as_ref()
+                    .and_then(|authority| authority.resolve(context))
+                else {
+                    return Some((context, id));
+                };
                 if id.0 <= self.last_dialog {
                     if self
                         .dialog
@@ -142,6 +199,7 @@ impl Snapshot {
                 }
                 self.last_dialog = id.0;
                 self.dialog = Some(Dialog {
+                    requester,
                     context,
                     id,
                     kind,
@@ -158,26 +216,50 @@ impl Snapshot {
                     self.dialog = None;
                 }
             }
-            event => {
-                if self.native.len() < 32 {
-                    self.native.push_back((context, event));
+            // Unactivated or replayed popup requests never reach the native UI.
+            ContentEvent::OpenWindow(_) => {}
+            ContentEvent::ActivatedOpenWindow { url, activation } => {
+                if self.native.len() < 32
+                    && self.authority.as_ref().is_some_and(|authority| {
+                        authority.has_activation(context, activation, std::time::Instant::now())
+                    })
+                {
+                    self.queue_native(
+                        context,
+                        ContentEvent::ActivatedOpenWindow { url, activation },
+                    );
                 }
+            }
+            event => {
+                self.queue_native(context, event);
             }
         }
         None
     }
 
-    pub fn take_native_events(&mut self, active: bool) -> Vec<(DocumentContext, ContentEvent)> {
+    pub fn take_native_events(&mut self, active: bool) -> Vec<(TrustedRequest, ContentEvent)> {
         let events = std::mem::take(&mut self.native);
         let mut ready = Vec::new();
-        for (context, event) in events {
-            if !self.accepts_context(context) {
+        for (requester, event) in events {
+            let context = requester.document;
+            if !self.accepts_requester(&requester) {
                 continue;
             }
             if active || matches!(&event, ContentEvent::Download { .. }) {
-                ready.push((context, event));
+                if let ContentEvent::ActivatedOpenWindow { activation, .. } = &event
+                    && !self.authority.as_mut().is_some_and(|authority| {
+                        authority.consume_activation(
+                            context,
+                            *activation,
+                            std::time::Instant::now(),
+                        )
+                    })
+                {
+                    continue;
+                }
+                ready.push((requester, event));
             } else {
-                self.native.push_back((context, event));
+                self.native.push_back((requester, event));
             }
         }
         ready
@@ -241,7 +323,7 @@ impl Snapshot {
 pub(crate) struct Page {
     child: wega_platform::process::OwnedProcess,
     frames: Arc<Mutex<wega_platform::FrameStore>>,
-    broker: wega_network::SessionHandle,
+    broker: Arc<wega_network::SessionHandle>,
     requests: Option<mpsc::SyncSender<Request>>,
     pub state: Arc<Mutex<Snapshot>>,
     pub texture: Option<egui::TextureHandle>,
@@ -259,6 +341,9 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if !state.lifecycle.accepts_requests() {
         return;
+    }
+    if let Some(authority) = &mut state.authority {
+        authority.invalidate();
     }
     wega::diagnostics::report(
         "worker:failure",
@@ -318,21 +403,36 @@ fn accept_frame(
     }
 }
 impl Page {
+    pub fn download_cookies(&self, url: &str) -> Result<String, String> {
+        self.broker
+            .download_cookies(&url::Url::parse(url).map_err(|error| error.to_string())?)
+    }
     pub fn new(
         url: &url::Url,
         policy: &Policy,
         proxy: EventLoopProxy<Wake>,
         profile_dir: &std::path::Path,
+        tab: u64,
     ) -> Result<Self, String> {
         let executable=executable().ok_or("Wega engine worker is not installed. Build it with python3 scripts/build-wega-engine.py --debug first.")?;
-        let broker = wega_network::Broker::shared()?.open_session(
+        let broker = Arc::new(wega_network::Broker::shared()?.open_bound_session(
             profile_dir.join("wega-storage"),
             wega_network::Policy {
                 offline: policy.offline,
                 blocked_hosts: policy.blocked_hosts.clone(),
                 allowed_hosts: policy.allowed_hosts.clone(),
             },
-        )?;
+        )?);
+        broker.begin_navigation(url);
+        let mut process = [0; 16];
+        getrandom::fill(&mut process).map_err(|error| error.to_string())?;
+        let identity = SessionIdentity {
+            tab: TabId(tab),
+            frame: FrameId(1),
+            process: ProcessSessionId(process),
+            service: Some(broker.identity()),
+        };
+        identity.validate().map_err(|error| error.message)?;
         let frames = Arc::new(Mutex::new(
             wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4)
                 .map_err(|e| e.to_string())?,
@@ -387,12 +487,14 @@ impl Page {
         let mut stdin = child.take_stdin().ok_or("Missing worker input")?;
         let mut stdout = child.take_stdout().ok_or("Missing worker output")?;
         let state = Arc::new(Mutex::new(Snapshot {
+            authority: Some(FrameAuthority::new(identity)),
             url: url.to_string(),
             ..Default::default()
         }));
         let (sender, receiver) = mpsc::sync_channel(32);
         let shared = state.clone();
         let writer_proxy = proxy.clone();
+        let writer_broker = broker.clone();
         std::thread::spawn(move || {
             'commands: while let Ok(request) = receiver.recv() {
                 if let Some(context) = protocol::scoped_context(&request) {
@@ -411,9 +513,11 @@ impl Page {
                     };
                     if cancellation {
                         for context in expired {
-                            if let Err(error) =
-                                protocol::write(&mut stdin, &Request::CancelRequest(context))
-                            {
+                            if let Err(error) = protocol::write(
+                                &mut stdin,
+                                &identity.command(Request::CancelRequest(context)),
+                            ) {
+                                writer_broker.revoke();
                                 failed(
                                     &shared,
                                     format!("Wega engine cancellation failed: {error}"),
@@ -428,7 +532,18 @@ impl Page {
                         continue;
                     }
                 }
-                if let Err(error) = protocol::write(&mut stdin, &request) {
+                if let Request::Load { url, .. } = &request
+                    && let Ok(url) = url::Url::parse(url)
+                {
+                    writer_broker.begin_navigation(&url);
+                }
+                let packet = if matches!(request, Request::Init { .. }) {
+                    request
+                } else {
+                    identity.command(request)
+                };
+                if let Err(error) = protocol::write(&mut stdin, &packet) {
+                    writer_broker.revoke();
                     failed(
                         &shared,
                         format!("Wega engine connection failed: {error}"),
@@ -441,12 +556,16 @@ impl Page {
         let shared = state.clone();
         let reader_frames = frames.clone();
         let acknowledgements = sender.clone();
+        let reader_broker = broker.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<(), String> {
                 let mut ready = false;
                 while let Some(event) =
                     protocol::read::<Event>(&mut stdout).map_err(|e| e.to_string())?
                 {
+                    let event = identity
+                        .receive_event(event)
+                        .map_err(|error| error.message)?;
                     if !ready {
                         if !matches!(
                             event,
@@ -499,11 +618,25 @@ impl Page {
                                     .map_err(|_| "Worker closed before stale dialog denial")?;
                             }
                         }
-                        Event::DocumentCommitted { serial, revision } => {
-                            shared
+                        Event::DocumentCommitted {
+                            serial,
+                            revision,
+                            url,
+                        } => {
+                            let mut state = shared
                                 .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .bind_document(serial, revision)?;
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if serial == state.requests.document().0
+                                && state.lifecycle.accepts_requests()
+                                && (!state.lifecycle.accepts_content()
+                                    || revision != state.requests.revision())
+                            {
+                                state.bind_principal(
+                                    serial,
+                                    revision,
+                                    reader_broker.take_committed_principal(url.as_deref()),
+                                )?;
+                            }
                         }
                         Event::Capabilities { version, supported } => {
                             if version != protocol::VERSION {
@@ -685,13 +818,16 @@ impl Page {
                         | Event::TraverseUnhandled(_)
                         | Event::Cursor(_)
                         | Event::Dialog { .. } => return Err("Unscoped content event".into()),
-                        Event::Ready { .. } => return Err("Unexpected worker handshake".into()),
+                        Event::Ready { .. } | Event::Session { .. } => {
+                            return Err("Unexpected worker handshake/envelope".into());
+                        }
                     }
                     let _ = proxy.send_event(Wake::Ui);
                 }
                 Err("Wega engine stopped. Reload this page or switch to Servo.".into())
             })();
             if let Err(error) = result {
+                reader_broker.revoke();
                 failed(&shared, error, &proxy);
             }
         });
@@ -710,6 +846,7 @@ impl Page {
             index: 0,
         };
         page.send(Request::Init {
+            identity: Some(identity),
             version: protocol::VERSION,
             url: url.to_string(),
             offline: policy.offline,
@@ -804,6 +941,35 @@ impl Page {
             request => (request, None, Vec::new()),
         };
         self.cancel_queued(expired);
+        let activates = matches!(&request, Request::Click { .. })
+            || matches!(&request, Request::Pointer { kind, .. } if kind == "down")
+            || matches!(&request, Request::Key { pressed: true, repeat: false, key, .. } if !matches!(key.as_str(), "Escape" | "Shift" | "Control" | "Alt" | "Meta" | "Unidentified"));
+        if activates {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let context = DocumentContext {
+                document: state.requests.document(),
+                revision: state.requests.revision(),
+            };
+            if state.lifecycle.accepts_content()
+                && let Some(authority) = &mut state.authority
+                && let Some(activation) = authority.activate(context, std::time::Instant::now())
+            {
+                if !self.requests.as_ref().is_some_and(|sender| {
+                    sender
+                        .try_send(Request::Activate {
+                            context,
+                            activation,
+                        })
+                        .is_ok()
+                }) {
+                    authority.clear_activation();
+                    return Err("Worker could not accept trusted input activation".into());
+                }
+            }
+        }
         if matches!(
             &request,
             Request::Click { .. } | Request::Key { pressed: true, .. } | Request::Ime { .. }
@@ -832,6 +998,16 @@ impl Page {
             .ok_or("Worker is closed")?
             .try_send(request)
             .map_err(|_| "Wega engine is busy or stopped. Reload or switch to Servo.".to_string());
+        if result.is_err() && activates {
+            if let Some(authority) = &mut self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .authority
+            {
+                authority.clear_activation();
+            }
+        }
         if result.is_err()
             && let Some(context) = scoped
         {
@@ -955,10 +1131,16 @@ impl Page {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !state.accepts_context(context)
-            || !state
-                .dialog
-                .as_ref()
-                .is_some_and(|dialog| dialog.context == context && dialog.id == id)
+            || !state.dialog.as_ref().is_some_and(|dialog| {
+                dialog.context == context
+                    && dialog.id == id
+                    && state
+                        .authority
+                        .as_ref()
+                        .and_then(|authority| authority.resolve(context))
+                        .as_ref()
+                        == Some(&dialog.requester)
+            })
         {
             return;
         }
@@ -982,6 +1164,9 @@ impl Page {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.lifecycle.freeze(frozen);
         if frozen {
+            if let Some(authority) = &mut state.authority {
+                authority.clear_activation();
+            }
             self.texture = None;
             state.frame = None;
             self.frames
@@ -1011,6 +1196,9 @@ impl Page {
             serial: document.0,
         })?;
         state.lifecycle.navigate();
+        if let Some(authority) = &mut state.authority {
+            authority.invalidate();
+        }
         state.native.clear();
         state.dialog = None;
         state.cursor = None;
@@ -1121,12 +1309,16 @@ impl NavigationPort for Page {
 }
 impl Drop for Page {
     fn drop(&mut self) {
+        self.broker.revoke();
         let graceful = {
             let mut state = self
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.lifecycle.close();
+            if let Some(authority) = &mut state.authority {
+                authority.invalidate();
+            }
             state.cancel_requests(ProtocolError::new(
                 ErrorCode::Cancelled,
                 "Content session is closing",
@@ -1154,8 +1346,87 @@ impl Drop for Page {
 mod tests {
     use super::*;
 
+    #[test]
+    fn native_actions_cannot_transfer_to_a_restarted_worker_with_the_same_document_counters() {
+        let (mut old, context) = committed_state();
+        old.content_event(
+            context,
+            ContentEvent::Navigate("https://example.test".into()),
+        );
+        let (requester, _) = old.take_native_events(true).pop().unwrap();
+        let (mut replacement, replacement_context) = committed_state();
+        assert_eq!(context, replacement_context);
+        let mut session = requester.session;
+        session.process = ProcessSessionId([8; 16]);
+        let mut authority = FrameAuthority::new(session);
+        authority.bind(context, requester.principal.clone());
+        replacement.authority = Some(authority);
+        assert!(replacement.accepts_context(context));
+        assert!(!replacement.accepts_requester(&requester));
+    }
+
+    #[test]
+    fn popup_authority_cannot_be_forged_replayed_or_renewed_by_evaluation() {
+        use protocol::identity::ActivationId;
+        let (mut state, context) = committed_state();
+        let popup = |activation| ContentEvent::ActivatedOpenWindow {
+            url: "https://example.test".into(),
+            activation,
+        };
+        state.content_event(
+            context,
+            ContentEvent::OpenWindow("https://example.test".into()),
+        );
+        state.content_event(context, popup(ActivationId(1)));
+        assert!(state.take_native_events(true).is_empty());
+        let now = std::time::Instant::now();
+        let token = state
+            .authority
+            .as_mut()
+            .unwrap()
+            .activate(context, now)
+            .unwrap();
+        state.content_event(context, popup(token));
+        state.content_event(context, popup(token));
+        assert_eq!(state.take_native_events(true).len(), 1);
+        state.content_event(context, popup(token));
+        assert!(state.take_native_events(true).is_empty());
+        let token = state
+            .authority
+            .as_mut()
+            .unwrap()
+            .activate(context, now - std::time::Duration::from_secs(6))
+            .unwrap();
+        state.content_event(context, popup(token));
+        assert!(state.take_native_events(true).is_empty());
+        let token = state
+            .authority
+            .as_mut()
+            .unwrap()
+            .activate(context, now)
+            .unwrap();
+        let request = state
+            .requests
+            .begin(RequestKind::Evaluate, std::time::Duration::from_secs(5))
+            .unwrap();
+        state.evaluation_result(request, Ok("true".into()));
+        state.content_event(context, popup(token));
+        assert_eq!(state.take_native_events(true).len(), 1);
+        state.evaluation_result(request, Ok("true".into()));
+        state.content_event(context, popup(token));
+        assert!(state.take_native_events(true).is_empty());
+    }
+
     fn committed_state() -> (Snapshot, DocumentContext) {
-        let mut state = Snapshot::default();
+        let mut state = Snapshot {
+            authority: Some(FrameAuthority::new(SessionIdentity {
+                tab: TabId(7),
+                frame: FrameId(1),
+                process: ProcessSessionId([7; 16]),
+                service: None,
+            })),
+            ..Default::default()
+        };
         state
             .bind_document(0, protocol::DocumentRevision(1))
             .unwrap();
@@ -1233,9 +1504,18 @@ mod tests {
     #[test]
     fn background_actions_remain_bounded_and_wait_for_their_own_tab() {
         let (mut state, context) = committed_state();
+        let activation = state
+            .authority
+            .as_mut()
+            .unwrap()
+            .activate(context, std::time::Instant::now())
+            .unwrap();
         state.content_event(
             context,
-            ContentEvent::OpenWindow("https://example.org/".into()),
+            ContentEvent::ActivatedOpenWindow {
+                url: "https://example.org/".into(),
+                activation,
+            },
         );
         state.content_event(
             context,
@@ -1256,7 +1536,7 @@ mod tests {
         assert_eq!(state.native.len(), 32);
         assert!(matches!(
             &state.take_native_events(true)[0].1,
-            ContentEvent::OpenWindow(_)
+            ContentEvent::ActivatedOpenWindow { .. }
         ));
     }
 

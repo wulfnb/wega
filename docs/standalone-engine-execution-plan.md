@@ -237,6 +237,12 @@ crashes, timeouts and cancelled permissions cannot mutate a newer document; the
 existing browser still works with the extracted contract. No live-page migration
 between engines is implied.
 
+**Implementation status (31 October 2026): complete, through protocol v11.**
+See the [Step 02 contract and delivery checklist](step-02-engine-contract.md) for
+ownership, authority rules, regression sources and compile checks. Runtime
+acceptance remains deferred by the owner's instruction to run tests at the end;
+the Done-when behavior above is not yet claimed as verified.
+
 ### 03 — Make the real worker observable and testable
 
 **Depends on:** 02.
@@ -649,10 +655,11 @@ Step 03 must add direct-Wega assertions before reusing native tests as parity ga
 
 ## 6. Progress checklist and first work package
 
-All items are pending:
+Checkboxes track implementation delivery. Runtime acceptance and parity remain
+separate gates in `docs/validation/standalone/progress.json`.
 
 - [ ] 01 Inventory and baseline
-- [ ] 02 Engine contract and lifecycle
+- [x] 02 Engine contract and lifecycle — implementation complete; runtime acceptance deferred
 - [ ] 03 Worker harness and observability
 - [ ] 04 Authoritative network/storage access
 - [ ] 05 Sandbox and supervision
@@ -678,8 +685,8 @@ All items are pending:
 - [ ] 25 Cross-platform release validation
 - [ ] 26 Servo retirement
 
-**Start with 01.a:** create the source-backed feature ledger, identify every
-Servo-dependent product action and enabled API family, and map the existing tests.
-**Then 01.b:** run and record baseline behavior in fresh isolated profiles.
-**Then 01.c:** audit profile/data migration and choose the first measurable engine
-contract slice for 02. This planning change does not remove Servo or alter runtime behavior.
+The source inventory and profile/data-path audit are recorded in the feature
+ledger; Step 01's full exposure audit and runtime baseline remain pending.
+Step 02's implementation is delivered. The next implementation package is 03;
+the final test pass must still verify Step 02 and the earlier deferred baselines
+before any parity or Servo-retirement claim.

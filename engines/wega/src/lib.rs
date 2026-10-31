@@ -79,12 +79,21 @@ impl Engine {
         address: &str,
         token: String,
     ) -> Result<Self, String> {
+        Self::with_broker(
+            limits,
+            policy,
+            wake,
+            wega_network::Remote::new(address, token)?,
+        )
+    }
+    pub fn with_broker(
+        limits: Limits,
+        policy: NetworkPolicy,
+        wake: std::sync::Arc<dyn Fn() + Send + Sync>,
+        remote: wega_network::Remote,
+    ) -> Result<Self, String> {
         Ok(Self {
-            network: network::Network::brokered(
-                policy,
-                wake,
-                wega_network::Remote::new(address, token)?,
-            )?,
+            network: network::Network::brokered(policy, wake, remote)?,
             limits,
         })
     }

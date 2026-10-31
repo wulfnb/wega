@@ -142,9 +142,9 @@ must be reported explicitly; do not silently discard the old data.
 - Regression tests for request expiry, forged/duplicate replies, navigation,
   buffered edit-state responses, worker shutdown and oversized evaluation results
   are written but **not executed**, following the owner's instruction.
-- Remaining Step 02 work: explicit lifecycle/commit states, scoped native events,
-  frame/service identities and queued-command cancellation. Do not mark the entire
-  step complete based on the extraction or correlation slice.
+- At 02.b, lifecycle/commit states, native scope, frame/service identities and
+  queued cancellation remained. Those implementations are recorded below;
+  runtime verification remains deferred throughout.
 - 02.c1: protocol v7 now tracks actual DOM/global revisions in addition to browser
   navigation generations. Full document replacements inside the worker invalidate
   requests even when no browser Load command occurred; paint completion and frame
@@ -158,7 +158,7 @@ must be reported explicitly; do not silently discard the old data.
   bookkeeping. Dialog-queue overflow explicitly rejects scoped work and releases
   its admission entry. Cancellation cannot roll back already-running script effects.
   Capabilities are filtered by protocol version for running older hosts.
-- The remaining items after 02.c2 are continued below. No full step is marked complete.
+- The subsequent implementations after 02.c2 are recorded below.
 - 02.c3: protocol v9 adds scoped native events and per-dialog identities. The view
   retains the old global's navigation identity until a real commit, fragment
   rebinding, stopped navigation or download response explicitly keeps the document.
@@ -171,9 +171,8 @@ must be reported explicitly; do not silently discard the old data.
   mutable loading/frozen/failure flags; worker messages cannot reopen terminal
   sessions or unfreeze host-selected tabs. Older protocol packet shapes remain
   filtered by their negotiated version.
-- Still pending: acknowledged close and process reaping, trusted frame/service
-  identities, and all runtime verification. The lifecycle model alone is not an
-  implemented safe unload/close handshake or OS sandbox.
+- At 02.c3, close/reaping and trusted frame/service identities remained. The
+  following increments implement them; an OS sandbox remains Step 05.
 - 02.c4: protocol v10 acknowledges shutdown only after the worker releases its
   DOM/JS ownership. A Rust `OwnedProcess` in `wega-platform` retains the actual
   child handle until exit/reaping, including startup error paths. Closing a tab
@@ -186,7 +185,19 @@ must be reported explicitly; do not silently discard the old data.
   This is normal shutdown ownership, not OS job containment or parent-crash cleanup.
   It does not acknowledge saved page edits or durable storage flushes; existing
   conservative destructive-action confirmation remains in force.
-- Remaining Step 02 work: trusted frame/service identity and authority contracts;
-  close/unload integration and process tests still require the deferred runtime pass.
+- 02.c5: protocol v11 binds every modern command/event to browser-issued tab,
+  frame, process and service/partition identity. Bound broker sessions reject
+  missing or foreign service identities and revoke on page close/IPC failure,
+  even when queued jobs retain the session allocation. Native dialogs use host
+  principal receipts; popup requests consume expiring host input activation;
+  downloads use host-owned cookies. Scoped permission ports deny stale, cancelled,
+  expired or foreign-document answers. Modern worker admission prevents completed
+  request-ID replay and rejects unscoped evaluation/state operations or reused
+  navigation IDs. Regression sources are written and type-checked, not executed.
+- Step 02 implementation is **complete**. Runtime acceptance, including existing
+  browser behavior and process/close checks, remains **deferred**. See the
+  [complete delivery checklist](step-02-engine-contract.md) and its later-step
+  boundaries; network authority, OS sandboxing, device APIs and real subframes
+  are not claimed by this contract delivery.
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.

@@ -145,7 +145,7 @@ impl Browser {
                 state
                     .take_native_events(index == active)
                     .into_iter()
-                    .map(|(context, event)| (tab.key, context, event)),
+                    .map(|(requester, event)| (tab.key, requester, event)),
             );
             drop(state);
             page.cancel_queued(expired);
@@ -153,7 +153,7 @@ impl Browser {
         for (request, key, dirty) in checks {
             self.page_state_result(request, key, dirty);
         }
-        for (owner, context, event) in native {
+        for (owner, requester, event) in native {
             use wega::engine_protocol::ContentEvent;
             let Some(index) = self.session().tabs().iter().position(|tab| {
                 tab.key == owner
@@ -161,7 +161,7 @@ impl Browser {
                         page.state
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .accepts_context(context)
+                            .accepts_requester(&requester)
                     })
             }) else {
                 continue;
@@ -174,7 +174,7 @@ impl Browser {
                         .state
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    if state.accepts_context(context) && !state.fallback_reported {
+                    if state.accepts_requester(&requester) && !state.fallback_reported {
                         state.compatibility.get_or_insert(reason);
                     }
                 }
@@ -184,7 +184,7 @@ impl Browser {
                         .state
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    if state.accepts_context(context) {
+                    if state.accepts_requester(&requester) {
                         state.cursor = Some(cursor);
                     }
                 }
@@ -193,26 +193,30 @@ impl Browser {
                     self.select_tab(index);
                     let mut opened = false;
                     match event {
-                        ContentEvent::Download { url, cookies } => {
+                        ContentEvent::Download { url, .. } => {
+                            let cookies = self.tab().wega.as_ref().unwrap().download_cookies(&url);
                             let connections = self.download_ui.connections;
-                            let message = match self.start_download(&url, "", connections, cookies)
-                            {
+                            let message = match cookies.and_then(|cookies| {
+                                self.start_download(&url, "", connections, cookies)
+                            }) {
                                 Ok(()) => format!("Downloading {url}"),
                                 Err(error) => error,
                             };
                             self.notify(crate::ux::Severity::Info, message, None);
                         }
-                        ContentEvent::OpenWindow(url) => match url::Url::parse(&url) {
-                            Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => {
-                                self.add_tab(&url);
-                                opened = true;
+                        ContentEvent::ActivatedOpenWindow { url, .. } => {
+                            match url::Url::parse(&url) {
+                                Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => {
+                                    self.add_tab(&url);
+                                    opened = true;
+                                }
+                                _ => self.notify(
+                                    crate::ux::Severity::Warning,
+                                    "The page tried to open an unsupported address.",
+                                    None,
+                                ),
                             }
-                            _ => self.notify(
-                                crate::ux::Severity::Warning,
-                                "The page tried to open an unsupported address.",
-                                None,
-                            ),
-                        },
+                        }
                         ContentEvent::TraverseUnhandled(delta) => {
                             for _ in 0..delta.unsigned_abs().min(8) {
                                 self.traverse(delta > 0);
@@ -488,6 +492,12 @@ impl Browser {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(context, |ui| {
+                ui.label(match &dialog.requester.principal.origin {
+                    wega::engine_protocol::authority::Origin::Tuple(origin) => origin.as_str(),
+                    wega::engine_protocol::authority::Origin::Opaque => {
+                        "Page with an opaque or unverified origin"
+                    }
+                });
                 ui.label(&dialog.message);
                 if dialog.kind == "prompt" {
                     ui.text_edit_singleline(&mut page.dialog_input);

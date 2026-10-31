@@ -17,6 +17,7 @@ enum Work {
     Command(Command),
     Rejected(protocol::RequestContext, ProtocolError),
     Wake,
+    Invalid(String),
 }
 
 fn document_context(view: &wega_engine::View, serial: u64, version: u32) -> DocumentContext {
@@ -71,9 +72,56 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let reader = sender.clone();
     std::thread::spawn(move || {
         let mut stdin = std::io::stdin().lock();
+        let mut initialized = false;
+        let mut identity = None;
         loop {
             match protocol::read::<Command>(&mut stdin) {
-                Ok(Some(command)) => {
+                Ok(Some(packet)) => {
+                    let command = if !initialized {
+                        match &packet {
+                            Command::Init {
+                                version,
+                                identity: offered,
+                                ..
+                            } if protocol::supports_version(*version) => {
+                                initialized = true;
+                                if *version >= 11 {
+                                    match offered.filter(|value| value.validate().is_ok()) {
+                                        Some(value) => identity = Some(value),
+                                        None => {
+                                            let _ = reader.send(Work::Invalid(
+                                                "Missing or invalid session identity".into(),
+                                            ));
+                                            break;
+                                        }
+                                    }
+                                }
+                                packet
+                            }
+                            _ => {
+                                let _ = reader.send(Work::Invalid("Expected Init".into()));
+                                break;
+                            }
+                        }
+                    } else if let Some(identity) = identity {
+                        match identity.receive_command(packet) {
+                            Ok(command) => command,
+                            Err(error) => {
+                                let _ = reader.send(Work::Invalid(error.message));
+                                break;
+                            }
+                        }
+                    } else {
+                        packet
+                    };
+                    if identity.is_some()
+                        && matches!(&command, Command::Evaluate(_) | Command::CheckPageState(_))
+                    {
+                        let _ = reader.send(Work::Invalid(
+                            "Unscoped document operation in session protocol".into(),
+                        ));
+                        break;
+                    }
                     if let Command::CancelRequest(context) = command {
                         input_queue
                             .lock()
@@ -87,10 +135,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             protocol::EVALUATION_TIMEOUT_MS
                         };
-                        let admitted = input_queue
+                        let mut queue = input_queue
                             .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .admit(context, Instant::now(), Duration::from_millis(timeout));
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        let admitted = if identity.is_some() {
+                            queue.admit_once(
+                                context,
+                                Instant::now(),
+                                Duration::from_millis(timeout),
+                            )
+                        } else {
+                            queue.admit(context, Instant::now(), Duration::from_millis(timeout))
+                        };
+                        drop(queue);
                         if let Err(error) = admitted {
                             if reader.send(Work::Rejected(context, error)).is_err() {
                                 break;
@@ -102,17 +159,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         break;
                     }
                 }
-                _ => {
+                Ok(None) => {
                     let _ = reader.send(Work::Command(Command::Shutdown));
+                    break;
+                }
+                Err(error) => {
+                    let _ = reader.send(Work::Invalid(error.to_string()));
                     break;
                 }
             }
         }
     });
-    let (version, url, policy, storage_dir, broker_address, broker_token, frame_path) =
+    let (version, identity, url, policy, storage_dir, broker_address, broker_token, frame_path) =
         match receiver.recv()? {
             Work::Command(Command::Init {
                 version,
+                identity,
                 url,
                 offline,
                 blocked_hosts,
@@ -125,6 +187,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 // are only sent in response to the corresponding new commands.
             }) if protocol::supports_version(version) => (
                 version,
+                identity,
                 Url::parse(&url)?,
                 NetworkPolicy {
                     offline,
@@ -138,12 +201,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ),
             _ => return Err("Expected versioned Init as the first private command".into()),
         };
+    if version >= 11
+        && (broker_address.is_some() != broker_token.is_some()
+            || broker_address.is_some() != identity.and_then(|value| value.service).is_some())
+    {
+        return Err("Incomplete or inconsistent broker service binding".into());
+    }
     let wake = sender.clone();
     let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
         let _ = wake.try_send(Work::Wake);
     });
     let mut engine = if let (Some(address), Some(token)) = (broker_address, broker_token) {
-        Engine::brokered(Limits::default(), policy, wake, &address, token)?
+        let remote = if version >= 11 {
+            wega_network::Remote::bound(
+                &address,
+                token,
+                identity
+                    .and_then(|value| value.service)
+                    .ok_or("Missing broker service identity")?,
+            )?
+        } else {
+            wega_network::Remote::new(&address, token)?
+        };
+        Engine::with_broker(Limits::default(), policy, wake, remote)?
     } else {
         Engine::new(Limits::default(), policy, wake)?
     };
@@ -166,17 +246,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut rss_bytes = wega_platform::resident_bytes();
     let mut metrics = (0, 0);
     let output = Rc::new(RefCell::new(std::io::stdout().lock()));
+    let event_output = output.clone();
+    let write = move |event: &Event| {
+        protocol::identity::write_event(&mut *event_output.borrow_mut(), event, version, identity)
+    };
     let receiver = Rc::new(receiver);
     // Commands that arrive while a dialog waits for its answer run afterwards.
     let deferred: Rc<RefCell<VecDeque<Work>>> = Default::default();
     {
-        let output = output.clone();
+        let write = write.clone();
         let receiver = receiver.clone();
         let deferred = deferred.clone();
         let admission = queue.clone();
         let mut next_dialog = 0_u64;
         view.set_document_dialog_handler(Box::new(
-            move |generation, revision, kind, message, default| {
+            move |generation, revision, document_url, kind, message, default| {
                 next_dialog = next_dialog.checked_add(1)?;
                 let id = DialogId(next_dialog);
                 let context = DocumentContext {
@@ -185,13 +269,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 // Parsing may reach an inline alert before poll() returns to the host loop.
                 if version >= 9
-                    && protocol::write(
-                        &mut *output.borrow_mut(),
-                        &Event::DocumentCommitted {
-                            serial: generation,
-                            revision: context.revision,
-                        },
-                    )
+                    && write(&Event::DocumentCommitted {
+                        serial: generation,
+                        revision: context.revision,
+                        url: (version >= 11).then(|| document_url.to_string()),
+                    })
                     .is_err()
                 {
                     return None;
@@ -206,7 +288,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         default: default.into(),
                     },
                 );
-                if protocol::write(&mut *output.borrow_mut(), &event).is_err() {
+                if write(&event).is_err() {
                     return None;
                 }
                 let deadline = Instant::now() + Duration::from_secs(300);
@@ -227,6 +309,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             Ok(Work::Command(Command::DialogReply(_))) => {}
                             Ok(Work::Wake) => {}
+                            Ok(work @ Work::Invalid(_)) => {
+                                deferred.borrow_mut().push_back(work);
+                                return None;
+                            }
                             Ok(work @ Work::Command(Command::Shutdown)) => {
                                 deferred.borrow_mut().push_back(work);
                                 return None;
@@ -261,11 +347,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                         Work::Rejected(context, error) => {
                                             Some(Event::RequestFailed { context, error })
                                         }
-                                        Work::Wake => None,
+                                        Work::Wake | Work::Invalid(_) => None,
                                     };
                                     if let Some(event) = rejection
-                                        && protocol::write(&mut *output.borrow_mut(), &event)
-                                            .is_err()
+                                        && write(&event).is_err()
                                     {
                                         return None;
                                     }
@@ -276,16 +361,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 })();
                 if version >= 9 {
-                    let _ = protocol::write(
-                        &mut *output.borrow_mut(),
-                        &protocol::content_event(version, context, ContentEvent::DialogClosed(id)),
-                    );
+                    let _ = write(&protocol::content_event(
+                        version,
+                        context,
+                        ContentEvent::DialogClosed(id),
+                    ));
                 }
                 answer
             },
         ));
     }
-    let write = |event: &Event| protocol::write(&mut *output.borrow_mut(), event);
+    let mut activation = None;
     let mut reported_commit = None;
     let mut report_commit = |view: &wega_engine::View, serial| -> std::io::Result<()> {
         let context = document_context(view, serial, version);
@@ -293,7 +379,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let revision = context.revision;
         if (version < 9 || revision.0 > 0) && reported_commit != Some((serial, revision)) {
             if version >= 7 {
-                write(&Event::DocumentCommitted { serial, revision })?;
+                write(&Event::DocumentCommitted {
+                    serial,
+                    revision,
+                    url: (version >= 11).then(|| view.url.to_string()),
+                })?;
             }
             reported_commit = Some((serial, revision));
         }
@@ -408,7 +498,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     cookies: view.download_cookies(&url),
                     url: url.to_string(),
                 },
-                PageEvent::OpenWindow(url) => ContentEvent::OpenWindow(url.to_string()),
+                PageEvent::OpenWindow(url) => {
+                    if version >= 11 {
+                        let context = document_context(&view, serial, version);
+                        let Some((owner, token)) = activation.take() else {
+                            continue;
+                        };
+                        if owner != context {
+                            continue;
+                        }
+                        ContentEvent::ActivatedOpenWindow {
+                            url: url.to_string(),
+                            activation: token,
+                        }
+                    } else {
+                        ContentEvent::OpenWindow(url.to_string())
+                    }
+                }
                 PageEvent::Traverse(delta) => ContentEvent::TraverseUnhandled(delta),
                 PageEvent::Cursor(cursor) => ContentEvent::Cursor(cursor),
             };
@@ -423,7 +529,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if view.needs_paint() && can_paint && last_frame.elapsed() >= frame_interval {
             let target = if shared {
                 let slot = slot.unwrap();
-                sequence = sequence.wrapping_add(1);
+                sequence = sequence.checked_add(1).ok_or("Frame identity exhausted")?;
                 credits[slot] = Some(sequence);
                 Some((slot as u8, sequence))
             } else {
@@ -505,10 +611,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             None
         };
         match work {
+            Work::Invalid(error) => return Err(error.into()),
             Work::Wake => {}
             Work::Rejected(context, error) => write(&Event::RequestFailed { context, error })?,
             Work::Command(command) => match command {
-                Command::CancelRequest(_) => {}    // Consumed by the input thread.
+                Command::Activate {
+                    context,
+                    activation: token,
+                } => {
+                    if context == document_context(&view, serial, version) {
+                        activation = Some((context, token));
+                    }
+                }
+                Command::Session { .. } => return Err("Nested session command".into()),
+                Command::CancelRequest(_) => {} // Consumed by the input thread.
                 Command::AnswerDialog { .. } => {} // A late answer has no authority over another prompt.
                 Command::Capabilities => {
                     write(&Event::Capabilities {
@@ -588,6 +704,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     url,
                     serial: requested,
                 } => {
+                    if version >= 11 && serial.checked_add(1) != Some(requested) {
+                        return Err("Reused or out-of-order navigation identity".into());
+                    }
                     serial = requested;
                     if let Err(error) = Url::parse(&url)
                         .map_err(|e| e.to_string())

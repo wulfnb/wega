@@ -15,9 +15,31 @@ struct Queued {
 #[derive(Debug, Default)]
 pub struct CommandQueue {
     pending: BTreeMap<RequestContext, Queued>,
+    last_request: Option<crate::RequestId>,
 }
 
 impl CommandQueue {
+    /// v11 hosts issue strictly increasing IDs across document replacements.
+    /// A high-water mark rejects replay without retaining completed request payloads.
+    pub fn admit_once(
+        &mut self,
+        context: RequestContext,
+        now: Instant,
+        timeout: Duration,
+    ) -> Result<(), ProtocolError> {
+        if self
+            .last_request
+            .is_some_and(|last| context.request <= last)
+        {
+            return Err(ProtocolError::new(
+                ErrorCode::InvalidRequest,
+                "Reused or out-of-order request identity",
+            ));
+        }
+        self.admit(context, now, timeout)?;
+        self.last_request = Some(context.request);
+        Ok(())
+    }
     pub fn admit(
         &mut self,
         context: RequestContext,

@@ -10,6 +10,33 @@ fn context(id: u64) -> RequestContext {
 }
 
 #[test]
+fn completion_cancellation_and_document_replacement_never_reenable_a_request_id() {
+    let mut queue = CommandQueue::default();
+    let now = Instant::now();
+    let old = context(1);
+    queue.admit_once(old, now, Duration::from_secs(5)).unwrap();
+    queue.start(old, now).unwrap();
+    queue.finish(old);
+    let replacement = RequestContext {
+        document: DocumentId(9),
+        revision: DocumentRevision(9),
+        ..old
+    };
+    assert!(queue.admit_once(old, now, Duration::from_secs(5)).is_err());
+    assert!(
+        queue
+            .admit_once(replacement, now, Duration::from_secs(5))
+            .is_err()
+    );
+    let next = context(2);
+    queue.admit_once(next, now, Duration::from_secs(5)).unwrap();
+    queue.cancel(next);
+    assert!(queue.start(next, now).is_err());
+    assert!(queue.admit_once(next, now, Duration::from_secs(5)).is_err());
+    assert!(queue.pending.is_empty());
+}
+
+#[test]
 fn cancelling_a_queued_operation_prevents_its_start() {
     let mut queue = CommandQueue::default();
     let now = Instant::now();

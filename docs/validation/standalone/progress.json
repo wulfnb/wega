@@ -6,6 +6,14 @@
   "test_policy": "Execution deferred by owner until final pass",
   "runtime_tests_executed": false,
   "servo_retirement_allowed": false,
+  "steps": {
+    "02": {
+      "implementation": "complete",
+      "protocol_version": 11,
+      "acceptance": "deferred until the owner's final test pass",
+      "contract": "docs/step-02-engine-contract.md"
+    }
+  },
   "substeps": {
     "01.a": "Source inventory and provisional family ledger prepared; effective exposure audit pending",
     "01.b": "Runtime baseline deferred",
@@ -16,14 +24,15 @@
     "02.c2": "Negotiated queued cancellation, pre-execution deadlines and bounded admission implemented; tests pending",
     "02.c3": "Host-owned lifecycle, actual navigation commit binding, scoped native events and identified dialog replies implemented; tests pending",
     "02.c4": "Shutdown acknowledgement, owned child process reaping and normal browser-exit draining implemented; tests pending",
-    "02.c": "Trusted frame/service identity and authority contracts pending; all runtime verification deferred"
+    "02.c5": "Session/frame/service identity envelopes, native principal and activation authority, scoped permission cancellation, immediate broker revocation and replay protection implemented; tests pending",
+    "02.c": "Implementation complete; all runtime acceptance verification deferred"
   },
   "compile_checks": [
     {
-      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol --all-targets",
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine -p wega-network -p wega-protocol -p wega-platform --all-targets",
       "platform": "macOS arm64",
       "result": "passed",
-      "scope": "Platform ownership, protocol and regression-source type checking only; no subprocess tests executed"
+      "scope": "Worker, network, platform, protocol and regression-source type checking only; no tests executed; existing Deno vendor warnings remain"
     },
     {
       "command": "cargo check --locked --offline --no-default-features --lib",
@@ -36,12 +45,6 @@
       "platform": "macOS arm64",
       "result": "passed",
       "scope": "Desktop and test-source type checking only; existing Servo vendor warnings remain"
-    },
-    {
-      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --all-targets",
-      "platform": "macOS arm64",
-      "result": "passed",
-      "scope": "Worker and test-source type checking only; pinned native artifacts downloaded during build; existing Deno vendor warnings remain"
     }
   ],
   "pending_verification": [

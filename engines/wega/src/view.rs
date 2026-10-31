@@ -430,7 +430,7 @@ impl View {
     /// Answer `alert`, `confirm` and `prompt`; without a handler they return
     /// their default (no) answer immediately.
     pub fn set_dialog_handler(&mut self, mut handler: crate::dom::DialogHandler) {
-        self.set_document_dialog_handler(Box::new(move |_, _, kind, message, default| {
+        self.set_document_dialog_handler(Box::new(move |_, _, _, kind, message, default| {
             handler(kind, message, default)
         }));
     }

@@ -551,6 +551,7 @@ impl Browser {
                 &self.profile().policy,
                 self.event_proxy.clone(),
                 &self.profile_dir,
+                self.tab().key,
             ) {
                 Ok(page) => Some(page),
                 Err(error) => {
@@ -675,7 +676,10 @@ impl Browser {
         title: String,
         opened_by_page: bool,
     ) -> usize {
-        self.next_tab_key += 1;
+        self.next_tab_key = self
+            .next_tab_key
+            .checked_add(1)
+            .expect("Tab identity exhausted");
         self.session.push(Tab {
             live,
             wega: None,
@@ -760,6 +764,7 @@ impl Browser {
                 &self.profile().policy,
                 self.event_proxy.clone(),
                 &self.profile_dir,
+                tab.key,
             ) {
                 Ok(page) => {
                     self.session.tabs_mut()[index].wega = Some(page);

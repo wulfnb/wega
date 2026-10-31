@@ -6,10 +6,18 @@ use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
-    sync::{Arc, Mutex, OnceLock, RwLock, Weak, mpsc},
+    sync::{
+        Arc, Mutex, OnceLock, RwLock, Weak,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 use url::Url;
+use wega_protocol::{
+    authority::{Origin, Principal},
+    identity::{PartitionId, ServiceIdentity, ServiceSessionId},
+};
 mod cookies;
 pub use cookies::{Cookies, SiteContext};
 const MAX_HEADER: usize = 64 * 1024;
@@ -407,6 +415,42 @@ struct Session {
     policy: RwLock<Policy>,
     cookies: Arc<Cookies>,
     scope: String,
+    identity: ServiceIdentity,
+    bound: bool,
+    revoked: AtomicBool,
+    navigation: Mutex<NavigationReceipt>,
+}
+
+#[derive(Default)]
+struct NavigationReceipt {
+    allowed: Vec<Url>,
+    committed: Option<Url>,
+    last: Option<Url>,
+}
+
+struct Jar {
+    cookies: Weak<Cookies>,
+    partition: PartitionId,
+}
+
+pub fn principal(url: &Url) -> Principal {
+    Principal {
+        origin: if matches!(url.scheme(), "http" | "https") {
+            Origin::Tuple(url.origin().ascii_serialization())
+        } else {
+            Origin::Opaque
+        },
+        top_level_site: Cookies::site(url),
+    }
+}
+
+fn nonce() -> Result<[u8; 16], String> {
+    let mut bytes = [0; 16];
+    getrandom::fill(&mut bytes).map_err(|error| error.to_string())?;
+    if bytes == [0; 16] {
+        return Err("Invalid identity entropy".into());
+    }
+    Ok(bytes)
 }
 pub struct SessionHandle {
     broker: Arc<Broker>,
@@ -414,6 +458,73 @@ pub struct SessionHandle {
     token: String,
 }
 impl SessionHandle {
+    pub fn identity(&self) -> ServiceIdentity {
+        self.session.identity
+    }
+    pub fn begin_navigation(&self, url: &Url) {
+        let mut receipt = self
+            .session
+            .navigation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut base = url.clone();
+        base.set_fragment(None);
+        let committed = receipt
+            .last
+            .as_ref()
+            .filter(|last| {
+                let mut last = (*last).clone();
+                last.set_fragment(None);
+                last == base
+            })
+            .map(|_| url.clone());
+        receipt.allowed = vec![url.clone()];
+        receipt.committed = committed;
+    }
+    /// Host-only attribution from a browser-approved navigation and broker-observed response.
+    pub fn take_committed_principal(&self, claimed: Option<&str>) -> Principal {
+        let mut receipt = self
+            .session
+            .navigation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let observed = receipt.committed.take().filter(|observed| {
+            claimed
+                .and_then(|url| Url::parse(url).ok())
+                .is_some_and(|url| url.origin() == observed.origin())
+        });
+        if let Some(url) = observed {
+            let principal = principal(&url);
+            receipt.last = Some(url);
+            principal
+        } else {
+            Principal {
+                origin: Origin::Opaque,
+                top_level_site: None,
+            }
+        }
+    }
+    pub fn revoke(&self) {
+        self.session.revoked.store(true, Ordering::Release);
+        self.broker
+            .sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.token);
+    }
+    pub fn download_cookies(&self, url: &Url) -> Result<String, String> {
+        if self.session.revoked.load(Ordering::Acquire)
+            || !self
+                .session
+                .policy
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .permits(url)
+        {
+            return Err("Download session is revoked or blocked".into());
+        }
+        Ok(self.session.cookies.netscape(url))
+    }
     pub fn endpoint(&self) -> (String, String) {
         (self.broker.address.to_string(), self.token.clone())
     }
@@ -425,11 +536,16 @@ impl SessionHandle {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = policy;
     }
 }
+impl Drop for SessionHandle {
+    fn drop(&mut self) {
+        self.revoke();
+    }
+}
 type Job = Box<dyn FnOnce() + Send>;
 pub struct Broker {
     address: SocketAddr,
     sessions: Mutex<HashMap<String, Weak<Session>>>,
-    jars: Mutex<HashMap<PathBuf, Weak<Cookies>>>,
+    jars: Mutex<HashMap<PathBuf, Jar>>,
     cache: Mutex<Cache>,
     jobs: mpsc::SyncSender<Job>,
     client: LocalClient,
@@ -499,23 +615,61 @@ impl Broker {
         directory: PathBuf,
         policy: Policy,
     ) -> Result<SessionHandle, String> {
+        self.open_session_kind(directory, policy, false)
+    }
+    pub fn open_bound_session(
+        self: &Arc<Self>,
+        directory: PathBuf,
+        policy: Policy,
+    ) -> Result<SessionHandle, String> {
+        self.open_session_kind(directory, policy, true)
+    }
+    fn open_session_kind(
+        self: &Arc<Self>,
+        directory: PathBuf,
+        policy: Policy,
+        bound: bool,
+    ) -> Result<SessionHandle, String> {
+        std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        let directory = directory
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
         let mut jars = self
             .jars
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        jars.retain(|_, jar| jar.strong_count() > 0);
-        let cookies = if let Some(jar) = jars.get(&directory).and_then(Weak::upgrade) {
-            jar
+        jars.retain(|_, jar| jar.cookies.strong_count() > 0);
+        let (cookies, partition) = if let Some((cookies, partition)) =
+            jars.get(&directory).and_then(|jar| {
+                jar.cookies
+                    .upgrade()
+                    .map(|cookies| (cookies, jar.partition))
+            }) {
+            (cookies, partition)
         } else {
             let jar = Arc::new(Cookies::default());
             jar.set_directory(directory.clone());
-            jars.insert(directory.clone(), Arc::downgrade(&jar));
-            jar
+            let partition = PartitionId(nonce()?);
+            jars.insert(
+                directory.clone(),
+                Jar {
+                    cookies: Arc::downgrade(&jar),
+                    partition,
+                },
+            );
+            (jar, partition)
         };
         let mut bytes = [0; 32];
         getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
         let token = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
         let session = Arc::new(Session {
+            identity: ServiceIdentity {
+                service: ServiceSessionId(nonce()?),
+                partition,
+            },
+            bound,
+            revoked: AtomicBool::new(false),
+            navigation: Mutex::new(NavigationReceipt::default()),
             policy: RwLock::new(policy),
             cookies,
             scope: directory.to_string_lossy().into_owned(),
@@ -546,6 +700,17 @@ impl Broker {
             .get(token)
             .and_then(Weak::upgrade)
             .ok_or("Invalid broker capability")?;
+        if session.revoked.load(Ordering::Acquire) {
+            return Err("Revoked broker capability".into());
+        }
+        let identity = match &request {
+            WireRequest::Fetch { identity, .. }
+            | WireRequest::CookieGet { identity, .. }
+            | WireRequest::CookieSet { identity, .. } => identity,
+        };
+        if session.bound && *identity != Some(session.identity) {
+            return Err("Broker service/partition mismatch".into());
+        }
         match request {
             WireRequest::CookieGet {
                 url,
@@ -621,16 +786,50 @@ impl Broker {
                 self.jobs
                     .try_send(Box::new(move || {
                         let result = (|| {
+                            if session.revoked.load(Ordering::Acquire) {
+                                return Err("Revoked broker capability".into());
+                            }
                             request.body = vec![0; bytes];
                             stream
                                 .read_exact(&mut request.body)
                                 .map_err(|e| e.to_string())?;
-                            client.fetch_cached(
+                            let response = client.fetch_cached(
                                 &request,
                                 &session.policy,
                                 &session.cookies,
                                 Some((&broker.cache, &session.scope)),
-                            )
+                            )?;
+                            if request.top_level {
+                                let mut receipt = session
+                                    .navigation
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                if receipt
+                                    .allowed
+                                    .iter()
+                                    .any(|url| url.as_str() == request.url)
+                                {
+                                    if (300..400).contains(&response.status) {
+                                        if let Some(next) = response
+                                            .headers
+                                            .iter()
+                                            .find(|(name, _)| name.eq_ignore_ascii_case("location"))
+                                            .and_then(|(_, location)| {
+                                                Url::parse(&response.url).ok()?.join(location).ok()
+                                            })
+                                            && receipt.allowed.len() < 10
+                                        {
+                                            receipt.allowed.push(next);
+                                        }
+                                    } else {
+                                        receipt.committed = Url::parse(&response.url).ok();
+                                    }
+                                }
+                            }
+                            if session.revoked.load(Ordering::Acquire) {
+                                return Err("Revoked broker response".into());
+                            }
+                            Ok(response)
                         })();
                         match result {
                             Ok(mut response) => {
@@ -653,6 +852,7 @@ impl Broker {
 pub struct Remote {
     address: SocketAddr,
     token: String,
+    identity: Option<ServiceIdentity>,
 }
 impl Remote {
     pub fn new(address: &str, token: String) -> Result<Self, String> {
@@ -660,7 +860,16 @@ impl Remote {
         if !address.ip().is_loopback() || token.len() != 64 {
             return Err("Invalid broker capability".into());
         };
-        Ok(Self { address, token })
+        Ok(Self {
+            address,
+            token,
+            identity: None,
+        })
+    }
+    pub fn bound(address: &str, token: String, identity: ServiceIdentity) -> Result<Self, String> {
+        let mut remote = Self::new(address, token)?;
+        remote.identity = Some(identity);
+        Ok(remote)
     }
     fn call(&self, request: impl Serialize, body: &[u8]) -> Result<(Reply, Vec<u8>), String> {
         let mut stream = TcpStream::connect_timeout(&self.address, Duration::from_secs(2))
@@ -684,6 +893,7 @@ impl Remote {
         request.validate()?;
         let (reply, body) = self.call(
             FetchCall::Fetch {
+                identity: self.identity,
                 token: &self.token,
                 request,
             },
@@ -711,6 +921,7 @@ impl Remote {
     ) -> Result<String, String> {
         let (reply, body) = self.call(
             WireRequest::CookieGet {
+                identity: self.identity,
                 token: self.token.clone(),
                 url: url.to_string(),
                 script,
@@ -741,6 +952,7 @@ impl Remote {
     ) -> Result<(), String> {
         let (reply, _) = self.call(
             WireRequest::CookieSet {
+                identity: self.identity,
                 token: self.token.clone(),
                 url: url.to_string(),
                 value: value.into(),
@@ -759,6 +971,7 @@ impl Remote {
 #[derive(Serialize)]
 enum FetchCall<'a> {
     Fetch {
+        identity: Option<ServiceIdentity>,
         token: &'a str,
         request: &'a Request,
     },
@@ -766,10 +979,14 @@ enum FetchCall<'a> {
 #[derive(Serialize, Deserialize)]
 enum WireRequest {
     Fetch {
+        #[serde(default)]
+        identity: Option<ServiceIdentity>,
         token: String,
         request: Box<Request>,
     },
     CookieGet {
+        #[serde(default)]
+        identity: Option<ServiceIdentity>,
         token: String,
         url: String,
         script: bool,
@@ -777,6 +994,8 @@ enum WireRequest {
         netscape: bool,
     },
     CookieSet {
+        #[serde(default)]
+        identity: Option<ServiceIdentity>,
         token: String,
         url: String,
         value: String,
@@ -827,6 +1046,145 @@ fn read_header<T: for<'de> Deserialize<'de>>(stream: &mut TcpStream) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bound_services_reject_missing_cross_partition_and_revoked_capabilities() {
+        let broker = Broker::new().unwrap();
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let first = broker
+            .open_bound_session(a.path().into(), Policy::default())
+            .unwrap();
+        let second = broker
+            .open_bound_session(a.path().join("."), Policy::default())
+            .unwrap();
+        let other = broker
+            .open_bound_session(b.path().into(), Policy::default())
+            .unwrap();
+        assert_eq!(first.identity().partition, second.identity().partition);
+        assert_ne!(first.identity().service, second.identity().service);
+        assert_ne!(first.identity().partition, other.identity().partition);
+        let (address, token) = first.endpoint();
+        let url = Url::parse("https://example.test/").unwrap();
+        assert!(
+            Remote::new(&address, token.clone())
+                .unwrap()
+                .cookie_get(&url, true)
+                .is_err()
+        );
+        assert!(
+            Remote::bound(&address, token.clone(), second.identity())
+                .unwrap()
+                .cookie_set(&url, "bad=1", true)
+                .is_err()
+        );
+        let wrong = ServiceIdentity {
+            partition: other.identity().partition,
+            ..first.identity()
+        };
+        assert!(
+            Remote::bound(&address, token.clone(), wrong)
+                .unwrap()
+                .cookie_set(&url, "bad=2", true)
+                .is_err()
+        );
+        let remote = Remote::bound(&address, token, first.identity()).unwrap();
+        remote.cookie_set(&url, "allowed=1; Path=/", true).unwrap();
+        assert_eq!(remote.cookie_get(&url, true).unwrap(), "allowed=1");
+        let inflight = first.session.clone(); // Jobs can retain Arc<Session> after the page closes.
+        first.revoke();
+        assert!(remote.cookie_get(&url, true).is_err());
+        assert!(first.download_cookies(&url).is_err());
+        assert!(inflight.revoked.load(Ordering::Acquire));
+        let (address, token) = second.endpoint();
+        assert_eq!(
+            Remote::bound(&address, token, second.identity())
+                .unwrap()
+                .cookie_get(&url, true)
+                .unwrap(),
+            "allowed=1"
+        );
+    }
+
+    #[test]
+    fn only_browser_approved_observed_navigation_can_supply_a_native_principal() {
+        // Exercise real transport; page-supplied origin/top_level do not select native authority.
+        let server = TcpListener::bind("127.0.0.1:0").unwrap();
+        server.set_nonblocking(true).unwrap();
+        let url = Url::parse(&format!("http://{}/page", server.local_addr().unwrap())).unwrap();
+        let address = server.local_addr().unwrap();
+        let serving = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            for _ in 0..3 {
+                let mut stream = loop {
+                    match server.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                std::time::Instant::now() < deadline,
+                                "Navigation fixture deadline"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("Navigation fixture: {error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    header.push(byte[0]);
+                    assert!(header.len() < 4096);
+                }
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 2\r\nConnection: close\r\n\r\nhi").unwrap();
+            }
+        });
+        let broker = Broker::new().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let session = broker
+            .open_bound_session(dir.path().into(), Policy::default())
+            .unwrap();
+        let (endpoint, token) = session.endpoint();
+        let remote = Remote::bound(&endpoint, token, session.identity()).unwrap();
+        let mut request = Request::get(&url, 4096);
+        request.origin = "https://forged.test".into();
+        remote.fetch(&request).unwrap();
+        assert_eq!(
+            session.take_committed_principal(Some(url.as_str())).origin,
+            Origin::Opaque
+        );
+        session.begin_navigation(&url);
+        remote.fetch(&request).unwrap();
+        assert_eq!(
+            session
+                .take_committed_principal(Some("https://forged.test/"))
+                .origin,
+            Origin::Opaque
+        );
+        session.begin_navigation(&url);
+        remote.fetch(&request).unwrap();
+        assert_eq!(
+            session.take_committed_principal(Some(url.as_str())).origin,
+            Origin::Tuple(format!("http://{address}"))
+        );
+        assert_eq!(
+            session.take_committed_principal(Some(url.as_str())).origin,
+            Origin::Opaque,
+            "Receipt is consumed once"
+        );
+        let mut fragment = url.clone();
+        fragment.set_fragment(Some("section"));
+        session.begin_navigation(&fragment);
+        assert_eq!(
+            session
+                .take_committed_principal(Some(fragment.as_str()))
+                .origin,
+            principal(&url).origin
+        );
+        serving.join().unwrap();
+    }
     #[test]
     fn capabilities_partition_profiles_share_live_cookies_and_track_policy() {
         let broker = Broker::new().unwrap();

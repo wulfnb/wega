@@ -2,10 +2,12 @@
 #![forbid(unsafe_code)]
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
+pub mod authority;
+pub mod identity;
 pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 10;
+pub const VERSION: u32 = 11;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -43,6 +45,10 @@ pub enum ContentEvent {
         cookies: String,
     },
     OpenWindow(String),
+    ActivatedOpenWindow {
+        url: String,
+        activation: identity::ActivationId,
+    },
     TraverseUnhandled(i32),
     Cursor(String),
     Dialog {
@@ -55,6 +61,12 @@ pub enum ContentEvent {
 }
 
 pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent) -> Event {
+    let event = match event {
+        ContentEvent::ActivatedOpenWindow { url, .. } if version < 11 => {
+            ContentEvent::OpenWindow(url)
+        }
+        event => event,
+    };
     if version >= 9 {
         return Event::Content { context, event };
     }
@@ -67,6 +79,7 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
         },
         ContentEvent::Download { url, cookies } => Event::Download { url, cookies },
         ContentEvent::OpenWindow(url) => Event::OpenWindow(url),
+        ContentEvent::ActivatedOpenWindow { url, .. } => Event::OpenWindow(url),
         ContentEvent::TraverseUnhandled(delta) => Event::TraverseUnhandled(delta),
         ContentEvent::Cursor(cursor) => Event::Cursor(cursor),
         ContentEvent::Dialog {
@@ -103,6 +116,7 @@ pub enum Capability {
     QueuedCancellation,
     ScopedContentEvents,
     GracefulShutdown,
+    SessionIdentity,
     SharedFrames,
 }
 
@@ -113,6 +127,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::QueuedCancellation,
     Capability::ScopedContentEvents,
     Capability::GracefulShutdown,
+    Capability::SessionIdentity,
     Capability::SharedFrames,
 ];
 
@@ -159,6 +174,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::QueuedCancellation => 8,
                     Capability::ScopedContentEvents => 9,
                     Capability::GracefulShutdown => 10,
+                    Capability::SessionIdentity => 11,
                 }
         })
         .collect()
@@ -175,6 +191,14 @@ pub fn scoped_context(command: &Command) -> Option<RequestContext> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Command {
+    Session {
+        identity: identity::SessionIdentity,
+        command: Box<Command>,
+    },
+    Activate {
+        context: DocumentContext,
+        activation: identity::ActivationId,
+    },
     AnswerDialog {
         context: DocumentContext,
         id: DialogId,
@@ -189,6 +213,8 @@ pub enum Command {
     /// Cancels a queued operation. Already-running script side effects cannot be rolled back.
     CancelRequest(RequestContext),
     Init {
+        #[serde(default)]
+        identity: Option<identity::SessionIdentity>,
         version: u32,
         url: String,
         offline: bool,
@@ -269,6 +295,10 @@ pub enum Command {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
+    Session {
+        identity: identity::SessionIdentity,
+        event: Box<Event>,
+    },
     /// DOM/JS ownership was released; the supervisor must still observe OS process exit.
     ShutdownComplete,
     Content {
@@ -278,6 +308,9 @@ pub enum Event {
     DocumentCommitted {
         serial: u64,
         revision: DocumentRevision,
+        /// Corroborated against the host service receipt; never trusted on its own.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
     },
     Capabilities {
         version: u32,
@@ -402,6 +435,41 @@ pub fn read<T: for<'a> Deserialize<'a>>(stream: &mut impl Read) -> io::Result<Op
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn activation_packets_are_downgraded_for_running_v9_and_v10_hosts() {
+        #[derive(Deserialize)]
+        enum OldContent {
+            OpenWindow(String),
+        }
+        #[derive(Deserialize)]
+        enum OldEvent {
+            Content {
+                context: DocumentContext,
+                event: OldContent,
+            },
+        }
+        let context = DocumentContext {
+            document: DocumentId(2),
+            revision: DocumentRevision(3),
+        };
+        for version in [9, 10] {
+            let bytes = serde_json::to_vec(&content_event(
+                version,
+                context,
+                ContentEvent::ActivatedOpenWindow {
+                    url: "https://example.test/".into(),
+                    activation: identity::ActivationId(1),
+                },
+            ))
+            .unwrap();
+            let OldEvent::Content {
+                context: received,
+                event: OldContent::OpenWindow(url),
+            } = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(received, context);
+            assert_eq!(url, "https://example.test/");
+        }
+    }
     #[test]
     fn scoped_content_is_never_sent_to_an_older_protocol() {
         #[derive(Deserialize)]
