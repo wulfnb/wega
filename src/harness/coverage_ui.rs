@@ -174,8 +174,14 @@ impl Browser {
         self.tools.network_ui.import_path =
             self.profile_dir.join("missing.har").display().to_string();
         self.coverage_click(&["Import"], |b, ui| b.network_dialogs(ui.ctx(), &owner));
+        // A failed import keeps the dialog open and shows a persistent error.
         assert!(self.tools.network_ui.import_open);
-        assert!(self.tools.notice.is_some());
+        assert!(
+            self.tools
+                .error
+                .as_deref()
+                .is_some_and(|e| e.starts_with("Could not import the HAR file"))
+        );
         let file = self.profile_dir.join("import-ui.har");
         std::fs::write(
             &file,
@@ -432,7 +438,10 @@ impl Browser {
         assert_eq!(self.profile().policy.allow_window_changes, !changes);
         self.coverage_click(&["Allow sites to move and resize this window"], render);
         self.features.settings_section = 2;
-        self.coverage_click(&["Clear session cookies"], render);
+        // Clearing signs out of every site, so it asks first; Cancel keeps cookies.
+        self.coverage_click(&["Clear session cookies…", "Cancel"], render);
+        assert!(!self.features.confirm_session_clear);
+        self.coverage_click(&["Clear session cookies…", "Clear and sign out"], render);
         assert_eq!(
             self.chrome.notice.as_ref().unwrap().message,
             "Session cookies cleared."
@@ -550,7 +559,7 @@ impl Browser {
         assert_eq!(self.tools.debug[&owner].advanced.watches.len(), count + 1);
         self.coverage_click(&["Remove all breakpoints"], render);
         assert!(self.tools.debug[&owner].breakpoints.is_empty());
-        self.coverage_click(&["…", "Rendering diagnostics…"], render);
+        self.coverage_click(&["Toolbox options", "Rendering diagnostics…"], render);
         assert!(self.features.diagnostics);
         self.features.diagnostics = false;
         self.tools.active = Tool::Console;

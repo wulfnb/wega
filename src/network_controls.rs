@@ -22,14 +22,18 @@ impl Browser {
             let mut open = true;
             egui::Window::new("Import network HAR").open(&mut open).default_width(520.0).show(ctx,|ui|{
                 ui.label("Import HAR 1.2 into this tab. Imported rows are marked and retain their recorded durations. Up to 500 requests and 16 MiB per file; bodies are limited to 64 KiB previews.");
-                ui.add(egui::TextEdit::singleline(&mut self.tools.network_ui.import_path).hint_text("/path/to/network.har").desired_width(f32::INFINITY));
+                ui.horizontal(|ui|{
+                    ui.add(egui::TextEdit::singleline(&mut self.tools.network_ui.import_path).hint_text("/path/to/network.har").desired_width((ui.available_width()-90.0).max(120.0)));
+                    if ui.button("Choose…").clicked() && let Some(path)=rfd::FileDialog::new().add_filter("HAR",&["har","json"]).pick_file(){self.tools.network_ui.import_path=path.display().to_string();}
+                });
+                if let Some(error)=&self.tools.error {crate::components::inline_message(ui,crate::ux::Severity::Error,error);}
                 if ui.button("Import").clicked(){
                     let result=(||{
                         let file=std::fs::File::open(&self.tools.network_ui.import_path).map_err(|e|e.to_string())?;
                         let mut bytes=Vec::new();file.take(16*1024*1024+1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
                         self.tools.network.import_har(owner,&bytes)
                     })();
-                    match result {Ok(count)=>{self.tools.notice=Some(format!("Imported {count} HAR requests"));self.tools.network_ui.import_open=false;},Err(e)=>self.tools.notice=Some(e)}
+                    match result {Ok(count)=>{self.tools.notice=Some(format!("Imported {count} HAR requests"));self.tools.error=None;self.tools.network_ui.import_open=false;},Err(e)=>self.tools.error=Some(format!("Could not import the HAR file: {e}"))}
                 }
             });
             if !open {
@@ -53,7 +57,7 @@ impl Browser {
                         self.view().evaluate_javascript(script, |_| {});
                         self.tools.notice=Some("Request sent through page fetch; inspect Network and Console for the result.".into());
                     }
-                    Err(e) => self.tools.notice = Some(e),
+                    Err(e) => self.tools.error = Some(e),
                 }
             }
             if !open {

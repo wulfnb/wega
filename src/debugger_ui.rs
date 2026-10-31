@@ -35,9 +35,9 @@ impl Browser {
                 });
         }
         ui.horizontal_wrapped(|ui| {
-            if ui.add_enabled(!debug.paused,egui::Button::new("Pause")).clicked(){command=Some(devtools_traits::DevtoolScriptControlMsg::Interrupt);}
-            if ui.add_enabled(debug.paused,egui::Button::new("Resume")).clicked(){resume=Some(None);}
-            for(label,kind)in [("Step over","next"),("Step in","step"),("Step out","finish")] {if ui.add_enabled(debug.paused,egui::Button::new(label)).clicked(){resume=Some(Some(kind));}}
+            if ui.add_enabled(!debug.paused,egui::Button::new("Pause")).on_hover_text("Pause (F8)").clicked(){command=Some(devtools_traits::DevtoolScriptControlMsg::Interrupt);}
+            if ui.add_enabled(debug.paused,egui::Button::new("Resume")).on_hover_text("Resume (F8)").on_disabled_hover_text("Resume (F8) — available while paused").clicked(){resume=Some(None);}
+            for(label,kind,key)in [("Step over","next","F10"),("Step in","step","F11"),("Step out","finish","Shift+F11")] {if ui.add_enabled(debug.paused,egui::Button::new(label)).on_hover_text(format!("{label} ({key})")).on_disabled_hover_text(format!("{label} ({key}) — available while paused")).clicked(){resume=Some(Some(kind));}}
             let mut enabled=!debug.advanced.all_disabled;if ui.checkbox(&mut enabled,"Breakpoints enabled").changed(){action.all=Some(enabled);}
             if ui.add_enabled(debug.paused,egui::Button::new("Refresh stack/scopes")).clicked(){action.refresh=true;}
             ui.weak(if debug.paused{"Selected paused frame"}else{"Running · main page"});
@@ -428,9 +428,10 @@ fn context(
         }
         ui.separator();ui.strong(format!("Breakpoints ({})",debug.breakpoints.len()));
         if ui.button("Remove all breakpoints").clicked(){action.clear=true;}
+        if debug.breakpoints.is_empty(){ui.weak("Click a line number in the source to add a breakpoint.");}
         for point in &debug.breakpoints {
             ui.push_id((point.0,point.1),|ui|{ui.horizontal_wrapped(|ui|{
-                let mut enabled=!debug.advanced.disabled.contains(&(point.0,point.1));if ui.checkbox(&mut enabled,"").changed(){action.enabled.push((point.0,point.1,enabled));}
+                let mut enabled=!debug.advanced.disabled.contains(&(point.0,point.1));let toggle=ui.checkbox(&mut enabled,"");toggle.widget_info(||egui::WidgetInfo::selected(egui::Role::CheckBox,true,enabled,format!("Enable breakpoint at line {}",point.1)));if toggle.changed(){action.enabled.push((point.0,point.1,enabled));}
                 let source=debug.sources.iter().position(|s|s.spidermonkey_id==point.0);
                 let name=source.map(|i|debug.sources[i].url.as_str().rsplit('/').next().unwrap_or("source")).unwrap_or("source");
                 if ui.link(format!("{name}:{}",point.1)).clicked()&&let Some(index)=source{debug.selected=index;debug.advanced.goto=Some(point.1);debug.advanced.sidebar=0;}

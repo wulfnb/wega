@@ -330,7 +330,9 @@ fn normalize(id: String, event: NetworkEvent) -> Option<Update> {
         ),
         NetworkEvent::SecurityInfo(info) => (
             info.browsing_context_id,
-            Payload::Security(format!("{:#?}", info.security_info)),
+            Payload::Security(security_summary(
+                &serde_json::to_value(&info.security_info).unwrap_or(Value::Null),
+            )),
         ),
     };
     Some(Update {
@@ -445,6 +447,14 @@ pub fn size_label(bytes: u64) -> String {
         format!("{:.2} kB", bytes as f64 / 1024.0)
     } else {
         format!("{bytes} B")
+    }
+}
+/// Request duration: milliseconds below one second, seconds above.
+pub fn duration_label(ms: f64) -> String {
+    if ms >= 1000.0 {
+        format!("{:.2} s", ms / 1000.0)
+    } else {
+        format!("{ms:.0} ms")
     }
 }
 fn matches_query(row: &Request, query: &str) -> bool {
@@ -707,6 +717,51 @@ fn iso_date(ms: u64) -> String {
         ms % 1000
     )
 }
+/// TLS details as "Label: value" lines for the Security tab, instead of a
+/// Rust debug dump. Works on the serialized engine record so new fields
+/// never break it; unknown fields are skipped.
+pub fn security_summary(info: &Value) -> String {
+    let Some(fields) = info.as_object() else {
+        return "Not an HTTPS connection; there are no TLS details.".into();
+    };
+    let text = |value: &Value| match value {
+        Value::String(text) => text.clone(),
+        Value::Bool(true) => "Yes".into(),
+        Value::Bool(false) => "No".into(),
+        other => other.to_string(),
+    };
+    let mut lines = Vec::new();
+    for (key, label) in [
+        ("state", "Connection"),
+        ("protocol_version", "Protocol"),
+        ("cipher_suite", "Cipher suite"),
+        ("kea_group_name", "Key exchange"),
+        ("signature_scheme_name", "Signature"),
+        ("alpn_protocol", "Application protocol"),
+        ("certificate_transparency", "Certificate transparency"),
+        ("hsts", "Strict transport security (HSTS)"),
+        ("used_ech", "Encrypted Client Hello"),
+        ("used_ocsp", "OCSP stapling"),
+    ] {
+        if let Some(value) = fields.get(key).filter(|v| !v.is_null()) {
+            lines.push(format!("{label}: {}", text(value)));
+        }
+    }
+    if let Some(chain) = fields
+        .get("certificate_chain_der")
+        .and_then(Value::as_array)
+    {
+        lines.push(format!("Certificates in chain: {}", chain.len()));
+    }
+    if let Some(reasons) = fields.get("weakness_reasons").and_then(Value::as_array)
+        && !reasons.is_empty()
+    {
+        let reasons: Vec<_> = reasons.iter().map(text).collect();
+        lines.push(format!("Weaknesses: {}", reasons.join("; ")));
+    }
+    lines.join("\n")
+}
+
 #[cfg(test)]
 #[path = "network_tests.rs"]
 mod tests;
