@@ -5,7 +5,7 @@ use std::io::{self, Read, Write};
 pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 9;
+pub const VERSION: u32 = 10;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -102,6 +102,7 @@ pub enum Capability {
     DocumentCommitTracking,
     QueuedCancellation,
     ScopedContentEvents,
+    GracefulShutdown,
     SharedFrames,
 }
 
@@ -111,6 +112,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::DocumentCommitTracking,
     Capability::QueuedCancellation,
     Capability::ScopedContentEvents,
+    Capability::GracefulShutdown,
     Capability::SharedFrames,
 ];
 
@@ -156,6 +158,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::DocumentCommitTracking => 7,
                     Capability::QueuedCancellation => 8,
                     Capability::ScopedContentEvents => 9,
+                    Capability::GracefulShutdown => 10,
                 }
         })
         .collect()
@@ -266,6 +269,8 @@ pub enum Command {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
+    /// DOM/JS ownership was released; the supervisor must still observe OS process exit.
+    ShutdownComplete,
     Content {
         context: DocumentContext,
         event: ContentEvent,

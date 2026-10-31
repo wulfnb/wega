@@ -158,6 +158,12 @@ pub struct Browser {
 }
 
 impl Browser {
+    /// Close every content owner before main drains reapers and exits the process.
+    pub(crate) fn shutdown_wega_workers(&mut self) {
+        for tab in self.session.tabs_mut() {
+            tab.wega.take();
+        }
+    }
     pub(crate) fn new(
         window: Window,
         event_loop: &ActiveEventLoop,

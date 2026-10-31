@@ -747,5 +747,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             },
         }
     }
+    drop(view);
+    drop(engine);
+    if version >= 10 {
+        write(&Event::ShutdownComplete)?;
+    }
     Ok(())
 }

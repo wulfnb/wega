@@ -14,6 +14,26 @@ struct Worker {
 }
 
 #[test]
+fn shutdown_acknowledges_runtime_release_and_the_process_actually_exits() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    worker.send(Command::Shutdown);
+    worker.until(|event| matches!(event, Event::ShutdownComplete));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(status) = worker.child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Shutdown acknowledgement did not lead to process exit"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
 fn scoped_requests_cannot_read_or_execute_in_a_replacement_document() {
     use protocol::{DocumentId, ErrorCode, RequestContext, RequestId};
     let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();

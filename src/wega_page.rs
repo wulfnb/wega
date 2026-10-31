@@ -3,7 +3,7 @@ use crate::engine::Wake;
 use std::{
     io::Read,
     path::PathBuf,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::{Arc, Mutex, mpsc},
 };
 use wega::{
@@ -239,7 +239,7 @@ impl Snapshot {
     }
 }
 pub(crate) struct Page {
-    child: Child,
+    child: wega_platform::process::OwnedProcess,
     frames: Arc<Mutex<wega_platform::FrameStore>>,
     broker: wega_network::SessionHandle,
     requests: Option<mpsc::SyncSender<Request>>,
@@ -362,21 +362,30 @@ impl Page {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000); // Private worker, no console window.
         }
-        let mut child = command
+        let child = command
             .spawn()
             .map_err(|e| format!("Cannot start Wega engine: {e}"))?;
+        let mut child = wega_platform::process::OwnedProcess::new(child, |report| {
+            wega::diagnostics::record(
+                &format!("worker:{}:exit", report.pid),
+                &format!(
+                    "Reaped content process: forced={}, status={:?}",
+                    report.forced, report.status
+                ),
+            );
+        });
         let worker_id = child.id();
         wega::diagnostics::record(
             &format!("worker:{worker_id}"),
             &format!("Started for {}", url),
         );
-        if let Some(stderr) = child.stderr.take() {
+        if let Some(stderr) = child.take_stderr() {
             std::thread::spawn(move || {
                 wega::diagnostics::drain(&format!("worker:{worker_id}:stderr"), stderr)
             });
         }
-        let mut stdin = child.stdin.take().ok_or("Missing worker input")?;
-        let mut stdout = child.stdout.take().ok_or("Missing worker output")?;
+        let mut stdin = child.take_stdin().ok_or("Missing worker input")?;
+        let mut stdout = child.take_stdout().ok_or("Missing worker output")?;
         let state = Arc::new(Mutex::new(Snapshot {
             url: url.to_string(),
             ..Default::default()
@@ -456,6 +465,14 @@ impl Page {
                         continue;
                     }
                     match event {
+                        Event::ShutdownComplete => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if !state.lifecycle.acknowledge_close() {
+                                return Err("Unrequested worker shutdown acknowledgement".into());
+                            }
+                        }
                         Event::Content { context, event } => {
                             if let ContentEvent::Notice(message)
                             | ContentEvent::Compatibility(message) = &event
@@ -1104,7 +1121,7 @@ impl NavigationPort for Page {
 }
 impl Drop for Page {
     fn drop(&mut self) {
-        {
+        let graceful = {
             let mut state = self
                 .state
                 .lock()
@@ -1116,10 +1133,20 @@ impl Drop for Page {
             ));
             state.native.clear();
             state.dialog = None;
+            state
+                .capabilities
+                .contains(&protocol::Capability::GracefulShutdown)
+        };
+        if graceful
+            && self
+                .requests
+                .as_ref()
+                .is_some_and(|sender| sender.try_send(Request::Shutdown).is_ok())
+        {
+            self.child
+                .allow_graceful_shutdown(wega_platform::process::MAX_SHUTDOWN_GRACE);
         }
         self.requests.take();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
     }
 }
 

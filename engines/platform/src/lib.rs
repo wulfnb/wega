@@ -2,6 +2,7 @@
 //! The DOM/VM crate remains `forbid(unsafe_code)`; native calls live here.
 #![deny(unsafe_op_in_unsafe_fn)]
 use std::{fs::File, io, path::Path};
+pub mod process;
 
 /// Current resident/working-set bytes, never peak usage or the JS heap.
 pub fn resident_bytes() -> Option<u64> {

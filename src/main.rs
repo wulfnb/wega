@@ -332,7 +332,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(target_os = "macos")]
         open_events,
     };
-    event_loop.run_app(&mut app)?;
+    let loop_result = event_loop.run_app(&mut app);
+    if let Some(browser) = &mut app.browser {
+        browser.shutdown_wega_workers();
+    }
+    wega_platform::process::wait_for_shutdowns();
+    loop_result?;
     if let Some(error) = app.failure {
         return Err(std::io::Error::other(error).into());
     }

@@ -174,5 +174,19 @@ must be reported explicitly; do not silently discard the old data.
 - Still pending: acknowledged close and process reaping, trusted frame/service
   identities, and all runtime verification. The lifecycle model alone is not an
   implemented safe unload/close handshake or OS sandbox.
+- 02.c4: protocol v10 acknowledges shutdown only after the worker releases its
+  DOM/JS ownership. A Rust `OwnedProcess` in `wega-platform` retains the actual
+  child handle until exit/reaping, including startup error paths. Closing a tab
+  cancels pending requests and queues negotiated shutdown; its reaper allows up
+  to one second of grace before attempting forced termination. Waiting occurs
+  off the UI thread; exceptional reaper-thread creation failure falls back to
+  termination/reaping rather than orphaning the handle. Normal event-loop exit
+  closes all Wega owners and drains reapers before the browser's existing process
+  exit path. A shutdown acknowledgement does not substitute for observed OS exit.
+  This is normal shutdown ownership, not OS job containment or parent-crash cleanup.
+  It does not acknowledge saved page edits or durable storage flushes; existing
+  conservative destructive-action confirmation remains in force.
+- Remaining Step 02 work: trusted frame/service identity and authority contracts;
+  close/unload integration and process tests still require the deferred runtime pass.
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.

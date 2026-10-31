@@ -111,7 +111,10 @@ impl crate::browser::Browser {
         let Some(capture) = &mut self.capture else {
             return;
         };
-        assert!(!state.lifecycle.failed(), "Wega worker failed during capture");
+        assert!(
+            !state.lifecycle.failed(),
+            "Wega worker failed during capture"
+        );
         assert!(
             capture.start.elapsed() < Duration::from_secs(60),
             "Wega page capture timed out"

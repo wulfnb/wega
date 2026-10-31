@@ -15,9 +15,16 @@
     "02.c1": "Actual document commit/revision tracking and stale-frame rejection implemented; tests pending",
     "02.c2": "Negotiated queued cancellation, pre-execution deadlines and bounded admission implemented; tests pending",
     "02.c3": "Host-owned lifecycle, actual navigation commit binding, scoped native events and identified dialog replies implemented; tests pending",
-    "02.c": "Acknowledged close/process reaping and trusted frame/service identities pending"
+    "02.c4": "Shutdown acknowledgement, owned child process reaping and normal browser-exit draining implemented; tests pending",
+    "02.c": "Trusted frame/service identity and authority contracts pending; all runtime verification deferred"
   },
   "compile_checks": [
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Platform ownership, protocol and regression-source type checking only; no subprocess tests executed"
+    },
     {
       "command": "cargo check --locked --offline --no-default-features --lib",
       "platform": "macOS arm64",
