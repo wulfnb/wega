@@ -11,6 +11,13 @@ deferred tests never satisfy a completion, parity or Servo-retirement gate.
 See the [feature ledger](standalone-feature-ledger.md) for source observations and
 pending evidence. Step 01 source auditing is in progress; baseline test execution is deferred.
 
+Implementation language: all new Wega-owned engine, browser and tooling code is
+Rust. The owner explicitly permits retaining V8 and Skia as dependencies. New DOM
+semantics belong in Rust; generate required binding glue instead of adding new
+handwritten JavaScript feature implementations. Existing Python tooling and
+handwritten JavaScript bindings must be inventoried for later migration; their
+presence is not permission to add more non-Rust implementations.
+
 This is the execution order for [the migration proposal](standalone-engine-migration.md).
 The destination is a browser powered entirely by Wega's engine: Blitz, V8 through
 `deno_core`, and Skia. The requirement is to retain **every capability currently
@@ -301,7 +308,7 @@ page functionality, and deadline termination has an explicit recovery outcome.
 Pin IDL inputs and licenses. Generate conversions, prototypes, inheritance,
 brand checks, dictionaries, unions, overloads, exceptions and exposure conditions
 incrementally under the [Web IDL standard](https://webidl.spec.whatwg.org/).
-First migrate a real small interface family; leave semantic hooks handwritten.
+First migrate a real small interface family; implement semantic hooks in Rust.
 Define wrapper identity per realm, GC tracing/rooting, weak wrappers, node lifetime,
 cross-realm handling and reentrant native calls before scaling the generator.
 
@@ -545,6 +552,12 @@ resolving the full dependency graph. Preserve core-only/test-harness builds, ven
 checks, generated bindings, offline fixtures and helper binary packaging. A temporary
 build-only historical Servo comparison path may remain until 26, outside the default
 workspace if dependency incompatibility requires it.
+
+Migrate remaining Wega-owned Python application/tooling code and handwritten
+JavaScript feature logic to Rust before declaring the language migration complete.
+Include the Docker gateway and build/package/test tooling in that inventory;
+website JavaScript, generated binding glue and permitted upstream dependencies
+are distinct from Wega-owned semantic implementations.
 
 **Done when:** a clean standalone build restores existing profile copies, all
 baseline product flows run with no Servo initialization/fallback, and the unified

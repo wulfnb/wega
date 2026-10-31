@@ -115,3 +115,12 @@ content isolation, and verify replacements before final Servo removal. Workspace
 unification follows a working standalone application. The initial one-worker-per-tab
 topology does not itself provide cross-site frame isolation. This addendum records
 the implementation plan, not completed runtime behavior or platform validation.
+
+## 31 October 2026: Rust for Wega-owned implementation and tooling
+
+The owner clarified that Wega-owned browser/engine code and tooling will be Rust;
+V8 and Skia remain permitted third-party dependencies despite their native C++
+implementations. New DOM semantics belong in Rust with generated binding glue.
+Existing handwritten JavaScript and Python implementation/tooling must be tracked
+and migrated; no new handwritten non-Rust feature implementation is authorized.
+This does not prohibit executing website JavaScript or using upstream Deno APIs.

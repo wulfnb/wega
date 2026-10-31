@@ -15,13 +15,17 @@ IDs, source references, target steps, pending gates and empty runtime evidence.
 Regenerate the source snapshot without building, launching or testing the browser:
 
 ```sh
-python3 scripts/standalone-inventory.py
+cargo run --locked --no-default-features --features migration-tools --bin wega-inventory
 ```
 
-The script reads the repository and the pinned `servo-config 0.7.0` source from the
+The Rust tool reads the repository and the pinned `servo-config 0.7.0` source from the
 Cargo registry. If it is unavailable or ambiguous, supply `--servo-config /path/to/prefs.rs`.
 It never reads a personal browser profile. Source hashes preserve the actual inputs
 even if the capture's HEAD includes unfinished migration work.
+
+The inventory generator is implemented in Rust. Its snapshot also lists existing
+Python, handwritten JavaScript and shell files in Wega's source/tooling directories
+for ownership and Rust-migration audit; no Python inventory implementation remains.
 
 ## Source audit findings that change the parity scope
 
