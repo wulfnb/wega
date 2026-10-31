@@ -21,7 +21,7 @@ mod v8;
 mod view;
 mod web;
 mod web_extensions;
-pub use dom::DialogHandler;
+pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use network::NetworkPolicy;
 pub use raster::{Painted, Pixels};
 pub use view::{Frame, View};

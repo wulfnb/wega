@@ -1,5 +1,8 @@
 //! One private worker per Wega tab. No window, network control port or Servo VM.
-use protocol::{Command, DocumentId, DocumentRevision, ErrorCode, Event, ProtocolError};
+use protocol::{
+    Command, ContentEvent, DialogId, DocumentContext, DocumentId, DocumentRevision, ErrorCode,
+    Event, ProtocolError,
+};
 use std::{
     cell::RefCell,
     collections::VecDeque,
@@ -14,6 +17,17 @@ enum Work {
     Command(Command),
     Rejected(protocol::RequestContext, ProtocolError),
     Wake,
+}
+
+fn document_context(view: &wega_engine::View, serial: u64, version: u32) -> DocumentContext {
+    DocumentContext {
+        document: DocumentId(if version >= 9 {
+            view.document_generation()
+        } else {
+            serial
+        }),
+        revision: DocumentRevision(view.document_revision()),
+    }
 }
 
 struct RunningRequest {
@@ -160,68 +174,124 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let receiver = receiver.clone();
         let deferred = deferred.clone();
         let admission = queue.clone();
-        view.set_dialog_handler(Box::new(move |kind, message, default| {
-            let event = Event::Dialog {
-                kind: kind.into(),
-                message: message.into(),
-                default: default.into(),
-            };
-            if protocol::write(&mut *output.borrow_mut(), &event).is_err() {
-                return None;
-            }
-            let deadline = Instant::now() + Duration::from_secs(300);
-            loop {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                match receiver.recv_timeout(remaining) {
-                    Ok(Work::Command(Command::DialogReply(value))) => return value,
-                    Ok(Work::Wake) => {}
-                    Ok(work @ Work::Command(Command::Shutdown)) => {
-                        deferred.borrow_mut().push_back(work);
-                        return None;
-                    }
-                    Ok(work) => {
-                        let mut queue = deferred.borrow_mut();
-                        if queue.len() < 64 {
-                            queue.push_back(work);
-                        } else {
-                            let rejection = match work {
-                                Work::Command(command) => {
-                                    protocol::scoped_context(&command).map(|context| {
-                                        admission
-                                            .lock()
-                                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                            .finish(context);
-                                        Event::RequestFailed {
-                                            context,
-                                            error: ProtocolError::new(
-                                                ErrorCode::ResourceLimit,
-                                                "Dialog command queue is full",
-                                            ),
-                                        }
-                                    })
-                                }
-                                Work::Rejected(context, error) => {
-                                    Some(Event::RequestFailed { context, error })
-                                }
-                                Work::Wake => None,
-                            };
-                            if let Some(event) = rejection
-                                && protocol::write(&mut *output.borrow_mut(), &event).is_err()
-                            {
+        let mut next_dialog = 0_u64;
+        view.set_document_dialog_handler(Box::new(
+            move |generation, revision, kind, message, default| {
+                next_dialog = next_dialog.checked_add(1)?;
+                let id = DialogId(next_dialog);
+                let context = DocumentContext {
+                    document: DocumentId(generation),
+                    revision: DocumentRevision(revision),
+                };
+                // Parsing may reach an inline alert before poll() returns to the host loop.
+                if version >= 9
+                    && protocol::write(
+                        &mut *output.borrow_mut(),
+                        &Event::DocumentCommitted {
+                            serial: generation,
+                            revision: context.revision,
+                        },
+                    )
+                    .is_err()
+                {
+                    return None;
+                }
+                let event = protocol::content_event(
+                    version,
+                    context,
+                    ContentEvent::Dialog {
+                        id,
+                        kind: kind.into(),
+                        message: message.into(),
+                        default: default.into(),
+                    },
+                );
+                if protocol::write(&mut *output.borrow_mut(), &event).is_err() {
+                    return None;
+                }
+                let deadline = Instant::now() + Duration::from_secs(300);
+                let answer = (|| {
+                    loop {
+                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        match receiver.recv_timeout(remaining) {
+                            Ok(Work::Command(Command::AnswerDialog {
+                                context: answered,
+                                id: answered_id,
+                                value,
+                            })) if version >= 9 && answered == context && answered_id == id => {
+                                return value;
+                            }
+                            Ok(Work::Command(Command::AnswerDialog { .. })) => {}
+                            Ok(Work::Command(Command::DialogReply(value))) if version < 9 => {
+                                return value;
+                            }
+                            Ok(Work::Command(Command::DialogReply(_))) => {}
+                            Ok(Work::Wake) => {}
+                            Ok(work @ Work::Command(Command::Shutdown)) => {
+                                deferred.borrow_mut().push_back(work);
                                 return None;
                             }
+                            Ok(work @ Work::Command(Command::Load { .. } | Command::Stop)) => {
+                                deferred.borrow_mut().push_back(work);
+                                return None;
+                            }
+                            Ok(work) => {
+                                let mut queue = deferred.borrow_mut();
+                                if queue.len() < 64 {
+                                    queue.push_back(work);
+                                } else {
+                                    let rejection = match work {
+                                        Work::Command(command) => {
+                                            protocol::scoped_context(&command).map(|context| {
+                                                admission
+                                                    .lock()
+                                                    .unwrap_or_else(
+                                                        std::sync::PoisonError::into_inner,
+                                                    )
+                                                    .finish(context);
+                                                Event::RequestFailed {
+                                                    context,
+                                                    error: ProtocolError::new(
+                                                        ErrorCode::ResourceLimit,
+                                                        "Dialog command queue is full",
+                                                    ),
+                                                }
+                                            })
+                                        }
+                                        Work::Rejected(context, error) => {
+                                            Some(Event::RequestFailed { context, error })
+                                        }
+                                        Work::Wake => None,
+                                    };
+                                    if let Some(event) = rejection
+                                        && protocol::write(&mut *output.borrow_mut(), &event)
+                                            .is_err()
+                                    {
+                                        return None;
+                                    }
+                                }
+                            }
+                            Err(_) => return None,
                         }
                     }
-                    Err(_) => return None,
+                })();
+                if version >= 9 {
+                    let _ = protocol::write(
+                        &mut *output.borrow_mut(),
+                        &protocol::content_event(version, context, ContentEvent::DialogClosed(id)),
+                    );
                 }
-            }
-        }));
+                answer
+            },
+        ));
     }
     let write = |event: &Event| protocol::write(&mut *output.borrow_mut(), event);
     let mut reported_commit = None;
     let mut report_commit = |view: &wega_engine::View, serial| -> std::io::Result<()> {
-        let revision = DocumentRevision(view.document_revision());
-        if reported_commit != Some((serial, revision)) {
+        let context = document_context(view, serial, version);
+        let serial = context.document.0;
+        let revision = context.revision;
+        if (version < 9 || revision.0 > 0) && reported_commit != Some((serial, revision)) {
             if version >= 7 {
                 write(&Event::DocumentCommitted { serial, revision })?;
             }
@@ -283,10 +353,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some((slot, _)) = completed_target {
                         credits[slot as usize] = None;
                     }
-                    write(&Event::Compatibility {
-                        serial,
-                        reason: error,
-                    })?;
+                    if completed_revision.0 == view.document_revision() {
+                        write(&protocol::content_event(
+                            version,
+                            document_context(&view, serial, version),
+                            ContentEvent::Compatibility(error),
+                        ))?;
+                    }
                 }
             }
         }
@@ -309,27 +382,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             state = serialized;
         }
         while let Some(notice) = view.notices.pop_front() {
-            write(&Event::Notice(notice.chars().take(4096).collect()))?;
+            write(&protocol::content_event(
+                version,
+                document_context(&view, serial, version),
+                ContentEvent::Notice(notice.chars().take(4096).collect()),
+            ))?;
         }
         if let Some(reason) = view.compatibility.take() {
-            write(&Event::Compatibility {
-                serial,
-                reason: reason.chars().take(4096).collect(),
-            })?;
+            write(&protocol::content_event(
+                version,
+                document_context(&view, serial, version),
+                ContentEvent::Compatibility(reason.chars().take(4096).collect()),
+            ))?;
         }
         while let Some(url) = view.next_navigation() {
-            write(&Event::Navigate(url.to_string()))?;
+            write(&protocol::content_event(
+                version,
+                document_context(&view, serial, version),
+                ContentEvent::Navigate(url.to_string()),
+            ))?;
         }
         while let Some(event) = view.events.pop_front() {
-            write(&match event {
-                PageEvent::Download(url) => Event::Download {
+            let event = match event {
+                PageEvent::Download(url) => ContentEvent::Download {
                     cookies: view.download_cookies(&url),
                     url: url.to_string(),
                 },
-                PageEvent::OpenWindow(url) => Event::OpenWindow(url.to_string()),
-                PageEvent::Traverse(delta) => Event::TraverseUnhandled(delta),
-                PageEvent::Cursor(cursor) => Event::Cursor(cursor),
-            })?;
+                PageEvent::OpenWindow(url) => ContentEvent::OpenWindow(url.to_string()),
+                PageEvent::Traverse(delta) => ContentEvent::TraverseUnhandled(delta),
+                PageEvent::Cursor(cursor) => ContentEvent::Cursor(cursor),
+            };
+            write(&protocol::content_event(
+                version,
+                document_context(&view, serial, version),
+                event,
+            ))?;
         }
         let slot = credits.iter().position(Option::is_none);
         let can_paint = !view.paint_pending() && (!shared || slot.is_some());
@@ -367,10 +454,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     frozen = true;
                     view.freeze(true);
-                    write(&Event::Compatibility {
-                        serial,
-                        reason: error,
-                    })?;
+                    write(&protocol::content_event(
+                        version,
+                        document_context(&view, serial, version),
+                        ContentEvent::Compatibility(error),
+                    ))?;
                 }
             }
         }
@@ -420,7 +508,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Work::Wake => {}
             Work::Rejected(context, error) => write(&Event::RequestFailed { context, error })?,
             Work::Command(command) => match command {
-                Command::CancelRequest(_) => {} // Consumed by the input thread.
+                Command::CancelRequest(_) => {}    // Consumed by the input thread.
+                Command::AnswerDialog { .. } => {} // A late answer has no authority over another prompt.
                 Command::Capabilities => {
                     write(&Event::Capabilities {
                         version,
@@ -502,9 +591,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     serial = requested;
                     if let Err(error) = Url::parse(&url)
                         .map_err(|e| e.to_string())
-                        .and_then(|url| view.load(url))
+                        .and_then(|url| view.load_for_navigation(url, requested))
                     {
-                        write(&Event::Notice(error))?;
+                        view.stop_for_navigation(requested);
+                        report_commit(&view, serial)?;
+                        write(&protocol::content_event(
+                            version,
+                            document_context(&view, serial, version),
+                            ContentEvent::Notice(error),
+                        ))?;
                     }
                 }
                 Command::Resize {

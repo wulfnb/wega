@@ -323,6 +323,8 @@ const MAX_SCRIPTS: usize = 1024;
 pub struct View {
     document: Rc<RefCell<BaseDocument>>,
     document_revision: u64,
+    navigation_generation: u64,
+    document_generation: Rc<Cell<u64>>,
     script: Option<Box<dyn ScriptHost>>,
     network: Network,
     limits: Limits,
@@ -339,7 +341,7 @@ pub struct View {
     encoding: &'static Encoding,
     referrer_policy: Option<String>,
     csp: Arc<RwLock<Csp>>,
-    dialog: Rc<RefCell<Option<crate::dom::DialogHandler>>>,
+    dialog: Rc<RefCell<Option<crate::dom::DocumentDialogHandler>>>,
     activation: Rc<Cell<Option<Instant>>>,
     navigate: Rc<RefCell<Vec<Url>>>,
     navigation_rx: mpsc::Receiver<NavigationOptions>,
@@ -378,6 +380,8 @@ impl View {
         let mut view = Self {
             document: Rc::new(RefCell::new(document)),
             document_revision: 0,
+            navigation_generation: 0,
+            document_generation: Rc::new(Cell::new(0)),
             script: None,
             network,
             limits,
@@ -425,7 +429,12 @@ impl View {
     }
     /// Answer `alert`, `confirm` and `prompt`; without a handler they return
     /// their default (no) answer immediately.
-    pub fn set_dialog_handler(&mut self, handler: crate::dom::DialogHandler) {
+    pub fn set_dialog_handler(&mut self, mut handler: crate::dom::DialogHandler) {
+        self.set_document_dialog_handler(Box::new(move |_, _, kind, message, default| {
+            handler(kind, message, default)
+        }));
+    }
+    pub fn set_document_dialog_handler(&mut self, handler: crate::dom::DocumentDialogHandler) {
         *self.dialog.borrow_mut() = Some(handler);
     }
     fn local_base(&self) -> Option<std::path::PathBuf> {
@@ -467,8 +476,22 @@ impl View {
     pub fn document_revision(&self) -> u64 {
         self.document_revision
     }
+    pub fn document_generation(&self) -> u64 {
+        self.document_generation.get()
+    }
+    pub fn load_for_navigation(&mut self, url: Url, generation: u64) -> Result<(), String> {
+        self.events.clear();
+        self.navigate.borrow_mut().clear();
+        self.navigation_generation = generation;
+        self.load(url)
+    }
+    pub fn stop_for_navigation(&mut self, generation: u64) {
+        self.navigation_generation = generation;
+        self.stop();
+    }
     pub fn load(&mut self, url: Url) -> Result<(), String> {
         if self.same_document(&url) {
+            self.document_generation.set(self.navigation_generation);
             self.navigate_fragment(&url);
             return Ok(());
         }
@@ -479,7 +502,7 @@ impl View {
         self.load_request(url, context)
     }
     fn load_request(&mut self, url: Url, context: FetchContext) -> Result<(), String> {
-        self.stop();
+        self.stop_pending();
         self.url = url.clone();
         self.loading = true;
         self.compatibility = None;
@@ -495,6 +518,11 @@ impl View {
     /// Stop loading: cancel fetches and the parser. The current document and
     /// its scripts stay.
     pub fn stop(&mut self) {
+        self.stop_pending();
+        self.document_generation.set(self.navigation_generation);
+        self.url = self.document.borrow().url().clone();
+    }
+    fn stop_pending(&mut self) {
         if let Some(abort) = self.abort.take() {
             abort.abort();
         }
@@ -580,6 +608,9 @@ impl View {
         };
         self.document = Rc::new(RefCell::new(document));
         self.document_revision = document_revision;
+        self.document_generation = Rc::new(Cell::new(self.navigation_generation));
+        self.events.clear();
+        self.navigate.borrow_mut().clear();
         self.refresh = response
             .and_then(|r| r.header("refresh"))
             .and_then(|value| self.parse_refresh(value));
@@ -591,6 +622,8 @@ impl View {
                 network: self.network.clone(),
                 csp: self.csp.clone(),
                 dialog: self.dialog.clone(),
+                document_generation: self.document_generation.clone(),
+                document_revision: self.document_revision,
                 activation: self.activation.clone(),
                 started_scripts: self.started_scripts.clone(),
             },
@@ -731,6 +764,7 @@ impl View {
         );
         let result = match kind {
             DocumentKind::Download => {
+                self.document_generation.set(self.navigation_generation);
                 self.events
                     .push_back(PageEvent::Download(response.url.clone()));
                 self.url = self.document.borrow().url().clone();

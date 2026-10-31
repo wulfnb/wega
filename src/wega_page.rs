@@ -8,7 +8,9 @@ use std::{
 };
 use wega::{
     engine_protocol::{
-        self as protocol, Command as Request, ErrorCode, Event, ProtocolError, RequestContext,
+        self as protocol, Command as Request, ContentEvent, DialogId, DocumentContext, ErrorCode,
+        Event, ProtocolError, RequestContext,
+        lifecycle::Lifecycle,
         requests::{DocumentRequests, PendingRequest, RequestKind},
     },
     model::Policy,
@@ -33,12 +35,17 @@ pub(crate) fn executable() -> Option<PathBuf> {
 /// A blocking `alert`, `confirm` or `prompt` the page is waiting on.
 #[derive(Clone, Debug)]
 pub(crate) struct Dialog {
+    pub context: DocumentContext,
+    pub id: DialogId,
     pub kind: String,
     pub message: String,
     pub default: String,
 }
 #[derive(Default)]
 pub(crate) struct Snapshot {
+    pub lifecycle: Lifecycle,
+    pub native: std::collections::VecDeque<(DocumentContext, ContentEvent)>,
+    last_dialog: u64,
     pub page_checks: Vec<(RequestContext, u64, bool)>,
     pub requests: DocumentRequests,
     pub capabilities: Vec<protocol::Capability>,
@@ -49,32 +56,132 @@ pub(crate) struct Snapshot {
     pub fallback_reported: bool,
     pub url: String,
     pub title: String,
-    pub loading: bool,
-    pub failed: bool,
     pub nodes: usize,
     pub js_heap: usize,
     pub notices: std::collections::VecDeque<String>,
-    pub navigations: std::collections::VecDeque<String>,
     pub frame: Option<(u32, u32, Vec<u8>)>,
     pub capture: Option<PathBuf>,
     pub capture_result: Option<Result<(), String>>,
     pub visited: Option<(String, String)>,
     pub evaluated: Option<Result<String, String>>,
-    pub frozen: bool,
     /// The page's own history (pushState, fragments) can go back / forward.
     pub document_back: bool,
     pub document_forward: bool,
-    /// Files to download: (url, Netscape cookie lines).
-    pub downloads: std::collections::VecDeque<(String, String)>,
-    /// User-activated popups and `target=_blank` links.
-    pub windows: std::collections::VecDeque<String>,
-    /// History steps outside the page's own entries.
-    pub traversals: std::collections::VecDeque<i32>,
     pub cursor: Option<String>,
     pub dialog: Option<Dialog>,
 }
 
 impl Snapshot {
+    pub fn accepts_context(&self, context: DocumentContext) -> bool {
+        self.lifecycle.accepts_content()
+            && context.document == self.requests.document()
+            && context.revision == self.requests.revision()
+    }
+
+    fn bind_document(
+        &mut self,
+        serial: u64,
+        revision: protocol::DocumentRevision,
+    ) -> Result<(), String> {
+        if serial != self.requests.document().0 || !self.lifecycle.accepts_requests() {
+            return Ok(());
+        }
+        if self.lifecycle.accepts_content() && revision == self.requests.revision() {
+            return Ok(());
+        }
+        let cancelled = self
+            .requests
+            .commit(revision)
+            .map_err(|error| error.message)?;
+        self.lifecycle.commit();
+        self.native.clear();
+        self.evaluated = None;
+        self.frame = None;
+        self.dialog = None;
+        self.cursor = None;
+        self.compatibility = None;
+        self.fallback_reported = false;
+        for request in cancelled {
+            self.request_failed(
+                request,
+                ProtocolError::new(ErrorCode::StaleDocument, "Document was replaced"),
+            );
+        }
+        Ok(())
+    }
+
+    /// Returns a denial to send when a stale/replayed prompt must be unblocked.
+    fn content_event(
+        &mut self,
+        context: DocumentContext,
+        event: ContentEvent,
+    ) -> Option<(DocumentContext, DialogId)> {
+        if !self.accepts_context(context) {
+            return if let ContentEvent::Dialog { id, .. } = event {
+                Some((context, id))
+            } else {
+                None
+            };
+        }
+        match event {
+            ContentEvent::Dialog {
+                id,
+                kind,
+                message,
+                default,
+            } => {
+                if id.0 <= self.last_dialog {
+                    if self
+                        .dialog
+                        .as_ref()
+                        .is_some_and(|dialog| dialog.context == context && dialog.id == id)
+                    {
+                        return None;
+                    }
+                    return Some((context, id));
+                }
+                self.last_dialog = id.0;
+                self.dialog = Some(Dialog {
+                    context,
+                    id,
+                    kind,
+                    message,
+                    default,
+                });
+            }
+            ContentEvent::DialogClosed(id) => {
+                if self
+                    .dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.context == context && dialog.id == id)
+                {
+                    self.dialog = None;
+                }
+            }
+            event => {
+                if self.native.len() < 32 {
+                    self.native.push_back((context, event));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn take_native_events(&mut self, active: bool) -> Vec<(DocumentContext, ContentEvent)> {
+        let events = std::mem::take(&mut self.native);
+        let mut ready = Vec::new();
+        for (context, event) in events {
+            if !self.accepts_context(context) {
+                continue;
+            }
+            if active || matches!(&event, ContentEvent::Download { .. }) {
+                ready.push((context, event));
+            } else {
+                self.native.push_back((context, event));
+            }
+        }
+        ready
+    }
     pub fn take_page_checks(&mut self) -> Vec<(u64, bool)> {
         let document = self.requests.document();
         let revision = self.requests.revision();
@@ -142,6 +249,7 @@ pub(crate) struct Page {
     pub zoom: f32,
     /// The text of an open `prompt`.
     pub dialog_input: String,
+    pub dialog_input_for: Option<DialogId>,
     history: Vec<String>,
     index: usize,
 }
@@ -149,6 +257,9 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
     let mut state = state
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !state.lifecycle.accepts_requests() {
+        return;
+    }
     wega::diagnostics::report(
         "worker:failure",
         wega::diagnostic_event::Diagnostic::error(
@@ -158,8 +269,7 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
         ),
     );
     state.compatibility.get_or_insert_with(|| message.clone());
-    state.failed = true;
-    state.loading = false;
+    state.lifecycle.crash();
     state.cancel_requests(ProtocolError::new(
         ErrorCode::Cancelled,
         "Content worker stopped",
@@ -183,7 +293,7 @@ fn accept_frame(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if serial != state.requests.document().0
             || revision != state.requests.revision()
-            || state.frozen
+            || !state.lifecycle.presents_frames()
         {
             return;
         }
@@ -199,7 +309,7 @@ fn accept_frame(
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if serial == state.requests.document().0
         && revision == state.requests.revision()
-        && !state.frozen
+        && state.lifecycle.presents_frames()
     {
         if let Some(result) = result {
             state.capture_result = Some(result);
@@ -269,7 +379,6 @@ impl Page {
         let mut stdout = child.stdout.take().ok_or("Missing worker output")?;
         let state = Arc::new(Mutex::new(Snapshot {
             url: url.to_string(),
-            loading: true,
             ..Default::default()
         }));
         let (sender, receiver) = mpsc::sync_channel(32);
@@ -339,32 +448,45 @@ impl Page {
                             return Err("Incompatible Wega engine worker".into());
                         }
                         ready = true;
+                        shared
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .lifecycle
+                            .ready();
                         continue;
                     }
                     match event {
-                        Event::DocumentCommitted { serial, revision } => {
-                            let mut state = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if serial != state.requests.document().0 {
-                                continue;
-                            }
-                            let cancelled = state
-                                .requests
-                                .commit(revision)
-                                .map_err(|error| error.message)?;
-                            state.evaluated = None;
-                            state.frame = None;
-                            state.dialog = None;
-                            for request in cancelled {
-                                state.request_failed(
-                                    request,
-                                    ProtocolError::new(
-                                        ErrorCode::StaleDocument,
-                                        "Document was replaced",
+                        Event::Content { context, event } => {
+                            if let ContentEvent::Notice(message)
+                            | ContentEvent::Compatibility(message) = &event
+                            {
+                                wega::diagnostics::record(
+                                    &format!(
+                                        "worker:{worker_id}:document:{}:{}",
+                                        context.document.0, context.revision.0
                                     ),
+                                    message,
                                 );
                             }
+                            let denial = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .content_event(context, event);
+                            if let Some((context, id)) = denial {
+                                acknowledgements
+                                    .send(Request::AnswerDialog {
+                                        context,
+                                        id,
+                                        value: None,
+                                    })
+                                    .map_err(|_| "Worker closed before stale dialog denial")?;
+                            }
+                        }
+                        Event::DocumentCommitted { serial, revision } => {
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .bind_document(serial, revision)?;
                         }
                         Event::Capabilities { version, supported } => {
                             if version != protocol::VERSION {
@@ -444,7 +566,7 @@ impl Page {
                             }
                         }
                         Event::PageState { .. } | Event::Evaluated { .. } => {
-                            return Err("Unscoped worker response in v6 session".into());
+                            return Err("Unscoped worker response".into());
                         }
                         Event::SharedFrame {
                             serial,
@@ -466,7 +588,7 @@ impl Page {
                                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                                 if serial != state.requests.document().0
                                     || revision != state.requests.revision()
-                                    || state.frozen
+                                    || !state.lifecycle.presents_frames()
                                 {
                                     None
                                 } else {
@@ -488,17 +610,8 @@ impl Page {
                                 accept_frame(&shared, serial, revision, width, height, bytes);
                             }
                         }
-                        Event::Compatibility { serial, reason } => {
-                            wega::diagnostics::record(
-                                &format!("worker:{worker_id}:compatibility"),
-                                &reason,
-                            );
-                            let mut state = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if state.requests.document().0 == serial && !state.fallback_reported {
-                                state.compatibility.get_or_insert(reason);
-                            }
+                        Event::Compatibility { .. } => {
+                            return Err("Unscoped compatibility event".into());
                         }
                         Event::Frame {
                             serial,
@@ -528,85 +641,33 @@ impl Page {
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if serial != state.requests.document().0 {
+                            if serial != state.requests.document().0
+                                || !state.lifecycle.accepts_requests()
+                            {
                                 continue;
                             }
                             state.rss_bytes = rss_bytes;
                             state.document_back = back;
                             state.document_forward = forward;
-                            if state.loading && !loading {
+                            if state.lifecycle.loading()
+                                && !loading
+                                && state.lifecycle.accepts_content()
+                            {
                                 state.visited = Some((url.clone(), title.clone()));
                             }
                             state.url = url;
                             state.title = title;
-                            state.loading = loading;
+                            state.lifecycle.observe_loading(loading);
                             state.nodes = nodes;
                             state.js_heap = js_heap;
                         }
-                        Event::Notice(message) => {
-                            wega::diagnostics::record(
-                                &format!("worker:{worker_id}:notice"),
-                                &message,
-                            );
-                            let mut state = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if state.notices.len() < 16 {
-                                state.notices.push_back(message);
-                            }
-                        }
-                        Event::Navigate(url) => {
-                            let mut state = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if state.navigations.len() < 8 {
-                                state.navigations.push_back(url);
-                            }
-                        }
-                        Event::Download { url, cookies } => {
-                            let mut state = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if state.downloads.len() < 8 {
-                                state.downloads.push_back((url, cookies));
-                            }
-                        }
-                        Event::OpenWindow(url) => {
-                            let mut state = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if state.windows.len() < 4 {
-                                state.windows.push_back(url);
-                            }
-                        }
-                        Event::TraverseUnhandled(delta) => {
-                            let mut state = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if state.traversals.len() < 8 {
-                                state.traversals.push_back(delta);
-                            }
-                        }
-                        Event::Cursor(cursor) => {
-                            shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .cursor = Some(cursor);
-                        }
-                        Event::Dialog {
-                            kind,
-                            message,
-                            default,
-                        } => {
-                            shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .dialog = Some(Dialog {
-                                kind,
-                                message,
-                                default,
-                            });
-                        }
+                        Event::Notice(_)
+                        | Event::Navigate(_)
+                        | Event::Download { .. }
+                        | Event::OpenWindow(_)
+                        | Event::TraverseUnhandled(_)
+                        | Event::Cursor(_)
+                        | Event::Dialog { .. } => return Err("Unscoped content event".into()),
                         Event::Ready { .. } => return Err("Unexpected worker handshake".into()),
                     }
                     let _ = proxy.send_event(Wake::Ui);
@@ -627,6 +688,7 @@ impl Page {
             viewport: None,
             zoom: 1.0,
             dialog_input: String::new(),
+            dialog_input_for: None,
             history: vec![url.to_string()],
             index: 0,
         };
@@ -686,7 +748,7 @@ impl Page {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 let expired = state.expire_requests();
-                if state.failed {
+                if !state.lifecycle.accepts_requests() {
                     return Err("Content worker is stopped".into());
                 }
                 let context = state
@@ -710,7 +772,7 @@ impl Page {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 let expired = state.expire_requests();
-                if state.failed {
+                if !state.lifecycle.accepts_requests() {
                     return Err("Content worker is stopped".into());
                 }
                 let context = state
@@ -832,7 +894,8 @@ impl Page {
         self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .loading
+            .lifecycle
+            .loading()
     }
     fn document_history(&self) -> (bool, bool) {
         let state = self
@@ -869,21 +932,38 @@ impl Page {
         });
     }
     /// Answer the open dialog (None cancels).
-    pub fn answer_dialog(&mut self, value: Option<String>) {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .dialog = None;
-        self.dialog_input.clear();
-        let _ = self.send(Request::DialogReply(value));
-    }
-    pub fn freeze(&mut self, frozen: bool) {
-        let _ = self.send(Request::Freeze(frozen));
+    pub fn answer_dialog(&mut self, context: DocumentContext, id: DialogId, value: Option<String>) {
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        state.frozen = frozen;
+        if !state.accepts_context(context)
+            || !state
+                .dialog
+                .as_ref()
+                .is_some_and(|dialog| dialog.context == context && dialog.id == id)
+        {
+            return;
+        }
+        if self
+            .send(Request::AnswerDialog { context, id, value })
+            .is_err()
+        {
+            return;
+        }
+        state.dialog = None;
+        self.dialog_input.clear();
+        self.dialog_input_for = None;
+    }
+    pub fn freeze(&mut self, frozen: bool) {
+        if self.send(Request::Freeze(frozen)).is_err() {
+            return;
+        }
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.lifecycle.freeze(frozen);
         if frozen {
             self.texture = None;
             state.frame = None;
@@ -902,6 +982,9 @@ impl Page {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !state.lifecycle.accepts_requests() {
+            return Err("Content worker is stopped".into());
+        }
         let document = state
             .requests
             .next_document()
@@ -910,6 +993,10 @@ impl Page {
             url: url.to_string(),
             serial: document.0,
         })?;
+        state.lifecycle.navigate();
+        state.native.clear();
+        state.dialog = None;
+        state.cursor = None;
         state.evaluated = None;
         state.frame = None;
         for request in state
@@ -948,8 +1035,7 @@ impl Page {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.url = url.to_string();
-        state.loading = true;
-        state.failed = false;
+        state.lifecycle.observe_loading(true);
         Ok(())
     }
     pub fn resize(
@@ -1018,6 +1104,19 @@ impl NavigationPort for Page {
 }
 impl Drop for Page {
     fn drop(&mut self) {
+        {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.lifecycle.close();
+            state.cancel_requests(ProtocolError::new(
+                ErrorCode::Cancelled,
+                "Content session is closing",
+            ));
+            state.native.clear();
+            state.dialog = None;
+        }
         self.requests.take();
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -1027,6 +1126,112 @@ impl Drop for Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn committed_state() -> (Snapshot, DocumentContext) {
+        let mut state = Snapshot::default();
+        state
+            .bind_document(0, protocol::DocumentRevision(1))
+            .unwrap();
+        state.lifecycle.observe_loading(false);
+        (
+            state,
+            DocumentContext {
+                document: protocol::DocumentId(0),
+                revision: protocol::DocumentRevision(1),
+            },
+        )
+    }
+
+    #[test]
+    fn buffered_actions_cannot_escape_a_replacement_document_or_pending_navigation() {
+        let (mut state, context) = committed_state();
+        state.content_event(
+            context,
+            ContentEvent::OpenWindow("https://old.example/".into()),
+        );
+        state.content_event(
+            context,
+            ContentEvent::Download {
+                url: "https://old.example/file".into(),
+                cookies: "private".into(),
+            },
+        );
+        state
+            .bind_document(0, protocol::DocumentRevision(2))
+            .unwrap();
+        assert!(state.take_native_events(true).is_empty());
+        assert!(!state.accepts_context(context));
+        let current = DocumentContext {
+            revision: protocol::DocumentRevision(2),
+            ..context
+        };
+        state.content_event(
+            current,
+            ContentEvent::Navigate("https://new.example/".into()),
+        );
+        state.lifecycle.navigate();
+        assert!(state.take_native_events(true).is_empty());
+        assert!(!state.lifecycle.presents_frames());
+    }
+
+    #[test]
+    fn a_duplicate_commit_does_not_close_an_inline_dialog_and_a_late_close_cannot_close_its_successor()
+     {
+        let (mut state, context) = committed_state();
+        let dialog = |id| ContentEvent::Dialog {
+            id: DialogId(id),
+            kind: "confirm".into(),
+            message: "Question".into(),
+            default: String::new(),
+        };
+        assert!(state.content_event(context, dialog(1)).is_none());
+        state.bind_document(0, context.revision).unwrap();
+        assert_eq!(state.dialog.as_ref().unwrap().id, DialogId(1));
+        assert!(state.content_event(context, dialog(1)).is_none());
+        state.content_event(context, ContentEvent::DialogClosed(DialogId(1)));
+        state.content_event(context, dialog(2));
+        state.content_event(context, ContentEvent::DialogClosed(DialogId(1)));
+        assert_eq!(state.dialog.as_ref().unwrap().id, DialogId(2));
+        assert_eq!(
+            state.content_event(context, dialog(1)),
+            Some((context, DialogId(1)))
+        );
+        state.lifecycle.navigate();
+        assert_eq!(
+            state.content_event(context, dialog(3)),
+            Some((context, DialogId(3)))
+        );
+    }
+
+    #[test]
+    fn background_actions_remain_bounded_and_wait_for_their_own_tab() {
+        let (mut state, context) = committed_state();
+        state.content_event(
+            context,
+            ContentEvent::OpenWindow("https://example.org/".into()),
+        );
+        state.content_event(
+            context,
+            ContentEvent::Download {
+                url: "https://example.org/file".into(),
+                cookies: String::new(),
+            },
+        );
+        let background = state.take_native_events(false);
+        assert_eq!(background.len(), 1);
+        assert!(matches!(&background[0].1, ContentEvent::Download { .. }));
+        for _ in 0..100 {
+            state.content_event(
+                context,
+                ContentEvent::Navigate("https://example.org/".into()),
+            );
+        }
+        assert_eq!(state.native.len(), 32);
+        assert!(matches!(
+            &state.take_native_events(true)[0].1,
+            ContentEvent::OpenWindow(_)
+        ));
+    }
 
     #[test]
     fn a_clean_reply_buffered_before_navigation_cannot_authorize_closing_the_new_document() {

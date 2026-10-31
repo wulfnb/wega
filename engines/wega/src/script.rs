@@ -24,7 +24,9 @@ pub(crate) struct HostContext {
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
     pub network: crate::network::Network,
     pub csp: std::sync::Arc<std::sync::RwLock<crate::csp::Csp>>,
-    pub dialog: Rc<RefCell<Option<crate::dom::DialogHandler>>>,
+    pub dialog: Rc<RefCell<Option<crate::dom::DocumentDialogHandler>>>,
+    pub document_generation: Rc<Cell<u64>>,
+    pub document_revision: u64,
     pub activation: Rc<Cell<Option<Instant>>>,
     /// Script elements already prepared ("already started"), shared with the view.
     pub started_scripts: Rc<RefCell<std::collections::HashSet<NodeId>>>,

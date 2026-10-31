@@ -123,7 +123,21 @@ fn a_cancelled_command_waiting_behind_a_dialog_never_executes() {
     worker.send(Command::Evaluate(
         "alert('hold the DOM thread');true".into(),
     ));
-    worker.until(|event| matches!(event, Event::Dialog { .. }));
+    let (dialog_context, id) = match worker.until(|event| {
+        matches!(
+            event,
+            Event::Content {
+                event: protocol::ContentEvent::Dialog { .. },
+                ..
+            }
+        )
+    }) {
+        Event::Content {
+            context,
+            event: protocol::ContentEvent::Dialog { id, .. },
+        } => (context, id),
+        _ => unreachable!(),
+    };
     let cancelled = RequestContext {
         document: DocumentId(0),
         revision: worker.revision,
@@ -134,7 +148,11 @@ fn a_cancelled_command_waiting_behind_a_dialog_never_executes() {
         source: "globalThis.cancelledSideEffect=true".into(),
     });
     worker.send(Command::CancelRequest(cancelled));
-    worker.send(Command::DialogReply(None));
+    worker.send(Command::AnswerDialog {
+        context: dialog_context,
+        id,
+        value: None,
+    });
     assert!(
         matches!(worker.until(|event| matches!(event, Event::RequestFailed { .. })), Event::RequestFailed { context, error } if context == cancelled && error.code == ErrorCode::Cancelled)
     );
@@ -148,6 +166,114 @@ fn a_cancelled_command_waiting_behind_a_dialog_never_executes() {
     });
     assert!(
         matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { context, result: Ok(value) } if context == next && value == "\"undefined\"")
+    );
+}
+
+#[test]
+fn dialog_answers_are_bound_to_the_prompt_that_created_them() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    worker.send(Command::Evaluate(
+        "[confirm('first'),confirm('second')]".into(),
+    ));
+    let (context, first) = match worker.until(|event| {
+        matches!(
+            event,
+            Event::Content {
+                event: protocol::ContentEvent::Dialog { .. },
+                ..
+            }
+        )
+    }) {
+        Event::Content {
+            context,
+            event: protocol::ContentEvent::Dialog { id, .. },
+        } => (context, id),
+        _ => unreachable!(),
+    };
+    worker.send(Command::AnswerDialog {
+        context,
+        id: first,
+        value: Some("true".into()),
+    });
+    let second = match worker.until(|event| {
+        matches!(
+            event,
+            Event::Content {
+                event: protocol::ContentEvent::Dialog { .. },
+                ..
+            }
+        )
+    }) {
+        Event::Content {
+            context: current,
+            event: protocol::ContentEvent::Dialog { id, .. },
+        } => {
+            assert_eq!(current, context);
+            id
+        }
+        _ => unreachable!(),
+    };
+    assert_ne!(first, second);
+    worker.send(Command::AnswerDialog {
+        context,
+        id: first,
+        value: None,
+    });
+    worker.send(Command::DialogReply(None)); // Unscoped legacy replies have no authority in v9.
+    worker.send(Command::AnswerDialog {
+        context,
+        id: second,
+        value: Some("true".into()),
+    });
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::Evaluated { .. })), Event::Evaluated { value, error: None } if value == "[true,true]")
+    );
+}
+
+#[test]
+fn navigation_unblocks_a_dialog_without_applying_its_reply_to_the_replacement_page() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    worker.send(Command::Evaluate("alert('old');true".into()));
+    let (context, id) = match worker.until(|event| {
+        matches!(
+            event,
+            Event::Content {
+                event: protocol::ContentEvent::Dialog { .. },
+                ..
+            }
+        )
+    }) {
+        Event::Content {
+            context,
+            event: protocol::ContentEvent::Dialog { id, .. },
+        } => (context, id),
+        _ => unreachable!(),
+    };
+    worker.send(Command::Load {
+        url: "about:blank".into(),
+        serial: 1,
+    });
+    worker.until(|event| matches!(event, Event::DocumentCommitted { serial: 1, .. }));
+    worker.until(|event| {
+        matches!(
+            event,
+            Event::State {
+                serial: 1,
+                loading: false,
+                ..
+            }
+        )
+    });
+    worker.send(Command::AnswerDialog {
+        context,
+        id,
+        value: Some("true".into()),
+    });
+    worker.send(Command::Evaluate("42".into()));
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::Evaluated { .. })), Event::Evaluated { value, error: None } if value == "42")
     );
 }
 #[test]
@@ -452,7 +578,7 @@ fn css_html_and_javascript_errors_are_structured_with_urls_before_ui_queue_limit
         url: server.url("127.0.0.1", "/"),
         serial: 1,
     });
-    worker.until(|e| matches!(e,Event::Notice(s) if s.contains("post-js")));
+    worker.until(|e| matches!(e,Event::Content { event: protocol::ContentEvent::Notice(s), .. } if s.contains("post-js")));
     worker.until(|e| {
         matches!(
             e,

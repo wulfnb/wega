@@ -14,7 +14,8 @@
     "02.b": "Scoped evaluation/edit-state requests, bounded correlation and cancellation on navigation/crash implemented; tests pending",
     "02.c1": "Actual document commit/revision tracking and stale-frame rejection implemented; tests pending",
     "02.c2": "Negotiated queued cancellation, pre-execution deadlines and bounded admission implemented; tests pending",
-    "02.c": "Explicit lifecycle/close acknowledgement, scoped native events and frame/service identities pending"
+    "02.c3": "Host-owned lifecycle, actual navigation commit binding, scoped native events and identified dialog replies implemented; tests pending",
+    "02.c": "Acknowledged close/process reaping and trusted frame/service identities pending"
   },
   "compile_checks": [
     {

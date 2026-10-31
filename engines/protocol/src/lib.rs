@@ -2,9 +2,10 @@
 #![forbid(unsafe_code)]
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
+pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 8;
+pub const VERSION: u32 = 9;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -21,6 +22,66 @@ pub struct DocumentId(pub u64);
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct DocumentRevision(pub u64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct DocumentContext {
+    pub document: DocumentId,
+    pub revision: DocumentRevision,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DialogId(pub u64);
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ContentEvent {
+    Navigate(String),
+    Notice(String),
+    Compatibility(String),
+    Download {
+        url: String,
+        cookies: String,
+    },
+    OpenWindow(String),
+    TraverseUnhandled(i32),
+    Cursor(String),
+    Dialog {
+        id: DialogId,
+        kind: String,
+        message: String,
+        default: String,
+    },
+    DialogClosed(DialogId),
+}
+
+pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent) -> Event {
+    if version >= 9 {
+        return Event::Content { context, event };
+    }
+    match event {
+        ContentEvent::Navigate(url) => Event::Navigate(url),
+        ContentEvent::Notice(message) => Event::Notice(message),
+        ContentEvent::Compatibility(reason) => Event::Compatibility {
+            serial: context.document.0,
+            reason,
+        },
+        ContentEvent::Download { url, cookies } => Event::Download { url, cookies },
+        ContentEvent::OpenWindow(url) => Event::OpenWindow(url),
+        ContentEvent::TraverseUnhandled(delta) => Event::TraverseUnhandled(delta),
+        ContentEvent::Cursor(cursor) => Event::Cursor(cursor),
+        ContentEvent::Dialog {
+            kind,
+            message,
+            default,
+            ..
+        } => Event::Dialog {
+            kind,
+            message,
+            default,
+        },
+        ContentEvent::DialogClosed(_) => Event::Notice("Page dialog closed".into()),
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -40,6 +101,7 @@ pub enum Capability {
     ScopedPageState,
     DocumentCommitTracking,
     QueuedCancellation,
+    ScopedContentEvents,
     SharedFrames,
 }
 
@@ -48,6 +110,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::ScopedPageState,
     Capability::DocumentCommitTracking,
     Capability::QueuedCancellation,
+    Capability::ScopedContentEvents,
     Capability::SharedFrames,
 ];
 
@@ -92,6 +155,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::ScopedEvaluation | Capability::ScopedPageState => 6,
                     Capability::DocumentCommitTracking => 7,
                     Capability::QueuedCancellation => 8,
+                    Capability::ScopedContentEvents => 9,
                 }
         })
         .collect()
@@ -108,6 +172,11 @@ pub fn scoped_context(command: &Command) -> Option<RequestContext> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Command {
+    AnswerDialog {
+        context: DocumentContext,
+        id: DialogId,
+        value: Option<String>,
+    },
     Capabilities,
     EvaluateDocument {
         context: RequestContext,
@@ -197,6 +266,10 @@ pub enum Command {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
+    Content {
+        context: DocumentContext,
+        event: ContentEvent,
+    },
     DocumentCommitted {
         serial: u64,
         revision: DocumentRevision,
@@ -324,6 +397,29 @@ pub fn read<T: for<'a> Deserialize<'a>>(stream: &mut impl Read) -> io::Result<Op
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn scoped_content_is_never_sent_to_an_older_protocol() {
+        #[derive(Deserialize)]
+        enum LegacyEvent {
+            Navigate(String),
+        }
+        let context = DocumentContext {
+            document: DocumentId(1),
+            revision: DocumentRevision(2),
+        };
+        let packet = serde_json::to_vec(&content_event(
+            8,
+            context,
+            ContentEvent::Navigate("https://example.org/".into()),
+        ))
+        .unwrap();
+        let LegacyEvent::Navigate(url) = serde_json::from_slice(&packet).unwrap();
+        assert_eq!(url, "https://example.org/");
+        assert!(!capabilities(8).contains(&Capability::ScopedContentEvents));
+        assert!(
+            matches!(content_event(VERSION, context, ContentEvent::Navigate(url)), Event::Content { context: owner, .. } if owner == context)
+        );
+    }
     #[test]
     fn capabilities_remain_decodable_by_running_v6_hosts() {
         #[derive(Debug, Deserialize)]

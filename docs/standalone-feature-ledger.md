@@ -158,7 +158,21 @@ must be reported explicitly; do not silently discard the old data.
   bookkeeping. Dialog-queue overflow explicitly rejects scoped work and releases
   its admission entry. Cancellation cannot roll back already-running script effects.
   Capabilities are filtered by protocol version for running older hosts.
-- Explicit document lifecycle/close acknowledgement, scoped native events and
-  trusted frame/service identities remain pending. No full step is marked complete.
+- The remaining items after 02.c2 are continued below. No full step is marked complete.
+- 02.c3: protocol v9 adds scoped native events and per-dialog identities. The view
+  retains the old global's navigation identity until a real commit, fragment
+  rebinding, stopped navigation or download response explicitly keeps the document.
+  Inline dialogs publish their real document context before they block parsing;
+  duplicate commit notifications no longer clear the active prompt. Late or
+  unscoped answers cannot answer a newer prompt, and navigation/stop unblock a
+  waiting dialog. Old-document side effects are rejected on arrival and when
+  drained, and native actions retain their originating tab when popups change focus.
+  Host-owned Starting/Loading/Active/Frozen/Closing/Crashed/Closed state replaces
+  mutable loading/frozen/failure flags; worker messages cannot reopen terminal
+  sessions or unfreeze host-selected tabs. Older protocol packet shapes remain
+  filtered by their negotiated version.
+- Still pending: acknowledged close and process reaping, trusted frame/service
+  identities, and all runtime verification. The lifecycle model alone is not an
+  implemented safe unload/close handshake or OS sandbox.
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.
