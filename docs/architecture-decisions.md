@@ -86,3 +86,24 @@ V8 is now mandatory, including builds with default features disabled. Keep the
 framework fixtures, limits, error-isolation contracts and mutation proofs running
 against V8. Old benchmark records remain historical evidence. This decision does
 not change Servo's separate role or make Wega the default browser engine.
+
+## 31 October 2026: Strategic commitment to standalone Wega engine and retirement of Servo
+
+The owner resolved to deprecate and retire the Servo rendering engine completely,
+committing 100% of engineering bandwidth to Wega's native engine (`blitz-dom`, V8 via
+`deno_core`, and Skia). Maintaining Servo as a dual-engine fallback divided developer
+effort between fixing bugs in upstream SpiderMonkey/Servo and advancing Wega's own
+engine, while locking Wega into split Cargo workspaces due to the ICU 2.1 vs 2.3
+dependency conflict.
+
+Under this decision:
+1. Servo and its dependent crates (`servo`, `servo-script-bindings`, `servo-devtools-traits`,
+   `servo-base`, `malloc_size_of`) and features (`multiprocess`, `media-gstreamer`)
+   will be removed.
+2. The Cargo dependency graph will be unified into a single root workspace.
+3. The out-of-process worker-per-tab architecture over versioned IPC is retained.
+4. Internal `wega://` pages will be implemented as native egui views.
+5. All web platform features (WebIDL generated bindings, selection/clipboard, form
+   controls, sandboxing, IndexedDB, Canvas 2D, and platform media) will be implemented
+   directly in Wega's standalone engine following the phased plan in
+   [standalone-engine-migration.md](standalone-engine-migration.md).
