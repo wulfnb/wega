@@ -2181,6 +2181,9 @@ impl View {
     pub fn take_painted(&mut self) -> Option<Result<crate::Painted, String>> {
         self.raster.take()
     }
+    pub fn wait_painted(&mut self) -> Result<crate::Painted, String> {
+        self.raster.wait()
+    }
     pub fn paint(
         &mut self,
         width: u32,
@@ -2189,6 +2192,9 @@ impl View {
         zoom: f32,
         dark: bool,
     ) -> Result<Frame, String> {
+        if self.raster.pending() {
+            let _ = self.raster.wait();
+        }
         self.begin_paint(
             Viewport {
                 window_size: (width, height),

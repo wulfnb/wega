@@ -24,11 +24,115 @@ const MAX_HEADER: usize = 64 * 1024;
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;
 
+fn is_private_or_loopback(host: &str) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".localhost") {
+        return true;
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        match ip {
+            std::net::IpAddr::V4(v4) => {
+                let octets = v4.octets();
+                octets[0] == 127
+                    || octets[0] == 10
+                    || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+                    || (octets[0] == 192 && octets[1] == 168)
+                    || (octets[0] == 169 && octets[1] == 254)
+                    || octets[0] == 0
+            }
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00
+            }
+        }
+    } else {
+        false
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ResourceDestination {
+    #[default]
+    Empty,
+    Document,
+    Script,
+    Style,
+    Image,
+    Font,
+    Fetch,
+    Xhr,
+    WebSocket,
+    Subresource,
+}
+
+#[derive(Clone, Debug)]
+pub struct HstsEntry {
+    pub expires_at: Instant,
+    pub include_subdomains: bool,
+}
+
+#[derive(Default)]
+pub struct HstsPolicy {
+    entries: HashMap<String, HstsEntry>,
+}
+
+impl HstsPolicy {
+    pub fn update(&mut self, host: &str, header_val: &str) {
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        let mut max_age = None;
+        let mut include_subdomains = false;
+        for part in header_val.split(';') {
+            let part = part.trim();
+            if let Some(age_str) = part.strip_prefix("max-age=") {
+                if let Ok(age) = age_str.trim().parse::<u64>() {
+                    max_age = Some(age);
+                }
+            } else if part.eq_ignore_ascii_case("includesubdomains") {
+                include_subdomains = true;
+            }
+        }
+        if let Some(age) = max_age {
+            if age == 0 {
+                self.entries.remove(&host);
+            } else {
+                self.entries.insert(
+                    host,
+                    HstsEntry {
+                        expires_at: Instant::now() + Duration::from_secs(age),
+                        include_subdomains,
+                    },
+                );
+            }
+        }
+    }
+
+    pub fn should_upgrade(&mut self, host: &str) -> bool {
+        let now = Instant::now();
+        self.entries.retain(|_, entry| entry.expires_at > now);
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        if let Some(entry) = self.entries.get(&host) {
+            if entry.expires_at > now {
+                return true;
+            }
+        }
+        for (domain, entry) in &self.entries {
+            if entry.include_subdomains && entry.expires_at > now {
+                if host.ends_with(&format!(".{domain}")) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct Policy {
     pub offline: bool,
     pub blocked_hosts: String,
     pub allowed_hosts: String,
+    pub allow_loopback: bool,
+    pub blocked_destinations: Vec<ResourceDestination>,
 }
 impl Policy {
     pub fn permits(&self, url: &Url) -> bool {
@@ -52,6 +156,42 @@ impl Policy {
         !matches(&self.blocked_hosts)
             && (self.allowed_hosts.trim().is_empty() || matches(&self.allowed_hosts))
     }
+
+    pub fn permits_request(&self, request: &Request, url: &Url) -> Result<(), String> {
+        if !self.permits(url) {
+            return Err("Network request blocked by browsing policy".into());
+        }
+        if self.blocked_destinations.contains(&request.destination) {
+            return Err(format!("Resource destination {:?} blocked by policy", request.destination));
+        }
+        let target_host = url.host_str().unwrap_or_default();
+        if is_private_or_loopback(target_host) && !self.allow_loopback {
+            let allowed_explicitly = self.allowed_hosts.split_whitespace().any(|rule| {
+                let rule = rule.trim_start_matches("*.").trim_end_matches('.').to_ascii_lowercase();
+                !rule.is_empty() && (target_host == rule || target_host.ends_with(&format!(".{rule}")))
+            });
+            if !allowed_explicitly {
+                let initiator_is_private = request
+                    .initiator
+                    .as_ref()
+                    .and_then(|i| i.host_str())
+                    .map(is_private_or_loopback)
+                    .unwrap_or(false);
+                let origin_host = request
+                    .origin
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://")
+                    .split(':')
+                    .next()
+                    .unwrap_or("");
+                let origin_is_private = is_private_or_loopback(origin_host);
+                if !initiator_is_private && !origin_is_private && !request.origin.is_empty() && request.origin != "null" {
+                    return Err(format!("Private network target '{}' blocked by policy", target_host));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Request {
@@ -68,6 +208,8 @@ pub struct Request {
     pub credentials: String,
     pub redirect: String,
     pub cache: String,
+    #[serde(default)]
+    pub destination: ResourceDestination,
     pub limit: usize,
 }
 impl Request {
@@ -83,6 +225,23 @@ impl Request {
             credentials: "include".into(),
             redirect: "follow".into(),
             cache: "default".into(),
+            destination: ResourceDestination::Document,
+            limit,
+        }
+    }
+    pub fn subresource(url: &Url, destination: ResourceDestination, limit: usize) -> Self {
+        Self {
+            url: url.to_string(),
+            method: "GET".into(),
+            headers: vec![],
+            body: vec![],
+            origin: url.origin().ascii_serialization(),
+            initiator: Some(url.clone()),
+            top_level: false,
+            credentials: "include".into(),
+            redirect: "follow".into(),
+            cache: "default".into(),
+            destination,
             limit,
         }
     }
@@ -242,7 +401,16 @@ impl LocalClient {
         policy: &RwLock<Policy>,
         cookies: &Cookies,
     ) -> Result<Response, String> {
-        self.fetch_cached(request, policy, cookies, None)
+        self.fetch_cached(request, policy, cookies, None, None)
+    }
+    pub fn fetch_with_hsts(
+        &self,
+        request: &Request,
+        policy: &RwLock<Policy>,
+        cookies: &Cookies,
+        hsts: Option<&Mutex<HstsPolicy>>,
+    ) -> Result<Response, String> {
+        self.fetch_cached(request, policy, cookies, None, hsts)
     }
     fn fetch_cached(
         &self,
@@ -250,20 +418,27 @@ impl LocalClient {
         policy: &RwLock<Policy>,
         cookies: &Cookies,
         cache: Option<(&Mutex<Cache>, &str)>,
+        hsts: Option<&Mutex<HstsPolicy>>,
     ) -> Result<Response, String> {
         request.validate()?;
         let mut url = Url::parse(&request.url).map_err(|e| e.to_string())?;
+        if url.scheme() == "http" && let Some(hsts) = hsts {
+            let host = url.host_str().unwrap_or_default();
+            if hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).should_upgrade(host) {
+                let _ = url.set_scheme("https");
+                if url.port() == Some(80) {
+                    let _ = url.set_port(None);
+                }
+            }
+        }
         let mut method = request.method.clone();
         let mut body = request.body.clone();
         let mut headers = request.headers.clone();
         for hop in 0..=8 {
-            if !policy
+            policy
                 .read()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .permits(&url)
-            {
-                return Err("Network request blocked by browsing policy".into());
-            }
+                .permits_request(request, &url)?;
             let credentials = request.credentials == "include"
                 || (request.credentials != "omit"
                     && url.origin().ascii_serialization() == request.origin);
@@ -365,7 +540,27 @@ impl LocalClient {
                     if hop == 8 {
                         return Err("Too many redirects".into());
                     }
-                    let next = url.join(location).map_err(|e| e.to_string())?;
+                    let mut next = url.join(location).map_err(|e| e.to_string())?;
+                    if url.scheme() == "https" && next.scheme() == "http" {
+                        let next_host = next.host_str().unwrap_or_default();
+                        let upgraded = if let Some(hsts) = hsts {
+                            hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).should_upgrade(next_host)
+                        } else {
+                            false
+                        };
+                        if upgraded {
+                            let _ = next.set_scheme("https");
+                            if next.port() == Some(80) {
+                                let _ = next.set_port(None);
+                            }
+                        } else {
+                            return Err("Insecure redirect downgrade from HTTPS to HTTP forbidden".into());
+                        }
+                    }
+                    policy
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .permits_request(request, &next)?;
                     if next.origin() != url.origin() {
                         headers.retain(|(name, _)| !name.eq_ignore_ascii_case("authorization"));
                     }
@@ -399,6 +594,15 @@ impl LocalClient {
                 redirected: hop > 0,
                 body: bytes,
             };
+            if url.scheme() == "https" && let Some(hsts) = hsts {
+                for (name, val) in &response.headers {
+                    if name.eq_ignore_ascii_case("strict-transport-security") {
+                        if let Some(host) = url.host_str() {
+                            hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).update(host, val);
+                        }
+                    }
+                }
+            }
             if cacheable && let Some((cache, _)) = cache {
                 cache
                     .lock()
@@ -528,6 +732,9 @@ impl SessionHandle {
     pub fn endpoint(&self) -> (String, String) {
         (self.broker.address.to_string(), self.token.clone())
     }
+    pub fn hsts(&self) -> &Mutex<HstsPolicy> {
+        &self.broker.hsts
+    }
     pub fn set_policy(&self, policy: Policy) {
         *self
             .session
@@ -547,6 +754,7 @@ pub struct Broker {
     sessions: Mutex<HashMap<String, Weak<Session>>>,
     jars: Mutex<HashMap<PathBuf, Jar>>,
     cache: Mutex<Cache>,
+    pub hsts: Mutex<HstsPolicy>,
     jobs: mpsc::SyncSender<Job>,
     client: LocalClient,
 }
@@ -588,6 +796,7 @@ impl Broker {
             sessions: Default::default(),
             jars: Default::default(),
             cache: Default::default(),
+            hsts: Default::default(),
             jobs,
             client: LocalClient::new()?,
         });
@@ -779,6 +988,20 @@ impl Broker {
                 if bytes > MAX_BODY {
                     return Err("Upload exceeds its size limit".into());
                 };
+                if session.bound && !request.top_level {
+                    let receipt = session.navigation.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if let Some(ref committed) = receipt.last {
+                        let committed_origin = committed.origin().ascii_serialization();
+                        if !request.origin.is_empty() && request.origin != "null" && request.origin != committed_origin {
+                            return Err(format!("Spoofed request origin '{}' does not match session origin '{}'", request.origin, committed_origin));
+                        }
+                        if let Some(ref initiator) = request.initiator {
+                            if initiator.origin().ascii_serialization() != committed_origin {
+                                return Err(format!("Spoofed request initiator '{}' does not match session origin '{}'", initiator, committed_origin));
+                            }
+                        }
+                    }
+                }
                 let mut stream = stream.try_clone().map_err(|e| e.to_string())?;
                 let client = self.client.clone();
                 // Cache/session data outlives the native page only for this bounded job.
@@ -798,6 +1021,7 @@ impl Broker {
                                 &session.policy,
                                 &session.cookies,
                                 Some((&broker.cache, &session.scope)),
+                                Some(&broker.hsts),
                             )?;
                             if request.top_level {
                                 let mut receipt = session
@@ -1144,7 +1368,7 @@ mod tests {
         let broker = Broker::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let session = broker
-            .open_bound_session(dir.path().into(), Policy::default())
+            .open_bound_session(dir.path().into(), Policy { allow_loopback: true, ..Policy::default() })
             .unwrap();
         let (endpoint, token) = session.endpoint();
         let remote = Remote::bound(&endpoint, token, session.identity()).unwrap();
