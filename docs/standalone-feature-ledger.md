@@ -132,5 +132,18 @@ must be reported explicitly; do not silently discard the old data.
   `wega-protocol` crate. Browser, worker and subprocess fixtures share that crate
   without importing application source files. Wire behavior is intentionally
   unchanged in this extraction; document/request correlation follows in 02.b.
+- 02.b: protocol v6 adds typed document/request identities, capability discovery,
+  structured failures and bounded, deadline-aware pending requests. Desktop edit
+  checks and evaluation now use scoped exchanges; old/duplicate replies are ignored,
+  navigation/crashes cancel pending operations, and even a buffered old clean-state
+  reply cannot authorize closing a replacement document. Loading documents reject
+  scoped queries conservatively. The updated worker retains v4/v5 packet support
+  for existing older browser sessions.
+- Regression tests for request expiry, forged/duplicate replies, navigation,
+  buffered edit-state responses, worker shutdown and oversized evaluation results
+  are written but **not executed**, following the owner's instruction.
+- Remaining Step 02 work: explicit lifecycle/commit states, scoped native events,
+  frame/service identities and queued-command cancellation. Do not mark the entire
+  step complete based on the extraction or correlation slice.
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.

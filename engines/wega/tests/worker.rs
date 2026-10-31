@@ -1,15 +1,109 @@
 //! Real subprocess protocol: two frame credits, exact acknowledgements and freeze.
-use wega_protocol as protocol;
 use protocol::{Command, Event};
 use std::{
     process::{Child, ChildStdin, Stdio},
     sync::mpsc,
     time::{Duration, Instant},
 };
+use wega_protocol as protocol;
 struct Worker {
     child: Child,
     input: ChildStdin,
     events: mpsc::Receiver<Event>,
+}
+
+#[test]
+fn scoped_requests_cannot_read_or_execute_in_a_replacement_document() {
+    use protocol::{DocumentId, ErrorCode, RequestContext, RequestId};
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    worker.send(Command::Capabilities);
+    match worker.until(|event| matches!(event, Event::Capabilities { .. })) {
+        Event::Capabilities { version, supported } => {
+            assert_eq!(version, protocol::VERSION);
+            assert!(supported.contains(&protocol::Capability::ScopedPageState));
+        }
+        _ => unreachable!(),
+    }
+    let old = RequestContext {
+        document: DocumentId(0),
+        request: RequestId(1),
+    };
+    worker.send(Command::Load {
+        url: "about:blank".into(),
+        serial: 1,
+    });
+    worker.until(|event| {
+        matches!(
+            event,
+            Event::State {
+                serial: 1,
+                loading: false,
+                ..
+            }
+        )
+    });
+    worker.send(Command::EvaluateDocument {
+        context: old,
+        source: "globalThis.staleMutation=true".into(),
+    });
+    match worker.until(|event| matches!(event, Event::RequestFailed { .. })) {
+        Event::RequestFailed { context, error } => {
+            assert_eq!(context, old);
+            assert_eq!(error.code, ErrorCode::StaleDocument);
+        }
+        _ => unreachable!(),
+    }
+    worker.send(Command::CheckDocumentState(old));
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::RequestFailed { .. })), Event::RequestFailed { error, .. } if error.code == ErrorCode::StaleDocument)
+    );
+    let current = RequestContext {
+        document: DocumentId(1),
+        request: RequestId(2),
+    };
+    worker.send(Command::EvaluateDocument {
+        context: current,
+        source: "typeof globalThis.staleMutation".into(),
+    });
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { context, result: Ok(value) } if context == current && value == "\"undefined\"")
+    );
+    worker.send(Command::CheckDocumentState(RequestContext {
+        request: RequestId(3),
+        ..current
+    }));
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::DocumentState { .. })), Event::DocumentState { context, dirty: false } if context.document == DocumentId(1))
+    );
+}
+
+#[test]
+fn oversized_scoped_evaluation_reports_an_error_and_worker_remains_usable() {
+    use protocol::{DocumentId, ErrorCode, RequestContext, RequestId};
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    let context = RequestContext {
+        document: DocumentId(0),
+        request: RequestId(1),
+    };
+    worker.send(Command::EvaluateDocument {
+        context,
+        source: format!("'x'.repeat({})", protocol::MAX_RESULT_BYTES + 1),
+    });
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { result: Err(error), .. } if error.code == ErrorCode::ResourceLimit)
+    );
+    worker.send(Command::EvaluateDocument {
+        context: RequestContext {
+            request: RequestId(2),
+            ..context
+        },
+        source: "6 * 7".into(),
+    });
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { result: Ok(value), .. } if value == "42")
+    );
 }
 #[test]
 fn page_state_requests_are_identified_and_reset_on_navigation() {

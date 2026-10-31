@@ -7,7 +7,10 @@ use std::{
     sync::{Arc, Mutex, mpsc},
 };
 use wega::{
-    engine_protocol::{self as protocol, Command as Request, Event},
+    engine_protocol::{
+        self as protocol, Command as Request, ErrorCode, Event, ProtocolError, RequestContext,
+        requests::{DocumentRequests, PendingRequest, RequestKind},
+    },
     model::Policy,
     navigation::NavigationPort,
 };
@@ -36,8 +39,10 @@ pub(crate) struct Dialog {
 }
 #[derive(Default)]
 pub(crate) struct Snapshot {
-    pub page_checks: Vec<(u64, bool)>,
-    pub serial: u64,
+    pub page_checks: Vec<(RequestContext, u64, bool)>,
+    pub requests: DocumentRequests,
+    pub capabilities: Vec<protocol::Capability>,
+    pub evaluations: std::collections::VecDeque<(RequestContext, Result<String, ProtocolError>)>,
     pub rss_bytes: Option<u64>,
     pub interacted: bool,
     pub compatibility: Option<String>,
@@ -68,6 +73,55 @@ pub(crate) struct Snapshot {
     pub cursor: Option<String>,
     pub dialog: Option<Dialog>,
 }
+
+impl Snapshot {
+    pub fn take_page_checks(&mut self) -> Vec<(u64, bool)> {
+        let document = self.requests.document();
+        self.page_checks
+            .drain(..)
+            .map(|(context, request, dirty)| (request, dirty || context.document != document))
+            .collect()
+    }
+
+    fn evaluation_result(
+        &mut self,
+        context: RequestContext,
+        result: Result<String, ProtocolError>,
+    ) {
+        self.evaluated = Some(result.clone().map_err(|error| error.message));
+        if self.evaluations.len() == protocol::requests::MAX_PENDING {
+            self.evaluations.pop_front();
+        }
+        self.evaluations.push_back((context, result));
+    }
+
+    fn request_failed(&mut self, request: PendingRequest, error: ProtocolError) {
+        match request.kind {
+            RequestKind::Evaluate => self.evaluation_result(request.context, Err(error)),
+            RequestKind::PageState(browser_request) => {
+                if self.page_checks.len() < protocol::requests::MAX_PENDING {
+                    self.page_checks
+                        .push((request.context, browser_request, true));
+                }
+            }
+        }
+    }
+
+    fn cancel_requests(&mut self, error: ProtocolError) {
+        for request in self.requests.cancel_all() {
+            self.request_failed(request, error.clone());
+        }
+    }
+
+    pub fn expire_requests(&mut self) {
+        for request in self.requests.expired(std::time::Instant::now()) {
+            self.request_failed(
+                request,
+                ProtocolError::new(ErrorCode::Timeout, "Document request timed out"),
+            );
+        }
+    }
+}
 pub(crate) struct Page {
     child: Child,
     frames: Arc<Mutex<wega_platform::FrameStore>>,
@@ -97,6 +151,10 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
     state.compatibility.get_or_insert_with(|| message.clone());
     state.failed = true;
     state.loading = false;
+    state.cancel_requests(ProtocolError::new(
+        ErrorCode::Cancelled,
+        "Content worker stopped",
+    ));
     if state.notices.len() < 16 {
         state.notices.push_back(message);
     }
@@ -107,7 +165,7 @@ fn accept_frame(shared: &Mutex<Snapshot>, serial: u64, width: u32, height: u32, 
         let mut state = shared
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if serial != state.serial || state.frozen {
+        if serial != state.requests.document().0 || state.frozen {
             return;
         }
         state.capture.take()
@@ -120,7 +178,7 @@ fn accept_frame(shared: &Mutex<Snapshot>, serial: u64, width: u32, height: u32, 
     let mut state = shared
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if serial == state.serial && !state.frozen {
+    if serial == state.requests.document().0 && !state.frozen {
         if let Some(result) = result {
             state.capture_result = Some(result);
         }
@@ -229,12 +287,85 @@ impl Page {
                         continue;
                     }
                     match event {
-                        Event::PageState { request, dirty } => {
+                        Event::Capabilities { version, supported } => {
+                            if version != protocol::VERSION {
+                                return Err("Capability version mismatch".into());
+                            }
                             shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .page_checks
-                                .push((request, dirty));
+                                .capabilities = supported;
+                        }
+                        Event::DocumentState { context, dirty } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if let Some(request) = state.requests.take(context) {
+                                let RequestKind::PageState(browser_request) = request.kind else {
+                                    state.request_failed(
+                                        request,
+                                        ProtocolError::new(
+                                            ErrorCode::InvalidRequest,
+                                            "Mismatched page-state response",
+                                        ),
+                                    );
+                                    return Err("Mismatched page-state response".into());
+                                };
+                                if state.page_checks.len() < protocol::requests::MAX_PENDING {
+                                    state.page_checks.push((
+                                        context,
+                                        browser_request,
+                                        dirty || request.deadline <= std::time::Instant::now(),
+                                    ));
+                                }
+                            }
+                        }
+                        Event::DocumentEvaluated { context, result } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if let Some(request) = state.requests.take(context) {
+                                if request.kind != RequestKind::Evaluate {
+                                    state.request_failed(
+                                        request,
+                                        ProtocolError::new(
+                                            ErrorCode::InvalidRequest,
+                                            "Mismatched evaluation response",
+                                        ),
+                                    );
+                                    return Err("Mismatched evaluation response".into());
+                                }
+                                let result = if request.deadline <= std::time::Instant::now() {
+                                    Err(ProtocolError::new(
+                                        ErrorCode::Timeout,
+                                        "Evaluation timed out",
+                                    ))
+                                } else if result
+                                    .as_ref()
+                                    .is_ok_and(|value| value.len() > protocol::MAX_RESULT_BYTES)
+                                {
+                                    Err(ProtocolError::new(
+                                        ErrorCode::ResourceLimit,
+                                        "Evaluation result exceeds the IPC budget",
+                                    ))
+                                } else {
+                                    result.map_err(|error| {
+                                        ProtocolError::new(error.code, error.message)
+                                    })
+                                };
+                                state.evaluation_result(context, result);
+                            }
+                        }
+                        Event::RequestFailed { context, error } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if let Some(request) = state.requests.take(context) {
+                                state.request_failed(request, error);
+                            }
+                        }
+                        Event::PageState { .. } | Event::Evaluated { .. } => {
+                            return Err("Unscoped worker response in v6 session".into());
                         }
                         Event::SharedFrame {
                             serial,
@@ -253,7 +384,7 @@ impl Page {
                                 let state = shared
                                     .lock()
                                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                if serial != state.serial || state.frozen {
+                                if serial != state.requests.document().0 || state.frozen {
                                     None
                                 } else {
                                     std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
@@ -282,7 +413,7 @@ impl Page {
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if state.serial == serial && !state.fallback_reported {
+                            if state.requests.document().0 == serial && !state.fallback_reported {
                                 state.compatibility.get_or_insert(reason);
                             }
                         }
@@ -313,7 +444,7 @@ impl Page {
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            if serial != state.serial {
+                            if serial != state.requests.document().0 {
                                 continue;
                             }
                             state.rss_bytes = rss_bytes;
@@ -347,12 +478,6 @@ impl Page {
                             if state.navigations.len() < 8 {
                                 state.navigations.push_back(url);
                             }
-                        }
-                        Event::Evaluated { value, error } => {
-                            shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .evaluated = Some(error.map_or(Ok(value), Err));
                         }
                         Event::Download { url, cookies } => {
                             let mut state = shared
@@ -437,15 +562,51 @@ impl Page {
                     .into_owned(),
             ),
         })?;
+        page.send(Request::Capabilities)?;
         Ok(page)
     }
     pub fn send(&self, request: Request) -> Result<(), String> {
+        let (request, scoped) = match request {
+            Request::Evaluate(source) => {
+                let mut state = self
+                    .state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                state.expire_requests();
+                if state.failed {
+                    return Err("Content worker is stopped".into());
+                }
+                let context = state
+                    .requests
+                    .begin(RequestKind::Evaluate, std::time::Duration::from_secs(5))
+                    .map_err(|error| error.message)?;
+                state.interacted = true;
+                state.evaluated = None;
+                (Request::EvaluateDocument { context, source }, Some(context))
+            }
+            Request::CheckPageState(browser_request) => {
+                let mut state = self
+                    .state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                state.expire_requests();
+                if state.failed {
+                    return Err("Content worker is stopped".into());
+                }
+                let context = state
+                    .requests
+                    .begin(
+                        RequestKind::PageState(browser_request),
+                        std::time::Duration::from_secs(2),
+                    )
+                    .map_err(|error| error.message)?;
+                (Request::CheckDocumentState(context), Some(context))
+            }
+            request => (request, None),
+        };
         if matches!(
             &request,
-            Request::Click { .. }
-                | Request::Key { pressed: true, .. }
-                | Request::Ime { .. }
-                | Request::Evaluate(_)
+            Request::Click { .. } | Request::Key { pressed: true, .. } | Request::Ime { .. }
         ) || matches!(&request, Request::Pointer { kind, .. } if kind == "down")
         {
             self.state
@@ -465,11 +626,27 @@ impl Page {
                 allowed_hosts: allowed_hosts.clone(),
             });
         }
-        self.requests
+        let result = self
+            .requests
             .as_ref()
             .ok_or("Worker is closed")?
             .try_send(request)
-            .map_err(|_| "Wega engine is busy or stopped. Reload or switch to Servo.".into())
+            .map_err(|_| "Wega engine is busy or stopped. Reload or switch to Servo.".to_string());
+        if result.is_err()
+            && let Some(context) = scoped
+        {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(request) = state.requests.take(context) {
+                state.request_failed(
+                    request,
+                    ProtocolError::new(ErrorCode::Cancelled, "Worker command was not queued"),
+                );
+            }
+        }
+        result
     }
     pub fn keyboard(
         &self,
@@ -604,12 +781,26 @@ impl Page {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let serial = state.serial.wrapping_add(1);
+        let document = state
+            .requests
+            .next_document()
+            .map_err(|error| error.message)?;
         self.send(Request::Load {
             url: url.to_string(),
-            serial,
+            serial: document.0,
         })?;
-        state.serial = serial;
+        state.evaluated = None;
+        state.frame = None;
+        for request in state
+            .requests
+            .navigate(document)
+            .map_err(|error| error.message)?
+        {
+            state.request_failed(
+                request,
+                ProtocolError::new(ErrorCode::StaleDocument, "Document navigated"),
+            );
+        }
         state.interacted = false;
         state.compatibility = None;
         state.fallback_reported = false;
@@ -703,5 +894,52 @@ impl Drop for Page {
         self.requests.take();
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clean_reply_buffered_before_navigation_cannot_authorize_closing_the_new_document() {
+        let mut state = Snapshot::default();
+        let context = state
+            .requests
+            .begin(RequestKind::PageState(7), std::time::Duration::from_secs(2))
+            .unwrap();
+        state.requests.take(context).unwrap();
+        state.page_checks.push((context, 7, false));
+        state
+            .requests
+            .navigate(state.requests.next_document().unwrap())
+            .unwrap();
+        assert_eq!(state.take_page_checks(), vec![(7, true)]);
+        assert!(state.take_page_checks().is_empty());
+    }
+
+    #[test]
+    fn timeout_and_worker_exit_require_confirmation_and_resolve_evaluations() {
+        let mut state = Snapshot::default();
+        state
+            .requests
+            .begin(RequestKind::PageState(8), std::time::Duration::ZERO)
+            .unwrap();
+        state.expire_requests();
+        assert_eq!(state.take_page_checks(), vec![(8, true)]);
+        state
+            .requests
+            .begin(RequestKind::PageState(9), std::time::Duration::from_secs(2))
+            .unwrap();
+        let evaluation = state
+            .requests
+            .begin(RequestKind::Evaluate, std::time::Duration::from_secs(5))
+            .unwrap();
+        state.cancel_requests(ProtocolError::new(ErrorCode::Cancelled, "Worker stopped"));
+        assert_eq!(state.take_page_checks(), vec![(9, true)]);
+        let (context, result) = state.evaluations.pop_front().unwrap();
+        assert_eq!(context, evaluation);
+        assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+        assert!(state.requests.take(evaluation).is_none());
     }
 }

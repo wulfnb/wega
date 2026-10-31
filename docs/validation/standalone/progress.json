@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "branch": "feature/standalone-wega-engine",
+  "date": "2026-10-31",
+  "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
+  "test_policy": "Execution deferred by owner until final pass",
+  "runtime_tests_executed": false,
+  "servo_retirement_allowed": false,
+  "substeps": {
+    "01.a": "Source inventory and provisional family ledger prepared; effective exposure audit pending",
+    "01.b": "Runtime baseline deferred",
+    "01.c": "Source-only profile/data-path audit prepared; migration fixtures pending",
+    "02.a": "Shared Rust protocol crate implemented and pushed",
+    "02.b": "Scoped evaluation/edit-state requests, bounded correlation and cancellation on navigation/crash implemented; tests pending",
+    "02.c": "Lifecycle/commit states, scoped native events and queued cancellation pending"
+  },
+  "compile_checks": [
+    {
+      "command": "cargo check --locked --offline --no-default-features --lib",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Core compilation only; no tests executed"
+    },
+    {
+      "command": "cargo check --locked --offline --features test-harness --bin wega --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Desktop and test-source type checking only; existing Servo vendor warnings remain"
+    },
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Worker and test-source type checking only; pinned native artifacts downloaded during build; existing Deno vendor warnings remain"
+    }
+  ],
+  "pending_verification": [
+    "Frozen Servo/direct-Wega baseline runtime captures",
+    "Protocol, worker and native regression test execution",
+    "Feature/API exposure and behavioral parity",
+    "Linux and Windows compile/runtime evidence",
+    "Profile migration and data preservation fixtures",
+    "Resource and release validation"
+  ]
+}

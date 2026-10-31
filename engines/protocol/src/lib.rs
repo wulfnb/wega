@@ -2,12 +2,78 @@
 #![forbid(unsafe_code)]
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
-pub const VERSION: u32 = 5;
+pub mod requests;
+pub const VERSION: u32 = 6;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
+pub const MAX_RESULT_BYTES: usize = 128 * 1024;
+
+/// A generation within one private content-process session. Zero is its initial document.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DocumentId(pub u64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RequestId(pub u64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestContext {
+    pub document: DocumentId,
+    pub request: RequestId,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Capability {
+    ScopedEvaluation,
+    ScopedPageState,
+    SharedFrames,
+}
+
+pub const CAPABILITIES: &[Capability] = &[
+    Capability::ScopedEvaluation,
+    Capability::ScopedPageState,
+    Capability::SharedFrames,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ErrorCode {
+    StaleDocument,
+    Cancelled,
+    Timeout,
+    ResourceLimit,
+    InvalidRequest,
+    Unsupported,
+    ScriptException,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProtocolError {
+    pub code: ErrorCode,
+    pub message: String,
+}
+
+impl ProtocolError {
+    pub fn new(code: ErrorCode, message: impl AsRef<str>) -> Self {
+        Self {
+            code,
+            message: message.as_ref().chars().take(4096).collect(),
+        }
+    }
+}
+
+pub fn supports_version(version: u32) -> bool {
+    matches!(version, 4..=VERSION)
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Command {
+    Capabilities,
+    EvaluateDocument {
+        context: RequestContext,
+        source: String,
+    },
+    CheckDocumentState(RequestContext),
     Init {
         version: u32,
         url: String,
@@ -89,6 +155,22 @@ pub enum Command {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
+    Capabilities {
+        version: u32,
+        supported: Vec<Capability>,
+    },
+    DocumentEvaluated {
+        context: RequestContext,
+        result: Result<String, ProtocolError>,
+    },
+    DocumentState {
+        context: RequestContext,
+        dirty: bool,
+    },
+    RequestFailed {
+        context: RequestContext,
+        error: ProtocolError,
+    },
     PageState {
         request: u64,
         dirty: bool,

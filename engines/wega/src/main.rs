@@ -1,4 +1,5 @@
 //! One private worker per Wega tab. No window, network control port or Servo VM.
+use protocol::{Command, DocumentId, ErrorCode, Event, ProtocolError};
 use std::{
     cell::RefCell,
     collections::VecDeque,
@@ -9,7 +10,6 @@ use std::{
 };
 use wega_engine::{Engine, Limits, NetworkPolicy, PageEvent, Pointer, PointerKind, Url};
 use wega_protocol as protocol;
-use protocol::{Command, Event};
 enum Work {
     Command(Command),
     Wake,
@@ -66,10 +66,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 broker_address,
                 broker_token,
                 frame_path,
-                // v5 only adds the requested PageState exchange. Existing v4
-                // commands/events keep their exact shape, allowing a running older
-                // browser to finish its session after an atomic worker update.
-            }) if version == protocol::VERSION || version == 4 => (
+                // Legacy v4/v5 packets retain their shape. Scoped v6 operations
+                // are only sent in response to the corresponding new commands.
+            }) if protocol::supports_version(version) => (
                 version,
                 Url::parse(&url)?,
                 NetworkPolicy {
@@ -310,6 +309,70 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         match work {
             Work::Wake => {}
             Work::Command(command) => match command {
+                Command::Capabilities => {
+                    write(&Event::Capabilities {
+                        version,
+                        supported: protocol::CAPABILITIES.to_vec(),
+                    })?;
+                }
+                Command::EvaluateDocument { context, source } => {
+                    if context.document != DocumentId(serial) {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::StaleDocument,
+                                "Document navigated before evaluation",
+                            ),
+                        })?;
+                        continue;
+                    }
+                    // Navigation can retain the old DOM until the replacement commits.
+                    // Never execute a new-generation request against that retained DOM.
+                    if view.loading {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::InvalidRequest,
+                                "Document has not finished loading",
+                            ),
+                        })?;
+                        continue;
+                    }
+                    let result = match view.evaluate_json(&source) {
+                        Ok(value) if value.len() <= protocol::MAX_RESULT_BYTES => Ok(value),
+                        Ok(_) => Err(ProtocolError::new(
+                            ErrorCode::ResourceLimit,
+                            "Evaluation result exceeds the IPC budget",
+                        )),
+                        Err(error) => Err(ProtocolError::new(ErrorCode::ScriptException, error)),
+                    };
+                    write(&Event::DocumentEvaluated { context, result })?;
+                }
+                Command::CheckDocumentState(context) => {
+                    if context.document != DocumentId(serial) {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::StaleDocument,
+                                "Document navigated before state check",
+                            ),
+                        })?;
+                        continue;
+                    }
+                    if view.loading {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::InvalidRequest,
+                                "Document has not finished loading",
+                            ),
+                        })?;
+                        continue;
+                    }
+                    let dirty =
+                        view.evaluate_json("__wega_page_has_edits()").as_deref() != Ok("false");
+                    write(&Event::DocumentState { context, dirty })?;
+                }
                 Command::Shutdown => break,
                 Command::CheckPageState(request) => {
                     let dirty =

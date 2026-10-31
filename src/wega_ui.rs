@@ -130,10 +130,11 @@ impl Browser {
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.expire_requests();
             checks.extend(
                 state
-                    .page_checks
-                    .drain(..)
+                    .take_page_checks()
+                    .into_iter()
                     .map(|(request, dirty)| (request, tab.key, dirty)),
             );
             if let Some(visit) = state.visited.take() {
