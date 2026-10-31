@@ -18,7 +18,7 @@ if [[ ! -f "$engine" ]]; then
 fi
 
 rm -rf "$dist_dir"
-mkdir -p "$dist_dir/bin" "$dist_dir/libexec" "$dist_dir/share/applications" "$dist_dir/share/icons/hicolor/256x256/apps"
+mkdir -p "$dist_dir/bin" "$dist_dir/libexec" "$dist_dir/share/applications" "$dist_dir/share/icons"
 
 # The executable lives in libexec/; bin/wega is the relocatable launcher.
 cp "$binary" "$dist_dir/libexec/wega"
@@ -26,9 +26,8 @@ cp "$engine" "$dist_dir/libexec/wega-engine"
 chmod 755 "$dist_dir/libexec/wega"
 chmod 755 "$dist_dir/libexec/wega-engine"
 
-if [[ -f "$project_dir/assets/icons/browser-icon-256.png" ]]; then
-  cp "$project_dir/assets/icons/browser-icon-256.png" "$dist_dir/share/icons/hicolor/256x256/apps/wega.png"
-fi
+# Every hicolor size (16-512 px), from scripts/generate-icons.py.
+cp -R "$project_dir/assets/icons/hicolor" "$dist_dir/share/icons/hicolor"
 
 # LICENSE, NOTICE (with the source commit) and THIRD-PARTY-NOTICES.html.
 bash "$project_dir/scripts/third-party-notices.sh" "$dist_dir"
@@ -50,6 +49,7 @@ Icon=wega
 Terminal=false
 Type=Application
 Categories=Network;WebBrowser;
+StartupWMClass=wega
 MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
 EOF
 
