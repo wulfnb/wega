@@ -6644,6 +6644,7 @@ dependencies = [
  "url",
  "wega-network",
  "wega-platform",
+ "wega-protocol",
 ]
 
 [[package]]
@@ -6668,6 +6669,14 @@ dependencies = [
  "memmap2",
  "tempfile",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "wega-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

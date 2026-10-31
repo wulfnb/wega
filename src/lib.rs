@@ -21,7 +21,7 @@ pub mod container_launch;
 pub mod containers;
 pub mod deadline;
 pub mod engine_choice;
-pub mod engine_protocol;
+pub use wega_protocol as engine_protocol;
 pub mod lifecycle;
 pub mod navigation;
 pub mod permissions;

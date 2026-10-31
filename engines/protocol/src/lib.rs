@@ -1,4 +1,5 @@
 //! Versioned, bounded private pipe protocol shared with the independent engine worker.
+#![forbid(unsafe_code)]
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 pub const VERSION: u32 = 5;

@@ -8,6 +8,7 @@ publish = false
 description = "Wega's experimental Blitz-based page engine"
 
 [dependencies]
+wega-protocol = { path = "../protocol" }
 deno_core = "=0.413.0"
 wega-network = {path="../network"}
 wega-platform = {path="../platform"}

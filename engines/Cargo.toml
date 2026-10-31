@@ -1,5 +1,5 @@
 [workspace]
-members = ["wega", "network", "platform"]
+members = ["wega", "network", "platform", "protocol"]
 exclude = ["vendor", "v8-spike"]
 resolver = "2"
 

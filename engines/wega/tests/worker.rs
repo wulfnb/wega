@@ -1,6 +1,5 @@
 //! Real subprocess protocol: two frame credits, exact acknowledgements and freeze.
-#[path = "../../../src/engine_protocol.rs"]
-mod protocol;
+use wega_protocol as protocol;
 use protocol::{Command, Event};
 use std::{
     process::{Child, ChildStdin, Stdio},

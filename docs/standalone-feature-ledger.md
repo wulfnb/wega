@@ -128,5 +128,9 @@ must be reported explicitly; do not silently discard the old data.
 - 01.b: runtime baseline capture deferred by owner.
 - 01.c: source-only data-path audit prepared; copied-profile migration fixtures pending.
 - Step 01 remains **in progress**, not complete or verified.
+- 02.a: the existing bounded v5 wire contract is now owned by the Rust-only
+  `wega-protocol` crate. Browser, worker and subprocess fixtures share that crate
+  without importing application source files. Wire behavior is intentionally
+  unchanged in this extraction; document/request correlation follows in 02.b.
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.

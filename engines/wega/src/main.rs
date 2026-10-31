@@ -8,8 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 use wega_engine::{Engine, Limits, NetworkPolicy, PageEvent, Pointer, PointerKind, Url};
-#[path = "../../../src/engine_protocol.rs"]
-mod protocol;
+use wega_protocol as protocol;
 use protocol::{Command, Event};
 enum Work {
     Command(Command),
