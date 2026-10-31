@@ -53,7 +53,8 @@ for (const [name, responses, message] of [
   ['unexplained server rejection', [{ok: false, json: async () => ({})}], 'Could not sign in.'],
   ['missing session cookie', [{ok: true, json: async () => ({})}, {ok: false}], 'Your password was accepted'],
   ['network failure', [new Error('Network unavailable')], 'Network unavailable'],
-  ['invalid JSON', [{ok: false, json: async () => {throw new Error('Invalid response');}}], 'Invalid response']
+  ['invalid JSON', [{ok: false, json: async () => {throw new Error('Invalid response');}}], 'The server sent an unexpected reply'],
+  ['gateway error page', [{ok: false, status: 502, json: async () => {throw new SyntaxError("Unexpected token '<'");}}], 'The browser is starting or unavailable']
 ]) {
   test(name + ' never redirects and restores controls', async () => {
     const f = fixture(responses);

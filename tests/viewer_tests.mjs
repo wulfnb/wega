@@ -155,6 +155,14 @@ test('uploads are bounded, authenticated and return a selectable remote path', a
   await f.get('#upload-form').fire('submit'); assert.equal(f.get('#upload-notice').textContent, 'Upload failed.');
   f.replies.push(new Error('offline')); await f.get('#upload-form').fire('submit');
   assert.equal(f.get('#upload-notice').textContent, 'offline');
+  // Proxy error pages are HTML; the notice explains them instead of a parse error.
+  const html = status => ({ok:false,status,json:async()=>{throw new SyntaxError("Unexpected token '<'");}});
+  f.replies.push(html(413)); await f.get('#upload-form').fire('submit');
+  assert.equal(f.get('#upload-notice').textContent, 'This file is too large to upload.');
+  f.replies.push(html(502)); await f.get('#upload-form').fire('submit');
+  assert.match(f.get('#upload-notice').textContent, /browser is not responding/);
+  f.replies.push(html(404)); await f.get('#upload-form').fire('submit');
+  assert.match(f.get('#upload-notice').textContent, /unexpected reply/);
   await f.get('#close-upload').fire('click'); assert.equal(f.clients[0].focused, true);
   f.replies.push(new Error('offline')); await f.get('#upload').fire('click');
   assert.equal(f.get('#upload-notice').textContent, 'offline');
@@ -207,6 +215,10 @@ test('floating controls reveal from the top edge or keyboard and hide after idle
   assert.equal(prevented, true);
   assert.equal(f.get('#clipboard').focused, true);
   f.document.listeners.get('keydown')({code:'KeyA'});
+  const summary = {focus(){this.focused=true;}}, menu = {open:true, querySelector:()=>summary};
+  f.document.querySelectorAll = selector => { assert.equal(selector, 'header details[open]'); return [menu]; };
+  f.document.listeners.get('keydown')({key:'Escape', code:'Escape'});
+  assert.equal(menu.open, false); assert.equal(summary.focused, true);
   f.document.listeners.get('fullscreenchange')();
   assert.equal(header['toolbar-hidden'], true);
 });
