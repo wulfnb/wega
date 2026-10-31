@@ -6,6 +6,7 @@ mod capabilities;
 mod capabilities_ui;
 mod capture;
 mod compat;
+mod components;
 mod console_model;
 mod console_ui;
 mod containers_ui;

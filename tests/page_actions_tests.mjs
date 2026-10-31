@@ -93,3 +93,45 @@ test('Vector mask fallback retires with native support and keeps original same-o
   assert.equal((await maskFixture({css:'.vector-icon.x{mask-image:none}'})).styles.length,0);
   assert.equal((await maskFixture({css:'.vector-icon.x{mask-image:url(https://[)}'})).styles.length,0);
 });
+
+function netErrorFixture({title='Error loading page', children=null, observe=false, history=1, hostname='down.test'}={}) {
+  const element=tag=>({tagName:tag.toUpperCase(),children:[],append(...c){this.children.push(...c);},focus(){this.focused=true;}});
+  const line={tagName:'P',textContent:'Could not load the requested page: client error (Connect)'};
+  const body={children:children??[line],get firstElementChild(){return this.children[0];},append(...c){this.children.push(...c);},set textContent(v){this.children=[];}};
+  const head={children:[],append(...c){this.children.push(...c);}};
+  let observer;
+  const document={title,head,body:observe?null:body,createElement:element};
+  const location={hostname,href:'https://'+hostname+'/',reloads:0,reload(){this.reloads++;}};
+  const historyObj={length:history,backs:0,back(){this.backs++;}};
+  new vm.Script(readFileSync(file('net_error.js'),'utf8'),{filename:file('net_error.js')}).runInNewContext({document,location,history:historyObj,MutationObserver:class{constructor(fn){observer=this;this.fn=fn;}observe(){this.observing=true;}disconnect(){this.observing=false;}}});
+  return {document,body,head,location,history:historyObj,observer:()=>observer};
+}
+const text=node=>[node.textContent??'',...(node.children??[]).map(text)].join(' ');
+test("Servo's bare load-error page becomes a readable page with recovery actions",()=>{
+  const f=netErrorFixture({history:2});
+  assert.equal(f.document.title,"Can't reach down.test");
+  assert.equal(f.head.children[0].tagName,'STYLE');
+  const page=text(f.body);
+  assert.match(page,/Can't reach this page/);assert.match(page,/down.test didn't respond/);assert.match(page,/client error \(Connect\)/);
+  const [retry,back]=f.body.children[0].children[2].children;
+  assert.equal(retry.focused,true);retry.onclick();back.onclick();
+  assert.equal(f.location.reloads,1);assert.equal(f.history.backs,1);
+  assert.equal(netErrorFixture().body.children[0].children[2].children.length,1,'no Go back without history');
+});
+test('load-error page explains DNS and certificate failures; ordinary pages are untouched',()=>{
+  const reason=r=>{const f=netErrorFixture({children:[{tagName:'P',textContent:'Could not load the requested page: '+r}]});return text(f.body);};
+  assert.match(reason('dns error: failed to lookup'),/couldn't find down.test/);
+  assert.match(reason('invalid peer certificate'),/secure connection to down.test failed/);
+  assert.equal(netErrorFixture({hostname:''}).document.title,"Can't reach https:///");
+  for(const options of [{title:'Example Domain'},{children:[{tagName:'DIV',textContent:'Could not load the requested page: x'}]},{children:[{tagName:'P',textContent:'Welcome'}]},{children:[{tagName:'P',textContent:'a'},{tagName:'P',textContent:'b'}]}]){
+    const f=netErrorFixture(options);assert.equal(f.head.children.length,0);
+  }
+});
+test('load-error check waits for the body Servo builds after user scripts run',()=>{
+  const f=netErrorFixture({observe:true});const observer=f.observer();
+  assert.equal(observer.observing,true);
+  observer.fn();assert.equal(observer.observing,true,'still waiting while the body is missing');
+  f.document.body={children:[],get firstElementChild(){return this.children[0];}};observer.fn();assert.equal(observer.observing,true,'and while it is empty');
+  f.document.body=f.body;observer.fn();
+  assert.equal(observer.observing,false);assert.equal(f.document.title,"Can't reach down.test");
+});

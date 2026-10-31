@@ -418,6 +418,12 @@ fn download_history_capacity_preserves_in_progress_and_paused_jobs() {
             worker: None,
         });
     }
+    // Removing one entry only forgets finished ones.
+    let jobs = manager.jobs();
+    manager.remove(&jobs[1]);
+    manager.remove(&jobs[3]);
+    assert_eq!(manager.jobs().len(), 5);
+    assert!(!manager.jobs().iter().any(|j| Arc::ptr_eq(j, &jobs[3])));
     manager.clear_finished();
     assert_eq!(
         manager

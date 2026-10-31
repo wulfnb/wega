@@ -40,5 +40,9 @@ pub fn content_manager(servo: &servo::Servo) -> Rc<servo::UserContentManager> {
         include_str!("mask_icons.js").into(),
         None,
     )));
+    manager.add_script(Rc::new(servo::UserScript::new(
+        include_str!("net_error.js").into(),
+        None,
+    )));
     manager
 }
