@@ -143,6 +143,10 @@ pub struct State {
     pub media_owner: Option<servo::WebViewId>,
     pub site_info: bool,
     pub clear_data: bool,
+    /// Second step before clearing session cookies (it signs out of every site).
+    pub confirm_session_clear: bool,
+    /// Cookie values can hold session tokens; they stay hidden unless asked for.
+    pub show_cookie_values: bool,
     pub delete_site: Option<String>,
     pub settings_section: usize,
     pub diagnostics: bool,
@@ -151,6 +155,10 @@ pub struct State {
     pub script: Option<std::rc::Rc<servo::UserScript>>,
     pub find_open: bool,
     pub find: String,
+    /// "3 of 12" / "No matches", written by the page script's callback.
+    pub find_status: std::rc::Rc<std::cell::RefCell<String>>,
+    /// The find field takes focus once each time the bar opens.
+    pub find_focused: bool,
     pub script_source: String,
 }
 
@@ -193,19 +201,23 @@ pub fn html(value: &str) -> String {
 pub fn theme_stylesheet(palette: crate::theme::Palette) -> String {
     let hex = |c: egui::Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
     format!(
-        ":root{{--wega-text:{};--wega-background:{};--wega-accent:{};--wega-surface:{};--wega-border:{};--wega-selected:{}}}",
+        ":root{{color-scheme:{};--wega-text:{};--wega-background:{};--wega-accent:{};--wega-surface:{};--wega-border:{};--wega-selected:{};--wega-muted:{};--wega-danger:{};--wega-on-accent:{}}}",
+        if palette.dark { "dark" } else { "light" },
         hex(palette.text),
         hex(palette.inset),
         hex(palette.accent),
         hex(palette.surface),
         hex(palette.border),
-        hex(palette.selected)
+        hex(palette.selected),
+        hex(palette.muted),
+        hex(palette.danger),
+        hex(palette.on_accent)
     )
 }
 pub fn document(title: &str, body: &str, palette: crate::theme::Palette) -> String {
     let variables = theme_stylesheet(palette);
     format!(
-        "<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>{}</title><style id='wega-theme'>{variables}</style><style>html{{font:16px system-ui;color:var(--wega-text);background:var(--wega-background)}}body{{max-width:850px;margin:48px auto;padding:24px}}a{{color:var(--wega-accent)}}input,button{{font:inherit;padding:12px;border-radius:8px;max-width:100%;box-sizing:border-box;background:var(--wega-surface);color:var(--wega-text);border:1px solid var(--wega-border)}}button{{background:var(--wega-selected);cursor:pointer}}.search-controls{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.search-controls input{{width:400px;min-width:0}}.search-controls input,.search-controls button{{height:48px}}.tiles{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}}.tile{{display:flex;align-items:center;gap:12px;padding:18px;background:var(--wega-surface);border:1px solid var(--wega-border);border-radius:12px;text-decoration:none}}.tile span{{overflow-wrap:anywhere}}.recent li{{display:flex;gap:12px;align-items:center}}.page-icon{{font-size:24px}}nav{{display:flex;flex-wrap:wrap;gap:12px}}:focus-visible{{outline:3px solid var(--wega-accent);outline-offset:4px}}li{{margin:14px 0}}p{{line-height:1.6}}</style></head><body><nav aria-label='Browser pages'><a href='wega://newtab'>New tab</a> · <a href='wega://history'>History</a> · <a href='wega://bookmarks'>Bookmarks</a> · <a href='wega://settings'>Settings</a></nav><main><h1>{}</h1>{body}</main></body></html>",
+        "<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>{}</title><style id='wega-theme'>{variables}</style><style>html{{font:16px system-ui;color:var(--wega-text);background:var(--wega-background)}}body{{max-width:760px;margin:40px auto;padding:24px}}h1{{font-size:1.9rem;margin:.5rem 0 1.25rem}}h2{{font-size:1rem;color:var(--wega-muted);font-weight:600;margin:2rem 0 .75rem}}a{{color:var(--wega-accent)}}input,button{{font:inherit;padding:12px;border-radius:8px;max-width:100%;box-sizing:border-box;background:var(--wega-surface);color:var(--wega-text);border:1px solid var(--wega-border)}}button{{background:var(--wega-accent);color:var(--wega-on-accent);border-color:var(--wega-accent);font-weight:600;cursor:pointer}}.search-controls{{display:flex;align-items:center;gap:8px}}.search-controls input{{width:calc(100% - 120px);min-width:0}}.search-controls button{{width:112px;flex:none}}.search-controls input,.search-controls button{{height:48px}}.hint,.empty,.address{{color:var(--wega-muted)}}.hint{{font-size:.85rem;margin:.5rem 0 0}}.tiles{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}}.tile{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:92px;padding:14px;text-align:center;color:var(--wega-text);background:var(--wega-surface);border:1px solid var(--wega-border);border-radius:12px;text-decoration:none}}.tile:hover,.tile:focus-visible{{background:var(--wega-selected)}}.tile span{{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;font-size:.9rem}}.recent,.entries{{list-style:none;padding:0}}.recent li,.entries li{{display:flex;gap:12px;align-items:center;margin:0;padding:8px 10px;border-radius:8px}}.recent li:hover,.entries li:hover{{background:var(--wega-surface)}}.entries a{{display:block;text-decoration:none;color:var(--wega-text)}}.address{{display:block;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.page-icon{{font-size:24px}}nav{{display:flex;flex-wrap:wrap;gap:6px}}nav a{{padding:6px 12px;border-radius:999px;text-decoration:none;background:var(--wega-surface)}}:focus-visible{{outline:3px solid var(--wega-accent);outline-offset:4px}}p{{line-height:1.6}}</style></head><body><nav aria-label='Browser pages'><a href='wega://newtab'>New tab</a><a href='wega://history'>History</a><a href='wega://bookmarks'>Bookmarks</a><a href='wega://settings'>Settings</a></nav><main><h1>{}</h1>{body}</main></body></html>",
         html(title),
         html(title)
     )

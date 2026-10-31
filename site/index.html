@@ -8,6 +8,7 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <style>
     :root {
+      color-scheme: dark;
       --bg: #061513;
       --surface: #0a201d;
       --surface-border: #143833;
@@ -377,6 +378,9 @@
       .terminal-title { max-width: 45%; }
       html { scroll-padding-top: 104px; }
     }
+      @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+    }
   </style>
 </head>
 <body>
@@ -385,7 +389,7 @@
   <header>
     <div class="container nav-wrapper">
       <a href="#" class="brand">
-        <img src="logo.png" alt="Wega Logo">
+        <img src="logo.png" alt="" width="36" height="36">
         <span>Wega</span>
         <span class="badge">v0.1.0-alpha.1</span>
       </a>
@@ -450,8 +454,8 @@
           &nbsp;&nbsp;-e BROWSER_PASSWORD=<span style="color: #f59e0b;">'choose-a-strong-password'</span> \<br>
           &nbsp;&nbsp;-v wega-profile:/config \<br>
           &nbsp;&nbsp;ghcr.io/wulfnb/wega:latest<br><br>
-          <span style="color: #64748b;"># Open https://localhost:7443 and sign in as servo with your chosen password.</span><br>
-          <span style="color: #64748b;"># Never expose port 7443 to the internet; use Tailscale/WireGuard or a trusted reverse proxy.</span>
+          <span style="color: var(--text-muted);"># Open https://localhost:7443 and sign in as servo with your chosen password.</span><br>
+          <span style="color: var(--text-muted);"># Never expose port 7443 to the internet; use Tailscale/WireGuard or a trusted reverse proxy.</span>
         </div>
       </div>
     </section>

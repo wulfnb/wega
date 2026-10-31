@@ -128,7 +128,7 @@ async function listDownloads() {
   try {
     const response = await fetch('/downloads/', {cache: 'no-store'});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const files = (await response.json()).filter(f => f.type === 'file' && !f.name.startsWith('.'));
+    const files = (await readJson(response)).filter(f => f.type === 'file' && !f.name.startsWith('.'));
     files.sort((a, b) => a.name.localeCompare(b.name));
     for (const file of files) {
       const row = document.createElement('li');
@@ -153,11 +153,23 @@ const accountDialog = document.querySelector('#account-dialog');
 const accountForm = document.querySelector('#account-form');
 const accountNotice = document.querySelector('#account-notice');
 let csrf = '';
+// Proxy error pages (nginx 413/502/504) are HTML, not JSON: explain them
+// instead of surfacing a parse error such as "Unexpected token '<'".
+async function readJson(response) {
+  try {
+    return await response.json();
+  } catch {
+    if (response.status === 413) throw new Error('This file is too large to upload.');
+    throw new Error(response.status >= 500
+      ? 'The browser is not responding. Wait a moment and try again.'
+      : 'The server sent an unexpected reply. Reload the page and try again.');
+  }
+}
 async function loadAccount() {
   const response = await fetch('/auth/account', {cache: 'no-store'});
   if (response.status === 401) { location.replace('/login.html'); throw new Error('Please sign in.'); }
   if (!response.ok) throw new Error('Could not load account settings.');
-  const result = await response.json();
+  const result = await readJson(response);
   csrf = result.csrf;
   return result;
 }
@@ -180,7 +192,7 @@ accountForm.addEventListener('submit', async event => {
       method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf},
       body: JSON.stringify(Object.fromEntries(new FormData(accountForm)))
     });
-    const result = await response.json();
+    const result = await readJson(response);
     if (!response.ok) throw new Error(result.error || 'Could not save account settings.');
     status.textContent = 'Account updated';
     accountDialog.close();
@@ -263,7 +275,7 @@ uploadForm.addEventListener('submit', async event => {
   uploadNotice.textContent = 'Uploading…'; uploadPath.value = '';
   try {
     const response = await fetch('/auth/upload', {method:'POST', headers:{'Content-Type':'application/octet-stream', 'X-CSRF-Token':uploadCsrf, 'X-Upload-Name':encodeURIComponent(file.name)}, body:file});
-    const result = await response.json();
+    const result = await readJson(response);
     if (!response.ok) throw new Error(result.error || 'Upload failed.');
     uploadPath.value = result.path; uploadPath.focus(); uploadPath.select();
     uploadNotice.textContent = 'Uploaded. Copy this remote path into the website file chooser.';
@@ -283,6 +295,13 @@ function revealToolbar() {
 document.addEventListener('pointermove', event => { if (event.clientY < 60) revealToolbar(); });
 document.addEventListener('pointerdown', event => { if (event.clientY < 60) revealToolbar(); });
 document.addEventListener('keydown', event => {
+  // Escape closes an open View/Account menu and returns focus to its button.
+  if (event.key === 'Escape') {
+    for (const menu of document.querySelectorAll('header details[open]')) {
+      menu.open = false;
+      menu.querySelector('summary').focus();
+    }
+  }
   if (event.altKey && event.shiftKey && event.code === 'KeyV') {
     event.preventDefault();
     revealToolbar();
@@ -322,7 +341,7 @@ async function pollFileRequest() {
   try {
     const response = await fetch('/auth/chooser', {cache:'no-store'});
     if (!response.ok) return;
-    const next = (await response.json()).request;
+    const next = (await readJson(response)).request;
     const changed = next?.id !== pendingFileRequest?.id;
     pendingFileRequest = next;
     fileRequest.hidden = !pendingFileRequest;
@@ -347,12 +366,12 @@ async function completeFileRequest(files) {
     const paths = [];
     for (const file of files) {
       const response = await fetch('/auth/upload', {method:'POST',headers:{'Content-Type':'application/octet-stream','X-CSRF-Token':token,'X-Upload-Name':encodeURIComponent(file.name)},body:file});
-      const result = await response.json();
+      const result = await readJson(response);
       if (!response.ok) throw new Error(result.error || 'Upload failed.');
       paths.push(result.path);
     }
     const response = await fetch('/auth/chooser', {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':token},body:JSON.stringify({id:request.id,paths})});
-    const result = await response.json();
+    const result = await readJson(response);
     if (!response.ok) throw new Error(result.error || 'The file chooser could not accept the upload.');
     if (pendingFileRequest?.id === request.id) { pendingFileRequest=undefined;fileRequest.hidden=true; }
     status.textContent = files.length ? 'File sent to the page' : 'File selection cancelled';

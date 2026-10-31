@@ -82,7 +82,12 @@ pub fn style(ctx: &egui::Context) {
     ctx.set_style_of(mode, style);
 }
 
-fn paint_icon(painter: &egui::Painter, center: egui::Pos2, symbol: &str, color: Color32) {
+pub(crate) fn paint_icon(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    symbol: &str,
+    color: Color32,
+) {
     let stroke = Stroke::new(1.6, color);
     let point = |x: f32, y: f32| center + egui::vec2(x, y);
     let line = |points: &[(f32, f32)]| {
@@ -244,11 +249,18 @@ fn site_info_button(ui: &mut Ui, protocol: &str) -> egui::Response {
             icon_atom("warning", Some(colors.amber)),
             RichText::new("Not secure").color(colors.amber),
         )),
-        "wega" => egui::Button::new("Wega"),
-        "file" => egui::Button::new("File"),
-        _ => egui::Button::new("Site"),
+        _ => egui::Button::new(icon_atom("info", None)),
     };
-    let response = ui.add(button).on_hover_text("Connection and site data");
+    let detail = match protocol {
+        "https" => "Secure connection",
+        "http" => "Not secure: this page is sent without encryption",
+        "file" => "Local file",
+        "wega" => "Wega page",
+        _ => "Site information",
+    };
+    let response = ui
+        .add(button)
+        .on_hover_text(format!("{detail} · connection and site data"));
     response.widget_info(|| {
         egui::WidgetInfo::labeled(
             egui::Role::Button,
@@ -541,10 +553,14 @@ impl Browser {
                                         .truncate(),
                                     )
                                     .on_hover_text(status);
-                                    if ui.small_button("Details").clicked() {
+                                    if ui.button("Details").clicked() {
                                         self.chrome.expanded_notice = true;
                                     }
-                                    if ui.small_button("×").clicked() {
+                                    let dismiss = ui
+                                        .add(egui::Button::new("×").frame(false).min_size(egui::vec2(24.0, 24.0)))
+                                        .on_hover_text("Dismiss message");
+                                    dismiss.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Dismiss message"));
+                                    if dismiss.clicked() {
                                         self.status = None;
                                         self.chrome.notice = None;
                                     }
@@ -563,20 +579,15 @@ impl Browser {
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             self.engine_picker(ui);
-                            if ui.small_button("+").clicked() {
-                                self.zoom(1.1);
-                            }
-                            if ui
-                                .small_button(format!(
-                                    "{}%",
-                                    (self.page_zoom() * 100.0).round()
-                                ))
-                                .clicked()
+                            // Zoom lives in the menu; the status bar only flags a
+                            // non-default level, and clicking it resets.
+                            let zoom = (self.page_zoom() * 100.0).round();
+                            if zoom != 100.0
+                                && crate::components::chip(ui, true, &format!("{zoom}%"))
+                                    .on_hover_text("Reset zoom to 100%")
+                                    .clicked()
                             {
                                 self.reset_zoom();
-                            }
-                            if ui.small_button("−").clicked() {
-                                self.zoom(1.0 / 1.1);
                             }
                             if self.profile().policy.show_performance {
                                 ui.add_space(10.0);
@@ -680,7 +691,11 @@ impl Browser {
             let security = site_info_button(ui, protocol);
             ui.ctx().data_mut(|data| data.insert_temp(Id::unique("site-panel-anchor"), security.rect.left_bottom()));
             if security.clicked() { self.refresh_site_data(); self.features.site_info = !self.features.site_info; }
-            self.engine_badge(ui);
+            // Servo is the default; only flag tabs on the experimental engine.
+            // The status bar picker switches engines for any tab.
+            if self.is_wega() {
+                self.engine_badge(ui);
+            }
             self.containers_menu(ui);
             let width = (ui.available_width() - 126.0).max(100.0);
             let hint = match self.profile().policy.search_engine {
@@ -750,34 +765,78 @@ impl Browser {
             if icon(ui,"↓","Downloads").clicked(){self.download_ui.open = !self.download_ui.open;}
             let menu = icon(ui, "⋯", "Menu");
             egui::Popup::menu(&menu).show(|ui| {
-                if ui
-                    .add(
-                        egui::Button::new("New tab").shortcut_text(if cfg!(target_os = "macos") {
-                            "Cmd+T"
-                        } else {
-                            "Ctrl+T"
-                        }),
-                    )
-                    .clicked()
-                {
+                ui.set_min_width(250.0);
+                let mac = cfg!(target_os = "macos");
+                let key = |keys: &str| format!("{}+{keys}", if mac { "Cmd" } else { "Ctrl" });
+                let item = |label: &str, shortcut: String| egui::Button::new(label.to_owned()).shortcut_text(shortcut);
+                // Tabs
+                if ui.add(item("New tab", key("T"))).clicked() {
                     self.new_tab();
                     ui.close();
                 }
-                if ui.button("Reopen closed tab").clicked() {
+                if ui
+                    .add_enabled(!self.chrome.closed_tabs.is_empty(), item("Reopen closed tab", key("Shift+T")))
+                    .clicked()
+                {
                     if let Some(url) = self.chrome.closed_tabs.pop() {
                         self.add_tab(&url);
                     }
                     ui.close();
                 }
                 ui.separator();
-                if ui.button("Tabs on top").clicked() {
-                    self.apply(wega::application::Command::Layout(TabLayout::Top));
-                    self.changed();
+                // Library
+                if ui.add(item("Bookmarks", key("Shift+B"))).clicked() {
+                    self.chrome.show_bookmarks = true;
+                    self.chrome.show_history = false;
+                    self.chrome.library_query.clear();
                     ui.close();
                 }
-                if ui.button("Tabs in sidebar").clicked() {
-                    self.apply(wega::application::Command::Layout(TabLayout::Side));
-                    self.changed();
+                // Cmd+H hides the app on macOS, so the shortcut is listed elsewhere only.
+                if ui.add(item("History", if mac { String::new() } else { key("H") })).clicked() {
+                    self.chrome.show_history = true;
+                    self.chrome.show_bookmarks = false;
+                    self.chrome.library_query.clear();
+                    ui.close();
+                }
+                if ui.button("Downloads").clicked() {
+                    self.download_ui.open = true;
+                    ui.close();
+                }
+                ui.separator();
+                // This page
+                if ui.add(item("Find in page", key("F"))).clicked() {
+                    self.features.find_open = true;
+                    ui.close();
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Zoom");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("+").on_hover_text(format!("Zoom in ({})", key("+"))).clicked() {
+                            self.zoom(1.1);
+                        }
+                        if ui
+                            .button(format!("{}%", (self.page_zoom() * 100.0).round()))
+                            .on_hover_text(format!("Reset zoom ({})", key("0")))
+                            .clicked()
+                        {
+                            self.reset_zoom();
+                        }
+                        if ui.button("−").on_hover_text(format!("Zoom out ({})", key("-"))).clicked() {
+                            self.zoom(1.0 / 1.1);
+                        }
+                    });
+                });
+                if ui.add_enabled(!self.is_wega(), egui::Button::new("Reader view")).clicked() {
+                    self.view().evaluate_javascript(include_str!("reader.js"), |_| {});
+                    ui.close();
+                }
+                if ui.button("Site information").clicked() {
+                    self.refresh_site_data();
+                    self.features.site_info = true;
+                    ui.close();
+                }
+                if ui.button("Save page as image").clicked() {
+                    self.screenshot_page();
                     ui.close();
                 }
                 ui.separator();
@@ -799,47 +858,26 @@ impl Browser {
                         "Glass uses an opaque fallback on this platform."
                     });
                 });
+                ui.menu_button("More tools", |ui| {
+                    if ui.add(egui::Button::new("Developer tools").shortcut_text("F12")).clicked() {
+                        self.toggle_developer_tools();
+                        ui.close();
+                    }
+                    if ui.add(item("Reload without cache", key("Shift+R"))).clicked() {
+                        self.reload_without_cache();
+                        ui.close();
+                    }
+                    if ui.add_enabled(!self.is_wega(),egui::Button::new("Toggle page dark style")).clicked() {self.view().evaluate_javascript("(()=>{let s=document.getElementById('__wega_dark');if(s){s.remove();return} s=document.createElement('style');s.id='__wega_dark';s.textContent='html{color-scheme:dark!important;background:#171717!important;color:#eee!important}body,main,article,section,header,footer,nav{background-color:#171717!important;color:#eee!important}a{color:#a9caff!important}';document.head.appendChild(s)})()", |_|{});ui.close();}
+                    if ui.button("Download current URL…").clicked(){let url=self.tab().url();self.offer_download(&url,"");ui.close();}
+                    if ui.button("Open browser logs").clicked() {if let Err(error)=crate::ux::open_path(&self.profile_dir.join("logs"),false) {self.status=Some(error);}ui.close();}
+                    if ui.button("Home").clicked() {
+                        self.navigate(profile::HOME);
+                        ui.close();
+                    }
+                });
                 ui.separator();
-                if ui.button("Bookmarks").clicked() {
-                    self.chrome.show_bookmarks = true;
-                    self.chrome.show_history = false;
-                    self.chrome.library_query.clear();
-                    ui.close();
-                }
-                if ui.button("History").clicked() {
-                    self.chrome.show_history = true;
-                    self.chrome.show_bookmarks = false;
-                    self.chrome.library_query.clear();
-                    ui.close();
-                }
-                if ui.button("Downloads").clicked(){self.download_ui.open=true;ui.close();}
-                if ui.button("Download current URL…").clicked(){let url=self.tab().url();self.offer_download(&url,"");ui.close();}
-                if ui
-                    .add(egui::Button::new("Developer tools").shortcut_text("F12"))
-                    .clicked()
-                {
-                    self.toggle_developer_tools();
-                    ui.close();
-                }
                 if ui.button("Browser settings").clicked() {self.features.settings=true;ui.close();}
-                if ui.button("Open browser logs").clicked() {if let Err(error)=crate::ux::open_path(&self.profile_dir.join("logs"),false) {self.status=Some(error);}ui.close();}
                 if ui.button("About Wega").clicked(){self.navigate("wega://about");ui.close();}
-                if ui.button("Site information").clicked() {self.refresh_site_data();self.features.site_info=true;ui.close();}
-                if ui.button("Save page as image").clicked() {self.screenshot_page();ui.close();}
-                if ui.add_enabled(!self.is_wega(),egui::Button::new("Reader view")).clicked() {self.view().evaluate_javascript(include_str!("reader.js"), |_|{});ui.close();}
-                if ui.add_enabled(!self.is_wega(),egui::Button::new("Toggle page dark style")).clicked() {self.view().evaluate_javascript("(()=>{let s=document.getElementById('__wega_dark');if(s){s.remove();return} s=document.createElement('style');s.id='__wega_dark';s.textContent='html{color-scheme:dark!important;background:#171717!important;color:#eee!important}body,main,article,section,header,footer,nav{background-color:#171717!important;color:#eee!important}a{color:#a9caff!important}';document.head.appendChild(s)})()", |_|{});ui.close();}
-                if ui.button("Find in page").clicked() {self.features.find_open=true;ui.close();}
-                if ui.button("Reload without cache").clicked() {self.reload_without_cache();ui.close();}
-                if ui.button("Home").clicked() {
-                    self.navigate(profile::HOME);
-                    ui.close();
-                }
-                ui.separator();
-                ui.label(
-                    RichText::new("Wega · Rust + Servo 0.7.0 + egui")
-                        .small()
-                        .color(colors.muted),
-                );
             });
         });
     }
@@ -1440,19 +1478,36 @@ impl Browser {
                 None
             };
             egui::Modal::new(Id::unique("site_permission")).show(ctx, |ui| {
-                ui.heading("Site permission");
-                ui.label(origin);
-                ui.label(format!("Allow access to {permission}?"));
-                ui.horizontal(|ui| {
-                    let deny = ui.button("Deny");
+                let colors = crate::theme::palette(ui.ctx());
+                // `permission` stays the stored key; only the wording is friendly.
+                let host = url::Url::parse(&origin)
+                    .ok()
+                    .and_then(|url| url.host_str().map(str::to_owned))
+                    .unwrap_or_else(|| origin.clone());
+                ui.set_max_width(420.0);
+                ui.heading(format!(
+                    "{host} wants to {}",
+                    crate::capabilities_ui::permission_request(&permission)
+                ));
+                ui.label(RichText::new(&origin).small().color(colors.muted));
+                ui.label(
+                    RichText::new("Allowing lasts until you leave this page.").color(colors.muted),
+                );
+                ui.add_space(4.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add(crate::components::primary_button(ui, "Allow for this page"))
+                        .clicked()
+                    {
+                        answer = Some(true);
+                    }
+                    // Deny is the safe default and takes focus.
+                    let deny = ui.add(egui::Button::new("Deny").min_size(egui::vec2(0.0, 30.0)));
                     if fresh {
                         deny.request_focus();
                     }
                     if deny.clicked() {
                         answer = Some(false);
-                    }
-                    if ui.button("Allow for this page").clicked() {
-                        answer = Some(true);
                     }
                 });
             });
@@ -1546,14 +1601,13 @@ impl Browser {
                             field.request_focus();
                         }
                     }
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            answer = Some(false);
-                        }
-                        if ui.button("OK").clicked() {
-                            answer = Some(true);
-                        }
-                    });
+                    // An alert has nothing to decline.
+                    let cancel =
+                        (!matches!(dialog, servo::SimpleDialog::Alert(_))).then_some("Cancel");
+                    if let Some(choice) = crate::components::dialog_buttons(ui, cancel, "OK", false)
+                    {
+                        answer = Some(choice);
+                    }
                 });
                 if let Some(allow) = answer {
                     if let servo::EmbedderControl::SimpleDialog(mut dialog) = control {
@@ -1794,41 +1848,68 @@ impl Browser {
                 let mut action = None;
                 let mut download = None;
                 finished = cancel;
-                egui::Modal::new(Id::unique("page_context")).show(ctx, |ui| {
-                    if let Some(url) = &menu.element_info().link_url
-                        && ui.button("Download link…").clicked()
-                    {
-                        download = Some(url.to_string());
-                        finished = true;
-                    }
-                    if let Some(url) = &menu.element_info().image_url
-                        && ui.button("Download image…").clicked()
-                    {
-                        download = Some(url.to_string());
-                        finished = true;
-                    }
-                    for item in menu.items() {
-                        match item {
-                            servo::ContextMenuItem::Item {
-                                label,
-                                action: item_action,
-                                enabled,
-                            } => {
-                                if ui.add_enabled(*enabled, egui::Button::new(label)).clicked() {
-                                    action = Some(*item_action);
-                                }
-                            }
-                            servo::ContextMenuItem::Separator => {
-                                ui.separator();
-                            }
-                        }
-                    }
-                    if ui.button("Dismiss").clicked() {
-                        finished = true;
-                    }
-                });
+                // A menu at the pointer, like every desktop browser; Escape or a
+                // click elsewhere dismisses it.
+                let at = menu.position().min;
+                let scale = ctx.pixels_per_point();
+                let anchor =
+                    self.chrome.page_rect.min + egui::vec2(at.x as f32, at.y as f32) / scale;
+                let area = egui::Area::new(Id::unique("page_context"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(anchor)
+                    .constrain(true)
+                    .show(ctx, |ui| {
+                        egui::Frame::menu(ui.style()).show(ui, |ui| {
+                            ui.set_min_width(220.0);
+                            ui.with_layout(
+                                egui::Layout::top_down_justified(egui::Align::Min),
+                                |ui| {
+                                    if let Some(url) = &menu.element_info().link_url
+                                        && ui.button("Download link").clicked()
+                                    {
+                                        download = Some(url.to_string());
+                                        finished = true;
+                                    }
+                                    if let Some(url) = &menu.element_info().image_url
+                                        && ui.button("Download image").clicked()
+                                    {
+                                        download = Some(url.to_string());
+                                        finished = true;
+                                    }
+                                    for item in menu.items() {
+                                        match item {
+                                            servo::ContextMenuItem::Item {
+                                                label,
+                                                action: item_action,
+                                                enabled,
+                                            } => {
+                                                if ui
+                                                    .add_enabled(*enabled, egui::Button::new(label))
+                                                    .clicked()
+                                                {
+                                                    action = Some(*item_action);
+                                                }
+                                            }
+                                            servo::ContextMenuItem::Separator => {
+                                                ui.separator();
+                                            }
+                                        }
+                                    }
+                                },
+                            );
+                        });
+                    });
+                // On macOS the menu opens on mouse-down, so the right button's
+                // release arrives later and must not count as clicking away.
+                let right_release =
+                    ctx.input(|i| i.pointer.button_released(egui::PointerButton::Secondary));
+                if area.response.clicked_elsewhere() && !right_release {
+                    finished = true;
+                }
                 if let Some(url) = download {
+                    // Start right away; the downloads panel opens to show progress.
                     self.offer_download(&url, "");
+                    self.begin_download();
                 }
                 if action.is_some() || finished {
                     if let servo::EmbedderControl::ContextMenu(menu) = control {

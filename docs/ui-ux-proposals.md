@@ -44,6 +44,26 @@ in the implementation log; no push has been made by the agent.
 | C5 | Windows 11 Mica is implemented through DWM, gated by API support, high contrast and the transparency preference; unsupported configurations use opaque themes. Adapter cross-compilation passes. Actual compositor, wallpaper contrast and OS preference changes still need Windows checks. |
 | D | Confirmed absent CSS mask support and Vector mask-based black backgrounds. A scoped MediaWiki fallback reuses the same-origin stylesheet’s original SVGs; native screenshot checks verify transparent corners and a painted glyph. This is a compatibility fallback. A fresh live Wikipedia verification and general engine CSS-mask support remain open. |
 
+### 31 October 2026 pass
+
+A third pass added a shared component layer (`src/components.rs`: underline tabs,
+filter chips, primary and destructive buttons, inline messages, empty states,
+dialog buttons) and the palette roles `on_accent`, `danger_bg` and `success`,
+with a WCAG AA contrast test for all six themes. It applies them to the main
+menu, right-click menu, find bar, permission and website dialogs, settings,
+site data, downloads, containers, internal pages, the developer toolbox and the
+load-error page (`src/net_error.js`). Icons are regenerated per platform grid by
+`scripts/generate-icons.py`.
+
+Correction to the table above: A7's mint sign-in button was missing from
+`viewer.css` until this pass; it is now styled.
+
+Still open from that pass: anchoring Downloads and Containers as panels instead
+of windows, a persisted download-folder setting, viewer toasts and a counting
+reconnect timer, caching `/novnc/` assets, the website's OS-aware download
+button, and the Impressum address and e-mail placeholders, which need the
+owner's details.
+
 Current implementation and verification limits are recorded in the [24 October checkpoint](ui-ux-implementation.md#remaining-proposal-implementation--24-october-2026). Remembered grants and active revocation require the [engine changes](permission-engine-requirements.md).
 
 ## Evidence

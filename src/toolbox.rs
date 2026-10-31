@@ -168,6 +168,8 @@ pub struct Toolbox {
     pub export_open: bool,
     pub notice: Option<String>,
     notice_seen: Option<(String, Instant)>,
+    /// A failure stays visible until dismissed; `notice` fades after 5 s.
+    pub error: Option<String>,
     pub attention: Option<String>,
     pub panel_rect: egui::Rect,
 }
@@ -206,6 +208,7 @@ impl Toolbox {
             export_open: false,
             notice: None,
             notice_seen: None,
+            error: None,
             attention: None,
             panel_rect: egui::Rect::NOTHING,
         })

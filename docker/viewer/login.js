@@ -1,3 +1,14 @@
+// A proxy or gateway error page is HTML, not JSON: explain it instead of
+// showing a parse error such as "Unexpected token '<'".
+async function readJson(response) {
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(response.status >= 500
+      ? 'The browser is starting or unavailable. Wait a moment and try again.'
+      : 'The server sent an unexpected reply. Reload the page and try again.');
+  }
+}
 const form = document.querySelector('#login-form');
 form.addEventListener('submit', async event => {
   event.preventDefault();
@@ -13,7 +24,7 @@ form.addEventListener('submit', async event => {
     });
     if (response.status === 429) throw new Error('Too many sign-in attempts. Wait a minute and try again.');
     if (response.status === 401) throw new Error('Username or password is incorrect. Try again.');
-    const result = await response.json();
+    const result = await readJson(response);
     if (!response.ok) throw new Error(result.error || 'Could not sign in.');
     const session = await fetch('/auth/account', {credentials: 'same-origin', cache: 'no-store'});
     if (!session.ok) {

@@ -147,6 +147,17 @@ impl Manager {
     pub fn jobs(&self) -> Vec<Arc<Job>> {
         self.items.iter().map(|i| i.job.clone()).collect()
     }
+    /// Forget one finished entry. Active and paused transfers are kept, so a
+    /// stale click can never drop a download that is still in progress.
+    pub fn remove(&mut self, job: &Arc<Job>) {
+        self.items.retain(|i| {
+            !Arc::ptr_eq(&i.job, job)
+                || !matches!(
+                    lock(&i.job.progress).phase,
+                    Phase::Complete | Phase::Failed | Phase::Cancelled
+                )
+        });
+    }
     pub fn clear_finished(&mut self) {
         self.items.retain(|i| {
             !matches!(

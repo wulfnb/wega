@@ -217,6 +217,23 @@ impl Browser {
             .stick_to_bottom(follow)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
+                if grouped.is_empty() {
+                    if live.is_empty() {
+                        crate::components::empty_state(
+                            ui,
+                            "No console messages yet",
+                            "Messages from this page appear here.",
+                            None,
+                        );
+                    } else {
+                        crate::components::empty_state(
+                            ui,
+                            "No messages match the filters",
+                            "Change the level or search filters to see them.",
+                            None,
+                        );
+                    }
+                }
                 for (entry, count) in &grouped {
                     let color = match entry.level.as_str() {
                         "Error" => colors.danger,
@@ -226,13 +243,7 @@ impl Browser {
                     ui.push_id(entry.id, |ui| {
                         egui::Frame::new()
                             .fill(match entry.level.as_str() {
-                                "Error" => {
-                                    if colors.dark {
-                                        egui::Color32::from_rgb(68, 35, 48)
-                                    } else {
-                                        egui::Color32::from_rgb(255, 235, 238)
-                                    }
-                                }
+                                "Error" => colors.danger_bg,
                                 "Warn" => colors.warning_bg,
                                 _ => egui::Color32::TRANSPARENT,
                             })
@@ -428,7 +439,22 @@ impl Browser {
                 .open(&mut open)
                 .show(ui.ctx(), |ui| {
                     ui.label("Saves currently filtered messages and source locations as text.");
-                    ui.text_edit_singleline(&mut self.tools.page(view).console_state.export_path);
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(
+                            &mut self.tools.page(view).console_state.export_path,
+                        );
+                        if ui.button("Choose…").clicked()
+                            && let Some(path) = rfd::FileDialog::new()
+                                .set_file_name("console.txt")
+                                .save_file()
+                        {
+                            self.tools.page(view).console_state.export_path =
+                                path.display().to_string();
+                        }
+                    });
+                    if let Some(error) = &self.tools.error {
+                        crate::components::inline_message(ui, crate::ux::Severity::Error, error);
+                    }
                     save = ui.button("Save").clicked();
                 });
             if save {
@@ -436,11 +462,17 @@ impl Browser {
                     &self.tools.pages[owner].console_state.export_path,
                     self.visible_console_text(owner),
                 );
-                self.tools.notice = Some(match result {
-                    Ok(()) => "Console output saved".into(),
-                    Err(e) => e.to_string(),
-                });
-                open = false;
+                // On failure keep the dialog and the typed path.
+                match result {
+                    Ok(()) => {
+                        self.tools.notice = Some("Console output saved".into());
+                        self.tools.error = None;
+                        open = false;
+                    }
+                    Err(e) => {
+                        self.tools.error = Some(format!("Could not save console output: {e}"))
+                    }
+                }
             }
             self.tools.page(view).console_state.export_open = open;
         }

@@ -331,28 +331,51 @@ impl Browser {
     }
 }
 fn box_model(ui: &mut Ui, box_value: &Value) {
-    for (label, key, color) in [
-        ("margin", "margin", egui::Color32::from_rgb(137, 94, 55)),
-        ("border", "border", egui::Color32::from_rgb(130, 114, 54)),
-        ("padding", "padding", egui::Color32::from_rgb(65, 110, 76)),
-    ] {
-        egui::Frame::new()
-            .fill(color)
-            .inner_margin(8)
-            .show(ui, |ui| {
-                let sides = &box_value[key];
-                ui.colored_label(
-                    egui::Color32::WHITE,
-                    format!(
-                        "{label}: {}  {}  {}  {}",
-                        sides["top"].as_str().unwrap_or("0"),
-                        sides["right"].as_str().unwrap_or("0"),
-                        sides["bottom"].as_str().unwrap_or("0"),
-                        sides["left"].as_str().unwrap_or("0")
-                    ),
-                );
-            });
-    }
+    // Nested like the CSS box model: margin around border around padding
+    // around content, in theme colours so it reads on light and dark themes.
+    let colors = crate::theme::palette(ui.ctx());
+    let line = |label: &str, key: &str| {
+        let sides = &box_value[key];
+        egui::RichText::new(format!(
+            "{label}: {}  {}  {}  {}",
+            sides["top"].as_str().unwrap_or("0"),
+            sides["right"].as_str().unwrap_or("0"),
+            sides["bottom"].as_str().unwrap_or("0"),
+            sides["left"].as_str().unwrap_or("0")
+        ))
+        .small()
+        .color(colors.text)
+    };
+    egui::Frame::new()
+        .fill(colors.warning_bg)
+        .corner_radius(6)
+        .inner_margin(6)
+        .show(ui, |ui| {
+            ui.label(line("margin", "margin"));
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(2.0, colors.amber))
+                .corner_radius(4)
+                .inner_margin(6)
+                .show(ui, |ui| {
+                    ui.label(line("border", "border"));
+                    egui::Frame::new()
+                        .fill(colors.selected)
+                        .corner_radius(4)
+                        .inner_margin(6)
+                        .show(ui, |ui| {
+                            ui.label(line("padding", "padding"));
+                            egui::Frame::new()
+                                .fill(colors.surface)
+                                .corner_radius(4)
+                                .inner_margin(6)
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new("content").small().color(colors.muted),
+                                    );
+                                });
+                        });
+                });
+        });
     ui.monospace(format!(
         "{:.2} × {:.2} px · x {:.2}, y {:.2}",
         box_value["width"].as_f64().unwrap_or(0.0),

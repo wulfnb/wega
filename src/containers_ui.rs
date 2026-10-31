@@ -69,59 +69,77 @@ fn colored(container: &Container) -> (egui::Atom<'static>, RichText) {
     let [r, g, b] = container.color.rgb();
     let color = Color32::from_rgb(r, g, b);
     (
+        // The dot carries the colour; the name stays in the text colour so
+        // light or pale container colours remain readable on every theme.
         crate::ui::icon_atom("container-dot", Some(color)),
-        RichText::new(&container.name).color(color),
+        RichText::new(&container.name),
     )
 }
 impl Browser {
     pub(crate) fn containers_menu(&mut self, ui: &mut egui::Ui) {
-        let label = self
-            .containers
-            .current
-            .as_ref()
-            .map(|container| {
-                let mut label = container.clone();
-                if label.name.chars().count() > 18 {
-                    label.name = format!("{}…", label.name.chars().take(17).collect::<String>());
+        let label = self.containers.current.as_ref().map(|container| {
+            let mut label = container.clone();
+            if label.name.chars().count() > 18 {
+                label.name = format!("{}…", label.name.chars().take(17).collect::<String>());
+            }
+            colored(&label)
+        });
+        let in_container = label.is_some();
+        let label =
+            label.unwrap_or_else(|| (crate::ui::icon_atom("containers", None), RichText::new("")));
+        let response = ui
+            .menu_button(label, |ui| {
+                // Load only while this popup is open; other windows may have renamed
+                // an identity. Never read JSON on every closed-menu redraw.
+                self.containers.refresh();
+                ui.label("Separate accounts in container windows");
+                if let Some(error) = &self.containers.error {
+                    ui.colored_label(crate::theme::palette(ui.ctx()).danger, error);
                 }
-                colored(&label)
-            })
-            .unwrap_or_else(|| {
-                (
-                    crate::ui::icon_atom("containers", None),
-                    RichText::new("Containers"),
-                )
-            });
-        ui.menu_button(label, |ui| {
-            // Load only while this popup is open; other windows may have renamed
-            // an identity. Never read JSON on every closed-menu redraw.
-            self.containers.refresh();
-            ui.label("Separate accounts in container windows");
-            if let Some(error) = &self.containers.error { ui.colored_label(crate::theme::palette(ui.ctx()).amber, error); }
-            let enabled = self.containers.error.is_none();
-            let containers = self.containers.registry.containers.clone();
-            ui.add_enabled_ui(enabled, |ui| {
-                for container in &containers {
-                    if ui.button(colored(container)).on_hover_text("Open or focus this container window").clicked() {
-                        self.open_container(&container.id, None);
-                        ui.close();
-                    }
-                }
-                let address = self.current_url().filter(|url| matches!(url.scheme(), "http" | "https" | "file"));
-                ui.add_enabled_ui(address.is_some(), |ui| {
-                    ui.menu_button("Open copy of this page in…", |ui| {
-                        for container in &containers {
-                            if ui.button(colored(container)).clicked() {
-                                self.open_container(&container.id, address.as_ref().map(ToString::to_string));
-                                ui.close();
-                            }
+                let enabled = self.containers.error.is_none();
+                let containers = self.containers.registry.containers.clone();
+                ui.add_enabled_ui(enabled, |ui| {
+                    for container in &containers {
+                        if ui
+                            .button(colored(container))
+                            .on_hover_text("Open or focus this container window")
+                            .clicked()
+                        {
+                            self.open_container(&container.id, None);
+                            ui.close();
                         }
+                    }
+                    let address = self
+                        .current_url()
+                        .filter(|url| matches!(url.scheme(), "http" | "https" | "file"));
+                    ui.add_enabled_ui(address.is_some(), |ui| {
+                        ui.menu_button("Open copy of this page in…", |ui| {
+                            for container in &containers {
+                                if ui.button(colored(container)).clicked() {
+                                    self.open_container(
+                                        &container.id,
+                                        address.as_ref().map(ToString::to_string),
+                                    );
+                                    ui.close();
+                                }
+                            }
+                        });
                     });
                 });
-            });
-            ui.separator();
-            if ui.button("Manage containers…").clicked() { self.containers.open = true; self.containers.refresh(); ui.close(); }
-        }).response.on_hover_text("Containers keep accounts and website data separate. Every tab in a container window shares its identity.");
+                ui.separator();
+                if ui.button("Manage containers…").clicked() {
+                    self.containers.open = true;
+                    self.containers.refresh();
+                    ui.close();
+                }
+            })
+            .response;
+        if !in_container {
+            // Icon-only button: give it the name it no longer shows.
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Containers"));
+        }
+        response.on_hover_text("Containers keep accounts and website data separate. Every tab in a container window shares its identity.");
     }
     pub(crate) fn open_container(&mut self, id: &str, address: Option<String>) {
         let result = (|| -> Result<(), String> {
@@ -194,14 +212,16 @@ impl Browser {
                 ui.horizontal(|ui| {
                     let label = egui::WidgetAtom::new(colored(&container)).show(ui).response;
                     label.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, ui.is_enabled(), &container.name));
-                    if ui.small_button("Open").clicked() { self.open_container(&container.id, None); }
-                    if ui.small_button("Edit").clicked() { self.containers.editing = Some(container.id.clone()); self.containers.name = container.name.clone(); self.containers.color = container.color; }
-                    if ui.small_button("Remove…").clicked() { self.containers.remove = Some(container.id.clone()); }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Remove…").clicked() { self.containers.remove = Some(container.id.clone()); }
+                        if ui.button("Edit").clicked() { self.containers.editing = Some(container.id.clone()); self.containers.name = container.name.clone(); self.containers.color = container.color; }
+                        if ui.button("Open").clicked() { self.open_container(&container.id, None); }
+                    });
                 });
                 if self.containers.remove.as_deref() == Some(&container.id) {
-                    ui.label("Remove from the menu? Saved website data will be kept on disk.");
+                    crate::components::inline_message(ui, crate::ux::Severity::Warning, "Remove from the menu? Saved website data will be kept on disk.");
                     ui.horizontal(|ui| {
-                        if ui.button("Remove from menu").clicked() {
+                        if ui.add(crate::components::destructive_button(ui, "Remove from menu")).clicked() {
                             match Registry::remove(&self.containers.root, &container.id) {
                                 Ok(registry) => { self.containers.registry = registry; self.containers.remove = None; self.containers.error = None; },
                                 Err(error) => self.containers.error = Some(error),
@@ -212,7 +232,7 @@ impl Browser {
                 }
             }
             ui.separator();
-            ui.label(if self.containers.editing.is_some() { "Edit container" } else { "New container" });
+            ui.label(egui::RichText::new(if self.containers.editing.is_some() { "Edit container" } else { "New container" }).strong());
             ui.horizontal(|ui| {
                 ui.label("Name"); ui.text_edit_singleline(&mut self.containers.name);
             });
@@ -220,7 +240,7 @@ impl Browser {
                 for color in Color::ALL { ui.selectable_value(&mut self.containers.color, color, color.name()); }
             });
             ui.horizontal(|ui| {
-                if ui.button(if self.containers.editing.is_some() { "Save changes" } else { "Add container" }).clicked() {
+                if ui.add(crate::components::primary_button(ui, if self.containers.editing.is_some() { "Save changes" } else { "Add container" })).clicked() {
                     let result = (|| {
                         let id = match &self.containers.editing { Some(id) => id.clone(), None => format!("c-{}", wega::containers::random_id()?) };
                         Registry::update(&self.containers.root, Container { id, name: self.containers.name.trim().to_owned(), color: self.containers.color })
@@ -231,10 +251,9 @@ impl Browser {
                     }
                 }
                 if self.containers.editing.is_some() && ui.button("Cancel edit").clicked() { self.containers.editing = None; self.containers.name.clear(); }
-                if ui.button("Refresh").clicked() { self.containers.refresh(); }
             });
-            if let Some(error) = &self.containers.error { ui.colored_label(crate::theme::palette(ui.ctx()).amber, error); }
-            ui.small("Containers also keep history, bookmarks, permissions and downloads separate. They share your network address. Mozilla VPN and Firefox Sync are not connected.");
+            if let Some(error) = self.containers.error.clone() { crate::components::inline_message(ui, crate::ux::Severity::Error, &error); }
+            ui.small("Containers also keep history, bookmarks, permissions and downloads separate. They share your network address.");
         });
         self.containers.open = open;
     }

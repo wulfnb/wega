@@ -2336,13 +2336,40 @@ impl Browser {
         if let Some(reason) = self.tab().crash.clone() {
             ui.centered_and_justified(|ui| {
                 ui.vertical_centered(|ui| {
+                    let colors = crate::theme::palette(ui.ctx());
                     ui.heading("This page stopped responding");
-                    ui.label(reason);
-                    if ui.button("Reload page").clicked() {
-                        let active = self.session.active();
-                        self.session.tabs_mut()[active].crash = None;
-                        self.reload();
-                    }
+                    ui.label(
+                        egui::RichText::new(
+                            "Reloading usually brings it back. Your other tabs are not affected.",
+                        )
+                        .color(colors.muted),
+                    );
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add(crate::components::primary_button(ui, "Reload page"))
+                            .clicked()
+                        {
+                            let active = self.session.active();
+                            self.session.tabs_mut()[active].crash = None;
+                            self.reload();
+                        }
+                        if self.can_go_back() && ui.button("Go back").clicked() {
+                            let active = self.session.active();
+                            self.session.tabs_mut()[active].crash = None;
+                            self.traverse(false);
+                        }
+                    });
+                    ui.add_space(8.0);
+                    ui.collapsing("Technical details", |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(reason).small().color(colors.muted),
+                            )
+                            .wrap()
+                            .selectable(true),
+                        );
+                    });
                 });
             });
             return;

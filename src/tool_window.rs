@@ -122,7 +122,7 @@ impl Browser {
                     self.tool_window = Some(window);
                 }
                 Err(error) => {
-                    self.tools.notice = Some(format!("Cannot open developer window: {error}"));
+                    self.tools.error = Some(format!("Cannot open developer window: {error}"));
                     self.apply(wega::application::Command::Dock(Dock::Bottom));
                 }
             }
@@ -199,7 +199,7 @@ impl Browser {
                     && window.window.inner_size().height > 0 =>
             {
                 if let Err(e) = window.context.make_current() {
-                    self.tools.notice = Some(format!("Developer window GPU error: {e:?}"));
+                    self.tools.error = Some(format!("Developer window GPU error: {e:?}"));
                 } else {
                     crate::theme::install(
                         &window.gui.egui_ctx,

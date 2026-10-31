@@ -14,6 +14,12 @@ pub struct Palette {
     pub danger: Color32,
     pub border: Color32,
     pub warning_bg: Color32,
+    /// Text and icons drawn on an `accent` fill (primary buttons).
+    pub on_accent: Color32,
+    /// Container behind error messages; `danger` and `text` stay readable on it.
+    pub danger_bg: Color32,
+    /// Confirmation colour for completed actions.
+    pub success: Color32,
     pub dark: bool,
     pub glass: bool,
 }
@@ -72,6 +78,11 @@ impl Theme {
             danger,
             border,
             warning_bg: rgb(if dark { 0x3b3124 } else { 0xffefcd }),
+            // `inset` is near-black in dark themes (pale accents) and near-white
+            // in light ones (dark accents), so it always contrasts the accent.
+            on_accent: inset,
+            danger_bg: mix(inset, danger, if dark { 0.16 } else { 0.10 }),
+            success: rgb(if dark { 0x8fd99a } else { 0x1f6f34 }),
             dark,
             glass: self.glass() && native,
         };

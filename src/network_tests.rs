@@ -183,6 +183,8 @@ fn network_rows_handle_security_body_updates_filters_and_all_sorts() {
     }
     assert!(matches_query(&r.rows[0], "https://example.com"));
     assert_eq!(size_label(10), "10 B");
+    assert_eq!(duration_label(12.4), "12 ms");
+    assert_eq!(duration_label(12_000.0), "12.00 s");
     assert_eq!(size_label(1024), "1.00 kB");
     assert_eq!(size_label(1048576), "1.00 MB");
     r.rows[1].transferred = None;
@@ -241,4 +243,31 @@ fn request_replay_rejects_binary_nuls_and_malformed_headers() {
     c.headers.clear();
     c.method = "bad method".into();
     assert!(c.script().is_err());
+}
+
+#[test]
+fn security_details_read_as_labelled_lines() {
+    let summary = security_summary(&json!({
+        "state": "Secure",
+        "protocol_version": "TLSv1_3",
+        "cipher_suite": null,
+        "alpn_protocol": "h2",
+        "hsts": true,
+        "used_ech": false,
+        "certificate_chain_der": [[1, 2], [3]],
+        "weakness_reasons": ["SHA-1 signature"],
+        "unknown_future_field": 1
+    }));
+    assert_eq!(
+        summary,
+        "Connection: Secure\nProtocol: TLSv1_3\nApplication protocol: h2\n\
+         Strict transport security (HSTS): Yes\nEncrypted Client Hello: No\n\
+         Certificates in chain: 2\nWeaknesses: SHA-1 signature"
+    );
+    assert!(!security_summary(&json!({"weakness_reasons": []})).contains("Weaknesses"));
+    assert_eq!(
+        security_summary(&json!({"kea_group_name": 29})),
+        "Key exchange: 29"
+    );
+    assert!(security_summary(&Value::Null).starts_with("Not an HTTPS connection"));
 }

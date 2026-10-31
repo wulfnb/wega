@@ -62,10 +62,12 @@ impl Browser {
                 (ui.available_height() - 120.0).max(160.0),
             ),
         };
+        // Side docks need room for the toolbar rows; the bottom dock can be shorter.
+        let minimum = if dock == Dock::Bottom { 160.0 } else { 320.0 };
         let shown = panel
             .resizable(true)
             .default_size(size)
-            .min_size(160.0)
+            .min_size(minimum)
             .max_size(maximum)
             .frame(
                 egui::Frame::new()
@@ -120,15 +122,22 @@ impl Browser {
                 if icon(ui, "×", "Close developer tools (F12)").clicked() {
                     self.close_developer_tools();
                 }
-                ui.menu_button("…", |ui| {
+                let compact = crate::ux::compact(ui.ctx().content_rect().width());
+                let menu = icon(ui, "⋯", "Toolbox options");
+                egui::Popup::menu(&menu).show(|ui| {
                     if ui.button("Rendering diagnostics…").clicked() {
                         self.features.diagnostics = true;
                         ui.close();
                     }
-
+                    ui.separator();
                     for (dock, label) in crate::tool_window::Dock::ALL {
+                        // Narrow windows always dock at the bottom; say so instead
+                        // of accepting a choice that has no effect.
+                        let side = matches!(dock, crate::tool_window::Dock::Left | crate::tool_window::Dock::Right);
+                        let enabled = !(compact && side);
                         if ui
-                            .selectable_label(self.profile().devtools_dock == dock, label)
+                            .add_enabled(enabled, egui::Button::selectable(self.profile().devtools_dock == dock, label))
+                            .on_disabled_hover_text("Needs a wider window; the toolbox docks at the bottom below 1100 px.")
                             .clicked()
                         {
                             self.apply(wega::application::Command::Dock(dock));
@@ -147,26 +156,24 @@ impl Browser {
                         egui::ScrollArea::horizontal()
                             .id_salt("tool-tabs")
                             .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    for tool in Tool::ALL {
-                                        if ui
-                                            .selectable_label(
-                                                self.tools.active == tool,
-                                                tool.name(),
-                                            )
-                                            .clicked()
-                                        {
-                                            self.tools.active = tool;
-                                            self.tools.refresh(&view, &self.servo);
-                                        }
-                                    }
-                                });
+                                let tabs: Vec<_> = Tool::ALL.iter().map(|tool| (*tool, tool.name())).collect();
+                                if crate::components::tabs(ui, &mut self.tools.active, &tabs) {
+                                    self.tools.refresh(&view, &self.servo);
+                                }
                             });
                     },
                 );
             });
         });
         ui.separator();
+        if let Some(error) = self.tools.error.clone() {
+            ui.horizontal(|ui| {
+                crate::components::inline_message(ui, crate::ux::Severity::Error, &error);
+            });
+            if ui.small_button("Dismiss").clicked() {
+                self.tools.error = None;
+            }
+        }
         if let Some((notice, remaining)) = self.tools.transient_notice() {
             egui::Frame::new()
                 .fill(colors.surface)
@@ -195,21 +202,47 @@ impl Browser {
                         _ => "Active page",
                     });
                 });
-                if let Some(snapshot) = self.tools.pages[&owner].snapshots.get(&tool) {
-                    if snapshot.pending {
+                let snapshot = self.tools.pages[&owner].snapshots.get(&tool);
+                let pending = snapshot.is_some_and(|s| s.pending);
+                let failed = snapshot.and_then(|s| s.error.clone());
+                let updated = snapshot.and_then(|s| s.updated);
+                let data = snapshot.map(|s| s.data.clone()).unwrap_or(Value::Null);
+                if pending {
+                    ui.horizontal(|ui| {
                         ui.spinner();
-                    }
-                    if let Some(error) = &snapshot.error {
-                        ui.colored_label(colors.danger, error);
-                    }
+                        ui.label(RichText::new("Reading the page…").color(colors.muted));
+                    });
+                } else if let Some(updated) = updated.filter(|_| !data.is_null()) {
+                    let seconds = updated.elapsed().as_secs();
+                    let age = if seconds < 2 {
+                        "just now".to_owned()
+                    } else if seconds < 120 {
+                        format!("{seconds} s ago")
+                    } else {
+                        format!("{} min ago", seconds / 60)
+                    };
+                    ui.label(
+                        RichText::new(format!("Updated {age}"))
+                            .small()
+                            .color(colors.muted),
+                    );
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_secs(1));
                 }
-                let data = self.tools.pages[&owner]
-                    .snapshots
-                    .get(&tool)
-                    .map(|s| s.data.clone())
-                    .unwrap_or(Value::Null);
-                if data.is_null() {
-                    ui.weak("Press Refresh to inspect the active page.");
+                if let Some(error) = &failed {
+                    crate::components::inline_message(ui, crate::ux::Severity::Error, error);
+                }
+                if data.is_null()
+                    && !pending
+                    && failed.is_none()
+                    && crate::components::empty_state(
+                        ui,
+                        "Nothing captured yet",
+                        "Read the active page to see its data here.",
+                        Some("Read page"),
+                    )
+                {
+                    self.tools.refresh(&view, &self.servo);
                 }
                 if tool == Tool::Inspector {
                     self.inspector_ui(ui, &view, &owner, &data);
@@ -239,18 +272,37 @@ impl Browser {
                 .collapsible(false)
                 .show(ui.ctx(), |ui| {
                     ui.label("Contains captured URLs, headers and bounded body previews.");
-                    ui.text_edit_singleline(&mut self.tools.export_path);
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.tools.export_path);
+                        if ui.button("Choose…").clicked()
+                            && let Some(path) = rfd::FileDialog::new()
+                                .set_file_name("network.har")
+                                .save_file()
+                        {
+                            self.tools.export_path = path.display().to_string();
+                        }
+                    });
+                    if let Some(error) = &self.tools.error {
+                        crate::components::inline_message(ui, crate::ux::Severity::Error, error);
+                    }
                     ui.horizontal(|ui| {
                         if ui.button("Save HAR").clicked() {
                             let result = std::fs::write(
                                 &self.tools.export_path,
                                 pretty(&self.tools.network.har(&owner)),
                             );
-                            self.tools.notice = Some(match result {
-                                Ok(()) => "HAR saved".into(),
-                                Err(error) => error.to_string(),
-                            });
-                            self.tools.export_open = false;
+                            // On failure keep the dialog and the typed path.
+                            match result {
+                                Ok(()) => {
+                                    self.tools.notice = Some("HAR saved".into());
+                                    self.tools.error = None;
+                                    self.tools.export_open = false;
+                                }
+                                Err(error) => {
+                                    self.tools.error =
+                                        Some(format!("Could not save the HAR file: {error}"));
+                                }
+                            }
                         }
                         if ui.button("Cancel").clicked() {
                             self.tools.export_open = false;
@@ -549,6 +601,7 @@ impl Browser {
                     self.network_details(ui, owner);
                 });
         }
+        let mut clear_filters = false;
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
         ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
         self.tools.network_rects[0] = ui.max_rect();
@@ -574,7 +627,12 @@ impl Browser {
             }
         );
         if count == 0 {
-            ui.weak("Reload or navigate to capture requests for this tab.");
+            let recorded = self.tools.network.rows.iter().any(|r| r.owner == owner);
+            if !recorded {
+                crate::components::empty_state(ui, "No requests yet", "Reload or navigate to record this tab's network traffic.", None);
+            } else if crate::components::empty_state(ui, "No requests match the filters", "", Some("Clear filters")) {
+                clear_filters = true;
+            }
         }
         let selected = self.tools.network.selected;
         let mut clicked = None;
@@ -743,7 +801,7 @@ impl Browser {
                                 }
                             }
                             Sort::Size => network::size_label(row.response_body.size as u64),
-                            Sort::Duration => format!("{:.1} ms", row.duration_ms()),
+                            Sort::Duration => network::duration_label(row.duration_ms()),
                             Sort::Started => String::new(),
                         })
                         .collect();
@@ -831,6 +889,12 @@ impl Browser {
         }
 
         });
+        if clear_filters {
+            let network = &mut self.tools.network;
+            network.query.clear();
+            network.filter.clear();
+            network.types.clear();
+        }
         let dropped = self
             .tools
             .bridge

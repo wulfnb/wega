@@ -247,8 +247,12 @@ impl Browser {
                 ui.vertical_centered(|ui| {
                     ui.heading("Wega engine stopped");
                     ui.label("This tab can be restarted without closing the browser.");
-                    restart = ui.button("Restart Wega").clicked();
-                    servo = ui.button("Reload in Servo").clicked();
+                    ui.horizontal(|ui| {
+                        restart = ui
+                            .add(crate::components::primary_button(ui, "Restart Wega"))
+                            .clicked();
+                        servo = ui.button("Reload in Servo").clicked();
+                    });
                 })
             });
             if restart {
@@ -298,8 +302,8 @@ impl Browser {
                     Some(context.load_texture("wega-page", image, egui::TextureOptions::LINEAR));
             }
         }
-        ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
         if let Some(texture) = &page.texture {
+            ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
             ui.painter().image(
                 texture.id(),
                 rect,
@@ -307,12 +311,15 @@ impl Browser {
                 egui::Color32::WHITE,
             );
         } else {
+            // Theme surface while the engine starts, instead of a white flash.
+            let colors = crate::theme::palette(ui.ctx());
+            ui.painter().rect_filled(rect, 0.0, colors.inset);
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
                 "Loading Wega engine…",
-                egui::FontId::proportional(18.0),
-                egui::Color32::DARK_GRAY,
+                egui::FontId::proportional(16.0),
+                colors.muted,
             );
         }
         // Pointer input in viewport CSS pixels: moves, presses, releases and wheel.

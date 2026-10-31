@@ -6,6 +6,7 @@ mod capabilities;
 mod capabilities_ui;
 mod capture;
 mod compat;
+mod components;
 mod console_model;
 mod console_ui;
 mod containers_ui;
@@ -82,16 +83,22 @@ impl ApplicationHandler<Wake> for App {
         if self.browser.is_some() {
             return;
         }
+        let attributes = Window::default_attributes()
+            .with_visible(false)
+            .with_title(crate::brand::APP_NAME)
+            .with_window_icon(browser_icon())
+            .with_transparent(cfg!(any(target_os = "macos", target_os = "windows")))
+            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 850.0))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(720.0, 480.0));
+        // Wayland app id and X11 WM_CLASS (one shared field in winit): launchers
+        // match this to wega.desktop to show the right icon. Wayland ignores
+        // the window icon itself.
+        #[cfg(target_os = "linux")]
+        let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(
+            attributes, "wega", "wega",
+        );
         let result = event_loop
-            .create_window(
-                Window::default_attributes()
-                    .with_visible(false)
-                    .with_title(crate::brand::APP_NAME)
-                    .with_window_icon(browser_icon())
-                    .with_transparent(cfg!(any(target_os = "macos", target_os = "windows")))
-                    .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 850.0))
-                    .with_min_inner_size(winit::dpi::LogicalSize::new(720.0, 480.0)),
-            )
+            .create_window(attributes)
             .map_err(|e| e.to_string())
             .and_then(|window| Browser::new(window, event_loop, self.proxy.clone(), &self.options));
         match result {

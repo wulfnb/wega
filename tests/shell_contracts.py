@@ -91,13 +91,14 @@ def main():
         run('scripts/package-linux.sh')
         package = checkout / 'dist/wega-linux-x86_64'
         assert (package / 'libexec/wega-engine').read_text()=='engine worker'
-        assert (package / 'share/applications/wega.desktop').read_text().startswith('[Desktop Entry]')
+        desktop = (package / 'share/applications/wega.desktop').read_text()
+        assert desktop.startswith('[Desktop Entry]') and 'StartupWMClass=wega\n' in desktop
+        for size in (16, 24, 32, 48, 64, 128, 256, 512):
+            assert (package / f'share/icons/hicolor/{size}x{size}/apps/wega.png').is_file(), size
         assert subprocess.check_output([str(package / 'bin/wega'), 'literal argument'], text=True).strip() == 'launcher:literal argument'
         assert (package / 'LICENSE').read_bytes() == (checkout / 'LICENSE').read_bytes()
         assert (package / 'THIRD-PARTY-NOTICES.html').read_text() == '<html>notices</html>'
         assert 'source commit: 0123456789abcdef0123456789abcdef01234567' in (package / 'NOTICE').read_text()
-        shutil.move(checkout / 'assets/icons/browser-icon-256.png', work / 'icon.png')
-        run('scripts/package-linux.sh', [str(binary)])
         # Third-party notices: usage, missing tool, empty output and explicit commit.
         notices = work / 'notices'
         run('scripts/third-party-notices.sh', success=False)
