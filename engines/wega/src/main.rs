@@ -195,6 +195,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     offline,
                     blocked_hosts,
                     allowed_hosts,
+                    allow_loopback: true,
+                    ..Default::default()
                 },
                 storage_dir,
                 broker_address,
@@ -948,6 +950,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         offline,
                         blocked_hosts,
                         allowed_hosts,
+                        allow_loopback: true,
+                        ..Default::default()
                     });
                     // Apply live permissions without discarding the current DOM/input state.
                 }

@@ -711,10 +711,10 @@ fn shared_frames_wait_for_exact_credits_and_resize_cannot_unfreeze_a_tab() {
     worker.frame();
     worker.send(Command::Load {
         url: "about:blank".into(),
-        serial: 9,
+        serial: 1,
     });
     worker
-        .until(|event| matches!(event,Event::State{serial:9,rss_bytes:Some(bytes),..} if *bytes>0));
+        .until(|event| matches!(event,Event::State{serial:1,rss_bytes:Some(bytes),..} if *bytes>0));
 }
 
 mod support;
