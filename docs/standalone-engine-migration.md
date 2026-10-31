@@ -3,6 +3,14 @@
 Status: **Proposed Architectural Pivot**, 31 October 2026.  
 Supersedes the dual-engine strategy in [engine-strategy.md](engine-strategy.md) by scheduling the full retirement of the Servo rendering backend and committing all development to Wega's native engine (`blitz-dom` + V8 via `deno_core` + Skia).
 
+> **Execution order and parity requirements:** follow the numbered
+> [Standalone Wega engine execution plan](standalone-engine-execution-plan.md).
+> It governs implementation order where this proposal differs: inventory every
+> current Servo capability, establish secure engine boundaries, implement and
+> verify replacements, then retire Servo. Build/RAM figures below are targets or
+> hypotheses; the current broker, forms and Web API implementations must be reused
+> and audited rather than treated as absent.
+
 ---
 
 ## 1. Executive Summary & Strategic Intent

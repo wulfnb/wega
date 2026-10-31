@@ -107,3 +107,11 @@ Under this decision:
    controls, sandboxing, IndexedDB, Canvas 2D, and platform media) will be implemented
    directly in Wega's standalone engine following the phased plan in
    [standalone-engine-migration.md](standalone-engine-migration.md).
+
+The numbered [execution plan](standalone-engine-execution-plan.md) refines this
+decision: preserve the full enabled Servo feature surface through an audited
+parity ledger, use browser-authoritative services and site/agent-cluster-aware
+content isolation, and verify replacements before final Servo removal. Workspace
+unification follows a working standalone application. The initial one-worker-per-tab
+topology does not itself provide cross-site frame isolation. This addendum records
+the implementation plan, not completed runtime behavior or platform validation.
