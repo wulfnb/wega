@@ -3,7 +3,10 @@
 use std::{
     io,
     process::{Child, ExitStatus},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -39,7 +42,10 @@ pub fn wait_for_shutdowns() {
 }
 
 pub struct OwnedProcess {
-    child: Option<Child>,
+    child: Arc<Mutex<Option<Child>>>,
+    terminate: Arc<AtomicBool>,
+    killed: Arc<AtomicBool>,
+    retained: Vec<Box<dyn Send>>,
     pid: u32,
     grace: Duration,
     observer: Option<Observer>,
@@ -49,7 +55,10 @@ impl OwnedProcess {
     pub fn new(child: Child, observer: impl FnOnce(ExitReport) + Send + 'static) -> Self {
         Self {
             pid: child.id(),
-            child: Some(child),
+            child: Arc::new(Mutex::new(Some(child))),
+            terminate: Arc::new(AtomicBool::new(false)),
+            killed: Arc::new(AtomicBool::new(false)),
+            retained: Vec::new(),
             grace: Duration::ZERO,
             observer: Some(Box::new(observer)),
         }
@@ -58,17 +67,121 @@ impl OwnedProcess {
         self.pid
     }
     pub fn take_stdin(&mut self) -> Option<std::process::ChildStdin> {
-        self.child.as_mut()?.stdin.take()
+        self.child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_mut()?
+            .stdin
+            .take()
     }
     pub fn take_stdout(&mut self) -> Option<std::process::ChildStdout> {
-        self.child.as_mut()?.stdout.take()
+        self.child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_mut()?
+            .stdout
+            .take()
     }
     pub fn take_stderr(&mut self) -> Option<std::process::ChildStderr> {
-        self.child.as_mut()?.stderr.take()
+        self.child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_mut()?
+            .stderr
+            .take()
     }
     /// The caller must first successfully enqueue the negotiated shutdown command.
     pub fn allow_graceful_shutdown(&mut self, grace: Duration) {
         self.grace = grace.min(MAX_SHUTDOWN_GRACE);
+    }
+    /// Cancellation uses the owned process handle; it never targets a stored PID.
+    pub fn control(&self) -> ProcessControl {
+        ProcessControl {
+            child: Arc::downgrade(&self.child),
+            terminate: self.terminate.clone(),
+            killed: self.killed.clone(),
+        }
+    }
+    /// Budgets, private directories and containment handles outlive the page owner.
+    /// They are released only after the reaper observes actual OS process exit.
+    pub fn retain_until_exit(&mut self, value: impl Send + 'static) {
+        self.retained.push(Box::new(value));
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn with_child<T>(
+        &self,
+        action: impl FnOnce(&Child) -> io::Result<T>,
+    ) -> io::Result<T> {
+        let child = self
+            .child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        action(
+            child
+                .as_ref()
+                .ok_or_else(|| io::Error::other("Process is already reaping"))?,
+        )
+    }
+}
+
+#[derive(Clone)]
+pub struct ProcessControl {
+    child: Weak<Mutex<Option<Child>>>,
+    terminate: Arc<AtomicBool>,
+    killed: Arc<AtomicBool>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sample {
+    Alive {
+        resident_bytes: Option<u64>,
+    },
+    Exited,
+    /// The reaper retains ownership; its exit guard still retains all reservations.
+    Reaping,
+    Busy,
+}
+impl ProcessControl {
+    pub fn sample(&self) -> io::Result<Sample> {
+        let Some(shared) = self.child.upgrade() else {
+            return Ok(Sample::Reaping);
+        };
+        let mut owner = match shared.try_lock() {
+            Ok(owner) => owner,
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(Sample::Busy),
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+        };
+        let Some(child) = owner.as_mut() else {
+            return Ok(Sample::Reaping);
+        };
+        if child.try_wait()?.is_some() {
+            return Ok(Sample::Exited);
+        }
+        // The child is unreaped while this lock is held, preventing PID reuse on Unix.
+        Ok(Sample::Alive {
+            resident_bytes: crate::resident_for_child(child),
+        })
+    }
+    pub fn terminate(&self) -> io::Result<()> {
+        self.terminate.store(true, Ordering::Release);
+        let Some(shared) = self.child.upgrade() else {
+            return Ok(());
+        };
+        let mut owner = match shared.try_lock() {
+            Ok(owner) => owner,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return Err(io::ErrorKind::WouldBlock.into());
+            }
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+        };
+        if let Some(child) = owner.as_mut()
+            && child.try_wait()?.is_none()
+        {
+            child.kill()?;
+            self.killed.store(true, Ordering::Release);
+        }
+        Ok(())
     }
 }
 
@@ -77,6 +190,9 @@ struct Reaper {
     deadline: Instant,
     forced: bool,
     observer: Option<Observer>,
+    terminate: Arc<AtomicBool>,
+    killed: Arc<AtomicBool>,
+    _retained: Vec<Box<dyn Send>>,
 }
 
 impl Reaper {
@@ -88,7 +204,10 @@ impl Reaper {
                 Err(error) => break Err(error),
                 Ok(None) => {}
             }
-            if self.forced || Instant::now() >= self.deadline {
+            if self.forced
+                || self.terminate.load(Ordering::Acquire)
+                || Instant::now() >= self.deadline
+            {
                 if !self.forced {
                     self.forced = self.child.kill().is_ok();
                 }
@@ -102,7 +221,7 @@ impl Reaper {
         if let Some(observer) = self.observer.take() {
             observer(ExitReport {
                 pid: self.child.id(),
-                forced: self.forced,
+                forced: self.forced || self.killed.load(Ordering::Acquire),
                 status,
             });
         }
@@ -121,7 +240,12 @@ impl Drop for Reaper {
 
 impl Drop for OwnedProcess {
     fn drop(&mut self) {
-        let Some(mut child) = self.child.take() else {
+        let Some(mut child) = self
+            .child
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        else {
             return;
         };
         let forced =
@@ -131,6 +255,9 @@ impl Drop for OwnedProcess {
             deadline: Instant::now() + self.grace,
             forced,
             observer: self.observer.take(),
+            terminate: self.terminate.clone(),
+            killed: self.killed.clone(),
+            _retained: std::mem::take(&mut self.retained),
         };
         // Keep a recoverable owner outside the closure if the OS refuses a new thread.
         let pending = Arc::new(Mutex::new(Some(reaper)));

@@ -46,6 +46,8 @@ pub(crate) struct Dialog {
 }
 #[derive(Default)]
 pub(crate) struct Snapshot {
+    /// Resource and containment failures require an explicit restart, not automatic fallback.
+    pub recovery_reason: Option<String>,
     pub authority: Option<FrameAuthority>,
     pub lifecycle: Lifecycle,
     pub native: std::collections::VecDeque<(TrustedRequest, ContentEvent)>,
@@ -324,6 +326,7 @@ pub(crate) struct Page {
     child: wega_platform::process::OwnedProcess,
     frames: Arc<Mutex<wega_platform::FrameStore>>,
     broker: Arc<wega_network::SessionHandle>,
+    _budget: wega_platform::supervision::Ticket,
     requests: Option<mpsc::SyncSender<Request>>,
     pub state: Arc<Mutex<Snapshot>>,
     pub texture: Option<egui::TextureHandle>,
@@ -354,7 +357,14 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
         ),
     );
     state.compatibility.get_or_insert_with(|| message.clone());
+    state.recovery_reason.get_or_insert_with(|| message.clone());
     state.lifecycle.crash();
+    state.native.clear();
+    state.dialog = None;
+    state.frame = None;
+    if state.capture.take().is_some() {
+        state.capture_result = Some(Err(message.clone()));
+    }
     state.cancel_requests(ProtocolError::new(
         ErrorCode::Cancelled,
         "Content worker stopped",
@@ -414,7 +424,16 @@ impl Page {
         profile_dir: &std::path::Path,
         tab: u64,
     ) -> Result<Self, String> {
-        let executable=executable().ok_or("Wega engine worker is not installed. Build it with python3 scripts/build-wega-engine.py --debug first.")?;
+        let executable=executable().ok_or("Wega engine worker is not installed. Build it with python3 scripts/build-wega-engine.py --debug first.")?.canonicalize().map_err(|error| error.to_string())?;
+        let mut command = Command::new(&executable);
+        let launch = wega_platform::launch::PreparedLaunch::browser(
+            &mut command,
+            wega_platform::launch::BrokerTransport::Tcp,
+        )
+        .map_err(|error| error.to_string())?;
+        let budget = wega_platform::supervision::Supervisor::shared()?
+            .reserve((protocol::MAX_PIXELS * 4 * 2) as u64)
+            .map_err(|error| error.to_string())?;
         let broker = Arc::new(wega_network::Broker::shared()?.open_bound_session(
             profile_dir.join("wega-storage"),
             wega_network::Policy {
@@ -433,6 +452,16 @@ impl Page {
             service: Some(broker.identity()),
         };
         identity.validate().map_err(|error| error.message)?;
+        let state = Arc::new(Mutex::new(Snapshot {
+            authority: Some(FrameAuthority::new(identity)),
+            url: url.to_string(),
+            notices: [
+                "Unsandboxed development worker. OS content sandbox integration is pending."
+                    .to_string(),
+            ]
+            .into(),
+            ..Default::default()
+        }));
         let frames = Arc::new(Mutex::new(
             wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4)
                 .map_err(|e| e.to_string())?,
@@ -445,7 +474,6 @@ impl Page {
             .to_string_lossy()
             .into_owned();
         let (broker_address, broker_token) = broker.endpoint();
-        let mut command = Command::new(executable);
         command.env("MALLOC_ARENA_MAX", "2");
         // Workers are private to a view, so process-wide V8 flags stay per-view.
         if std::env::var_os("WEGA_ENGINE_LITE").is_some_and(|value| value == "1")
@@ -474,6 +502,29 @@ impl Page {
                 ),
             );
         });
+        launch
+            .attach(&mut child, budget.worker_memory_limit())
+            .map_err(|error| error.to_string())?;
+        let budget_state = state.clone();
+        let budget_proxy = proxy.clone();
+        let budget_broker = broker.clone();
+        let budget_frames = frames.clone();
+        budget
+            .attach(&mut child, move |violation| {
+                budget_broker.revoke();
+                {
+                    let mut state = budget_state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    state.recovery_reason = Some(violation.to_string());
+                }
+                failed(&budget_state, violation.to_string(), &budget_proxy);
+                budget_frames
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .release_pages();
+            })
+            .map_err(|error| error.to_string())?;
         let worker_id = child.id();
         wega::diagnostics::record(
             &format!("worker:{worker_id}"),
@@ -486,15 +537,11 @@ impl Page {
         }
         let mut stdin = child.take_stdin().ok_or("Missing worker input")?;
         let mut stdout = child.take_stdout().ok_or("Missing worker output")?;
-        let state = Arc::new(Mutex::new(Snapshot {
-            authority: Some(FrameAuthority::new(identity)),
-            url: url.to_string(),
-            ..Default::default()
-        }));
         let (sender, receiver) = mpsc::sync_channel(32);
         let shared = state.clone();
         let writer_proxy = proxy.clone();
         let writer_broker = broker.clone();
+        let writer_budget = budget.clone();
         std::thread::spawn(move || {
             'commands: while let Ok(request) = receiver.recv() {
                 if let Some(context) = protocol::scoped_context(&request) {
@@ -518,6 +565,7 @@ impl Page {
                                 &identity.command(Request::CancelRequest(context)),
                             ) {
                                 writer_broker.revoke();
+                                writer_budget.terminate();
                                 failed(
                                     &shared,
                                     format!("Wega engine cancellation failed: {error}"),
@@ -544,6 +592,7 @@ impl Page {
                 };
                 if let Err(error) = protocol::write(&mut stdin, &packet) {
                     writer_broker.revoke();
+                    writer_budget.terminate();
                     failed(
                         &shared,
                         format!("Wega engine connection failed: {error}"),
@@ -557,6 +606,7 @@ impl Page {
         let reader_frames = frames.clone();
         let acknowledgements = sender.clone();
         let reader_broker = broker.clone();
+        let reader_budget = budget.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<(), String> {
                 let mut ready = false;
@@ -576,6 +626,7 @@ impl Page {
                             return Err("Incompatible Wega engine worker".into());
                         }
                         ready = true;
+                        reader_budget.ready();
                         shared
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -828,6 +879,7 @@ impl Page {
             })();
             if let Err(error) = result {
                 reader_broker.revoke();
+                reader_budget.terminate();
                 failed(&shared, error, &proxy);
             }
         });
@@ -835,6 +887,7 @@ impl Page {
             child,
             frames,
             broker,
+            _budget: budget,
             requests: Some(sender),
             state,
             texture: None,

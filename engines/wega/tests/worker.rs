@@ -438,6 +438,7 @@ impl Worker {
     }
     fn start_version(path: &std::path::Path, stderr: Stdio, version: u32) -> Self {
         let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_wega-engine"))
+            .arg(wega_platform::launch::DEVELOPMENT_ARGUMENT)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr)

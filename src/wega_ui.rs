@@ -266,6 +266,9 @@ impl Browser {
                     .state
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if state.recovery_reason.is_some() {
+                    return None;
+                }
                 state.compatibility.take().map(|reason| {
                     state.fallback_reported = true;
                     (reason, state.interacted)
@@ -297,12 +300,25 @@ impl Browser {
                 .failed()
         });
         if failed {
+            let reason = self.tab().wega.as_ref().and_then(|page| {
+                page.state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .recovery_reason
+                    .clone()
+            });
+            if let Some(page) = self.wega_mut() {
+                page.texture = None;
+            }
             let mut restart = false;
             let mut servo = false;
             ui.centered_and_justified(|ui| {
                 ui.vertical_centered(|ui| {
                     ui.heading("Wega engine stopped");
                     ui.label("This tab can be restarted without closing the browser.");
+                    if let Some(reason) = &reason {
+                        ui.label(reason);
+                    }
                     ui.horizontal(|ui| {
                         restart = ui
                             .add(crate::components::primary_button(ui, "Restart Wega"))

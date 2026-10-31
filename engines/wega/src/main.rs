@@ -63,6 +63,7 @@ fn main() {
     }
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    wega_platform::launch::validate_worker_start(std::env::args().skip(1))?;
     if std::env::args().any(|arg| arg == "--lite") {
         deno_core::v8_set_flags(vec![String::new(), "--lite-mode".into()]);
     }

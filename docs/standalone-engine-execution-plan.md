@@ -292,6 +292,13 @@ reads, writes, process launch and direct network connections while normal fixtur
 work. Unsupported sandbox setup fails closed for release browsing; any development
 escape hatch is explicit. Killing a worker releases its resources and grants.
 
+**Implementation status (31 October 2026): in progress.** Host supervision,
+resource admission, launch hygiene, Linux baseline hardening, Windows jobs and
+fail-closed required mode are implemented in the
+[Step 05 foundation](step-05-sandbox-and-supervision.md). Required browsing remains
+blocked until Step 04's transport/resource brokers and real platform sandboxes
+are integrated. Runtime tests/probes remain deferred by the owner.
+
 ### 06 — Consolidate the document host and event loop
 
 **Depends on:** 03–05.

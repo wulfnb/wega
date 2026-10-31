@@ -36,6 +36,23 @@ fn child() -> Child {
 }
 
 #[test]
+fn a_control_handle_can_terminate_and_sample_without_releasing_the_real_owner() {
+    let (tx, rx) = mpsc::channel();
+    let mut process = OwnedProcess::new(child(), move |report| {
+        tx.send(report).unwrap();
+    });
+    let _input = process.take_stdin().unwrap();
+    let control = process.control();
+    assert!(matches!(control.sample().unwrap(), Sample::Alive { .. }));
+    control.terminate().unwrap();
+    drop(process);
+    let report = rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert!(report.forced);
+    assert!(!report.status.unwrap().success());
+    assert!(matches!(control.sample().unwrap(), Sample::Reaping));
+}
+
+#[test]
 fn graceful_exit_is_observed_and_reaped_before_reporting_success() {
     let (tx, rx) = mpsc::channel();
     let mut process = OwnedProcess::new(child(), move |report| {

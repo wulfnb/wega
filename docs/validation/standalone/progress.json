@@ -12,6 +12,13 @@
       "protocol_version": 11,
       "acceptance": "deferred until the owner's final test pass",
       "contract": "docs/step-02-engine-contract.md"
+    },
+    "05": {
+      "implementation": "in progress; supervision and launch-policy foundation implemented",
+      "dependency": "Step 04 is being developed in a separate clone/branch and will be merged later",
+      "acceptance": "deferred; full platform sandboxes and required resource brokers still pending",
+      "required_browsing": "fail-closed; no unsandboxed release override",
+      "contract": "docs/step-05-sandbox-and-supervision.md"
     }
   },
   "substeps": {
@@ -25,7 +32,10 @@
     "02.c3": "Host-owned lifecycle, actual navigation commit binding, scoped native events and identified dialog replies implemented; tests pending",
     "02.c4": "Shutdown acknowledgement, owned child process reaping and normal browser-exit draining implemented; tests pending",
     "02.c5": "Session/frame/service identity envelopes, native principal and activation authority, scoped permission cancellation, immediate broker revocation and replay protection implemented; tests pending",
-    "02.c": "Implementation complete; all runtime acceptance verification deferred"
+    "02.c": "Implementation complete; all runtime acceptance verification deferred",
+    "05.a": "Threat model, allowlist, transport/merge contract and required/development launch policy implemented; tests pending",
+    "05.b": "Host process/frame admission, native residency supervision, startup deadlines, retained resource ownership and recoverable crash handling implemented; tests pending",
+    "05.c": "Linux baseline launch hardening and Windows job containment implemented and cross-compiled; native filesystem/network/process sandbox integration and runtime probes pending"
   },
   "compile_checks": [
     {
@@ -47,11 +57,43 @@
       "scope": "Desktop and test-source type checking only; existing Servo vendor warnings remain"
     }
   ],
+  "step05_compile_checks": [
+    {
+      "command": "cargo clippy --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform --all-targets -- -D warnings",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Platform implementation and regression-source lints only; no tests executed"
+    },
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine-platform-linux --target x86_64-unknown-linux-gnu -p wega-platform --all-targets",
+      "platform": "Linux x86_64 cross-compiled on macOS arm64",
+      "result": "passed",
+      "scope": "Platform implementation and Linux probe/test sources only; no native Linux execution"
+    },
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine-platform-windows --target x86_64-pc-windows-gnu -p wega-platform --all-targets",
+      "platform": "Windows x86_64 GNU cross-compiled on macOS arm64",
+      "result": "passed",
+      "scope": "Platform implementation and Windows job/test sources only; no native Windows execution"
+    },
+    {
+      "command": "cargo check --locked --offline --features test-harness --bin wega --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Desktop integration and regression-source compilation only; existing Servo vendor warnings remain"
+    },
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine -p wega-platform --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Worker launch gate and regression-source compilation only; existing Deno vendor warnings remain"
+    }
+  ],
   "pending_verification": [
     "Frozen Servo/direct-Wega baseline runtime captures",
     "Protocol, worker and native regression test execution",
     "Feature/API exposure and behavioral parity",
-    "Linux and Windows compile/runtime evidence",
+    "Full Linux/Windows browser-worker builds and native runtime evidence; Step 05 platform-only cross-checks are recorded separately",
     "Profile migration and data preservation fixtures",
     "Resource and release validation"
   ]

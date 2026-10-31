@@ -2,7 +2,59 @@
 //! The DOM/VM crate remains `forbid(unsafe_code)`; native calls live here.
 #![deny(unsafe_op_in_unsafe_fn)]
 use std::{fs::File, io, path::Path};
+pub mod launch;
 pub mod process;
+pub mod supervision;
+
+pub(crate) fn resident_for_child(child: &std::process::Child) -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v0>::uninit();
+        // SAFETY: the supervisor retains an unreaped child while querying its PID;
+        // the kernel initializes the correctly sized v0 buffer on success.
+        let result = unsafe {
+            libc::proc_pid_rusage(
+                child.id() as libc::c_int,
+                libc::RUSAGE_INFO_V0,
+                usage.as_mut_ptr().cast(),
+            )
+        };
+        (result == 0).then(|| unsafe { usage.assume_init() }.ri_resident_size)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string(format!("/proc/{}/status", child.id())).ok()?;
+        let line = status.lines().find(|line| line.starts_with("VmRSS:"))?;
+        line.split_whitespace()
+            .nth(1)?
+            .parse::<u64>()
+            .ok()?
+            .checked_mul(1024)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::ProcessStatus::{
+            GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        };
+        let mut counters = std::mem::MaybeUninit::<PROCESS_MEMORY_COUNTERS>::zeroed();
+        // SAFETY: Child retains the live process handle and the writable output
+        // has the exact PROCESS_MEMORY_COUNTERS size requested by the API.
+        let result = unsafe {
+            GetProcessMemoryInfo(
+                child.as_raw_handle().cast(),
+                counters.as_mut_ptr(),
+                std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            )
+        };
+        (result != 0).then(|| unsafe { counters.assume_init() }.WorkingSetSize as u64)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    {
+        let _ = child;
+        None
+    }
+}
 
 /// Current resident/working-set bytes, never peak usage or the JS heap.
 pub fn resident_bytes() -> Option<u64> {
