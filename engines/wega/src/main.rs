@@ -132,6 +132,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(context) = protocol::scoped_context(&command) {
                         let timeout = if matches!(&command, Command::CheckDocumentState(_)) {
                             protocol::PAGE_STATE_TIMEOUT_MS
+                        } else if matches!(&command, Command::CaptureDocument { .. } | Command::NavigateDocument { .. }) {
+                            protocol::HARNESS_TIMEOUT_MS
                         } else {
                             protocol::EVALUATION_TIMEOUT_MS
                         };
@@ -472,9 +474,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             state = serialized;
         }
         while let Some(notice) = view.notices.pop_front() {
+            let doc_context = document_context(&view, serial, version);
+            if version >= 12 {
+                write(&Event::Diagnostic {
+                    context: Some(doc_context),
+                    record: protocol::DiagnosticRecord {
+                        level: protocol::DiagnosticLevel::Info,
+                        message: notice.chars().take(4096).collect(),
+                        source: None,
+                        line: None,
+                        col: None,
+                    },
+                })?;
+            }
             write(&protocol::content_event(
                 version,
-                document_context(&view, serial, version),
+                doc_context,
                 ContentEvent::Notice(notice.chars().take(4096).collect()),
             ))?;
         }
@@ -693,6 +708,93 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let dirty =
                         view.evaluate_json("__wega_page_has_edits()").as_deref() != Ok("false");
                     write(&Event::DocumentState { context, dirty })?;
+                }
+                Command::CaptureDocument { context } => {
+                    if context.document != DocumentId(serial)
+                        || (version >= 7 && context.revision.0 != view.document_revision())
+                    {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::StaleDocument,
+                                "Document navigated before capture",
+                            ),
+                        })?;
+                        continue;
+                    }
+                    if view.loading {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::InvalidRequest,
+                                "Document has not finished loading",
+                            ),
+                        })?;
+                        continue;
+                    }
+                    if view.paint_pending() {
+                        let _ = view.wait_painted();
+                        let _ = pending_target.take();
+                        let _ = pending_revision.take();
+                    }
+                    let (width, height) = (800, 600);
+                    let result = view.paint(width, height, 1.0, 1.0, false);
+                    match result {
+                        Ok(frame) => {
+                            use sha2::{Digest, Sha256};
+                            let mut hasher = Sha256::new();
+                            hasher.update(&frame.rgba);
+                            let hash = format!("{:x}", hasher.finalize());
+                            write(&Event::DocumentCaptured {
+                                context,
+                                width: frame.width,
+                                height: frame.height,
+                                hash,
+                            })?;
+                        }
+                        Err(e) => {
+                            write(&Event::RequestFailed {
+                                context,
+                                error: ProtocolError::new(ErrorCode::ResourceLimit, e),
+                            })?;
+                        }
+                    }
+                }
+                Command::NavigateDocument { context, url } => {
+                    if context.document != DocumentId(serial)
+                        || (version >= 7 && context.revision.0 != view.document_revision())
+                    {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::StaleDocument,
+                                "Document navigated before navigate command",
+                            ),
+                        })?;
+                        continue;
+                    }
+                    let parsed = Url::parse(&url);
+                    match parsed {
+                        Ok(parsed_url) => {
+                            serial = serial.wrapping_add(1);
+                            let res = view.load_for_navigation(parsed_url, serial).map_err(|e| {
+                                ProtocolError::new(ErrorCode::InvalidRequest, e)
+                            });
+                            write(&Event::DocumentNavigated {
+                                context,
+                                status: res,
+                            })?;
+                        }
+                        Err(e) => {
+                            write(&Event::DocumentNavigated {
+                                context,
+                                status: Err(ProtocolError::new(
+                                    ErrorCode::InvalidRequest,
+                                    e.to_string(),
+                                )),
+                            })?;
+                        }
+                    }
                 }
                 Command::Shutdown => break,
                 Command::CheckPageState(request) => {

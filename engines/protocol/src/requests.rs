@@ -12,6 +12,8 @@ pub enum RequestKind {
     Evaluate,
     /// The browser's destructive-action check ID, independent of the wire ID.
     PageState(u64),
+    Capture,
+    Navigate,
 }
 
 #[derive(Clone, Copy, Debug)]

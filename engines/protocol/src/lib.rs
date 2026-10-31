@@ -7,12 +7,13 @@ pub mod identity;
 pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 11;
+pub const VERSION: u32 = 12;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
 pub const EVALUATION_TIMEOUT_MS: u64 = 5_000;
 pub const PAGE_STATE_TIMEOUT_MS: u64 = 2_000;
+pub const HARNESS_TIMEOUT_MS: u64 = 10_000;
 
 /// A generation within one private content-process session. Zero is its initial document.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -118,6 +119,7 @@ pub enum Capability {
     GracefulShutdown,
     SessionIdentity,
     SharedFrames,
+    HarnessObservability,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -129,7 +131,28 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::GracefulShutdown,
     Capability::SessionIdentity,
     Capability::SharedFrames,
+    Capability::HarnessObservability,
 ];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DiagnosticLevel {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiagnosticRecord {
+    pub level: DiagnosticLevel,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub col: Option<u32>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCode {
@@ -175,6 +198,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::ScopedContentEvents => 9,
                     Capability::GracefulShutdown => 10,
                     Capability::SessionIdentity => 11,
+                    Capability::HarnessObservability => 12,
                 }
         })
         .collect()
@@ -182,7 +206,10 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
 
 pub fn scoped_context(command: &Command) -> Option<RequestContext> {
     match command {
-        Command::EvaluateDocument { context, .. } | Command::CheckDocumentState(context) => {
+        Command::EvaluateDocument { context, .. }
+        | Command::CheckDocumentState(context)
+        | Command::CaptureDocument { context, .. }
+        | Command::NavigateDocument { context, .. } => {
             Some(*context)
         }
         _ => None,
@@ -210,6 +237,13 @@ pub enum Command {
         source: String,
     },
     CheckDocumentState(RequestContext),
+    CaptureDocument {
+        context: RequestContext,
+    },
+    NavigateDocument {
+        context: RequestContext,
+        url: String,
+    },
     /// Cancels a queued operation. Already-running script side effects cannot be rolled back.
     CancelRequest(RequestContext),
     Init {
@@ -323,6 +357,20 @@ pub enum Event {
     DocumentState {
         context: RequestContext,
         dirty: bool,
+    },
+    DocumentCaptured {
+        context: RequestContext,
+        width: u32,
+        height: u32,
+        hash: String,
+    },
+    DocumentNavigated {
+        context: RequestContext,
+        status: Result<(), ProtocolError>,
+    },
+    Diagnostic {
+        context: Option<DocumentContext>,
+        record: DiagnosticRecord,
     },
     RequestFailed {
         context: RequestContext,
