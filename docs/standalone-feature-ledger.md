@@ -145,5 +145,11 @@ must be reported explicitly; do not silently discard the old data.
 - Remaining Step 02 work: explicit lifecycle/commit states, scoped native events,
   frame/service identities and queued-command cancellation. Do not mark the entire
   step complete based on the extraction or correlation slice.
+- 02.c1: protocol v7 now tracks actual DOM/global revisions in addition to browser
+  navigation generations. Full document replacements inside the worker invalidate
+  requests even when no browser Load command occurred; paint completion and frame
+  acceptance check the same revision. Mutations and fragments keep the existing
+  DOM revision. The updated worker preserves v4–v6 sessions at their previous
+  protocol behavior; commit/revision protection requires the v7 host.
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.

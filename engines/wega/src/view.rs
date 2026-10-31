@@ -322,6 +322,7 @@ const MAX_SCRIPTS: usize = 1024;
 
 pub struct View {
     document: Rc<RefCell<BaseDocument>>,
+    document_revision: u64,
     script: Option<Box<dyn ScriptHost>>,
     network: Network,
     limits: Limits,
@@ -376,6 +377,7 @@ impl View {
         let csp = Arc::new(RwLock::new(Csp::default()));
         let mut view = Self {
             document: Rc::new(RefCell::new(document)),
+            document_revision: 0,
             script: None,
             network,
             limits,
@@ -461,6 +463,10 @@ impl View {
         b.set_fragment(None);
         a == b && self.pending.is_none() && self.script.is_some() && url.fragment().is_some()
     }
+    /// Changes only when the DOM/global is replaced, not on ordinary mutations.
+    pub fn document_revision(&self) -> u64 {
+        self.document_revision
+    }
     pub fn load(&mut self, url: Url) -> Result<(), String> {
         if self.same_document(&url) {
             self.navigate_fragment(&url);
@@ -514,6 +520,10 @@ impl View {
         if html.len() > self.limits.html_bytes {
             return Err("HTML document exceeds the size limit".into());
         }
+        let document_revision = self
+            .document_revision
+            .checked_add(1)
+            .ok_or("Document revision exhausted")?;
         if let Some(abort) = self.abort.take() {
             abort.abort();
         }
@@ -569,6 +579,7 @@ impl View {
             blitz_dom::BaseDocument::new(config)
         };
         self.document = Rc::new(RefCell::new(document));
+        self.document_revision = document_revision;
         self.refresh = response
             .and_then(|r| r.header("refresh"))
             .and_then(|value| self.parse_refresh(value));

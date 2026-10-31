@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 pub mod requests;
-pub const VERSION: u32 = 6;
+pub const VERSION: u32 = 7;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -13,6 +13,12 @@ pub const MAX_RESULT_BYTES: usize = 128 * 1024;
 #[serde(transparent)]
 pub struct DocumentId(pub u64);
 
+/// Actual DOM/global replacement sequence within a content process, including
+/// replacements initiated by a form rather than a browser Load command.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DocumentRevision(pub u64);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct RequestId(pub u64);
@@ -20,6 +26,8 @@ pub struct RequestId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestContext {
     pub document: DocumentId,
+    #[serde(default)]
+    pub revision: DocumentRevision,
     pub request: RequestId,
 }
 
@@ -27,12 +35,14 @@ pub struct RequestContext {
 pub enum Capability {
     ScopedEvaluation,
     ScopedPageState,
+    DocumentCommitTracking,
     SharedFrames,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
     Capability::ScopedEvaluation,
     Capability::ScopedPageState,
+    Capability::DocumentCommitTracking,
     Capability::SharedFrames,
 ];
 
@@ -155,6 +165,10 @@ pub enum Command {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
+    DocumentCommitted {
+        serial: u64,
+        revision: DocumentRevision,
+    },
     Capabilities {
         version: u32,
         supported: Vec<Capability>,
@@ -196,6 +210,8 @@ pub enum Event {
     },
     SharedFrame {
         serial: u64,
+        #[serde(default)]
+        revision: DocumentRevision,
         width: u32,
         height: u32,
         slot: u8,
@@ -210,6 +226,8 @@ pub enum Event {
     /// Exactly width*height*4 raw RGBA bytes follow this bounded JSON packet.
     Frame {
         serial: u64,
+        #[serde(default)]
+        revision: DocumentRevision,
         width: u32,
         height: u32,
     },

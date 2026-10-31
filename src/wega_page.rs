@@ -77,9 +77,15 @@ pub(crate) struct Snapshot {
 impl Snapshot {
     pub fn take_page_checks(&mut self) -> Vec<(u64, bool)> {
         let document = self.requests.document();
+        let revision = self.requests.revision();
         self.page_checks
             .drain(..)
-            .map(|(context, request, dirty)| (request, dirty || context.document != document))
+            .map(|(context, request, dirty)| {
+                (
+                    request,
+                    dirty || context.document != document || context.revision != revision,
+                )
+            })
             .collect()
     }
 
@@ -160,12 +166,22 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
     }
     let _ = proxy.send_event(Wake::Ui);
 }
-fn accept_frame(shared: &Mutex<Snapshot>, serial: u64, width: u32, height: u32, bytes: Vec<u8>) {
+fn accept_frame(
+    shared: &Mutex<Snapshot>,
+    serial: u64,
+    revision: protocol::DocumentRevision,
+    width: u32,
+    height: u32,
+    bytes: Vec<u8>,
+) {
     let capture = {
         let mut state = shared
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if serial != state.requests.document().0 || state.frozen {
+        if serial != state.requests.document().0
+            || revision != state.requests.revision()
+            || state.frozen
+        {
             return;
         }
         state.capture.take()
@@ -178,7 +194,10 @@ fn accept_frame(shared: &Mutex<Snapshot>, serial: u64, width: u32, height: u32, 
     let mut state = shared
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if serial == state.requests.document().0 && !state.frozen {
+    if serial == state.requests.document().0
+        && revision == state.requests.revision()
+        && !state.frozen
+    {
         if let Some(result) = result {
             state.capture_result = Some(result);
         }
@@ -287,6 +306,30 @@ impl Page {
                         continue;
                     }
                     match event {
+                        Event::DocumentCommitted { serial, revision } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if serial != state.requests.document().0 {
+                                continue;
+                            }
+                            let cancelled = state
+                                .requests
+                                .commit(revision)
+                                .map_err(|error| error.message)?;
+                            state.evaluated = None;
+                            state.frame = None;
+                            state.dialog = None;
+                            for request in cancelled {
+                                state.request_failed(
+                                    request,
+                                    ProtocolError::new(
+                                        ErrorCode::StaleDocument,
+                                        "Document was replaced",
+                                    ),
+                                );
+                            }
+                        }
                         Event::Capabilities { version, supported } => {
                             if version != protocol::VERSION {
                                 return Err("Capability version mismatch".into());
@@ -369,6 +412,7 @@ impl Page {
                         }
                         Event::SharedFrame {
                             serial,
+                            revision,
                             width,
                             height,
                             slot,
@@ -384,7 +428,10 @@ impl Page {
                                 let state = shared
                                     .lock()
                                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                if serial != state.requests.document().0 || state.frozen {
+                                if serial != state.requests.document().0
+                                    || revision != state.requests.revision()
+                                    || state.frozen
+                                {
                                     None
                                 } else {
                                     std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
@@ -402,7 +449,7 @@ impl Page {
                                 .send(Request::FrameConsumed { slot, sequence })
                                 .map_err(|_| "Worker closed before frame acknowledgement")?;
                             if let Some(bytes) = bytes {
-                                accept_frame(&shared, serial, width, height, bytes);
+                                accept_frame(&shared, serial, revision, width, height, bytes);
                             }
                         }
                         Event::Compatibility { serial, reason } => {
@@ -419,6 +466,7 @@ impl Page {
                         }
                         Event::Frame {
                             serial,
+                            revision,
                             width,
                             height,
                         } => {
@@ -428,7 +476,7 @@ impl Page {
                                     .map_err(|e| e.to_string())?
                             ];
                             stdout.read_exact(&mut bytes).map_err(|e| e.to_string())?;
-                            accept_frame(&shared, serial, width, height, bytes);
+                            accept_frame(&shared, serial, revision, width, height, bytes);
                         }
                         Event::State {
                             serial,
@@ -916,6 +964,29 @@ mod tests {
             .unwrap();
         assert_eq!(state.take_page_checks(), vec![(7, true)]);
         assert!(state.take_page_checks().is_empty());
+    }
+
+    #[test]
+    fn a_clean_reply_from_an_old_dom_is_stale_even_without_a_browser_navigation() {
+        let mut state = Snapshot::default();
+        state
+            .requests
+            .commit(protocol::DocumentRevision(1))
+            .unwrap();
+        let context = state
+            .requests
+            .begin(
+                RequestKind::PageState(10),
+                std::time::Duration::from_secs(2),
+            )
+            .unwrap();
+        state.requests.take(context).unwrap();
+        state.page_checks.push((context, 10, false));
+        state
+            .requests
+            .commit(protocol::DocumentRevision(2))
+            .unwrap();
+        assert_eq!(state.take_page_checks(), vec![(10, true)]);
     }
 
     #[test]

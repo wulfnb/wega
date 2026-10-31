@@ -30,6 +30,32 @@ fn documents() -> Server {
 }
 
 #[test]
+fn document_revisions_change_on_replacement_but_not_mutation_or_fragments() {
+    let server = documents();
+    let engine = engine();
+    let mut view = open(&engine, &server.url("127.0.0.1", "/"));
+    let first = view.document_revision();
+    assert!(first > 0);
+    view.evaluate_json("document.body.append(document.createElement('p'));true")
+        .unwrap();
+    assert_eq!(view.document_revision(), first);
+    view.load(
+        format!("{}#part", server.url("127.0.0.1", "/"))
+            .parse()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(view.document_revision(), first);
+    view.set_html("<title>Replacement</title>").unwrap();
+    assert!(view.document_revision() > first);
+    let second = view.document_revision();
+    view.load(server.url("127.0.0.1", "/notes.txt").parse().unwrap())
+        .unwrap();
+    settle(&mut view);
+    assert!(view.document_revision() > second);
+}
+
+#[test]
 fn transport_meta_and_bom_charsets_decode_documents() {
     let server = documents();
     let engine = engine();

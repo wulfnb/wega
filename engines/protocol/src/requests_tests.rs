@@ -26,6 +26,45 @@ fn navigation_invalidates_old_replies_without_reusing_request_ids() {
 }
 
 #[test]
+fn worker_initiated_document_replacement_invalidates_requests_without_a_browser_load() {
+    let mut requests = DocumentRequests::default();
+    requests.commit(DocumentRevision(1)).unwrap();
+    let old = requests
+        .begin(RequestKind::PageState(15), Duration::from_secs(2))
+        .unwrap();
+    let cancelled = requests.commit(DocumentRevision(2)).unwrap();
+    assert_eq!(cancelled[0].context, old);
+    assert_eq!(requests.document(), old.document);
+    let new = requests
+        .begin(RequestKind::Evaluate, Duration::from_secs(2))
+        .unwrap();
+    assert_ne!(new.revision, old.revision);
+    assert!(requests.take(old).is_none());
+    assert!(requests.commit(DocumentRevision(1)).is_err());
+    assert!(requests.take(new).is_some());
+}
+
+#[test]
+fn same_document_commit_keeps_requests_but_a_new_navigation_still_invalidates_them() {
+    let mut requests = DocumentRequests::default();
+    requests.commit(DocumentRevision(1)).unwrap();
+    let context = requests
+        .begin(RequestKind::Evaluate, Duration::from_secs(2))
+        .unwrap();
+    assert!(requests.commit(DocumentRevision(1)).unwrap().is_empty());
+    assert!(requests.take(context).is_some());
+    requests
+        .navigate(requests.next_document().unwrap())
+        .unwrap();
+    assert!(requests.commit(DocumentRevision(1)).unwrap().is_empty());
+    let rebound = requests
+        .begin(RequestKind::Evaluate, Duration::from_secs(2))
+        .unwrap();
+    assert_ne!(rebound.document, context.document);
+    assert_eq!(rebound.revision, context.revision);
+}
+
+#[test]
 fn forged_generation_does_not_consume_the_real_pending_request() {
     let mut requests = DocumentRequests::default();
     let context = requests

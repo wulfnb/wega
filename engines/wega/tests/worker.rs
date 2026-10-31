@@ -10,6 +10,7 @@ struct Worker {
     child: Child,
     input: ChildStdin,
     events: mpsc::Receiver<Event>,
+    revision: protocol::DocumentRevision,
 }
 
 #[test]
@@ -27,12 +28,18 @@ fn scoped_requests_cannot_read_or_execute_in_a_replacement_document() {
     }
     let old = RequestContext {
         document: DocumentId(0),
+        revision: worker.revision,
         request: RequestId(1),
     };
     worker.send(Command::Load {
         url: "about:blank".into(),
         serial: 1,
     });
+    let revision =
+        match worker.until(|event| matches!(event, Event::DocumentCommitted { serial: 1, .. })) {
+            Event::DocumentCommitted { revision, .. } => revision,
+            _ => unreachable!(),
+        };
     worker.until(|event| {
         matches!(
             event,
@@ -60,6 +67,7 @@ fn scoped_requests_cannot_read_or_execute_in_a_replacement_document() {
     );
     let current = RequestContext {
         document: DocumentId(1),
+        revision,
         request: RequestId(2),
     };
     worker.send(Command::EvaluateDocument {
@@ -85,6 +93,7 @@ fn oversized_scoped_evaluation_reports_an_error_and_worker_remains_usable() {
     let mut worker = Worker::start(store.path().unwrap());
     let context = RequestContext {
         document: DocumentId(0),
+        revision: worker.revision,
         request: RequestId(1),
     };
     worker.send(Command::EvaluateDocument {
@@ -174,6 +183,7 @@ impl Worker {
             child,
             input,
             events,
+            revision: Default::default(),
         };
         worker.send(Command::Init {
             version,
@@ -187,6 +197,13 @@ impl Worker {
             frame_path: Some(path.to_string_lossy().into_owned()),
         });
         worker.until(|event| matches!(event,Event::Ready{version:actual} if *actual==version));
+        if version == protocol::VERSION {
+            worker.revision =
+                match worker.until(|event| matches!(event, Event::DocumentCommitted { .. })) {
+                    Event::DocumentCommitted { revision, .. } => revision,
+                    _ => unreachable!(),
+                };
+        }
         worker
     }
     fn send(&mut self, command: Command) {
@@ -245,6 +262,29 @@ fn running_v4_browsers_can_still_start_and_use_an_updated_worker() {
     ));
     assert!(
         matches!(worker.until(|event|matches!(event,Event::Evaluated{..})),Event::Evaluated{value,error:None} if value=="\"legacy client\"")
+    );
+}
+
+#[test]
+fn running_v6_sessions_keep_their_scoped_packets_without_commit_notifications() {
+    use protocol::{DocumentId, DocumentRevision, RequestContext, RequestId};
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start_version(store.path().unwrap(), Stdio::inherit(), 6);
+    worker.send(Command::Capabilities);
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::Capabilities { .. })), Event::Capabilities { supported, .. } if !supported.contains(&protocol::Capability::DocumentCommitTracking))
+    );
+    let context = RequestContext {
+        document: DocumentId(0),
+        revision: DocumentRevision(0),
+        request: RequestId(1),
+    };
+    worker.send(Command::EvaluateDocument {
+        context,
+        source: "42".into(),
+    });
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { context: returned, result: Ok(value) } if returned == context && value == "42")
     );
 }
 #[test]

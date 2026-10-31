@@ -12,7 +12,8 @@
     "01.c": "Source-only profile/data-path audit prepared; migration fixtures pending",
     "02.a": "Shared Rust protocol crate implemented and pushed",
     "02.b": "Scoped evaluation/edit-state requests, bounded correlation and cancellation on navigation/crash implemented; tests pending",
-    "02.c": "Lifecycle/commit states, scoped native events and queued cancellation pending"
+    "02.c1": "Actual document commit/revision tracking and stale-frame rejection implemented; tests pending",
+    "02.c": "Explicit lifecycle states, scoped native events and queued cancellation pending"
   },
   "compile_checks": [
     {

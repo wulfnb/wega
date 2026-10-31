@@ -1,5 +1,5 @@
 //! One private worker per Wega tab. No window, network control port or Servo VM.
-use protocol::{Command, DocumentId, ErrorCode, Event, ProtocolError};
+use protocol::{Command, DocumentId, DocumentRevision, ErrorCode, Event, ProtocolError};
 use std::{
     cell::RefCell,
     collections::VecDeque,
@@ -103,6 +103,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut credits = [None, None];
     let mut sequence = 0_u64;
     let mut pending_target = None;
+    let mut pending_revision = None;
     let mut serial = 0_u64;
     let mut frozen = false;
     let interval = std::time::Duration::from_secs(2);
@@ -148,12 +149,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }));
     }
     let write = |event: &Event| protocol::write(&mut *output.borrow_mut(), event);
+    let mut reported_commit = None;
+    let mut report_commit = |view: &wega_engine::View, serial| -> std::io::Result<()> {
+        let revision = DocumentRevision(view.document_revision());
+        if reported_commit != Some((serial, revision)) {
+            if version == protocol::VERSION {
+                write(&Event::DocumentCommitted { serial, revision })?;
+            }
+            reported_commit = Some((serial, revision));
+        }
+        Ok(())
+    };
     write(&Event::Ready { version })?;
     let mut viewport = (1000, 700, 1.0, 1.0, false);
     let mut state = String::new();
     let frame_interval = std::time::Duration::from_millis(33);
     let mut last_frame = std::time::Instant::now() - std::time::Duration::from_secs(1);
     loop {
+        report_commit(&view, serial)?;
         if sampled.elapsed() >= interval {
             rss_bytes = wega_platform::resident_bytes();
             metrics = (view.node_count(), view.heap_bytes());
@@ -161,13 +174,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(result) = view.take_painted() {
             let completed_target = pending_target.take();
+            let completed_revision = pending_revision.take().unwrap_or(DocumentRevision(0));
             match result {
                 Ok(frame) => {
-                    if frame.serial == serial && !frozen {
+                    if frame.serial == serial
+                        && completed_revision.0 == view.document_revision()
+                        && !frozen
+                    {
                         match frame.pixels {
                             wega_engine::Pixels::Shared { slot, sequence } => {
                                 write(&Event::SharedFrame {
                                     serial: frame.serial,
+                                    revision: completed_revision,
                                     width: frame.width,
                                     height: frame.height,
                                     slot,
@@ -177,6 +195,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             wega_engine::Pixels::Owned(bytes) => {
                                 write(&Event::Frame {
                                     serial: frame.serial,
+                                    revision: completed_revision,
                                     width: frame.width,
                                     height: frame.height,
                                 })?;
@@ -203,6 +222,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         view.poll();
+        report_commit(&view, serial)?;
         let snapshot = Event::State {
             serial,
             rss_bytes,
@@ -269,6 +289,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ) {
                 Ok(()) => {
                     pending_target = target;
+                    pending_revision = Some(DocumentRevision(view.document_revision()));
                     last_frame = std::time::Instant::now();
                 }
                 Err(error) => {
@@ -312,11 +333,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Command::Capabilities => {
                     write(&Event::Capabilities {
                         version,
-                        supported: protocol::CAPABILITIES.to_vec(),
+                        supported: protocol::CAPABILITIES
+                            .iter()
+                            .copied()
+                            .filter(|capability| {
+                                version == protocol::VERSION
+                                    || *capability != protocol::Capability::DocumentCommitTracking
+                            })
+                            .collect(),
                     })?;
                 }
                 Command::EvaluateDocument { context, source } => {
-                    if context.document != DocumentId(serial) {
+                    if context.document != DocumentId(serial)
+                        || (version == protocol::VERSION
+                            && context.revision.0 != view.document_revision())
+                    {
                         write(&Event::RequestFailed {
                             context,
                             error: ProtocolError::new(
@@ -349,7 +380,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     write(&Event::DocumentEvaluated { context, result })?;
                 }
                 Command::CheckDocumentState(context) => {
-                    if context.document != DocumentId(serial) {
+                    if context.document != DocumentId(serial)
+                        || (version == protocol::VERSION
+                            && context.revision.0 != view.document_revision())
+                    {
                         write(&Event::RequestFailed {
                             context,
                             error: ProtocolError::new(

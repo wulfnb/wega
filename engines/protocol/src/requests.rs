@@ -1,5 +1,5 @@
 //! Host-side document/request correlation, independent of a browser or VM.
-use crate::{DocumentId, ErrorCode, ProtocolError, RequestContext, RequestId};
+use crate::{DocumentId, DocumentRevision, ErrorCode, ProtocolError, RequestContext, RequestId};
 use std::{
     collections::BTreeMap,
     time::{Duration, Instant},
@@ -24,6 +24,7 @@ pub struct PendingRequest {
 #[derive(Debug, Default)]
 pub struct DocumentRequests {
     document: DocumentId,
+    revision: DocumentRevision,
     next: u64,
     pending: BTreeMap<RequestId, PendingRequest>,
 }
@@ -31,6 +32,10 @@ pub struct DocumentRequests {
 impl DocumentRequests {
     pub fn document(&self) -> DocumentId {
         self.document
+    }
+
+    pub fn revision(&self) -> DocumentRevision {
+        self.revision
     }
 
     pub fn begin(
@@ -54,6 +59,7 @@ impl DocumentRequests {
         self.next = next;
         let context = RequestContext {
             document: self.document,
+            revision: self.revision,
             request,
         };
         self.pending.insert(
@@ -69,7 +75,7 @@ impl DocumentRequests {
 
     /// Ignore late, duplicate and old-document replies without consuming another request.
     pub fn take(&mut self, context: RequestContext) -> Option<PendingRequest> {
-        if context.document != self.document {
+        if context.document != self.document || context.revision != self.revision {
             return None;
         }
         self.pending.remove(&context.request)
@@ -111,6 +117,26 @@ impl DocumentRequests {
         }
         let cancelled = self.cancel_all();
         self.document = document;
+        Ok(cancelled)
+    }
+
+    pub fn commit(
+        &mut self,
+        revision: DocumentRevision,
+    ) -> Result<Vec<PendingRequest>, ProtocolError> {
+        if revision < self.revision {
+            return Err(ProtocolError::new(
+                ErrorCode::InvalidRequest,
+                "Document revision moved backwards",
+            ));
+        }
+        // A fragment/same-document navigation binds a new navigation generation
+        // to the existing DOM rather than replacing its global.
+        if revision == self.revision {
+            return Ok(Vec::new());
+        }
+        let cancelled = self.cancel_all();
+        self.revision = revision;
         Ok(cancelled)
     }
 }
