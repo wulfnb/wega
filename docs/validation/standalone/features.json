@@ -1,0 +1,481 @@
+{
+  "schema": 1,
+  "source_baseline": "d853e5f",
+  "verification_policy": "Tests deferred until final pass by owner; source observations are not runtime proof.",
+  "features": [
+    {
+      "id": "F01",
+      "servo_source_observation": "Application/session ownership, movable tabs/panes, history/bookmarks/settings: `src/application.rs`, `session.rs`, `ui.rs`, `profile.rs`, `containers.rs`",
+      "wega_source_observation": "Browser core reusable; desktop tab objects and container engine/data plumbing still depend on Servo. Preserve URL/title/engine migration and account boundaries.",
+      "replacement_steps": [
+        "02",
+        "09",
+        "10",
+        "23"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F02",
+      "servo_source_observation": "Native navigation and acknowledged traversal: `src/navigation.rs`, `navigation_adapter.rs`, `automation.rs`",
+      "wega_source_observation": "Wega has browser history plus pushState/fragment history. Port stop, cache bypass, completion and clear-history with correlated document identity.",
+      "replacement_steps": [
+        "06",
+        "09"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F03",
+      "servo_source_observation": "Servo delegates publish metadata, geometry, popups and controls: `src/engine.rs`",
+      "wega_source_observation": "Wega State/Cursor/OpenWindow events exist; favicon/geometry/opener and move/resize parity need dedicated implementations.",
+      "replacement_steps": [
+        "09",
+        "14"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F04",
+      "servo_source_observation": "Conservative unload/close/quit confirmation and edit probes: `src/page_safety.rs`, `page_state.js`, `lifecycle.rs`",
+      "wega_source_observation": "Wega PageState is request-correlated, but not document-correlated; late responses can outlive navigation. Keep conservative confirmation on errors/timeouts.",
+      "replacement_steps": [
+        "02",
+        "05",
+        "09"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F05",
+      "servo_source_observation": "574 IDL source files; scripts/crypto/DOM preferences: `vendor/servo-script-bindings/webidls/`, `src/browser.rs`",
+      "wega_source_observation": "Wega handwritten DOM, parser and Deno adapters exist; generation, complete semantics and task ordering remain open. Every file is indexed, not certified.",
+      "replacement_steps": [
+        "06",
+        "07",
+        "08"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F06",
+      "servo_source_observation": "HTTP interception/auth/cache/cookies: `src/capabilities.rs`, `network_controls.rs`, `download_actions.rs`",
+      "wega_source_observation": "Shared Wega broker exists. Origin/destination/partition authority, broader caching, auth and transport parity require audit; direct-worker bypasses must close before sandboxing.",
+      "replacement_steps": [
+        "04",
+        "06",
+        "09"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F07",
+      "servo_source_observation": "Origin/policy behavior in pinned Servo scripts/network, and `src/engine.rs` policy intercept",
+      "wega_source_observation": "Wega CORS/CSP/mixed-content/referrer subsets exist; module dependencies and extension-based resource classification have known limitations.",
+      "replacement_steps": [
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "14"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F08",
+      "servo_source_observation": "Input and embedded controls: `src/input.rs`, `engine.rs`, `file_handoff.rs`",
+      "wega_source_observation": "Wega pointer/keyboard/IME/form submission exist; select popup, file capabilities and full native-control/a11y integration remain missing.",
+      "replacement_steps": [
+        "11"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F09",
+      "servo_source_observation": "Native find/reader scripts, OS clipboard and Servo DOM Range: `src/page_actions.js`, `reader.js`, `engine.rs`",
+      "wega_source_observation": "Wega has partial Range and input selection; page selection, editing/geometry, copy/cut/paste/find and drag/drop require real implementations.",
+      "replacement_steps": [
+        "12"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F10",
+      "servo_source_observation": "CSS/SVG/text/rendering/zoom: `vendor/servo/`, `src/browser.rs`, `input.rs`, `capture.rs`",
+      "wega_source_observation": "Blitz/Stylo/Skia already render; coverage gaps need source-family and pixel/interaction evidence. Mask fallbacks are not general mask conformance.",
+      "replacement_steps": [
+        "13",
+        "19"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F11",
+      "servo_source_observation": "Frames/Window/popup relationships: pinned Servo IDL and scripts, `src/engine.rs`",
+      "wega_source_observation": "Visible frames currently trigger Servo fallback. Need browser-owned frame tree, origin policy and process placement, composed input/a11y, real WindowProxy and messaging.",
+      "replacement_steps": [
+        "14"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F12",
+      "servo_source_observation": "ShadowRoot/CustomElementRegistry/HTMLSlotElement IDL",
+      "wega_source_observation": "Wega missing component trees/style scoping/lifecycle. Preserve exact enabled Servo behavior after exposure capture.",
+      "replacement_steps": [
+        "15"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F13",
+      "servo_source_observation": "Site-data UI and HttpOnly cookie table: `src/capabilities_ui.rs`, `cookie_inspector.rs`",
+      "wega_source_observation": "Wega Deno storage globals and broker cookie jar exist, but native data-management/UI adapters still call Servo. Session scoping and deletion require direct verification.",
+      "replacement_steps": [
+        "04",
+        "16",
+        "22"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F14",
+      "servo_source_observation": "IndexedDB/ServiceWorker disabled by source preferences; existing clear-data UI only claims cookies/local/session/cache/history",
+      "wega_source_observation": "New storage scope must remain explicitly additional. No IndexedDB/CacheStorage/SW data-clear claim until stores and clear paths exist.",
+      "replacement_steps": [
+        "16",
+        "17"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F15",
+      "servo_source_observation": "Worker/SharedWorker IDL and source preference gates",
+      "wega_source_observation": "Wega lacks public Worker/SharedWorker constructors and multi-agent lifecycle. Include SharedWorker because its source preference is true. ServiceWorker is tracked separately.",
+      "replacement_steps": [
+        "17"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F16",
+      "servo_source_observation": "Cargo WebGL enabled; Canvas/WebGL IDL",
+      "wega_source_observation": "Wega lacks canvas/WebGL surfaces. Skia can supply 2D rasterization but not WebGL API/GLSL semantics. WebGL2 is source-disabled.",
+      "replacement_steps": [
+        "18",
+        "19"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F17",
+      "servo_source_observation": "Default GStreamer playback, WebM/WAV fixtures, native media controls: `src/native_media.rs`, `tests/media_smoke.py`",
+      "wega_source_observation": "Wega media backend missing. Reuse native action/metadata behavior through engine-neutral messages; port before deleting adapters.",
+      "replacement_steps": [
+        "20"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F18",
+      "servo_source_observation": "Enabled audio/media families and disabled WebRTC/capture prefs in pinned sources",
+      "wega_source_observation": "Audit Web Audio/MSE separately from capture/WebRTC and platform backend availability. Do not infer from an IDL file that a codec/device works.",
+      "replacement_steps": [
+        "20",
+        "21"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F19",
+      "servo_source_observation": "Page-scoped permission responders, notification/control dialogs: `src/permissions.rs`, `permission_adapter.rs`, `native_notifications.rs`",
+      "wega_source_observation": "Wega needs trusted requesting-document/frame context and revocation acknowledgement before persistent grants. Native notifications need actual platform evidence.",
+      "replacement_steps": [
+        "02",
+        "21"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F20",
+      "servo_source_observation": "User scripts, reader/dark style, screenshots and segmented download manager: `src/probes.rs`, `capture.rs`, `downloads.rs`, `download_actions.rs`",
+      "wega_source_observation": "Wega has evaluation/frames/download events but browser UI/tools often use Servo types. Preserve credentials, pause/resume/cancel and atomic publication.",
+      "replacement_steps": [
+        "09",
+        "12",
+        "19",
+        "22"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F21",
+      "servo_source_observation": "All native tool panels: `src/toolbox.rs`, `inspector_ui.rs`, `debugger_ui.rs`, `network_har.rs`, `cookie_inspector.rs`",
+      "wega_source_observation": "Wega logs exist; full DOM/style/network/debugger/storage/memory adapters remain open.",
+      "replacement_steps": [
+        "03",
+        "22",
+        "24"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F22",
+      "servo_source_observation": "Loopback WebDriver and opt-in Firefox remote server: `src/automation.rs`, `debug_driver.rs`, `options.rs`",
+      "wega_source_observation": "Wega protocol has evaluate without request IDs. Automation explicitly rejects many Wega operations. Preserve supported endpoints; record remote wire compatibility as a separate requirement.",
+      "replacement_steps": [
+        "03",
+        "22"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F23",
+      "servo_source_observation": "Servo AccessKit tree/actions bridged into native window: `src/accessibility.rs`, `engine.rs`",
+      "wega_source_observation": "Chrome AccessKit exists; Wega content tree transport and frame/document action ownership remain missing.",
+      "replacement_steps": [
+        "11",
+        "13",
+        "14"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F24",
+      "servo_source_observation": "Native external-scheme approval, protocol registration, file handoff/auth and viewers: `src/engine.rs`, `file_handoff.rs`, `capabilities.rs`",
+      "wega_source_observation": "Wega text/image/download viewers exist; internal routes and native privileged actions require browser mediation. Release protocol API may be preference-disabled.",
+      "replacement_steps": [
+        "09",
+        "10",
+        "21"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F25",
+      "servo_source_observation": "Container process/profile registry and Docker viewer: `src/containers.rs`, `container_launch.rs`, `docker/`, `tests/containers_smoke.py`",
+      "wega_source_observation": "Preserve authenticated launch, per-container data/download paths, upload handoff and remote gestures. No login/state transfer between engines currently exists.",
+      "replacement_steps": [
+        "10",
+        "11",
+        "23",
+        "25"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F26",
+      "servo_source_observation": "Structured diagnostics, signing/outbox, resource accounting and packaging: `src/diagnostic_event.rs`, `diagnostics.rs`, `error_reporting.rs`, `scripts/`",
+      "wega_source_observation": "Wega stderr/log/metrics paths exist. Shared protocol ownership, resource totals, sandbox services and release backend closure still need implementation.",
+      "replacement_steps": [
+        "03",
+        "05",
+        "24",
+        "25",
+        "26"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    },
+    {
+      "id": "F27",
+      "servo_source_observation": "Entire source inventory including less common IDL families and build/preference gates",
+      "wega_source_observation": "Every IDL has a provisional owner step; declaration-level effective exposure and semantic completeness remain unknown until audited. No catch-all row can satisfy the parity gate.",
+      "replacement_steps": [
+        "01",
+        "08"
+      ],
+      "semantic_audit": "pending",
+      "runtime_status": {
+        "macos": "unknown",
+        "linux": "unknown",
+        "windows": "unknown"
+      },
+      "runtime_evidence": [],
+      "acceptance": "Complete the mapped execution-plan behaviors and attach direct-Wega platform evidence without fallback."
+    }
+  ],
+  "retirement_allowed": false
+}

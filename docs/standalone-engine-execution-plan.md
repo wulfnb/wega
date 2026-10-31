@@ -2,7 +2,14 @@
 
 Date: 31 October 2026. Branch: `feature/standalone-wega-engine`.
 Planning baseline: `212304b`; source inspected before this documentation-only change.
-Status: **Plan only. No implementation step below is complete.**
+Status: **Implementation started. No migration step is runtime-verified yet.**
+
+Execution instruction (31 October 2026): commit and push incremental work on this
+branch; run tests at the end only. Source inventory, code review and implementation
+can proceed meanwhile. Record implementation separately from runtime verification;
+deferred tests never satisfy a completion, parity or Servo-retirement gate.
+See the [feature ledger](standalone-feature-ledger.md) for source observations and
+pending evidence. Step 01 source auditing is in progress; baseline test execution is deferred.
 
 This is the execution order for [the migration proposal](standalone-engine-migration.md).
 The destination is a browser powered entirely by Wega's engine: Blitz, V8 through
