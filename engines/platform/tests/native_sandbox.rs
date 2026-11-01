@@ -32,9 +32,14 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         .arg(grant.to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
-    let mut process =
-        wega_platform::process::OwnedProcess::new(launch.spawn(&mut command).unwrap(), |_| {});
+        .stderr(Stdio::piped());
+    let (exit, exited) = std::sync::mpsc::channel();
+    let mut process = wega_platform::process::OwnedProcess::new(
+        launch.spawn(&mut command).unwrap(),
+        move |report| {
+            let _ = exit.send(report);
+        },
+    );
     launch.attach(&mut process, 128 * 1024 * 1024).unwrap();
     drop(command);
     let mut stdout = process.take_stdout().unwrap();
@@ -58,8 +63,19 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     let diagnostics = error_output
         .recv_timeout(Duration::from_secs(2))
         .unwrap_or_default();
-    let sample = process.control().sample();
-    eprintln!("Native probe state: {sample:?}; stderr: {diagnostics}");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !matches!(
+        process.control().sample().unwrap(),
+        wega_platform::process::Sample::Exited
+    ) && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    drop(process);
+    let report = exited
+        .recv_timeout(Duration::from_secs(3))
+        .expect("Probe was not reaped");
+    eprintln!("Native probe exit: {report:?}; stderr: {diagnostics}");
     for item in [
         "granted_file",
         "private_read_denied",
@@ -70,15 +86,15 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     ] {
         assert!(
             output.contains(&format!("\"{item}\":true")),
-            "{item}: stdout={output}; stderr={diagnostics}; state={sample:?}"
+            "{item}: stdout={output}; stderr={diagnostics}; exit={report:?}"
         );
     }
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while !matches!(
-        process.control().sample().unwrap(),
-        wega_platform::process::Sample::Exited
-    ) {
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    assert!(
+        !report.forced,
+        "Probe required forced termination: {report:?}"
+    );
+    assert!(
+        report.status.unwrap().success(),
+        "Probe failed: {diagnostics}"
+    );
 }
