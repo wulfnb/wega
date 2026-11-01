@@ -38,6 +38,13 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     launch.attach(&mut process, 128 * 1024 * 1024).unwrap();
     drop(command);
     let mut stdout = process.take_stdout().unwrap();
+    let mut stderr = process.take_stderr().unwrap();
+    let (errors, error_output) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = String::new();
+        let _ = stderr.by_ref().take(65536).read_to_string(&mut bytes);
+        let _ = errors.send(bytes);
+    });
     let (sent, received) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut bytes = String::new();
@@ -48,6 +55,11 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         .recv_timeout(Duration::from_secs(10))
         .expect("Probe failed to terminate");
     read.unwrap();
+    let diagnostics = error_output
+        .recv_timeout(Duration::from_secs(2))
+        .unwrap_or_default();
+    let sample = process.control().sample();
+    eprintln!("Native probe state: {sample:?}; stderr: {diagnostics}");
     for item in [
         "granted_file",
         "private_read_denied",
@@ -56,7 +68,10 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         "udp_denied",
         "child_denied",
     ] {
-        assert!(output.contains(&format!("\"{item}\":true")), "{output}");
+        assert!(
+            output.contains(&format!("\"{item}\":true")),
+            "{item}: stdout={output}; stderr={diagnostics}; state={sample:?}"
+        );
     }
     let deadline = Instant::now() + Duration::from_secs(2);
     while !matches!(

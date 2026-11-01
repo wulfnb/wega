@@ -222,6 +222,10 @@ fn install_filter() -> io::Result<()> {
         libc::SYS_writev,
         libc::SYS_close,
         libc::SYS_close_range,
+        // recv() uses recvfrom() on Linux; these operate on explicit inherited
+        // sockets. Socket creation/connect/bind and descriptor transfer stay denied.
+        libc::SYS_recvfrom,
+        libc::SYS_shutdown,
         libc::SYS_getsockopt,
         libc::SYS_setsockopt,
         libc::SYS_getpeername,
@@ -300,6 +304,10 @@ fn install_filter() -> io::Result<()> {
     }
     #[cfg(target_arch = "x86_64")]
     for syscall in [
+        // V8's memory protection keys only affect this process's mappings.
+        libc::SYS_pkey_alloc,
+        libc::SYS_pkey_free,
+        libc::SYS_pkey_mprotect,
         libc::SYS_arch_prctl,
         libc::SYS_poll,
         libc::SYS_epoll_wait,
