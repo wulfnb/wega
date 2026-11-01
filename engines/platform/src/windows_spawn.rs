@@ -50,6 +50,55 @@ pub(crate) fn duplicate(raw: HANDLE, inherit: bool) -> io::Result<OwnedHandle> {
     }
     Ok(unsafe { OwnedHandle::from_raw_handle(copied.cast()) })
 }
+fn current_user_sid() -> io::Result<String> {
+    let mut raw = std::ptr::null_mut();
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let token = unsafe { OwnedHandle::from_raw_handle(raw.cast()) };
+    let mut required = 0;
+    unsafe {
+        GetTokenInformation(
+            token.as_raw_handle().cast(),
+            TokenUser,
+            std::ptr::null_mut(),
+            0,
+            &mut required,
+        );
+    }
+    if required < size_of::<TOKEN_USER>() as u32 || required > 65536 {
+        return Err(io::Error::other("Invalid current-user token information"));
+    }
+    let mut user = vec![0_usize; (required as usize).div_ceil(size_of::<usize>())];
+    if unsafe {
+        GetTokenInformation(
+            token.as_raw_handle().cast(),
+            TokenUser,
+            user.as_mut_ptr().cast(),
+            required,
+            &mut required,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let mut text = std::ptr::null_mut();
+    if unsafe { ConvertSidToStringSidW((*user.as_ptr().cast::<TOKEN_USER>()).User.Sid, &mut text) }
+        == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let mut length = 0;
+    while unsafe { *text.add(length) } != 0 {
+        length += 1;
+    }
+    let result = String::from_utf16(unsafe { std::slice::from_raw_parts(text, length) })
+        .map_err(io::Error::other);
+    unsafe {
+        LocalFree(text.cast());
+    }
+    result
+}
 struct Profile {
     name: Vec<u16>,
     sid: PSID,
@@ -134,7 +183,14 @@ impl Profile {
         }
         // The worker may read/execute this selected image, never the host's
         // profile/project directory. Owner/system retain normal cleanup access.
-        let dacl = string(&format!("D:P(A;;FA;;;OW)(A;;FA;;;SY)(A;;GRGX;;;{})", sid?));
+        // AppContainer access checks require BOTH the ordinary user principal
+        // and the package principal. OWNER_RIGHTS alone is insufficient when an
+        // elevated parent's default file owner is the Administrators group.
+        let dacl = string(&format!(
+            "D:P(A;;FA;;;{})(A;;FA;;;SY)(A;;GRGX;;;{})",
+            current_user_sid()?,
+            sid?
+        ));
         let mut security = std::ptr::null_mut();
         if unsafe {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
