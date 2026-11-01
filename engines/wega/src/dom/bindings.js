@@ -92,7 +92,7 @@
       this._stopped = this._immediate = true;
     }
     composedPath() {
-      return this._path || [];
+      return [...(this._path || [])];
     }
     initEvent(type, bubbles = false, cancelable = false) {
       this.type = String(type);
@@ -131,18 +131,45 @@
     }
     dispatchEvent(event) {
       if (!event?.type) fail("InvalidStateError", "Event type is empty");
+      const originalTarget = this;
       event.target = this;
       const path = [this];
-      let parent = this.parentNode;
-      while (parent) {
-        path.push(parent);
-        parent = parent.parentNode;
+      let curr = this;
+      while (true) {
+        if (curr.parentNode) {
+          curr = curr.parentNode;
+          path.push(curr);
+        } else if (curr._host) {
+          if (event.composed) {
+            curr = curr._host;
+            path.push(curr);
+          } else {
+            break;
+          }
+        } else {
+          break;
+        }
       }
       if (path.at(-1)?.nodeType === 9) path.push(globalThis);
       event._path = path;
       const invoke = (target, capture, phase) => {
         event.currentTarget = target;
         event.eventPhase = phase;
+        if (originalTarget.getRootNode && target.getRootNode) {
+          const targetRoot = target.getRootNode();
+          if (originalTarget.getRootNode() === targetRoot) {
+            event.target = originalTarget;
+          } else {
+            let retargeted = originalTarget;
+            for (const node of path) {
+              if (node.getRootNode && node.getRootNode() === targetRoot) {
+                retargeted = node;
+                break;
+              }
+            }
+            event.target = retargeted;
+          }
+        }
         for (const entry of [...(target._events?.get(event.type) || [])]) {
           if (entry.capture !== capture) continue;
           if (entry.once)
@@ -174,6 +201,7 @@
           invoke(path[i], false, 3);
       event.currentTarget = null;
       event.eventPhase = 0;
+      event.target = originalTarget;
       event._path = [];
       return !event.defaultPrevented;
     }
@@ -226,6 +254,12 @@
     if (owner) result._owner = owner;
     if (host("connected", id)) connected.set(id, result);
     if (info.nodeType === 1) {
+      if (typeof customElements === "object") {
+        const def = customElements._definitions?.get(info.localName);
+        if (def && !result._upgraded) {
+          upgradeElement(result, def);
+        }
+      }
       for (const attr of host("attributes", id)) {
         if (attr.name.startsWith("on")) {
           ensureHandler(attr.name.slice(2));
@@ -481,14 +515,17 @@
       }
     }
     get isConnected() {
-      return this.getRootNode().nodeType === 9;
+      return this.getRootNode({ composed: true }).nodeType === 9;
     }
     hasChildNodes() {
       return this.childNodes.length > 0;
     }
-    getRootNode() {
+    getRootNode(options) {
+      const composed = !!options?.composed;
       let root = this;
-      while (root.parentNode) root = root.parentNode;
+      while (root.parentNode || (composed && root._host)) {
+        root = root.parentNode || root._host;
+      }
       return root;
     }
     contains(other) {
@@ -570,8 +607,9 @@
         });
       }
       notify(this, "childList", { removedNodes: [], addedNodes: [child] });
-      if (this.getRootNode() === document) {
+      if (this.getRootNode() === document || this.isConnected) {
         prepareInserted(child);
+        triggerConnected(child);
         if (isScript(this)) prepareScript(this);
       }
       return child;
@@ -580,6 +618,7 @@
       if (child?.parentNode !== this) {
         fail("NotFoundError", "Node is not a child");
       }
+      const wasConnected = child.isConnected;
       if (child?.localName === "iframe") {
         const idx = childFrames.indexOf(child);
         if (idx !== -1) childFrames.splice(idx, 1);
@@ -592,6 +631,9 @@
       retainTree(child, false);
       host("remove", child._id);
       notify(this, "childList", { removedNodes: [child], addedNodes: [] });
+      if (wasConnected) {
+        triggerDisconnected(child);
+      }
       return child;
     }
     replaceChild(child, old) {
@@ -816,6 +858,40 @@
       );
     }
   }
+  class ShadowRoot extends DocumentFragment {
+    constructor(id, info, hostNode, mode, delegatesFocus) {
+      super(id, info);
+      this._host = hostNode;
+      this._mode = mode;
+      this._delegatesFocus = !!delegatesFocus;
+    }
+    get host() {
+      return this._host;
+    }
+    get mode() {
+      return this._mode;
+    }
+    get delegatesFocus() {
+      return this._delegatesFocus;
+    }
+    get innerHTML() {
+      return [...this.childNodes]
+        .map((child) => host("serialize", child._id))
+        .join("");
+    }
+    set innerHTML(value) {
+      this.replaceChildren();
+      const template = (this.ownerDocument || document).createElement("template");
+      template.innerHTML = String(value);
+      this.appendChild(template.content);
+    }
+    getElementById(id) {
+      return (
+        [...this.querySelectorAll("[id]")].find((n) => n.id === String(id)) ||
+        null
+      );
+    }
+  }
   const cssName = (name) =>
     String(name)
       .replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())
@@ -898,6 +974,29 @@
         : "";
     }
   }
+  const allShadowRoots = new Set();
+  const ALLOWED_SHADOW_HOSTS = new Set([
+    "article", "aside", "blockquote", "body", "div", "footer",
+    "h1", "h2", "h3", "h4", "h5", "h6", "header", "main",
+    "nav", "p", "section", "span",
+  ]);
+
+  function isValidCustomElementName(name) {
+    if (typeof name !== "string") return false;
+    if (!/^[a-z][a-z0-9._\-]*-[a-z0-9._\-]*$/.test(name)) return false;
+    const reserved = new Set([
+      "annotation-xml",
+      "color-profile",
+      "font-face",
+      "font-face-src",
+      "font-face-uri",
+      "font-face-format",
+      "font-face-name",
+      "missing-glyph",
+    ]);
+    return !reserved.has(name);
+  }
+
   class Element extends Node {
     get tagName() {
       return this.nodeName;
@@ -977,16 +1076,37 @@
         this[name] = new Function("event", String(value));
       }
       notify(this, "attributes", { attributeName: name, oldValue: old });
+      if (this._upgraded && typeof this.attributeChangedCallback === "function") {
+        const obs = this.constructor.observedAttributes;
+        if (Array.isArray(obs) && obs.includes(name) && old !== String(value)) {
+          try {
+            this.attributeChangedCallback(name, old, String(value), null);
+          } catch (e) {
+            report(e);
+          }
+        }
+      }
     }
     removeAttribute(name) {
       const old = this.getAttribute(name);
       host("removeAttr", this._id, String(name));
       if (String(name).startsWith("on")) this[name] = null;
-      if (old !== null)
+      if (old !== null) {
         notify(this, "attributes", {
           attributeName: String(name),
           oldValue: old,
         });
+        if (this._upgraded && typeof this.attributeChangedCallback === "function") {
+          const obs = this.constructor.observedAttributes;
+          if (Array.isArray(obs) && obs.includes(name)) {
+            try {
+              this.attributeChangedCallback(name, old, null, null);
+            } catch (e) {
+              report(e);
+            }
+          }
+        }
+      }
     }
     toggleAttribute(name, force) {
       const add = force === undefined ? !this.hasAttribute(name) : !!force;
@@ -1381,8 +1501,228 @@
         this._clicking = false;
       }
     }
+    attachShadow(options) {
+      if (!options || (options.mode !== "open" && options.mode !== "closed")) {
+        fail("TypeError", "Invalid attachShadow options: mode must be 'open' or 'closed'");
+      }
+      const tag = this.localName.toLowerCase();
+      if (!ALLOWED_SHADOW_HOSTS.has(tag) && !isValidCustomElementName(tag)) {
+        fail("NotSupportedError", `Element <${tag}> cannot host a shadow root`);
+      }
+      if (this._shadowRoot) {
+        fail("NotSupportedError", "Shadow root already exists on this element");
+      }
+      const fragId = host("createFragment");
+      const fragInfo = host("info", fragId);
+      const root = new ShadowRoot(fragId, fragInfo, this, options.mode, !!options.delegatesFocus);
+      this._shadowRoot = root;
+      allShadowRoots.add(root);
+      cache.set(fragId, weak ? new WeakRef(root) : root);
+      host("retain", fragId);
+      finalizer?.register(root, fragId);
+      return root;
+    }
+    get shadowRoot() {
+      return this._shadowRoot?.mode === "open" ? this._shadowRoot : null;
+    }
+    get assignedSlot() {
+      const parent = this.parentNode;
+      if (!parent || !parent._shadowRoot) return null;
+      const slotName = this.getAttribute("slot") || "";
+      const slots = parent._shadowRoot.querySelectorAll("slot");
+      for (const s of slots) {
+        if ((s.name || "") === slotName) return s;
+      }
+      return null;
+    }
   }
-  class HTMLElement extends Element {}
+
+  let __currentlyUpgrading = null;
+
+  function upgradeElement(element, def) {
+    if (!element || element._upgraded) return;
+    element._upgraded = true;
+    Object.setPrototypeOf(element, def.constructor.prototype);
+    __currentlyUpgrading = element;
+    try {
+      Reflect.construct(def.constructor, [], def.constructor);
+    } finally {
+      __currentlyUpgrading = null;
+    }
+    if (element.attributeChangedCallback && def.observedAttributes.length) {
+      for (const attr of element.attributes) {
+        if (def.observedAttributes.includes(attr.name)) {
+          try {
+            element.attributeChangedCallback(attr.name, null, attr.value, null);
+          } catch (e) {
+            report(e);
+          }
+        }
+      }
+    }
+    if (element.isConnected && typeof element.connectedCallback === "function") {
+      try {
+        element.connectedCallback();
+      } catch (e) {
+        report(e);
+      }
+    }
+  }
+
+  function triggerConnected(node) {
+    if (!node || node.nodeType !== 1) return;
+    if (node._upgraded && typeof node.connectedCallback === "function") {
+      try {
+        node.connectedCallback();
+      } catch (e) {
+        report(e);
+      }
+    }
+    for (const child of node.children) {
+      triggerConnected(child);
+    }
+    if (node._shadowRoot) {
+      for (const child of node._shadowRoot.children) {
+        triggerConnected(child);
+      }
+    }
+  }
+
+  function triggerDisconnected(node) {
+    if (!node || node.nodeType !== 1) return;
+    if (node._upgraded && typeof node.disconnectedCallback === "function") {
+      try {
+        node.disconnectedCallback();
+      } catch (e) {
+        report(e);
+      }
+    }
+    for (const child of node.children) {
+      triggerDisconnected(child);
+    }
+    if (node._shadowRoot) {
+      for (const child of node._shadowRoot.children) {
+        triggerDisconnected(child);
+      }
+    }
+  }
+
+  class CustomElementRegistry {
+    constructor() {
+      this._definitions = new Map();
+      this._constructors = new Map();
+      this._whenDefined = new Map();
+    }
+    define(name, constructor, options) {
+      name = String(name).toLowerCase();
+      if (!isValidCustomElementName(name)) {
+        fail("SyntaxError", `"${name}" is not a valid custom element name`);
+      }
+      if (typeof constructor !== "function") {
+        fail("TypeError", "Custom element constructor must be a function");
+      }
+      if (this._definitions.has(name)) {
+        fail("NotSupportedError", `Custom element "${name}" has already been defined`);
+      }
+      if (this._constructors.has(constructor)) {
+        fail("NotSupportedError", "This constructor has already been defined for a custom element");
+      }
+      const observedAttributes = Array.isArray(constructor.observedAttributes)
+        ? [...constructor.observedAttributes]
+        : [];
+      const def = { name, constructor, observedAttributes };
+      this._definitions.set(name, def);
+      this._constructors.set(constructor, name);
+
+      if (this._whenDefined.has(name)) {
+        this._whenDefined.get(name)._resolve(constructor);
+        this._whenDefined.delete(name);
+      }
+
+      this._upgradeMatching(name, def);
+    }
+    _upgradeMatching(name, def) {
+      if (document) {
+        for (const el of document.querySelectorAll(name)) {
+          upgradeElement(el, def);
+        }
+      }
+      for (const root of allShadowRoots) {
+        for (const el of root.querySelectorAll(name)) {
+          upgradeElement(el, def);
+        }
+      }
+    }
+    get(name) {
+      return this._definitions.get(String(name).toLowerCase())?.constructor;
+    }
+    getName(constructor) {
+      return this._constructors.get(constructor) || null;
+    }
+    whenDefined(name) {
+      name = String(name).toLowerCase();
+      if (!isValidCustomElementName(name)) {
+        return Promise.reject(new SyntaxError(`"${name}" is not a valid custom element name`));
+      }
+      if (this._definitions.has(name)) {
+        return Promise.resolve(this._definitions.get(name).constructor);
+      }
+      let promise = this._whenDefined.get(name);
+      if (!promise) {
+        let resolve;
+        promise = new Promise((res) => { resolve = res; });
+        promise._resolve = resolve;
+        this._whenDefined.set(name, promise);
+      }
+      return promise;
+    }
+    upgrade(root) {
+      if (!root) return;
+      const walk = (node) => {
+        if (node.nodeType === 1) {
+          const tag = node.localName.toLowerCase();
+          const def = this._definitions.get(tag);
+          if (def && !node._upgraded) {
+            upgradeElement(node, def);
+          }
+          if (node._shadowRoot) {
+            walk(node._shadowRoot);
+          }
+        }
+        for (const child of node.childNodes) {
+          walk(child);
+        }
+      };
+      walk(root);
+    }
+  }
+  const customElements = new CustomElementRegistry();
+
+  class HTMLElement extends Element {
+    constructor(id, info) {
+      if (__currentlyUpgrading) {
+        return __currentlyUpgrading;
+      }
+      if (new.target === HTMLElement && (id === undefined || info === undefined)) {
+        fail("TypeError", "Illegal constructor");
+      }
+      if (new.target !== HTMLElement && (id === undefined || info === undefined)) {
+        const name = customElements._constructors.get(new.target);
+        if (!name) {
+          fail("TypeError", "Illegal constructor");
+        }
+        id = host("create", name);
+        info = host("info", id);
+      }
+      super(id, info);
+      if (id !== undefined) {
+        cache.set(id, weak ? new WeakRef(this) : this);
+        host("retain", id);
+        finalizer?.register(this, id);
+      }
+      this._upgraded = true;
+    }
+  }
   class SVGElement extends Element {}
   for (const key of [
     "title",
@@ -2037,6 +2377,51 @@
       return wrap(host("templateContent", this._id), this.ownerDocument);
     }
   }
+  class HTMLSlotElement extends HTMLElement {
+    get name() {
+      return this.getAttribute("name") || "";
+    }
+    set name(value) {
+      this.setAttribute("name", value);
+    }
+    assignedNodes(options) {
+      const flatten = !!options?.flatten;
+      const root = this.getRootNode();
+      if (!(root instanceof ShadowRoot)) return [];
+      const hostEl = root.host;
+      if (!hostEl) return [];
+      const slotName = this.name;
+      const assigned = [];
+      for (const child of hostEl.childNodes) {
+        if (child.nodeType === 1) {
+          const targetSlot = child.getAttribute("slot") || "";
+          if (targetSlot === slotName) {
+            assigned.push(child);
+          }
+        } else if (!slotName) {
+          assigned.push(child);
+        }
+      }
+      if (assigned.length === 0 && flatten) {
+        return [...this.childNodes];
+      }
+      if (flatten) {
+        const flat = [];
+        for (const node of assigned) {
+          if (node instanceof HTMLSlotElement) {
+            flat.push(...node.assignedNodes({ flatten: true }));
+          } else {
+            flat.push(node);
+          }
+        }
+        return flat;
+      }
+      return assigned;
+    }
+    assignedElements(options) {
+      return this.assignedNodes(options).filter((node) => node.nodeType === 1);
+    }
+  }
   class CanvasRenderingContext2D {
     constructor(canvas) {
       this._canvas = canvas;
@@ -2259,6 +2644,7 @@
     canvas: HTMLCanvasElement,
     script: HTMLScriptElement,
     template: HTMLTemplateElement,
+    slot: HTMLSlotElement,
   };
 
   // Ranges hold real DOM boundary points. Fragment parsing uses the start
@@ -3004,6 +3390,10 @@
     HTMLCanvasElement,
     HTMLScriptElement,
     HTMLTemplateElement,
+    HTMLSlotElement,
+    ShadowRoot,
+    CustomElementRegistry,
+    customElements,
     CanvasRenderingContext2D,
     Document,
     HTMLDocument: Document,
