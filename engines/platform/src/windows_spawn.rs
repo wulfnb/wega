@@ -50,54 +50,6 @@ pub(crate) fn duplicate(raw: HANDLE, inherit: bool) -> io::Result<OwnedHandle> {
     }
     Ok(unsafe { OwnedHandle::from_raw_handle(copied.cast()) })
 }
-/// LPAC's read-only OS-registry capability is needed by the statically imported
-/// Windows runtime. No network, COM, user-file or device capability is granted.
-/// This SID is derived locally and verified exactly in the child token.
-fn registry_read_capability() -> io::Result<Vec<usize>> {
-    let mut groups: *mut PSID = std::ptr::null_mut();
-    let mut group_count = 0;
-    let mut sids: *mut PSID = std::ptr::null_mut();
-    let mut count = 0;
-    // SAFETY: the API allocates both SID arrays; every allocation is freed below.
-    if unsafe {
-        DeriveCapabilitySidsFromName(
-            string("registryRead").as_ptr(),
-            &mut groups,
-            &mut group_count,
-            &mut sids,
-            &mut count,
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    let result = (|| {
-        if count != 1 || sids.is_null() || unsafe { IsValidSid(*sids) } == 0 {
-            return Err(io::Error::other("Invalid registryRead capability SID"));
-        }
-        let bytes = unsafe { GetLengthSid(*sids) };
-        if bytes == 0 || bytes > 68 {
-            return Err(io::Error::other("Invalid capability SID length"));
-        }
-        let mut copy = vec![0_usize; (bytes as usize).div_ceil(size_of::<usize>())];
-        if unsafe { CopySid(bytes, copy.as_mut_ptr().cast(), *sids) } == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(copy)
-    })();
-    // The documented allocator is LocalFree for every SID and each array.
-    unsafe {
-        for (array, count) in [(groups, group_count), (sids, count)] {
-            if !array.is_null() {
-                for index in 0..count {
-                    LocalFree((*array.add(index as usize)).cast());
-                }
-                LocalFree(array.cast());
-            }
-        }
-    }
-    result
-}
 struct Profile {
     name: Vec<u16>,
     sid: PSID,
@@ -428,33 +380,23 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
     ];
     handles.extend(grants.iter().map(|handle| handle.as_raw_handle().cast()));
     handles.extend(gates.child_handles());
-    let mut attributes = Attributes::new(if required { 4 } else { 1 })?;
+    let mut attributes = Attributes::new(if required { 3 } else { 1 })?;
     attributes.handles(&mut handles)?;
-    let mut registry_sid = registry_read_capability()?;
-    let mut runtime_capability = SID_AND_ATTRIBUTES {
-        Sid: registry_sid.as_mut_ptr().cast(),
-        Attributes: windows_sys::Win32::System::SystemServices::SE_GROUP_ENABLED as u32,
-    };
     let capabilities = SECURITY_CAPABILITIES {
         AppContainerSid: profile
             .as_ref()
             .map(|profile| profile.sid)
             .unwrap_or(std::ptr::null_mut()),
-        Capabilities: &mut runtime_capability,
-        CapabilityCount: 1,
+        Capabilities: std::ptr::null_mut(),
+        CapabilityCount: 0,
         Reserved: 0,
     };
     let restricted_children = 1_u32;
-    let exclude_all_packages = 1_u32;
     if required {
         attributes.set(PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &capabilities)?;
         attributes.set(
             PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
             &restricted_children,
-        )?;
-        attributes.set(
-            PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY,
-            &exclude_all_packages,
         )?;
     }
     let mut startup: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
@@ -652,26 +594,11 @@ pub(crate) fn verify() -> io::Result<()> {
             &mut returned,
         )
     } == 0
-        || unsafe { *capabilities.as_ptr().cast::<u32>() } != 1
+        || unsafe { *capabilities.as_ptr().cast::<u32>() } != 0
     {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "Content AppContainer has unapproved capabilities",
-        ));
-    }
-    let mut expected = registry_read_capability()?;
-    if required < size_of::<TOKEN_GROUPS>() as u32 {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Truncated token capabilities",
-        ));
-    }
-    // SAFETY: the successful kernel query returned one group and the full header.
-    let groups = unsafe { &*capabilities.as_ptr().cast::<TOKEN_GROUPS>() };
-    if unsafe { EqualSid(groups.Groups[0].Sid, expected.as_mut_ptr().cast()) } == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Content token has an unapproved capability",
         ));
     }
     let mut in_job = 0;
