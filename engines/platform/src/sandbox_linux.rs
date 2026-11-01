@@ -127,6 +127,33 @@ fn install_filter() -> io::Result<()> {
         instruction(JGE, 0, 1, 0x40000000),
         instruction(RET, 0, 0, KILL),
     ];
+    // Tokio's signal driver uses an anonymous Unix stream pair. It creates no
+    // addressable endpoint: socket(), connect(), bind() and FD transfer remain
+    // denied, and no child process can receive these private descriptors.
+    filter.extend([
+        instruction(JEQ, 0, 7, libc::SYS_socketpair as u32),
+        instruction(LD, 0, 0, 16),
+        instruction(JEQ, 0, 4, libc::AF_UNIX as u32),
+        instruction(LD, 0, 0, 24),
+        instruction(
+            AND,
+            0,
+            0,
+            !(libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK) as u32,
+        ),
+        instruction(JEQ, 0, 1, libc::SOCK_STREAM as u32),
+        instruction(RET, 0, 0, ALLOW),
+        instruction(RET, 0, 0, EPERM),
+    ]);
+    // std/Tokio switch their anonymous signal streams to nonblocking with this
+    // request. No device/terminal ioctl family is generally available.
+    filter.extend([
+        instruction(JEQ, 0, 4, libc::SYS_ioctl as u32),
+        instruction(LD, 0, 0, 24),
+        instruction(JEQ, 0, 1, libc::FIONBIO as u32),
+        instruction(RET, 0, 0, ALLOW),
+        instruction(RET, 0, 0, EPERM),
+    ]);
     // clone3's pointed-to flags cannot be inspected by classic BPF. ENOSYS lets
     // pthread implementations fall back to clone; fork/vfork/exec are never allowed.
     filter.extend([

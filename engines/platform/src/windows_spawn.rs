@@ -367,6 +367,26 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
         .get_envs()
         .filter_map(|(key, value)| value.map(|value| (key.to_owned(), value.to_owned())))
         .collect();
+    if let Some(profile) = &profile {
+        // A caller-supplied Unicode environment is not a usable host profile for
+        // a lowbox child. Supply the documented AppContainer paths explicitly;
+        // KERNELBASE initialization must not resolve LOCALAPPDATA/TEMP outside
+        // the container. No global environment or directory ACL is changed.
+        let temporary = profile.folder.join("Temp");
+        std::fs::create_dir_all(&temporary)?;
+        environment.retain(|(key, _)| {
+            !["LOCALAPPDATA", "TMP", "TEMP", "TMPDIR"]
+                .iter()
+                .any(|name| key.to_string_lossy().eq_ignore_ascii_case(name))
+        });
+        environment.push((
+            "LOCALAPPDATA".into(),
+            profile.folder.clone().into_os_string(),
+        ));
+        for key in ["TMP", "TEMP", "TMPDIR"] {
+            environment.push((key.into(), temporary.clone().into_os_string()));
+        }
+    }
     environment.sort_by_key(|(key, _)| key.to_string_lossy().to_uppercase());
     let mut block = Vec::new();
     for (key, value) in environment {
