@@ -799,6 +799,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
+                Command::FrameNavigate { frame, url } => {
+                    let eval_script = format!(
+                        "(() => {{ const f = Array.from(document.querySelectorAll('iframe')).find(el => el.getAttribute('name') === '{frame}' || el.id === '{frame}'); if (f) f.src = '{url}'; }})()",
+                        frame = frame.0,
+                        url = url.replace('\'', "\\'")
+                    );
+                    let _ = view.evaluate(&eval_script);
+                    let origin = Url::parse(&url)
+                        .map(|u| u.origin().ascii_serialization())
+                        .unwrap_or_else(|_| "null".into());
+                    write(&Event::FrameNavigated {
+                        frame,
+                        url,
+                        origin,
+                    })?;
+                }
+                Command::FramePostMessage { target, origin: _, target_origin, message } => {
+                    let eval_script = format!(
+                        "(() => {{ const f = Array.from(document.querySelectorAll('iframe')).find(el => el.getAttribute('name') === '{target}' || el.id === '{target}'); if (f && f.contentWindow) f.contentWindow.postMessage({msg}, '{target_origin}'); }})()",
+                        target = target.0,
+                        msg = serde_json::to_string(&message).unwrap_or_else(|_| "\"\"".into()),
+                        target_origin = target_origin.as_deref().unwrap_or("*")
+                    );
+                    let _ = view.evaluate(&eval_script);
+                }
                 Command::Shutdown => break,
                 Command::CheckPageState(request) => {
                     let dirty =

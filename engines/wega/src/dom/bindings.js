@@ -580,6 +580,14 @@
       if (child?.parentNode !== this) {
         fail("NotFoundError", "Node is not a child");
       }
+      if (child?.localName === "iframe") {
+        const idx = childFrames.indexOf(child);
+        if (idx !== -1) childFrames.splice(idx, 1);
+        if (child._frameContext) {
+          child._frameContext.frameWindow.close();
+          child._frameContext = null;
+        }
+      }
       removedRangeNode(child);
       retainTree(child, false);
       host("remove", child._id);
@@ -1394,7 +1402,411 @@
       },
     });
 
-  class HTMLIFrameElement extends HTMLElement {}
+  class DOMTokenList {
+    constructor(element, attribute) {
+      this._element = element;
+      this._attr = attribute;
+    }
+    get length() {
+      return this._tokens().length;
+    }
+    _tokens() {
+      const val = this._element.getAttribute(this._attr) || "";
+      return val.trim() ? val.trim().split(/\s+/).filter(Boolean) : [];
+    }
+    item(index) {
+      return this._tokens()[index] || null;
+    }
+    contains(token) {
+      return this._tokens().includes(String(token));
+    }
+    add(...tokens) {
+      const set = new Set(this._tokens());
+      for (const t of tokens) {
+        if (!t || /\s/.test(t)) fail("InvalidCharacterError", "Invalid token");
+        set.add(String(t));
+      }
+      this._element.setAttribute(this._attr, [...set].join(" "));
+    }
+    remove(...tokens) {
+      const names = tokens.map(String);
+      const set = new Set(this._tokens().filter((t) => !names.includes(t)));
+      this._element.setAttribute(this._attr, [...set].join(" "));
+    }
+    toggle(token, force) {
+      const has = this.contains(token);
+      const shouldHave = force !== undefined ? Boolean(force) : !has;
+      if (shouldHave) this.add(token);
+      else this.remove(token);
+      return shouldHave;
+    }
+    toString() {
+      return this._element.getAttribute(this._attr) || "";
+    }
+    get value() {
+      return this.toString();
+    }
+    set value(v) {
+      this._element.setAttribute(this._attr, String(v));
+    }
+    [Symbol.iterator]() {
+      return this._tokens()[Symbol.iterator]();
+    }
+  }
+
+  const PERMITTED_CROSS_ORIGIN_PROPERTIES = new Set([
+    "postMessage",
+    "location",
+    "close",
+    "closed",
+    "focus",
+    "blur",
+    "parent",
+    "top",
+    "self",
+    "window",
+    "frames",
+    "length",
+    Symbol.toStringTag,
+  ]);
+
+  function isSameOrigin(originA, originB) {
+    if (!originA || !originB || originA === "null" || originB === "null") {
+      return false;
+    }
+    return originA === originB;
+  }
+
+  const childFrames = [];
+
+  function createFrameContext(iframeElement) {
+    const parentOrigin = document.location ? document.location.origin : "null";
+    const parentHref = document.location ? document.location.href : "about:blank";
+    const src = iframeElement.getAttribute("src") || "about:blank";
+    const isSrcdoc = iframeElement.hasAttribute("srcdoc");
+    const isSandboxed = iframeElement.hasAttribute("sandbox");
+    const allowSameOrigin = isSandboxed && iframeElement.sandbox.contains("allow-same-origin");
+    const allowScripts = !isSandboxed || iframeElement.sandbox.contains("allow-scripts");
+
+    let origin = "null";
+    let frameUrl = src;
+    if (isSrcdoc) {
+      frameUrl = "about:srcdoc";
+      if (!isSandboxed || allowSameOrigin) {
+        origin = parentOrigin;
+      }
+    } else if (src === "about:blank") {
+      if (!isSandboxed || allowSameOrigin) {
+        origin = parentOrigin;
+      }
+    } else {
+      try {
+        const resolved = new URL(src, document.baseURI || parentHref);
+        frameUrl = resolved.href;
+        if (!isSandboxed || allowSameOrigin) {
+          origin = resolved.origin;
+        }
+      } catch {
+        origin = "null";
+      }
+    }
+
+    const frameDoc = new Document();
+    frameDoc._isFrameDocument = true;
+    frameDoc._ownerFrame = iframeElement;
+
+    const html = frameDoc.createElement("html");
+    const head = frameDoc.createElement("head");
+    const body = frameDoc.createElement("body");
+    html.appendChild(head);
+    html.appendChild(body);
+    frameDoc.appendChild(html);
+
+    if (isSrcdoc) {
+      body.innerHTML = iframeElement.getAttribute("srcdoc") || "";
+    }
+
+    const frameLocation = {
+      _href: frameUrl,
+      _origin: origin,
+      get href() {
+        return this._href;
+      },
+      set href(v) {
+        this._href = String(v);
+        iframeElement.setAttribute("src", String(v));
+      },
+      get origin() {
+        return this._origin;
+      },
+      get protocol() {
+        try { return new URL(this._href).protocol; } catch { return ":"; }
+      },
+      get host() {
+        try { return new URL(this._href).host; } catch { return ""; }
+      },
+      get hostname() {
+        try { return new URL(this._href).hostname; } catch { return ""; }
+      },
+      get port() {
+        try { return new URL(this._href).port; } catch { return ""; }
+      },
+      get pathname() {
+        try { return new URL(this._href).pathname; } catch { return "/"; }
+      },
+      get search() {
+        try { return new URL(this._href).search; } catch { return ""; }
+      },
+      get hash() {
+        try { return new URL(this._href).hash; } catch { return ""; }
+      },
+      replace(v) { this.href = v; },
+      assign(v) { this.href = v; },
+      reload() { iframeElement._updateFrame(); },
+      toString() { return this._href; },
+    };
+
+    const listeners = new Map();
+    let isClosed = false;
+
+    const frameWindow = {
+      document: frameDoc,
+      location: frameLocation,
+      get closed() { return isClosed; },
+      close() { isClosed = true; },
+      focus() {},
+      blur() {},
+      parent: globalThis,
+      top: globalThis.top || globalThis,
+      frameElement: iframeElement,
+      length: 0,
+      name: iframeElement.getAttribute("name") || "",
+      addEventListener(type, listener, options) {
+        if (!listeners.has(type)) listeners.set(type, new Set());
+        listeners.get(type).add(listener);
+      },
+      removeEventListener(type, listener, options) {
+        listeners.get(type)?.delete(listener);
+      },
+      dispatchEvent(event) {
+        const set = listeners.get(event.type);
+        if (set) {
+          for (const l of [...set]) {
+            try {
+              if (typeof l === "function") l.call(frameWindow, event);
+              else if (typeof l?.handleEvent === "function") l.handleEvent(event);
+            } catch (e) {
+              report(e);
+            }
+          }
+        }
+        return !event.defaultPrevented;
+      },
+      postMessage(message, targetOrigin = "*", transfer = []) {
+        dispatchCrossFrameMessage(globalThis, frameWindow, message, targetOrigin, transfer);
+      },
+    };
+
+    frameWindow.self = frameWindow;
+    frameWindow.window = frameWindow;
+    frameWindow.frames = frameWindow;
+    frameDoc._defaultView = frameWindow;
+    frameDoc._location = frameLocation;
+
+    const windowProxy = new Proxy(frameWindow, {
+      get(target, prop, receiver) {
+        const callerOrigin = document.location ? document.location.origin : "null";
+        const targetOrigin = target.location.origin;
+        const same = isSameOrigin(callerOrigin, targetOrigin);
+
+        if (!same) {
+          if (prop === "location") {
+            return new Proxy({}, {
+              get(locTarget, locProp) {
+                if (locProp === "replace") return (url) => { target.location.replace(url); };
+                if (locProp === "assign") return (url) => { target.location.assign(url); };
+                fail(
+                  "SecurityError",
+                  `Blocked a frame with origin "${callerOrigin}" from accessing "${String(locProp)}" on cross-origin Location.`
+                );
+              },
+              set(locTarget, locProp, val) {
+                if (locProp === "href") {
+                  target.location.href = val;
+                  return true;
+                }
+                fail(
+                  "SecurityError",
+                  `Blocked a frame with origin "${callerOrigin}" from setting "${String(locProp)}" on cross-origin Location.`
+                );
+              },
+            });
+          }
+          if (prop === "postMessage") {
+            return function(msg, tgtOrigin = "*", trans = []) {
+              dispatchCrossFrameMessage(globalThis, target, msg, tgtOrigin, trans);
+            };
+          }
+          if (prop === "window" || prop === "self" || prop === "frames") {
+            return receiver;
+          }
+          if (!PERMITTED_CROSS_ORIGIN_PROPERTIES.has(prop)) {
+            fail(
+              "SecurityError",
+              `Blocked a frame with origin "${callerOrigin}" from accessing a cross-origin frame.`
+            );
+          }
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+      set(target, prop, value, receiver) {
+        const callerOrigin = document.location ? document.location.origin : "null";
+        const targetOrigin = target.location.origin;
+        const same = isSameOrigin(callerOrigin, targetOrigin);
+
+        if (!same) {
+          if (prop === "location") {
+            target.location.href = value;
+            return true;
+          }
+          fail(
+            "SecurityError",
+            `Blocked a frame with origin "${callerOrigin}" from modifying a cross-origin frame.`
+          );
+        }
+        return Reflect.set(target, prop, value, receiver);
+      },
+    });
+
+    return { frameWindow, windowProxy, frameDoc, allowScripts };
+  }
+
+  function dispatchCrossFrameMessage(sourceWindow, targetWindow, message, targetOrigin, transfer) {
+    if (typeof targetOrigin !== "string") {
+      throw new TypeError("Failed to execute 'postMessage': 2nd argument must be a string.");
+    }
+    const targetNorm = targetOrigin.trim();
+    if (targetNorm !== "*" && targetNorm !== "/") {
+      try {
+        new URL(targetNorm);
+      } catch {
+        fail(
+          "SyntaxError",
+          `Failed to execute 'postMessage': The target origin provided ('${targetOrigin}') is not a valid absolute URL.`
+        );
+      }
+    }
+
+    const sourceOrigin = sourceWindow.location ? sourceWindow.location.origin : "null";
+    const receiverOrigin = targetWindow.location ? targetWindow.location.origin : "null";
+
+    if (targetNorm !== "*") {
+      if (targetNorm === "/") {
+        if (!isSameOrigin(sourceOrigin, receiverOrigin)) return;
+      } else {
+        if (receiverOrigin !== targetNorm) return;
+      }
+    }
+
+    let cloned;
+    try {
+      cloned = typeof structuredClone === "function" ? structuredClone(message) : JSON.parse(JSON.stringify(message));
+    } catch {
+      cloned = message;
+    }
+
+    queueMicrotask(() => {
+      if (targetWindow.closed) return;
+      const event = new (web ? web.MessageEvent : Event)("message", {
+        data: cloned,
+        origin: sourceOrigin,
+        source: sourceWindow,
+        ports: transfer || [],
+      });
+      event.data = cloned;
+      event.origin = sourceOrigin;
+      event.source = sourceWindow;
+      targetWindow.dispatchEvent(event);
+      if (typeof targetWindow.onmessage === "function") {
+        try {
+          targetWindow.onmessage(event);
+        } catch (e) {
+          report(e);
+        }
+      }
+    });
+  }
+
+  class HTMLIFrameElement extends HTMLElement {
+    constructor(id, info) {
+      super(id, info);
+      this._frameContext = null;
+    }
+    _ensureFrame() {
+      if (!this._frameContext) {
+        this._frameContext = createFrameContext(this);
+        if (!childFrames.includes(this)) {
+          childFrames.push(this);
+        }
+      }
+      return this._frameContext;
+    }
+    _updateFrame() {
+      if (this._frameContext) {
+        const idx = childFrames.indexOf(this);
+        if (idx !== -1) childFrames.splice(idx, 1);
+        this._frameContext = null;
+      }
+      this._ensureFrame();
+    }
+    get contentWindow() {
+      return this._ensureFrame().windowProxy;
+    }
+    get contentDocument() {
+      const ctx = this._ensureFrame();
+      const callerOrigin = document.location ? document.location.origin : "null";
+      const targetOrigin = ctx.frameWindow.location.origin;
+      if (isSameOrigin(callerOrigin, targetOrigin)) {
+        return ctx.frameDoc;
+      }
+      return null;
+    }
+    get src() {
+      return this.getAttribute("src") || "";
+    }
+    set src(val) {
+      this.setAttribute("src", val);
+      this._updateFrame();
+    }
+    get srcdoc() {
+      return this.getAttribute("srcdoc") || "";
+    }
+    set srcdoc(val) {
+      this.setAttribute("srcdoc", val);
+      this._updateFrame();
+    }
+    get name() {
+      return this.getAttribute("name") || "";
+    }
+    set name(val) {
+      this.setAttribute("name", val);
+    }
+    get width() {
+      return this.getAttribute("width") || "";
+    }
+    set width(val) {
+      this.setAttribute("width", val);
+    }
+    get height() {
+      return this.getAttribute("height") || "";
+    }
+    set height(val) {
+      this.setAttribute("height", val);
+    }
+    get sandbox() {
+      return new DOMTokenList(this, "sandbox");
+    }
+  }
   Object.defineProperty(Element.prototype, "form", {
     get() {
       if (
@@ -1609,10 +2021,16 @@
   }
   function prepareInserted(node) {
     if (node?.nodeType !== 1) return;
+    if (node.localName === "iframe") {
+      node._ensureFrame();
+    }
     if (isScript(node)) prepareScript(node);
-    else if (node.firstElementChild)
+    else if (node.firstElementChild) {
+      for (const iframe of node.querySelectorAll("iframe"))
+        iframe._ensureFrame();
       for (const script of node.querySelectorAll("script"))
         prepareScript(script);
+    }
   }
   class HTMLTemplateElement extends HTMLElement {
     get content() {
@@ -2166,16 +2584,18 @@
       return range;
     }
     get defaultView() {
-      return this === document ? globalThis : null;
+      return this === document ? globalThis : (this._defaultView || null);
     }
     get location() {
-      return this === document ? globalThis.location : null;
+      return this === document ? globalThis.location : (this._location || null);
     }
     set location(value) {
       if (this === document) globalThis.location.href = String(value);
+      else if (this._location) this._location.href = String(value);
     }
     get URL() {
-      return host("url");
+      if (this === document) return host("url");
+      return this._location ? this._location.href : "about:blank";
     }
     get documentURI() {
       return this.URL;
@@ -2563,6 +2983,7 @@
     "hashchange",
     "DOMContentLoaded",
     "error",
+    "message",
   ])
     defineHandler(globalThis, name);
   Object.assign(globalThis, {
@@ -2571,6 +2992,7 @@
     HTMLElement,
     SVGElement,
     HTMLIFrameElement,
+    DOMTokenList,
     HTMLInputElement,
     HTMLTextAreaElement,
     HTMLSelectElement,
@@ -2603,6 +3025,11 @@
     self: globalThis,
     top: globalThis,
     parent: globalThis,
+    frames: globalThis,
+    frameElement: null,
+    postMessage(message, targetOrigin = "*", transfer = []) {
+      dispatchCrossFrameMessage(globalThis, globalThis, message, targetOrigin, transfer);
+    },
     navigator: {
       userAgent:
         "Mozilla/5.0 (compatible; Wega/0.2; Blitz) AppleWebKit/537.36 (KHTML, like Gecko)",
@@ -2818,4 +3245,27 @@
         ),
     },
   });
+  function getChildFrames() {
+    if (!document) return [];
+    try {
+      return Array.from(document.querySelectorAll("iframe"));
+    } catch {
+      return [];
+    }
+  }
+  Object.defineProperty(globalThis, "length", {
+    get() {
+      return getChildFrames().length;
+    },
+    configurable: true,
+  });
+  for (let i = 0; i < 32; i++) {
+    Object.defineProperty(globalThis, i, {
+      get() {
+        const frames = getChildFrames();
+        return frames[i]?.contentWindow;
+      },
+      configurable: true,
+    });
+  }
 })();

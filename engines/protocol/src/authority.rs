@@ -5,20 +5,57 @@ use crate::{
 };
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Origin {
     Tuple(String),
     /// Opaque/unknown origins cannot receive remembered or device permissions.
     Opaque,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl Origin {
+    pub fn is_same_origin(&self, other: &Origin) -> bool {
+        match (self, other) {
+            (Origin::Tuple(a), Origin::Tuple(b)) => a == b,
+            _ => false,
+        }
+    }
+
+    pub fn allows_target_origin(&self, target_origin: &str) -> bool {
+        if target_origin == "*" {
+            return true;
+        }
+        match self {
+            Origin::Tuple(origin) => origin == target_origin,
+            Origin::Opaque => false,
+        }
+    }
+}
+
+/// Permitted cross-origin window properties per HTML § 7.2.3.
+pub const CROSS_ORIGIN_WINDOW_PROPERTIES: &[&str] = &[
+    "postMessage",
+    "location",
+    "close",
+    "closed",
+    "parent",
+    "top",
+    "self",
+    "window",
+    "frames",
+    "length",
+];
+
+pub fn is_permitted_cross_origin_property(property: &str) -> bool {
+    CROSS_ORIGIN_WINDOW_PROPERTIES.contains(&property)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Principal {
     pub origin: Origin,
     pub top_level_site: Option<(String, String)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TrustedRequest {
     pub session: SessionIdentity,
     pub document: DocumentContext,

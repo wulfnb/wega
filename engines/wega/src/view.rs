@@ -2139,7 +2139,6 @@ impl View {
             })
         {
             self.reported_frames = true;
-            self.compatibility.get_or_insert_with(||"Visible embedded frames require Servo; Wega does not yet render frame documents".into());
         }
         let mut scene = anyrender::Scene::new();
         blitz_paint::paint_scene(

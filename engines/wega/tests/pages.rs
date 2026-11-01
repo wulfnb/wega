@@ -24,7 +24,7 @@ fn document_titles_collapse_html_whitespace_but_preserve_nonbreaking_spaces() {
     assert_eq!(view.title(), "Updated title");
 }
 #[test]
-fn visible_frames_report_compatibility_once_but_hidden_feature_probes_do_not() {
+fn visible_frames_render_natively_without_compatibility_fallback() {
     let mut view = page(Limits::default());
     view.set_html("<iframe id=f style='display:none'></iframe><iframe width=1 height=1></iframe>")
         .unwrap();
@@ -33,19 +33,12 @@ fn visible_frames_report_compatibility_once_but_hidden_feature_probes_do_not() {
     view.evaluate("document.getElementById('f').style.display='block'")
         .unwrap();
     view.paint(300, 200, 1.0, 1.0, false).unwrap();
-    assert!(
-        view.compatibility
-            .take()
-            .unwrap()
-            .contains("embedded frames")
-    );
-    view.paint(300, 200, 1.0, 1.0, false).unwrap();
     assert!(view.compatibility.is_none());
     view.set_html("<iframe></iframe>").unwrap();
     view.paint(300, 200, 1.0, 1.0, false).unwrap();
     assert!(
-        view.compatibility.is_some(),
-        "new documents get their own compatibility report"
+        view.compatibility.is_none(),
+        "natively rendered frames never report compatibility degradation"
     );
 }
 #[test]
