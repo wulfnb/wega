@@ -258,6 +258,11 @@ Keep diagnostics available from this step onward, not only after full DevTools.
 failure and genuine assertion failure; a wrong-engine capture fails validation.
 Record per-suite counts and exclusions rather than a whole-Web pass percentage.
 
+**Integration status (1 November 2026): partial implementation merged.** Protocol
+capture/navigation/diagnostic support and Rust subprocess harness sources are
+present. The full framework/WPT matrix and runtime acceptance remain pending;
+see the [post-merge gaps](step-05-sandbox-and-supervision.md).
+
 ### 04 — Make network, cookies and storage access authoritative
 
 **Depends on:** 02, 03.
@@ -276,6 +281,12 @@ network targets and cross-container credentials are covered by adversarial tests
 policy is enforced at the service boundary. Test loopback access via explicit test
 policy. HTTP/2/3 availability is measured and audited rather than assumed.
 
+**Integration status (1 November 2026): partial implementation merged.** Request
+destinations, origin checks, private-network controls and in-memory HSTS sources
+are present, with inherited Unix service transport added during Step 05. Document
+authority, bypass removal, native resource brokers and adversarial runtime proof
+remain pending; see the [authority audit](step-05-sandbox-and-supervision.md).
+
 ### 05 — Sandbox and supervise content processes
 
 **Depends on:** 04.
@@ -292,11 +303,12 @@ reads, writes, process launch and direct network connections while normal fixtur
 work. Unsupported sandbox setup fails closed for release browsing; any development
 escape hatch is explicit. Killing a worker releases its resources and grants.
 
-**Implementation status (31 October 2026): in progress.** Host supervision,
+**Implementation status (1 November 2026): in progress.** Host supervision,
 resource admission, launch hygiene, Linux baseline hardening, Windows jobs and
-fail-closed required mode are implemented in the
+fail-closed required mode, inherited Unix broker/frame grants and bounded browser
+frame copies are implemented in the
 [Step 05 foundation](step-05-sandbox-and-supervision.md). Required browsing remains
-blocked until Step 04's transport/resource brokers and real platform sandboxes
+blocked until Step 04's request authority/resource brokers and real platform sandboxes
 are integrated. Runtime tests/probes remain deferred by the owner.
 
 ### 06 — Consolidate the document host and event loop

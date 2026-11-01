@@ -1,6 +1,8 @@
 //! Bounded HTTP/cache/cookie broker. Capabilities travel only over private worker IPC.
 //! The loopback socket speaks a binary-framed protocol, never HTTP or WebSocket.
 use serde::{Deserialize, Serialize};
+mod connection;
+use connection::Connection;
 use std::{
     collections::{HashMap, VecDeque},
     io::{Read, Write},
@@ -40,9 +42,7 @@ fn is_private_or_loopback(host: &str) -> bool {
                     || (octets[0] == 169 && octets[1] == 254)
                     || octets[0] == 0
             }
-            std::net::IpAddr::V6(v6) => {
-                v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00
-            }
+            std::net::IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
         }
     } else {
         false
@@ -79,6 +79,9 @@ pub struct HstsPolicy {
 impl HstsPolicy {
     pub fn update(&mut self, host: &str, header_val: &str) {
         let host = host.trim_end_matches('.').to_ascii_lowercase();
+        if host.is_empty() || host.len() > 253 || header_val.len() > MAX_HEADER {
+            return;
+        }
         let mut max_age = None;
         let mut include_subdomains = false;
         for part in header_val.split(';') {
@@ -95,10 +98,29 @@ impl HstsPolicy {
             if age == 0 {
                 self.entries.remove(&host);
             } else {
+                // Bound server-controlled state and duration arithmetic. A hostile
+                // max-age must not panic and permanently remove a broker worker.
+                let now = Instant::now();
+                let Some(expires_at) =
+                    now.checked_add(Duration::from_secs(age.min(365 * 24 * 60 * 60)))
+                else {
+                    return;
+                };
+                self.entries.retain(|_, entry| entry.expires_at > now);
+                if self.entries.len() >= 4096
+                    && !self.entries.contains_key(&host)
+                    && let Some(oldest) = self
+                        .entries
+                        .iter()
+                        .min_by_key(|(_, entry)| entry.expires_at)
+                        .map(|(host, _)| host.clone())
+                {
+                    self.entries.remove(&oldest);
+                }
                 self.entries.insert(
                     host,
                     HstsEntry {
-                        expires_at: Instant::now() + Duration::from_secs(age),
+                        expires_at,
                         include_subdomains,
                     },
                 );
@@ -110,16 +132,17 @@ impl HstsPolicy {
         let now = Instant::now();
         self.entries.retain(|_, entry| entry.expires_at > now);
         let host = host.trim_end_matches('.').to_ascii_lowercase();
-        if let Some(entry) = self.entries.get(&host) {
-            if entry.expires_at > now {
-                return true;
-            }
+        if let Some(entry) = self.entries.get(&host)
+            && entry.expires_at > now
+        {
+            return true;
         }
         for (domain, entry) in &self.entries {
-            if entry.include_subdomains && entry.expires_at > now {
-                if host.ends_with(&format!(".{domain}")) {
-                    return true;
-                }
+            if entry.include_subdomains
+                && entry.expires_at > now
+                && host.ends_with(&format!(".{domain}"))
+            {
+                return true;
             }
         }
         false
@@ -162,13 +185,20 @@ impl Policy {
             return Err("Network request blocked by browsing policy".into());
         }
         if self.blocked_destinations.contains(&request.destination) {
-            return Err(format!("Resource destination {:?} blocked by policy", request.destination));
+            return Err(format!(
+                "Resource destination {:?} blocked by policy",
+                request.destination
+            ));
         }
         let target_host = url.host_str().unwrap_or_default();
         if is_private_or_loopback(target_host) && !self.allow_loopback {
             let allowed_explicitly = self.allowed_hosts.split_whitespace().any(|rule| {
-                let rule = rule.trim_start_matches("*.").trim_end_matches('.').to_ascii_lowercase();
-                !rule.is_empty() && (target_host == rule || target_host.ends_with(&format!(".{rule}")))
+                let rule = rule
+                    .trim_start_matches("*.")
+                    .trim_end_matches('.')
+                    .to_ascii_lowercase();
+                !rule.is_empty()
+                    && (target_host == rule || target_host.ends_with(&format!(".{rule}")))
             });
             if !allowed_explicitly {
                 let initiator_is_private = request
@@ -185,8 +215,15 @@ impl Policy {
                     .next()
                     .unwrap_or("");
                 let origin_is_private = is_private_or_loopback(origin_host);
-                if !initiator_is_private && !origin_is_private && !request.origin.is_empty() && request.origin != "null" {
-                    return Err(format!("Private network target '{}' blocked by policy", target_host));
+                if !initiator_is_private
+                    && !origin_is_private
+                    && !request.origin.is_empty()
+                    && request.origin != "null"
+                {
+                    return Err(format!(
+                        "Private network target '{}' blocked by policy",
+                        target_host
+                    ));
                 }
             }
         }
@@ -422,9 +459,15 @@ impl LocalClient {
     ) -> Result<Response, String> {
         request.validate()?;
         let mut url = Url::parse(&request.url).map_err(|e| e.to_string())?;
-        if url.scheme() == "http" && let Some(hsts) = hsts {
+        if url.scheme() == "http"
+            && let Some(hsts) = hsts
+        {
             let host = url.host_str().unwrap_or_default();
-            if hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).should_upgrade(host) {
+            if hsts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .should_upgrade(host)
+            {
                 let _ = url.set_scheme("https");
                 if url.port() == Some(80) {
                     let _ = url.set_port(None);
@@ -544,7 +587,9 @@ impl LocalClient {
                     if url.scheme() == "https" && next.scheme() == "http" {
                         let next_host = next.host_str().unwrap_or_default();
                         let upgraded = if let Some(hsts) = hsts {
-                            hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).should_upgrade(next_host)
+                            hsts.lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .should_upgrade(next_host)
                         } else {
                             false
                         };
@@ -554,7 +599,9 @@ impl LocalClient {
                                 let _ = next.set_port(None);
                             }
                         } else {
-                            return Err("Insecure redirect downgrade from HTTPS to HTTP forbidden".into());
+                            return Err(
+                                "Insecure redirect downgrade from HTTPS to HTTP forbidden".into()
+                            );
                         }
                     }
                     policy
@@ -594,12 +641,16 @@ impl LocalClient {
                 redirected: hop > 0,
                 body: bytes,
             };
-            if url.scheme() == "https" && let Some(hsts) = hsts {
+            if url.scheme() == "https"
+                && let Some(hsts) = hsts
+            {
                 for (name, val) in &response.headers {
-                    if name.eq_ignore_ascii_case("strict-transport-security") {
-                        if let Some(host) = url.host_str() {
-                            hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).update(host, val);
-                        }
+                    if name.eq_ignore_ascii_case("strict-transport-security")
+                        && let Some(host) = url.host_str()
+                    {
+                        hsts.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .update(host, val);
                     }
                 }
             }
@@ -621,6 +672,9 @@ struct Session {
     scope: String,
     identity: ServiceIdentity,
     bound: bool,
+    inherited_only: AtomicBool,
+    #[cfg(unix)]
+    channels: Mutex<Vec<Arc<std::os::unix::net::UnixStream>>>,
     revoked: AtomicBool,
     navigation: Mutex<NavigationReceipt>,
 }
@@ -710,6 +764,16 @@ impl SessionHandle {
     }
     pub fn revoke(&self) {
         self.session.revoked.store(true, Ordering::Release);
+        #[cfg(unix)]
+        for channel in self
+            .session
+            .channels
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+        {
+            let _ = channel.shutdown(std::net::Shutdown::Both);
+        }
         self.broker
             .sessions
             .lock()
@@ -746,6 +810,111 @@ impl SessionHandle {
 impl Drop for SessionHandle {
     fn drop(&mut self) {
         self.revoke();
+    }
+}
+
+#[cfg(unix)]
+impl SessionHandle {
+    /// Each preconnected endpoint is tied to this service, independent of a token
+    /// supplied inside the packet. This session can no longer use the TCP listener.
+    pub fn inherited_channels(
+        &self,
+        count: usize,
+    ) -> Result<Vec<std::os::unix::net::UnixStream>, String> {
+        use std::os::unix::net::UnixStream;
+        if !self.session.bound
+            || count == 0
+            || count > 4
+            || self.session.revoked.load(Ordering::Acquire)
+        {
+            return Err("Invalid inherited broker session".into());
+        }
+        if self.session.inherited_only.swap(true, Ordering::AcqRel) {
+            return Err("Broker transport already selected".into());
+        }
+        // Serialize publication with revoke(), including the revoked check. A
+        // revocation during setup must not miss a newly created idle endpoint.
+        let mut published = self
+            .session
+            .channels
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.session.revoked.load(Ordering::Acquire) {
+            return Err("Revoked broker capability".into());
+        }
+        let mut children = Vec::new();
+        let mut controllers = Vec::new();
+        for _ in 0..count {
+            let (server, child) = UnixStream::pair().map_err(|error| error.to_string())?;
+            server
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .map_err(|error| error.to_string())?;
+            let controller = Arc::new(server.try_clone().map_err(|error| error.to_string())?);
+            controllers.push(controller.clone());
+            let broker = self.broker.clone();
+            let expected = self.session.clone();
+            std::thread::Builder::new()
+                .name("wega-broker-channel".into())
+                .spawn(move || {
+                    let _shutdown = ChannelShutdown(controller);
+                    let mut stream = server;
+                    loop {
+                        let _ = stream.set_read_timeout(None);
+                        let mut first = [0_u8];
+                        if stream.read_exact(&mut first).is_err() {
+                            break;
+                        }
+                        if stream
+                            .set_read_timeout(Some(Duration::from_secs(20)))
+                            .is_err()
+                        {
+                            break;
+                        }
+                        let mut connection = Connection::Unix(stream);
+                        let result =
+                            broker.accept(&mut connection, Some(&expected), Some(first[0]));
+                        let failed = match result {
+                            Ok(Some(done)) => !done.recv().unwrap_or(false),
+                            Ok(None) => false,
+                            Err(error) => {
+                                let _ = write_packet(&mut connection, &Reply::Error(error), &[]);
+                                true
+                            }
+                        };
+                        let Connection::Unix(returned) = connection else {
+                            unreachable!()
+                        };
+                        stream = returned;
+                        if failed || expected.revoked.load(Ordering::Acquire) {
+                            break;
+                        }
+                    }
+                })
+                .map_err(|error| error.to_string())?;
+            children.push(child);
+        }
+        *published = controllers;
+        Ok(children)
+    }
+}
+
+struct Completion {
+    done: Option<mpsc::Sender<bool>>,
+    reusable: bool,
+}
+#[cfg(unix)]
+struct ChannelShutdown(Arc<std::os::unix::net::UnixStream>);
+#[cfg(unix)]
+impl Drop for ChannelShutdown {
+    fn drop(&mut self) {
+        let _ = self.0.shutdown(std::net::Shutdown::Both);
+    }
+}
+impl Drop for Completion {
+    fn drop(&mut self) {
+        if let Some(done) = self.done.take() {
+            let _ = done.send(self.reusable);
+        }
     }
 }
 type Job = Box<dyn FnOnce() + Send>;
@@ -806,10 +975,11 @@ impl Broker {
             .spawn(move || {
                 for stream in listener.incoming() {
                     let Some(broker) = weak.upgrade() else { break };
-                    if let Ok(mut stream) = stream {
+                    if let Ok(stream) = stream {
                         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
                         let _ = stream.set_write_timeout(Some(Duration::from_secs(20)));
-                        let result = broker.accept(&mut stream);
+                        let mut stream = Connection::Tcp(stream);
+                        let result = broker.accept(&mut stream, None, None);
                         if let Err(error) = result {
                             let _ = write_packet(&mut stream, &Reply::Error(error), &[]);
                         }
@@ -877,6 +1047,9 @@ impl Broker {
                 partition,
             },
             bound,
+            inherited_only: AtomicBool::new(false),
+            #[cfg(unix)]
+            channels: Mutex::new(Vec::new()),
             revoked: AtomicBool::new(false),
             navigation: Mutex::new(NavigationReceipt::default()),
             policy: RwLock::new(policy),
@@ -895,8 +1068,13 @@ impl Broker {
             token,
         })
     }
-    fn accept(self: &Arc<Self>, stream: &mut TcpStream) -> Result<(), String> {
-        let (request, bytes): (WireRequest, usize) = read_header(stream)?;
+    fn accept(
+        self: &Arc<Self>,
+        stream: &mut Connection,
+        expected: Option<&Arc<Session>>,
+        first: Option<u8>,
+    ) -> Result<Option<mpsc::Receiver<bool>>, String> {
+        let (request, bytes): (WireRequest, usize) = read_header_prefix(stream, first)?;
         let token = match &request {
             WireRequest::Fetch { token, .. }
             | WireRequest::CookieGet { token, .. }
@@ -911,6 +1089,11 @@ impl Broker {
             .ok_or("Invalid broker capability")?;
         if session.revoked.load(Ordering::Acquire) {
             return Err("Revoked broker capability".into());
+        }
+        if expected.is_some_and(|expected| !Arc::ptr_eq(expected, &session))
+            || (expected.is_none() && session.inherited_only.load(Ordering::Acquire))
+        {
+            return Err("Broker endpoint/session mismatch".into());
         }
         let identity = match &request {
             WireRequest::Fetch { identity, .. }
@@ -957,7 +1140,7 @@ impl Broker {
                 } else {
                     String::new()
                 };
-                write_packet(stream, &Reply::Cookie(String::new()), value.as_bytes())
+                write_packet(stream, &Reply::Cookie(String::new()), value.as_bytes()).map(|_| None)
             }
             WireRequest::CookieSet {
                 url,
@@ -981,7 +1164,7 @@ impl Broker {
                 if policy.permits(&url) {
                     session.cookies.set(&url, &value, script, context)
                 };
-                write_packet(stream, &Reply::Done, &[])
+                write_packet(stream, &Reply::Done, &[]).map(|_| None)
             }
             WireRequest::Fetch { mut request, .. } => {
                 request.validate()?;
@@ -989,16 +1172,28 @@ impl Broker {
                     return Err("Upload exceeds its size limit".into());
                 };
                 if session.bound && !request.top_level {
-                    let receipt = session.navigation.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let receipt = session
+                        .navigation
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     if let Some(ref committed) = receipt.last {
                         let committed_origin = committed.origin().ascii_serialization();
-                        if !request.origin.is_empty() && request.origin != "null" && request.origin != committed_origin {
-                            return Err(format!("Spoofed request origin '{}' does not match session origin '{}'", request.origin, committed_origin));
+                        if !request.origin.is_empty()
+                            && request.origin != "null"
+                            && request.origin != committed_origin
+                        {
+                            return Err(format!(
+                                "Spoofed request origin '{}' does not match session origin '{}'",
+                                request.origin, committed_origin
+                            ));
                         }
-                        if let Some(ref initiator) = request.initiator {
-                            if initiator.origin().ascii_serialization() != committed_origin {
-                                return Err(format!("Spoofed request initiator '{}' does not match session origin '{}'", initiator, committed_origin));
-                            }
+                        if let Some(ref initiator) = request.initiator
+                            && initiator.origin().ascii_serialization() != committed_origin
+                        {
+                            return Err(format!(
+                                "Spoofed request initiator '{}' does not match session origin '{}'",
+                                initiator, committed_origin
+                            ));
                         }
                     }
                 }
@@ -1006,8 +1201,14 @@ impl Broker {
                 let client = self.client.clone();
                 // Cache/session data outlives the native page only for this bounded job.
                 let broker = self.clone();
+                let (done, completed) = mpsc::channel();
                 self.jobs
                     .try_send(Box::new(move || {
+                        let mut completion = Completion {
+                            done: Some(done),
+                            reusable: false,
+                        };
+                        let mut body_read = false;
                         let result = (|| {
                             if session.revoked.load(Ordering::Acquire) {
                                 return Err("Revoked broker capability".into());
@@ -1016,6 +1217,7 @@ impl Broker {
                             stream
                                 .read_exact(&mut request.body)
                                 .map_err(|e| e.to_string())?;
+                            body_read = true;
                             let response = client.fetch_cached(
                                 &request,
                                 &session.policy,
@@ -1055,26 +1257,33 @@ impl Broker {
                             }
                             Ok(response)
                         })();
-                        match result {
+                        let written = match result {
                             Ok(mut response) => {
                                 let body = std::mem::take(&mut response.body);
-                                let _ =
-                                    write_packet(&mut stream, &Reply::Response(response), &body);
+                                write_packet(&mut stream, &Reply::Response(response), &body)
                             }
-                            Err(error) => {
-                                let _ = write_packet(&mut stream, &Reply::Error(error), &[]);
-                            }
-                        }
+                            Err(error) => write_packet(&mut stream, &Reply::Error(error), &[]),
+                        };
+                        // A partial body, failed reply or panic destroys framing.
+                        // Never read another request on that channel afterward.
+                        completion.reusable = body_read && written.is_ok();
                     }))
-                    .map_err(|_| "Shared network queue is full".to_string())
+                    .map_err(|_| "Shared network queue is full".to_string())?;
+                Ok(Some(completed))
             }
         }
     }
 }
 
 #[derive(Clone)]
+enum Endpoint {
+    Tcp(SocketAddr),
+    #[cfg(unix)]
+    Inherited(Arc<connection::Pool>),
+}
+#[derive(Clone)]
 pub struct Remote {
-    address: SocketAddr,
+    endpoint: Endpoint,
     token: String,
     identity: Option<ServiceIdentity>,
 }
@@ -1085,7 +1294,7 @@ impl Remote {
             return Err("Invalid broker capability".into());
         };
         Ok(Self {
-            address,
+            endpoint: Endpoint::Tcp(address),
             token,
             identity: None,
         })
@@ -1095,8 +1304,44 @@ impl Remote {
         remote.identity = Some(identity);
         Ok(remote)
     }
+    #[cfg(unix)]
+    pub fn inherited(
+        channels: Vec<std::os::unix::net::UnixStream>,
+        token: String,
+        identity: ServiceIdentity,
+    ) -> Result<Self, String> {
+        if token.len() != 64 {
+            return Err("Invalid broker capability".into());
+        }
+        Ok(Self {
+            endpoint: Endpoint::Inherited(Arc::new(connection::Pool::new(channels)?)),
+            token,
+            identity: Some(identity),
+        })
+    }
     fn call(&self, request: impl Serialize, body: &[u8]) -> Result<(Reply, Vec<u8>), String> {
-        let mut stream = TcpStream::connect_timeout(&self.address, Duration::from_secs(2))
+        #[cfg(unix)]
+        if let Endpoint::Inherited(pool) = &self.endpoint {
+            let (reply, body) = pool.call(|stream| {
+                write_packet(stream, &request, body).map_err(std::io::Error::other)?;
+                let (reply, len): (Reply, usize) =
+                    read_header(stream).map_err(std::io::Error::other)?;
+                let mut body = vec![0; len];
+                stream.read_exact(&mut body)?;
+                Ok((reply, body))
+            })?;
+            return if let Reply::Error(error) = reply {
+                Err(error)
+            } else {
+                Ok((reply, body))
+            };
+        }
+        let address = match self.endpoint {
+            Endpoint::Tcp(address) => address,
+            #[cfg(unix)]
+            Endpoint::Inherited(_) => unreachable!(),
+        };
+        let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
             .map_err(|e| e.to_string())?;
         stream
             .set_read_timeout(Some(Duration::from_secs(20)))
@@ -1235,7 +1480,7 @@ enum Reply {
     Error(String),
 }
 fn write_packet<T: Serialize>(
-    stream: &mut TcpStream,
+    stream: &mut impl Write,
     value: &T,
     body: &[u8],
 ) -> Result<(), String> {
@@ -1251,9 +1496,24 @@ fn write_packet<T: Serialize>(
         .and_then(|_| stream.write_all(body))
         .map_err(|e| e.to_string())
 }
-fn read_header<T: for<'de> Deserialize<'de>>(stream: &mut TcpStream) -> Result<(T, usize), String> {
+fn read_header<T: for<'de> Deserialize<'de>>(stream: &mut impl Read) -> Result<(T, usize), String> {
+    read_header_prefix(stream, None)
+}
+fn read_header_prefix<T: for<'de> Deserialize<'de>>(
+    stream: &mut impl Read,
+    first: Option<u8>,
+) -> Result<(T, usize), String> {
     let mut fixed = [0; 12];
-    stream.read_exact(&mut fixed).map_err(|e| e.to_string())?;
+    if let Some(first) = first {
+        fixed[0] = first;
+        stream
+            .read_exact(&mut fixed[1..])
+            .map_err(|error| error.to_string())?;
+    } else {
+        stream
+            .read_exact(&mut fixed)
+            .map_err(|error| error.to_string())?;
+    }
     let len = u32::from_le_bytes(fixed[4..8].try_into().unwrap()) as usize;
     let bytes = u32::from_le_bytes(fixed[8..12].try_into().unwrap()) as usize;
     if &fixed[..4] != b"WGNB" || len == 0 || len > MAX_HEADER || bytes > MAX_BODY {
@@ -1270,6 +1530,22 @@ fn read_header<T: for<'de> Deserialize<'de>>(stream: &mut TcpStream) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn server_controlled_hsts_durations_and_entry_counts_are_bounded() {
+        let mut policy = HstsPolicy::default();
+        policy.update("huge.example", &format!("max-age={}", u64::MAX));
+        assert!(policy.should_upgrade("huge.example"));
+        assert!(
+            policy.entries["huge.example"]
+                .expires_at
+                .saturating_duration_since(Instant::now())
+                <= Duration::from_secs(365 * 24 * 60 * 60)
+        );
+        for index in 0..4200 {
+            policy.update(&format!("{index}.example"), "max-age=100");
+        }
+        assert!(policy.entries.len() <= 4096);
+    }
     #[test]
     fn bound_services_reject_missing_cross_partition_and_revoked_capabilities() {
         let broker = Broker::new().unwrap();
@@ -1368,7 +1644,13 @@ mod tests {
         let broker = Broker::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let session = broker
-            .open_bound_session(dir.path().into(), Policy { allow_loopback: true, ..Policy::default() })
+            .open_bound_session(
+                dir.path().into(),
+                Policy {
+                    allow_loopback: true,
+                    ..Policy::default()
+                },
+            )
             .unwrap();
         let (endpoint, token) = session.endpoint();
         let remote = Remote::bound(&endpoint, token, session.identity()).unwrap();

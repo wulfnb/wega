@@ -317,6 +317,19 @@ impl Network {
             request.body = body.clone().unwrap_or_default();
             request.initiator = context.initiator.clone();
             request.top_level = top_level;
+            request.origin = context
+                .initiator
+                .as_ref()
+                .map(|url| url.origin().ascii_serialization())
+                .unwrap_or_else(|| "null".into());
+            request.destination = match context.destination {
+                Destination::Document => wega_network::ResourceDestination::Document,
+                Destination::Script => wega_network::ResourceDestination::Script,
+                Destination::Style => wega_network::ResourceDestination::Style,
+                Destination::Image => wega_network::ResourceDestination::Image,
+                Destination::Font => wega_network::ResourceDestination::Font,
+                Destination::Other => wega_network::ResourceDestination::Subresource,
+            };
             request.redirect = "manual".into();
             if let Some(initiator) = &context.initiator
                 && let Some(value) = referrer(initiator, &url, context.referrer_policy.as_deref())

@@ -87,7 +87,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             } if protocol::supports_version(*version) => {
                                 initialized = true;
                                 if *version >= 11 {
-                                    match offered.filter(|value| value.validate().is_ok()) {
+                                    match offered
+                                        .as_deref()
+                                        .copied()
+                                        .filter(|value| value.validate().is_ok())
+                                    {
                                         Some(value) => identity = Some(value),
                                         None => {
                                             let _ = reader.send(Work::Invalid(
@@ -133,7 +137,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(context) = protocol::scoped_context(&command) {
                         let timeout = if matches!(&command, Command::CheckDocumentState(_)) {
                             protocol::PAGE_STATE_TIMEOUT_MS
-                        } else if matches!(&command, Command::CaptureDocument { .. } | Command::NavigateDocument { .. }) {
+                        } else if matches!(
+                            &command,
+                            Command::CaptureDocument { .. } | Command::NavigateDocument { .. }
+                        ) {
                             protocol::HARNESS_TIMEOUT_MS
                         } else {
                             protocol::EVALUATION_TIMEOUT_MS
@@ -173,42 +180,83 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    let (version, identity, url, policy, storage_dir, broker_address, broker_token, frame_path) =
-        match receiver.recv()? {
-            Work::Command(Command::Init {
-                version,
-                identity,
-                url,
+    let (
+        version,
+        identity,
+        url,
+        policy,
+        storage_dir,
+        broker_address,
+        broker_token,
+        broker_fds,
+        frame_path,
+        frame_fd,
+    ) = match receiver.recv()? {
+        Work::Command(Command::Init {
+            version,
+            identity,
+            url,
+            offline,
+            blocked_hosts,
+            allowed_hosts,
+            storage_dir,
+            broker_address,
+            broker_token,
+            broker_fds,
+            frame_path,
+            frame_fd,
+            // Legacy v4/v5 packets retain their shape. Scoped v6 operations
+            // are only sent in response to the corresponding new commands.
+        }) if protocol::supports_version(version) => (
+            version,
+            identity.map(|identity| *identity),
+            Url::parse(&url)?,
+            NetworkPolicy {
                 offline,
                 blocked_hosts,
                 allowed_hosts,
-                storage_dir,
-                broker_address,
-                broker_token,
-                frame_path,
-                // Legacy v4/v5 packets retain their shape. Scoped v6 operations
-                // are only sent in response to the corresponding new commands.
-            }) if protocol::supports_version(version) => (
-                version,
-                identity,
-                Url::parse(&url)?,
-                NetworkPolicy {
-                    offline,
-                    blocked_hosts,
-                    allowed_hosts,
-                    allow_loopback: true,
-                    ..Default::default()
-                },
-                storage_dir,
-                broker_address,
-                broker_token,
-                frame_path,
-            ),
-            _ => return Err("Expected versioned Init as the first private command".into()),
-        };
-    if version >= 11
-        && (broker_address.is_some() != broker_token.is_some()
-            || broker_address.is_some() != identity.and_then(|value| value.service).is_some())
+                allow_loopback: true,
+                ..Default::default()
+            },
+            storage_dir,
+            broker_address,
+            broker_token,
+            broker_fds,
+            frame_path,
+            frame_fd,
+        ),
+        _ => return Err("Expected versioned Init as the first private command".into()),
+    };
+    let has_endpoint = broker_address.is_some() || !broker_fds.is_empty();
+    if (version < 13 && frame_fd.is_some()) || (frame_fd.is_some() && frame_path.is_some()) {
+        return Err("Invalid frame grant negotiation".into());
+    }
+    let frame_store = if let Some(descriptor) = frame_fd {
+        #[cfg(unix)]
+        {
+            Some(wega_platform::FrameStore::from_file(
+                wega_platform::inherited::duplicate_file(descriptor)?,
+                protocol::MAX_PIXELS * 4,
+            )?)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = descriptor;
+            return Err("Inherited frame descriptors are unavailable on this platform".into());
+        }
+    } else if let Some(path) = frame_path {
+        Some(wega_platform::FrameStore::open(
+            std::path::Path::new(&path),
+            protocol::MAX_PIXELS * 4,
+        )?)
+    } else {
+        None
+    };
+    if (version < 13 && !broker_fds.is_empty())
+        || (broker_address.is_some() && !broker_fds.is_empty())
+        || (version >= 11
+            && (has_endpoint != broker_token.is_some()
+                || has_endpoint != identity.and_then(|value| value.service).is_some()))
     {
         return Err("Incomplete or inconsistent broker service binding".into());
     }
@@ -216,8 +264,43 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
         let _ = wake.try_send(Work::Wake);
     });
-    let mut engine = if let (Some(address), Some(token)) = (broker_address, broker_token) {
+    #[cfg(unix)]
+    let inherited = if broker_fds.is_empty() {
+        None
+    } else {
+        Some(wega_platform::inherited::duplicate_channels(&broker_fds)?)
+    };
+    #[cfg(not(unix))]
+    if !broker_fds.is_empty() {
+        return Err("Inherited Unix broker channels are unavailable on this platform".into());
+    }
+    let mut engine = if let Some(token) = broker_token {
+        #[cfg(unix)]
+        let remote = if let Some(channels) = inherited {
+            wega_network::Remote::inherited(
+                channels,
+                token,
+                identity
+                    .and_then(|value| value.service)
+                    .ok_or("Missing broker service identity")?,
+            )?
+        } else {
+            let address = broker_address.ok_or("Missing broker endpoint")?;
+            if version >= 11 {
+                wega_network::Remote::bound(
+                    &address,
+                    token,
+                    identity
+                        .and_then(|value| value.service)
+                        .ok_or("Missing broker service identity")?,
+                )?
+            } else {
+                wega_network::Remote::new(&address, token)?
+            }
+        };
+        #[cfg(not(unix))]
         let remote = if version >= 11 {
+            let address = broker_address.ok_or("Missing broker endpoint")?;
             wega_network::Remote::bound(
                 &address,
                 token,
@@ -226,6 +309,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("Missing broker service identity")?,
             )?
         } else {
+            let address = broker_address.ok_or("Missing broker endpoint")?;
             wega_network::Remote::new(&address, token)?
         };
         Engine::with_broker(Limits::default(), policy, wake, remote)?
@@ -236,9 +320,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         engine = engine.with_storage_dir(path.into());
     }
     let mut view = engine.create_view(url)?;
-    let shared = frame_path.is_some();
-    if let Some(path) = frame_path {
-        view.configure_shared_frames(std::path::Path::new(&path))?;
+    let shared = frame_store.is_some();
+    if let Some(store) = frame_store {
+        view.configure_shared_store(store)?;
     }
     let mut credits = [None, None];
     let mut sequence = 0_u64;
@@ -647,7 +731,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Command::Capabilities => {
                     write(&Event::Capabilities {
                         version,
-                        supported: protocol::capabilities(version),
+                        supported: protocol::capabilities(version)
+                            .into_iter()
+                            .filter(|capability| {
+                                cfg!(unix)
+                                    || !matches!(
+                                        capability,
+                                        protocol::Capability::InheritedBroker
+                                            | protocol::Capability::InheritedFrames
+                                    )
+                            })
+                            .collect(),
                     })?;
                 }
                 Command::EvaluateDocument { context, source } => {
@@ -737,7 +831,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     if view.paint_pending() {
                         let _ = view.wait_painted();
-                        let _ = pending_target.take();
+                        if let Some((slot, sequence)) = pending_target.take()
+                            && credits[slot as usize] == Some(sequence)
+                        {
+                            credits[slot as usize] = None;
+                        }
                         let _ = pending_revision.take();
                     }
                     let (width, height) = (800, 600);
@@ -779,10 +877,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let parsed = Url::parse(&url);
                     match parsed {
                         Ok(parsed_url) => {
-                            serial = serial.wrapping_add(1);
-                            let res = view.load_for_navigation(parsed_url, serial).map_err(|e| {
-                                ProtocolError::new(ErrorCode::InvalidRequest, e)
-                            });
+                            serial = serial
+                                .checked_add(1)
+                                .ok_or("Navigation identity exhausted")?;
+                            let res = view
+                                .load_for_navigation(parsed_url, serial)
+                                .map_err(|e| ProtocolError::new(ErrorCode::InvalidRequest, e));
                             write(&Event::DocumentNavigated {
                                 context,
                                 status: res,

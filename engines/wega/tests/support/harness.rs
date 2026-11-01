@@ -1,8 +1,11 @@
 //! Observable, crash-resilient subprocess test harness for the Wega engine worker.
 #![allow(dead_code)]
+use protocol::{
+    Command, DocumentContext, DocumentId, DocumentRevision, Event, RequestContext, RequestId,
+};
 use std::{
     collections::VecDeque,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::Path,
     process::{Child, ChildStdin, Stdio},
     sync::{
@@ -14,10 +17,6 @@ use std::{
     time::{Duration, Instant},
 };
 use wega_protocol as protocol;
-use protocol::{
-    Command, DocumentContext, DocumentId, DocumentRevision, Event,
-    RequestContext, RequestId,
-};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TestFailureKind {
@@ -53,6 +52,7 @@ pub struct WorkerHarness {
     diagnostics: Arc<Mutex<Vec<protocol::DiagnosticRecord>>>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
     crashed: Arc<AtomicBool>,
+    reader_failure: Arc<Mutex<Option<TestFailureKind>>>,
 }
 
 impl WorkerHarness {
@@ -62,6 +62,7 @@ impl WorkerHarness {
 
     pub fn start_with_policy(frame_path: &Path, offline: bool) -> Result<Self, TestFailureKind> {
         let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_wega-engine"))
+            .arg(wega_platform::launch::DEVELOPMENT_ARGUMENT)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -78,7 +79,9 @@ impl WorkerHarness {
             TestFailureKind::HarnessFailure("Failed to capture worker stderr".into())
         })?;
 
-        let (tx, events) = mpsc::channel();
+        let (tx, events) = mpsc::sync_channel(32);
+        let reader_failure = Arc::new(Mutex::new(None));
+        let failed_reader = reader_failure.clone();
         let context = Arc::new(Mutex::new(DocumentContext {
             document: DocumentId(0),
             revision: DocumentRevision(0),
@@ -99,26 +102,51 @@ impl WorkerHarness {
         thread::Builder::new()
             .name("harness-stdout-reader".into())
             .spawn(move || {
-                while let Ok(Some(packet)) = protocol::read::<Event>(&mut stdout) {
+                loop {
+                    let packet = match protocol::read::<Event>(&mut stdout) {
+                        Ok(Some(packet)) => packet,
+                        Ok(None) => break,
+                        Err(error) => {
+                            *failed_reader.lock().unwrap() = Some(TestFailureKind::HarnessFailure(
+                                format!("Malformed worker IPC: {error}"),
+                            ));
+                            break;
+                        }
+                    };
                     let event = if let Some(identity) = identity {
                         match identity.receive_event(packet) {
                             Ok(ev) => ev,
                             Err(e) => {
-                                eprintln!("Harness packet dropped: {e:?}");
-                                continue;
+                                *failed_reader.lock().unwrap() =
+                                    Some(TestFailureKind::HarnessFailure(format!(
+                                        "Foreign worker packet: {e:?}"
+                                    )));
+                                break;
                             }
                         }
                     } else {
                         packet
                     };
 
-                    if let Event::DocumentCommitted { serial, revision, .. } = &event {
+                    if let Event::DocumentCommitted {
+                        serial, revision, ..
+                    } = &event
+                    {
                         *committed_context.lock().unwrap() = DocumentContext {
                             document: DocumentId(*serial),
                             revision: *revision,
                         };
                     } else if let Event::Diagnostic { record, .. } = &event {
-                        diag_store.lock().unwrap().push(record.clone());
+                        let mut record = record.clone();
+                        record.message = record.message.chars().take(4096).collect();
+                        record.source = record
+                            .source
+                            .map(|source| source.chars().take(4096).collect());
+                        let mut stored = diag_store.lock().unwrap();
+                        if stored.len() == 256 {
+                            stored.remove(0);
+                        }
+                        stored.push(record);
                     }
 
                     if tx.send(event).is_err() {
@@ -134,9 +162,19 @@ impl WorkerHarness {
         thread::Builder::new()
             .name("harness-stderr-reader".into())
             .spawn(move || {
-                let reader = BufReader::new(stderr);
-                for line in reader.lines().flatten() {
-                    stderr_store.lock().unwrap().push(line);
+                let mut reader = BufReader::new(stderr);
+                loop {
+                    let mut fragment = Vec::new();
+                    match (&mut reader).take(4096).read_until(b'\n', &mut fragment) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {
+                            let mut lines = stderr_store.lock().unwrap();
+                            if lines.len() == 256 {
+                                lines.remove(0);
+                            }
+                            lines.push(String::from_utf8_lossy(&fragment).into_owned());
+                        }
+                    }
                 }
             })
             .map_err(|e| TestFailureKind::HarnessFailure(e.to_string()))?;
@@ -152,11 +190,14 @@ impl WorkerHarness {
             diagnostics,
             stderr_lines,
             crashed: Arc::new(AtomicBool::new(false)),
+            reader_failure,
         };
 
         // Initialize worker
         harness.send(Command::Init {
-            identity,
+            frame_fd: None,
+            broker_fds: Vec::new(),
+            identity: identity.map(Box::new),
             version: protocol::VERSION,
             url: "about:blank".into(),
             offline,
@@ -169,7 +210,20 @@ impl WorkerHarness {
         })?;
 
         // Wait for ready event and initial document commit
-        harness.wait_for(|event| matches!(event, Event::Ready { .. }), Duration::from_secs(15))?;
+        let ready = harness.wait_for(
+            |event| matches!(event, Event::Ready { .. }),
+            Duration::from_secs(15),
+        )?;
+        if !matches!(
+            ready,
+            Event::Ready {
+                version: protocol::VERSION
+            }
+        ) {
+            return Err(TestFailureKind::HarnessFailure(
+                "Incompatible worker protocol".into(),
+            ));
+        }
         harness.wait_for(
             |event| matches!(event, Event::DocumentCommitted { .. }),
             Duration::from_secs(15),
@@ -184,7 +238,9 @@ impl WorkerHarness {
 
     pub fn send(&mut self, command: Command) -> Result<(), TestFailureKind> {
         self.check_alive()?;
-        let command = if !matches!(command, Command::Init { .. }) && let Some(identity) = self.identity {
+        let command = if !matches!(command, Command::Init { .. })
+            && let Some(identity) = self.identity
+        {
             identity.command(command)
         } else {
             command
@@ -194,7 +250,10 @@ impl WorkerHarness {
     }
 
     pub fn next_request_context(&mut self) -> RequestContext {
-        self.next_request += 1;
+        self.next_request = self
+            .next_request
+            .checked_add(1)
+            .expect("Harness request identity exhausted");
         let doc = self.current_context();
         RequestContext {
             document: doc.document,
@@ -214,7 +273,13 @@ impl WorkerHarness {
                     code: status.code(),
                 })
             }
-            Ok(None) => Ok(()),
+            Ok(None) => {
+                if let Some(error) = self.reader_failure.lock().unwrap().clone() {
+                    Err(error)
+                } else {
+                    Ok(())
+                }
+            }
             Err(e) => Err(TestFailureKind::HarnessFailure(e.to_string())),
         }
     }
@@ -235,6 +300,11 @@ impl WorkerHarness {
                 if predicate(&event) {
                     return Ok(event);
                 }
+                if self.event_buffer.len() == 256 {
+                    return Err(TestFailureKind::HarnessFailure(
+                        "Worker event buffer exceeded its budget".into(),
+                    ));
+                }
                 self.event_buffer.push_back(event);
             }
             if start.elapsed() > timeout {
@@ -244,8 +314,19 @@ impl WorkerHarness {
         }
     }
 
-    pub fn load(&mut self, url: &str, timeout: Duration) -> Result<DocumentContext, TestFailureKind> {
-        let serial = self.current_context().document.0 + 1;
+    pub fn load(
+        &mut self,
+        url: &str,
+        timeout: Duration,
+    ) -> Result<DocumentContext, TestFailureKind> {
+        let serial = self
+            .current_context()
+            .document
+            .0
+            .checked_add(1)
+            .ok_or_else(|| {
+                TestFailureKind::HarnessFailure("Navigation identity exhausted".into())
+            })?;
         self.send(Command::Load {
             url: url.into(),
             serial,
@@ -299,10 +380,12 @@ impl WorkerHarness {
         )?;
 
         match event {
-            Event::DocumentEvaluated { result: Ok(val), .. } => Ok(val),
-            Event::DocumentEvaluated { result: Err(err), .. } => {
-                Err(TestFailureKind::EngineError(err.message))
-            }
+            Event::DocumentEvaluated {
+                result: Ok(val), ..
+            } => Ok(val),
+            Event::DocumentEvaluated {
+                result: Err(err), ..
+            } => Err(TestFailureKind::EngineError(err.message)),
             Event::RequestFailed { error, .. } => Err(TestFailureKind::EngineError(error.message)),
             _ => unreachable!(),
         }
@@ -326,7 +409,12 @@ impl WorkerHarness {
         )?;
 
         match event {
-            Event::DocumentCaptured { width, height, hash, .. } => Ok((width, height, hash)),
+            Event::DocumentCaptured {
+                width,
+                height,
+                hash,
+                ..
+            } => Ok((width, height, hash)),
             Event::RequestFailed { error, .. } => Err(TestFailureKind::EngineError(error.message)),
             _ => unreachable!(),
         }
@@ -354,9 +442,9 @@ impl WorkerHarness {
 
         match event {
             Event::DocumentNavigated { status: Ok(()), .. } => Ok(()),
-            Event::DocumentNavigated { status: Err(err), .. } => {
-                Err(TestFailureKind::EngineError(err.message))
-            }
+            Event::DocumentNavigated {
+                status: Err(err), ..
+            } => Err(TestFailureKind::EngineError(err.message)),
             Event::RequestFailed { error, .. } => Err(TestFailureKind::EngineError(error.message)),
             _ => unreachable!(),
         }
@@ -373,15 +461,21 @@ impl WorkerHarness {
         timeout: Duration,
     ) -> Result<(), TestFailureKind> {
         let start = Instant::now();
-        let query = format!("document.querySelector('{selector}')?.textContent?.trim()");
+        let query = format!(
+            "document.querySelector({})?.textContent?.trim()",
+            serde_json::to_string(selector).unwrap()
+        );
         let mut last_actual = String::new();
         while start.elapsed() < timeout {
-            if let Ok(res) = self.evaluate(&query, Duration::from_secs(2)) {
-                let text = res.trim_matches('"').to_string();
-                if text == expected {
+            {
+                let res = self.evaluate(&query, Duration::from_secs(2))?;
+                let text: Option<String> = serde_json::from_str(&res).map_err(|error| {
+                    TestFailureKind::HarnessFailure(format!("Invalid text result: {error}"))
+                })?;
+                if text.as_deref() == Some(expected) {
                     return Ok(());
                 }
-                last_actual = text;
+                last_actual = text.unwrap_or_else(|| "<missing element>".into());
             }
             thread::sleep(Duration::from_millis(10));
         }

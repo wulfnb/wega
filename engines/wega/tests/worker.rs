@@ -490,7 +490,9 @@ impl Worker {
             next_request: 0,
         };
         worker.send(Command::Init {
-            identity,
+            frame_fd: None,
+            broker_fds: Vec::new(),
+            identity: identity.map(Box::new),
             version,
             url: "about:blank".into(),
             offline: true,

@@ -1,9 +1,11 @@
 # Step 05 — content-process containment and supervision
 
-Status, 31 October 2026: **in progress**. This branch implements the independent
-supervision and launch-policy foundation while Steps 03/04 are developed in a
-separate clone. Full sandbox activation depends on merging Step 04 and completing
-native resource mediation, platform backends, signing and runtime probes.
+Status, 1 November 2026: **in progress**. Steps 03/04 were merged at `62269d9`.
+This branch integrates their protocol/harness additions with supervision and adds
+inherited Unix service/frame grants under protocol v13. The merge supplies partial
+Step 03/04 implementations, not their full acceptance criteria. Full sandbox
+activation still needs authoritative resource mediation, platform backends,
+signing and runtime probes.
 No part of this document claims a verified OS content sandbox.
 
 ## Threat model
@@ -37,9 +39,58 @@ an environment flag, a signed executable or a Ready packet alone is not proof.
 | Code/JIT | Verified packaged libraries, V8's required JIT mappings | Child execution, library injection, arbitrary executable files or unnecessary signing exceptions |
 | Processes/devices | Necessary threads, clocks and anonymous synchronization | Child processes, ptrace/debugging other processes, signals to other sessions, device APIs without a broker grant |
 
-The existing TCP broker and path-based storage/frame handoff do not satisfy this
-allowlist. The debug escape hatch below preserves explicit development access
-while their replacements are implemented.
+On macOS/Linux, the browser now passes preconnected Unix broker channels and a
+frame file descriptor. Path-based profile storage, direct worker network/file
+access and the Windows development TCP/frame-path handoff still violate this
+allowlist. The debug escape hatch below remains necessary.
+
+## Inherited grants and merge integration
+
+The browser selects four connected Unix channels before spawn. Each server endpoint
+is bound to the host's service object independently of the token inside a packet;
+a different service's valid token cannot transfer authority. Selecting inherited
+channels permanently disables TCP access for that session. The broker retains its
+legacy TCP listener for other callers, but these Unix workers receive no broker
+address. Closed or failed channels never reconnect over TCP.
+
+The renderer uses a bounded four-channel pool. Each channel serializes request,
+body and response; the server waits for its bounded network job to finish before
+reading another packet. Partial bodies, failed writes, malformed envelopes and
+panics close that channel. Revocation shuts down published endpoints and prevents
+late publication during setup; it unblocks idle and active broker I/O. Channel
+admission waits at most two seconds, packet reads use a 20-second timeout, and
+writes use five seconds. Idle server endpoints wait for explicit revocation/EOF.
+These are I/O timeouts, not hard wall-clock deadlines against a trickling peer.
+Hostile network traffic remains subject to the existing global job/body bounds.
+
+Only explicit broker/file grants regain inheritance after Linux's descriptor
+sanitization. Native validation rejects standard streams, repeated descriptors,
+non-Unix/unconnected sockets and invalid frame backing sizes before VM startup.
+The worker duplicates grants into safe owned types and restores CLOEXEC on the
+original inherited descriptors. Originals remain bounded to four channels and one
+frame file until process exit; no safe API adopts an arbitrary caller-owned FD.
+The host retains its frame file and resource reservation through worker reaping.
+
+The browser's `FrameReader` exposes bounded positional copies, with no mapping API.
+It validates slot, byte count and backing length; a worker that truncates the
+file produces an I/O failure instead of a browser SIGBUS. The producer still uses
+its own mapping. This is not a sealed file or immutable snapshot: hostile workers
+can corrupt their frame bytes or fault their own mappings. Content remains
+untrusted and dimensions/sequence/document scope are checked independently.
+
+Protocol v13 adds inherited broker/frame capabilities, with defaulted optional
+fields preserving older Init JSON. Windows does not advertise these Unix grants;
+its explicit debug path retains TCP and frame paths until native handle handoff
+is implemented. Required/release mode remains closed on every platform.
+
+The merged Capture/Navigate/Diagnostic events now have desktop routing, bounded
+correlation and payload handling. The subprocess harness explicitly opts into
+development mode, bounds stderr/diagnostic/event buffers, escapes selectors and
+preserves engine/crash/transport failures. Capture-only raster targets return
+their unpublished credits. Worker network adapters now propagate the initiating
+document origin and actual fetch context rather than labeling CDN requests with
+the CDN's origin. Server-controlled HSTS durations and entry counts are bounded;
+this is not a claim of complete HSTS semantics or persistence.
 
 ## Implemented foundation
 
@@ -97,8 +148,8 @@ On Linux, the parent establishes `PR_SET_PDEATHSIG` with a parent-death race che
 `NO_NEW_PRIVS`, disabled core dumps and `close_range(CLOEXEC)` for non-stdio
 descriptors. The worker disables dumpability **after exec**, which can reset that
 attribute. Unsupported setup fails instead of silently omitting a restriction.
-The current descriptor policy retains only standard streams; Step 04 inherited
-broker/frame descriptors require explicit allowlisted remapping before activation.
+The descriptor policy now preserves standard streams and explicit inherited
+broker/frame grants. Grant preservation is registered after the CLOEXEC sweep.
 This is not a filesystem/network/child-execution sandbox.
 
 On Windows, a non-inheritable unnamed job is configured with kill-on-last-close,
@@ -111,7 +162,7 @@ and an audited handle list are still required; a job alone is insufficient.
 ## Required mode and explicit development mode
 
 The browser and private worker now fail closed in required mode. Since native
-content sandboxes and the replacement resource transport are unfinished,
+content sandboxes and resource mediation are unfinished,
 **release Wega browsing is blocked on this branch**. Replacing TCP with an
 inherited endpoint does not by itself satisfy the platform gate.
 
@@ -130,17 +181,17 @@ The Rust subprocess regression fixture passes the development argument explicitl
 it is not evidence of sandboxed browsing. Library embeddings remain responsible
 for their own host policy; these rules gate the shipped browser/private-worker path.
 
-## Merge contract for Steps 03/04
+## Boundaries and remaining gaps after the Steps 03/04 merge
 
-The other AI's work remains on its separate branch. No network implementation or
-harness features are implemented here. When merging, preserve these boundaries:
+The merged implementation does not yet close the following boundaries. Keep
+these requirements when extending it:
 
-1. Step 04 must supply preconnected/inherited service endpoints with broker-owned
-   authority. Do not enable a TCP-port exception as a substitute for denying
+1. Unix service endpoints are inherited; Windows still needs a native equivalent.
+   Do not enable a TCP-port exception as a substitute for denying
    arbitrary network access across platforms. Landlock's TCP rights select ports,
    not a unique authenticated peer. Preserve service/document/session revocation.
-2. Frame and storage paths in Init must become native handle/operation grants.
-   Add font/file brokers and descriptor/handle ownership before enabling required
+2. Unix frame paths are replaced; storage paths and Windows frame paths remain.
+   Add font/file/storage brokers and descriptor/handle ownership before enabling required
    mode. A renderer-selected raw handle number or path is not an authority grant.
 3. Keep `PreparedLaunch` before spawn; job/resource attachment before Init; native
    sandbox entry before V8/Blitz executes content; Ready after successful setup.
@@ -151,13 +202,26 @@ harness features are implemented here. When merging, preserve these boundaries:
 5. Direct debug worker fixtures need `--development-unsandboxed`. Direct-Wega
    release assertions must classify sandbox-unavailable as setup failure; Servo
    fallback and development captures cannot count as sandboxed Wega passes.
-6. Resolve overlapping edits in `src/wega_page.rs`, `engines/wega/src/main.rs`,
-   `engines/wega/tests/worker.rs`, `engines/platform/src/process.rs` and progress
-   documents deliberately. Shared protocol wire version remains 11 in this slice.
+6. Shared protocol wire version is now 13. The desktop/worker/harness must negotiate
+   capabilities together; an unavailable capability cannot grant native authority.
+
+Step 03 still needs the full offline framework matrix (including Angular), WPT
+serving/asynchronous/reftest/testdriver paths and final failure-classification
+evidence. Compiling the new harness is not a direct-Wega behavioral pass.
+
+Step 04's current origin check exempts renderer-declared top-level requests and
+empty/opaque origins. Cookie calls are service-scoped but not document-scoped.
+WebSockets and profile storage still have direct paths. Destination propagation
+does not remove extension-based CSP decisions elsewhere. Private-network checks
+are lexical, without DNS address pinning/rebinding protection; CORS, redirects,
+module dependencies, certificate handling and caching need a complete authority
+audit. Inherited transport prevents endpoint switching; it does not fix those
+request-authority gaps. No source test is evidence that these bypasses are closed.
 
 ## Remaining Step 05 work
 
-- Merge Step 04 and finish brokered fonts/files/storage and narrow native handles.
+- Finish Step 04 authority enforcement, brokered fonts/files/storage and narrow
+  Windows native handles. Preserve the Unix grant/revocation boundary.
 - Implement Linux filesystem/process/network confinement, syscall and architecture
   policy, capability removal and supported-kernel detection. Combine kernel
   mechanisms deliberately; seccomp alone is not an information-flow sandbox.
@@ -182,7 +246,10 @@ harness features are implemented here. When merging, preserve these boundaries:
 Only compilation/lints are performed now, per the owner's tests-at-the-end rule.
 Platform test/probe sources cover reservation lifetime, native memory/aggregate
 pressure, startup deadlines, descriptor sanitation, Windows descendant denial/job
-close, policy opt-in and process reaping. They have **not been executed**.
+close, policy opt-in and process reaping. New regression sources cover inherited
+channel reuse/concurrency, service binding, TCP rejection, revocation, real-worker
+broker/file descriptor handoff, truncated frame files, v13 compatibility, harness
+reply scope and HSTS bounds. They have **not been executed**.
 Cross-compilation is not runtime or packaging proof. Full Step 05 stays unchecked.
 
 Primary design references:

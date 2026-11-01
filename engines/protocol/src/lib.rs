@@ -7,7 +7,7 @@ pub mod identity;
 pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -120,6 +120,8 @@ pub enum Capability {
     SessionIdentity,
     SharedFrames,
     HarnessObservability,
+    InheritedBroker,
+    InheritedFrames,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -132,6 +134,8 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::SessionIdentity,
     Capability::SharedFrames,
     Capability::HarnessObservability,
+    Capability::InheritedBroker,
+    Capability::InheritedFrames,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,6 +203,8 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::GracefulShutdown => 10,
                     Capability::SessionIdentity => 11,
                     Capability::HarnessObservability => 12,
+                    Capability::InheritedBroker => 13,
+                    Capability::InheritedFrames => 13,
                 }
         })
         .collect()
@@ -209,9 +215,7 @@ pub fn scoped_context(command: &Command) -> Option<RequestContext> {
         Command::EvaluateDocument { context, .. }
         | Command::CheckDocumentState(context)
         | Command::CaptureDocument { context, .. }
-        | Command::NavigateDocument { context, .. } => {
-            Some(*context)
-        }
+        | Command::NavigateDocument { context, .. } => Some(*context),
         _ => None,
     }
 }
@@ -248,7 +252,7 @@ pub enum Command {
     CancelRequest(RequestContext),
     Init {
         #[serde(default)]
-        identity: Option<identity::SessionIdentity>,
+        identity: Option<Box<identity::SessionIdentity>>,
         version: u32,
         url: String,
         offline: bool,
@@ -257,7 +261,11 @@ pub enum Command {
         storage_dir: Option<String>,
         broker_address: Option<String>,
         broker_token: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        broker_fds: Vec<u64>,
         frame_path: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frame_fd: Option<u64>,
     },
     Load {
         url: String,
@@ -483,6 +491,33 @@ pub fn read<T: for<'a> Deserialize<'a>>(stream: &mut impl Read) -> io::Result<Op
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inherited_resource_fields_and_capabilities_are_versioned() {
+        assert!(!capabilities(12).contains(&Capability::InheritedBroker));
+        assert!(!capabilities(12).contains(&Capability::InheritedFrames));
+        assert!(capabilities(13).contains(&Capability::InheritedBroker));
+        assert!(capabilities(13).contains(&Capability::InheritedFrames));
+        let old = Command::Init {
+            identity: None,
+            version: 4,
+            url: "about:blank".into(),
+            offline: true,
+            blocked_hosts: String::new(),
+            allowed_hosts: String::new(),
+            storage_dir: None,
+            broker_address: None,
+            broker_token: None,
+            broker_fds: Vec::new(),
+            frame_path: None,
+            frame_fd: None,
+        };
+        let packet = serde_json::to_string(&old).unwrap();
+        assert!(!packet.contains("broker_fds"));
+        assert!(!packet.contains("frame_fd"));
+        assert!(
+            matches!(serde_json::from_str::<Command>(&packet).unwrap(), Command::Init { broker_fds, frame_fd: None, .. } if broker_fds.is_empty())
+        );
+    }
     #[test]
     fn activation_packets_are_downgraded_for_running_v9_and_v10_hosts() {
         #[derive(Deserialize)]

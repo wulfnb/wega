@@ -2159,6 +2159,12 @@ impl View {
             wega_platform::FrameStore::open(path, 4096 * 2160 * 4).map_err(|e| e.to_string())?,
         )
     }
+    pub fn configure_shared_store(
+        &mut self,
+        store: wega_platform::FrameStore,
+    ) -> Result<(), String> {
+        self.raster.set_store(store)
+    }
     pub fn paint_pending(&self) -> bool {
         self.raster.pending()
     }

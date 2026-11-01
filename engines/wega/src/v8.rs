@@ -30,6 +30,7 @@ impl crate::native_ops::NativeHost for Dom {
         request.origin = document.origin().ascii_serialization();
         request.initiator = Some(document);
         request.top_level = false;
+        request.destination = wega_network::ResourceDestination::Fetch;
         request.redirect = "manual".into();
         request.limit = self.limits.resource_bytes.min(wega_network::MAX_BODY);
         let (sender, receiver) = tokio::sync::oneshot::channel();

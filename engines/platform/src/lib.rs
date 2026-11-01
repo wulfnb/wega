@@ -2,6 +2,8 @@
 //! The DOM/VM crate remains `forbid(unsafe_code)`; native calls live here.
 #![deny(unsafe_op_in_unsafe_fn)]
 use std::{fs::File, io, path::Path};
+#[cfg(unix)]
+pub mod inherited;
 pub mod launch;
 pub mod process;
 pub mod supervision;
@@ -128,7 +130,25 @@ pub struct FrameStore {
     capacity: usize,
     owner: Option<tempfile::NamedTempFile>,
 }
+/// A browser consumer has no mapping/producer API. Host copies use bounded
+/// positional reads even if a compromised renderer resizes its own backing.
+pub struct FrameReader(FrameStore);
+impl FrameReader {
+    pub fn path(&self) -> Option<&Path> {
+        self.0.path()
+    }
+    pub fn try_clone_file(&self) -> io::Result<File> {
+        self.0.try_clone_file()
+    }
+    pub fn read_slot(&self, slot: usize, bytes: usize) -> io::Result<Vec<u8>> {
+        self.0.read_slot(slot, bytes)
+    }
+}
 impl FrameStore {
+    pub fn into_reader(mut self) -> FrameReader {
+        self.release_pages();
+        FrameReader(self)
+    }
     pub fn create(capacity: usize) -> io::Result<Self> {
         Self::validate_capacity(capacity)?;
         let owner = tempfile::Builder::new().prefix("wega-frames-").tempfile()?;
@@ -141,9 +161,13 @@ impl FrameStore {
         })
     }
     pub fn open(path: &Path, capacity: usize) -> io::Result<Self> {
-        Self::validate_capacity(capacity)?;
         let file = File::options().read(true).write(true).open(path)?;
-        if file.metadata()?.len() != (capacity * 2) as u64 {
+        Self::from_file(file, capacity)
+    }
+    pub fn from_file(file: File, capacity: usize) -> io::Result<Self> {
+        Self::validate_capacity(capacity)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.len() != (capacity * 2) as u64 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid shared frame backing size",
@@ -168,6 +192,50 @@ impl FrameStore {
     pub fn path(&self) -> Option<&Path> {
         self.owner.as_ref().map(|owner| owner.path())
     }
+    pub fn try_clone_file(&self) -> io::Result<File> {
+        self.file.try_clone()
+    }
+    /// Browser-side copy: never mmap a file a hostile producer can truncate.
+    /// A short or resized backing becomes an ordinary I/O error, not SIGBUS.
+    pub fn read_slot(&self, slot: usize, bytes: usize) -> io::Result<Vec<u8>> {
+        if slot >= 2
+            || bytes > self.capacity
+            || self.file.metadata()?.len() != (self.capacity * 2) as u64
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid shared frame read",
+            ));
+        }
+        let mut output = vec![0; bytes];
+        let mut done = 0;
+        while done < bytes {
+            #[cfg(unix)]
+            let read = {
+                use std::os::unix::fs::FileExt;
+                self.file
+                    .read_at(&mut output[done..], (slot * self.capacity + done) as u64)
+            };
+            #[cfg(windows)]
+            let read = {
+                use std::os::windows::fs::FileExt;
+                self.file
+                    .seek_read(&mut output[done..], (slot * self.capacity + done) as u64)
+            };
+            #[cfg(not(any(unix, windows)))]
+            let read: io::Result<usize> = Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Positional frame reads are unsupported",
+            ));
+            match read {
+                Ok(0) => return Err(io::Error::from(io::ErrorKind::UnexpectedEof)),
+                Ok(read) => done += read,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(output)
+    }
     pub fn slot(&mut self, slot: usize, bytes: usize) -> io::Result<&mut [u8]> {
         if slot >= 2 || bytes > self.capacity {
             return Err(io::Error::new(
@@ -176,9 +244,9 @@ impl FrameStore {
             ));
         }
         if self.mapping.is_none() {
-            // SAFETY: this file has a fixed validated size. Both native peers
-            // keep it open and coordinate exclusive slot ownership through the
-            // private pipe; neither exposes the mapping to page JavaScript.
+            // SAFETY: producer mappings have a validated size and slot credits
+            // coordinate access. Production browser consumers use read_slot,
+            // so truncating this backing can fault only the content producer.
             self.mapping = Some(unsafe {
                 memmap2::MmapOptions::new()
                     .len(self.capacity * 2)
@@ -197,6 +265,21 @@ impl FrameStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn consumer_frame_reads_reject_a_backing_truncated_by_the_producer() {
+        let owner = FrameStore::create(1024).unwrap();
+        let producer = owner.try_clone_file().unwrap();
+        let owner = owner.into_reader();
+        let mut peer = FrameStore::from_file(producer, 1024).unwrap();
+        peer.slot(1, 4).unwrap().copy_from_slice(&[1, 2, 3, 4]);
+        assert_eq!(owner.read_slot(1, 4).unwrap(), [1, 2, 3, 4]);
+        assert!(owner.read_slot(2, 4).is_err());
+        assert!(owner.read_slot(0, 1025).is_err());
+        peer.release_pages();
+        peer.file.set_len(0).unwrap();
+        assert!(owner.read_slot(1, 4).is_err());
+        assert!(FrameStore::from_file(peer.file.try_clone().unwrap(), 1024).is_err());
+    }
     #[test]
     fn shared_slots_are_bounded_and_survive_mapping_release() {
         let mut owner = FrameStore::create(1024).unwrap();

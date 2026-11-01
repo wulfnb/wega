@@ -58,6 +58,31 @@ pub struct PreparedLaunch {
     directory: tempfile::TempDir,
 }
 impl PreparedLaunch {
+    #[cfg(unix)]
+    pub fn inherit_frame_file(
+        &self,
+        command: &mut Command,
+        file: &std::fs::File,
+    ) -> io::Result<u64> {
+        crate::inherited::preserve_file(command, file)
+    }
+    /// Explicit fixture opt-in without mutating the test process environment.
+    /// This cannot enable unsandboxed release workers.
+    pub fn development_fixture(command: &mut Command) -> io::Result<Self> {
+        Self::prepare(
+            command,
+            BrokerTransport::InheritedEndpoint,
+            Mode::select(cfg!(debug_assertions), true)?,
+        )
+    }
+    #[cfg(unix)]
+    pub fn inherit_broker_channels(
+        &self,
+        command: &mut Command,
+        channels: &[std::os::unix::net::UnixStream],
+    ) -> io::Result<Vec<u64>> {
+        crate::inherited::preserve(command, channels)
+    }
     /// Read the escape hatch in the trusted browser, never in renderer-supplied IPC.
     /// Required mode remains fail-closed until Step 04 transport/resource handles
     /// and the per-platform sandbox backends actually exist; no claimed capability

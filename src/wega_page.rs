@@ -56,6 +56,7 @@ pub(crate) struct Snapshot {
     pub requests: DocumentRequests,
     pub capabilities: Vec<protocol::Capability>,
     pub evaluations: std::collections::VecDeque<(RequestContext, Result<String, ProtocolError>)>,
+    pub harness_results: std::collections::VecDeque<(RequestContext, Result<Event, ProtocolError>)>,
     pub rss_bytes: Option<u64>,
     pub interacted: bool,
     pub compatibility: Option<String>,
@@ -301,7 +302,44 @@ impl Snapshot {
                         .push((request.context, browser_request, true));
                 }
             }
+            RequestKind::Capture | RequestKind::Navigate => {
+                self.harness_result(request.context, Err(error))
+            }
         }
+    }
+
+    fn harness_result(&mut self, context: RequestContext, result: Result<Event, ProtocolError>) {
+        if self.harness_results.len() == protocol::requests::MAX_PENDING {
+            self.harness_results.pop_front();
+        }
+        self.harness_results.push_back((context, result));
+    }
+    fn complete_harness(
+        &mut self,
+        context: RequestContext,
+        kind: RequestKind,
+        event: Event,
+    ) -> Result<(), String> {
+        let Some(request) = self.requests.take(context) else {
+            return Ok(());
+        };
+        if request.kind != kind {
+            self.request_failed(
+                request,
+                ProtocolError::new(ErrorCode::InvalidRequest, "Mismatched harness response"),
+            );
+            return Err("Mismatched harness response".into());
+        }
+        let result = if request.deadline <= std::time::Instant::now() {
+            Err(ProtocolError::new(
+                ErrorCode::Timeout,
+                "Harness operation timed out",
+            ))
+        } else {
+            Ok(event)
+        };
+        self.harness_result(context, result);
+        Ok(())
     }
 
     fn cancel_requests(&mut self, error: ProtocolError) {
@@ -324,7 +362,7 @@ impl Snapshot {
 }
 pub(crate) struct Page {
     child: wega_platform::process::OwnedProcess,
-    frames: Arc<Mutex<wega_platform::FrameStore>>,
+    _frames: Arc<wega_platform::FrameReader>,
     broker: Arc<wega_network::SessionHandle>,
     _budget: wega_platform::supervision::Ticket,
     requests: Option<mpsc::SyncSender<Request>>,
@@ -428,7 +466,11 @@ impl Page {
         let mut command = Command::new(&executable);
         let launch = wega_platform::launch::PreparedLaunch::browser(
             &mut command,
-            wega_platform::launch::BrokerTransport::Tcp,
+            if cfg!(unix) {
+                wega_platform::launch::BrokerTransport::InheritedEndpoint
+            } else {
+                wega_platform::launch::BrokerTransport::Tcp
+            },
         )
         .map_err(|error| error.to_string())?;
         let budget = wega_platform::supervision::Supervisor::shared()?
@@ -440,6 +482,7 @@ impl Page {
                 offline: policy.offline,
                 blocked_hosts: policy.blocked_hosts.clone(),
                 allowed_hosts: policy.allowed_hosts.clone(),
+                ..Default::default()
             },
         )?);
         broker.begin_navigation(url);
@@ -462,19 +505,43 @@ impl Page {
             .into(),
             ..Default::default()
         }));
-        let frames = Arc::new(Mutex::new(
+        let frames = Arc::new(
             wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4)
-                .map_err(|e| e.to_string())?,
-        ));
-        let frame_path = frames
-            .lock()
-            .unwrap()
-            .path()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+                .map_err(|e| e.to_string())?
+                .into_reader(),
+        );
+        let frame_path = frames.path().unwrap().to_string_lossy().into_owned();
         let (broker_address, broker_token) = broker.endpoint();
+        #[cfg(unix)]
+        let channels = broker.inherited_channels(4)?;
+        #[cfg(unix)]
+        let broker_fds = launch
+            .inherit_broker_channels(&mut command, &channels)
+            .map_err(|error| error.to_string())?;
+        #[cfg(not(unix))]
+        let broker_fds = Vec::new();
+        let broker_address = if broker_fds.is_empty() {
+            Some(broker_address)
+        } else {
+            None
+        };
         command.env("MALLOC_ARENA_MAX", "2");
+        #[cfg(unix)]
+        let frame_fd = Some(
+            launch
+                .inherit_frame_file(
+                    &mut command,
+                    &frames.try_clone_file().map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?,
+        );
+        #[cfg(not(unix))]
+        let frame_fd = None;
+        let frame_path = if frame_fd.is_some() {
+            None
+        } else {
+            Some(frame_path)
+        };
         // Workers are private to a view, so process-wide V8 flags stay per-view.
         if std::env::var_os("WEGA_ENGINE_LITE").is_some_and(|value| value == "1")
             || wega::engine_choice::rollout_site(url)
@@ -493,6 +560,9 @@ impl Page {
         let child = command
             .spawn()
             .map_err(|e| format!("Cannot start Wega engine: {e}"))?;
+        drop(command);
+        #[cfg(unix)]
+        drop(channels);
         let mut child = wega_platform::process::OwnedProcess::new(child, |report| {
             wega::diagnostics::record(
                 &format!("worker:{}:exit", report.pid),
@@ -508,7 +578,7 @@ impl Page {
         let budget_state = state.clone();
         let budget_proxy = proxy.clone();
         let budget_broker = broker.clone();
-        let budget_frames = frames.clone();
+        child.retain_until_exit(frames.clone());
         budget
             .attach(&mut child, move |violation| {
                 budget_broker.revoke();
@@ -519,10 +589,6 @@ impl Page {
                     state.recovery_reason = Some(violation.to_string());
                 }
                 failed(&budget_state, violation.to_string(), &budget_proxy);
-                budget_frames
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .release_pages();
             })
             .map_err(|error| error.to_string())?;
         let worker_id = child.id();
@@ -766,6 +832,60 @@ impl Page {
                                 state.request_failed(request, error);
                             }
                         }
+                        Event::DocumentCaptured {
+                            context,
+                            width,
+                            height,
+                            hash,
+                        } => {
+                            protocol::frame_bytes(width, height)
+                                .map_err(|error| error.to_string())?;
+                            if hash.len() != 64
+                                || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                            {
+                                return Err("Invalid capture digest".into());
+                            }
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .complete_harness(
+                                    context,
+                                    RequestKind::Capture,
+                                    Event::DocumentCaptured {
+                                        context,
+                                        width,
+                                        height,
+                                        hash,
+                                    },
+                                )?;
+                        }
+                        Event::DocumentNavigated { context, status } => {
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .complete_harness(
+                                    context,
+                                    RequestKind::Navigate,
+                                    Event::DocumentNavigated { context, status },
+                                )?;
+                        }
+                        Event::Diagnostic { context, record } => {
+                            let state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if state.lifecycle.accepts_requests()
+                                && context.is_none_or(|context| state.accepts_context(context))
+                            {
+                                wega::diagnostics::record(
+                                    &format!("worker:{worker_id}:diagnostic"),
+                                    &format!(
+                                        "{:?}: {}",
+                                        record.level,
+                                        record.message.chars().take(4096).collect::<String>()
+                                    ),
+                                );
+                            }
+                        }
                         Event::PageState { .. } | Event::Evaluated { .. } => {
                             return Err("Unscoped worker response".into());
                         }
@@ -780,29 +900,25 @@ impl Page {
                             let size =
                                 protocol::frame_bytes(width, height).map_err(|e| e.to_string())?;
                             // Acknowledge stale/frozen frames without faulting their pages back in.
-                            let bytes = {
-                                // Freeze takes these locks in the same order. Keep the
-                                // state lock through the copy so freeze cannot unmap and
-                                // then race with a reader remapping a hidden tab.
+                            let accepted = {
                                 let state = shared
                                     .lock()
                                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                if serial != state.requests.document().0
-                                    || revision != state.requests.revision()
-                                    || !state.lifecycle.presents_frames()
-                                {
-                                    None
-                                } else {
-                                    std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
-                                    Some(
-                                        reader_frames
-                                            .lock()
-                                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                            .slot(slot as usize, size)
-                                            .map_err(|e| e.to_string())?
-                                            .to_vec(),
-                                    )
-                                }
+                                serial == state.requests.document().0
+                                    && revision == state.requests.revision()
+                                    && state.lifecycle.presents_frames()
+                            };
+                            // No UI lock or host mmap spans untrusted backing I/O.
+                            // accept_frame revalidates the scope after the copy.
+                            let bytes = if accepted {
+                                std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+                                Some(
+                                    reader_frames
+                                        .read_slot(slot as usize, size)
+                                        .map_err(|e| e.to_string())?,
+                                )
+                            } else {
+                                None
                             };
                             acknowledgements
                                 .send(Request::FrameConsumed { slot, sequence })
@@ -885,7 +1001,7 @@ impl Page {
         });
         let page = Self {
             child,
-            frames,
+            _frames: frames,
             broker,
             _budget: budget,
             requests: Some(sender),
@@ -899,15 +1015,17 @@ impl Page {
             index: 0,
         };
         page.send(Request::Init {
-            identity: Some(identity),
+            identity: Some(Box::new(identity)),
             version: protocol::VERSION,
             url: url.to_string(),
             offline: policy.offline,
             blocked_hosts: policy.blocked_hosts.clone(),
             allowed_hosts: policy.allowed_hosts.clone(),
-            broker_address: Some(broker_address),
+            broker_address,
             broker_token: Some(broker_token),
-            frame_path: Some(frame_path),
+            broker_fds,
+            frame_path,
+            frame_fd,
             storage_dir: Some(
                 profile_dir
                     .join("wega-storage")
@@ -1043,6 +1161,7 @@ impl Page {
                 offline: *offline,
                 blocked_hosts: blocked_hosts.clone(),
                 allowed_hosts: allowed_hosts.clone(),
+                ..Default::default()
             });
         }
         let result = self
@@ -1222,10 +1341,6 @@ impl Page {
             }
             self.texture = None;
             state.frame = None;
-            self.frames
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .release_pages();
         }
         self.viewport = None;
     }
@@ -1398,6 +1513,53 @@ impl Drop for Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn harness_replies_cannot_consume_an_evaluation_or_complete_after_expiry() {
+        let (mut state, _) = committed_state();
+        let evaluation = state
+            .requests
+            .begin(RequestKind::Evaluate, std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(
+            state
+                .complete_harness(
+                    evaluation,
+                    RequestKind::Capture,
+                    Event::DocumentCaptured {
+                        context: evaluation,
+                        width: 1,
+                        height: 1,
+                        hash: "0".repeat(64)
+                    }
+                )
+                .is_err()
+        );
+        assert!(state.evaluations.back().unwrap().1.is_err());
+        let capture = state
+            .requests
+            .begin(RequestKind::Capture, std::time::Duration::ZERO)
+            .unwrap();
+        state
+            .complete_harness(
+                capture,
+                RequestKind::Capture,
+                Event::DocumentCaptured {
+                    context: capture,
+                    width: 1,
+                    height: 1,
+                    hash: "0".repeat(64),
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            &state.harness_results.back().unwrap().1,
+            Err(ProtocolError {
+                code: ErrorCode::Timeout,
+                ..
+            })
+        ));
+        assert!(state.requests.take(capture).is_none());
+    }
 
     #[test]
     fn native_actions_cannot_transfer_to_a_restarted_worker_with_the_same_document_counters() {

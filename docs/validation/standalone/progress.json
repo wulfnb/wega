@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "branch": "feature/standalone-wega-engine",
-  "date": "2026-10-31",
+  "date": "2026-11-01",
   "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
   "test_policy": "Execution deferred by owner until final pass",
   "runtime_tests_executed": false,
@@ -13,9 +13,17 @@
       "acceptance": "deferred until the owner's final test pass",
       "contract": "docs/step-02-engine-contract.md"
     },
+    "03": {
+      "implementation": "partial implementation merged at 62269d9; protocol capture/navigation/diagnostics and Rust subprocess harness integrated",
+      "acceptance": "deferred; complete framework and WPT paths still pending"
+    },
+    "04": {
+      "implementation": "partial implementation merged at 62269d9; request destinations, origin/private-network checks and bounded in-memory HSTS integrated",
+      "acceptance": "deferred; document authority, bypass removal and full resource mediation still pending"
+    },
     "05": {
-      "implementation": "in progress; supervision and launch-policy foundation implemented",
-      "dependency": "Step 04 is being developed in a separate clone/branch and will be merged later",
+      "implementation": "in progress; supervision, launch policy, inherited Unix service/frame grants and safe browser frame copies implemented",
+      "dependency": "Steps 03/04 merged at 62269d9; full Step 04 authority and resource mediation remain incomplete",
       "acceptance": "deferred; full platform sandboxes and required resource brokers still pending",
       "required_browsing": "fail-closed; no unsandboxed release override",
       "contract": "docs/step-05-sandbox-and-supervision.md"
@@ -35,7 +43,10 @@
     "02.c": "Implementation complete; all runtime acceptance verification deferred",
     "05.a": "Threat model, allowlist, transport/merge contract and required/development launch policy implemented; tests pending",
     "05.b": "Host process/frame admission, native residency supervision, startup deadlines, retained resource ownership and recoverable crash handling implemented; tests pending",
-    "05.c": "Linux baseline launch hardening and Windows job containment implemented and cross-compiled; native filesystem/network/process sandbox integration and runtime probes pending"
+    "05.c": "Linux baseline launch hardening and Windows job containment implemented and cross-compiled; native filesystem/network/process sandbox integration and runtime probes pending",
+    "03.integration": "Bounded harness/events, development-worker opt-in, strict correlation and failure handling integrated; tests pending",
+    "04.integration": "Worker initiator/destination metadata and HSTS input/storage bounds integrated; remaining authority bypasses documented",
+    "05.d": "Protocol v13 inherited Unix session channels and frame file grants, no TCP fallback, revocation-safe publication, descriptor validation and positional frame reads implemented; Windows handle handoff and runtime proof pending"
   },
   "compile_checks": [
     {
@@ -59,22 +70,28 @@
   ],
   "step05_compile_checks": [
     {
-      "command": "cargo clippy --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform --all-targets -- -D warnings",
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine -p wega-platform -p wega-protocol -p wega-network --all-targets",
       "platform": "macOS arm64",
       "result": "passed",
-      "scope": "Platform implementation and regression-source lints only; no tests executed"
+      "scope": "Worker/platform/protocol/network integration and regression-source type checking only; no tests executed; existing Deno vendor warnings remain"
     },
     {
-      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine-platform-linux --target x86_64-unknown-linux-gnu -p wega-platform --all-targets",
+      "command": "cargo clippy --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol -p wega-network --all-targets -- -D warnings",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Platform/protocol/network implementation and regression-source lints only; no tests executed"
+    },
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine-platform-linux --target x86_64-unknown-linux-gnu -p wega-platform -p wega-protocol --all-targets",
       "platform": "Linux x86_64 cross-compiled on macOS arm64",
       "result": "passed",
-      "scope": "Platform implementation and Linux probe/test sources only; no native Linux execution"
+      "scope": "Platform/protocol implementation and Linux probe/test sources only; no native Linux execution"
     },
     {
-      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine-platform-windows --target x86_64-pc-windows-gnu -p wega-platform --all-targets",
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine-platform-windows --target x86_64-pc-windows-gnu -p wega-platform -p wega-protocol --all-targets",
       "platform": "Windows x86_64 GNU cross-compiled on macOS arm64",
       "result": "passed",
-      "scope": "Platform implementation and Windows job/test sources only; no native Windows execution"
+      "scope": "Platform/protocol implementation and Windows job/test sources only; no native Windows execution"
     },
     {
       "command": "cargo check --locked --offline --features test-harness --bin wega --all-targets",
@@ -83,10 +100,10 @@
       "scope": "Desktop integration and regression-source compilation only; existing Servo vendor warnings remain"
     },
     {
-      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine -p wega-platform --all-targets",
+      "command": "cargo check --locked --offline --no-default-features --lib",
       "platform": "macOS arm64",
       "result": "passed",
-      "scope": "Worker launch gate and regression-source compilation only; existing Deno vendor warnings remain"
+      "scope": "Browser core compilation only; no tests executed"
     }
   ],
   "pending_verification": [
@@ -95,6 +112,10 @@
     "Feature/API exposure and behavioral parity",
     "Full Linux/Windows browser-worker builds and native runtime evidence; Step 05 platform-only cross-checks are recorded separately",
     "Profile migration and data preservation fixtures",
-    "Resource and release validation"
-  ]
+    "Resource and release validation",
+    "Step 03 full offline framework matrix and WPT asynchronous/reftest/testdriver paths",
+    "Step 04 document-bound cookie/fetch authority, direct WebSocket/storage bypass removal, DNS pinning and complete policy audit",
+    "Step 05 native OS sandbox backends, brokered file/font/storage access and Windows inherited handles"
+  ],
+  "current_protocol_version": 13
 }
