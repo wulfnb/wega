@@ -33,8 +33,6 @@ pub fn enter() -> io::Result<()> {
 /// Apply the descriptor ceiling only after numeric grants were duplicated. High
 /// inherited FD numbers remain valid; new allocations use the remaining low slots.
 pub fn finish_grants() -> io::Result<()> {
-    #[cfg(target_os = "macos")]
-    macos::finish_grants()?;
     #[cfg(unix)]
     {
         let mut current = std::mem::MaybeUninit::<libc::rlimit>::uninit();

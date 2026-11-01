@@ -113,7 +113,7 @@ pub(super) fn verify() -> io::Result<()> {
             return Err(io::Error::last_os_error());
         }
     }
-    Ok(())
+    restrict_bootstrap_namespace()
 }
 
 unsafe extern "C" {
@@ -122,10 +122,9 @@ unsafe extern "C" {
     fn task_set_special_port(task: u32, which: i32, port: u32) -> i32;
     fn mach_port_destroy(task: u32, port: u32) -> i32;
 }
-/// Remove the ambient launchd namespace after signature inspection and explicit
-/// grants. Destroying this child's name also invalidates libSystem's cached name;
+/// Remove the ambient launchd namespace after signature inspection. Destroying this child's name also invalidates libSystem's cached name;
 /// it does not destroy the launchd service or the parent's send right.
-pub(super) fn finish_grants() -> io::Result<()> {
+fn restrict_bootstrap_namespace() -> io::Result<()> {
     // SAFETY: these public Mach APIs operate only on this task's special port
     // and a send right obtained from it, before worker/VM threads exist.
     unsafe {

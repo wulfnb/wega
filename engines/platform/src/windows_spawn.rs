@@ -376,6 +376,13 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
     let mut startup: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    // USER32 imports must initialize against the standard low-integrity desktop,
+    // rather than inheriting a CI/service window station that rejects AppContainer
+    // tokens. The attached job denies clipboard, foreign USER handles, desktop
+    // changes and global atoms before the suspended process is resumed. No host
+    // window-station ACL is modified to grant the worker access.
+    let mut desktop = string("WinSta0\\Default");
+    startup.StartupInfo.lpDesktop = desktop.as_mut_ptr();
     startup.StartupInfo.hStdInput = input.as_raw_handle().cast();
     startup.StartupInfo.hStdOutput = output.as_raw_handle().cast();
     startup.StartupInfo.hStdError = error.as_raw_handle().cast();

@@ -37,6 +37,15 @@ jobs:
         run: |
           cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol --all-targets
           cargo build --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform --bins
+      - name: Inspect Windows probe dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products '*' -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'Visual Studio dumpbin is unavailable' }
+          & $dumpbin /DEPENDENTS target/wega-engine/debug/wega-containment-probe.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect native helper imports' }
       - name: Prepare native confinement probe
         run: |
           suffix=''; if [ "$RUNNER_OS" = Windows ]; then suffix='.exe'; fi
