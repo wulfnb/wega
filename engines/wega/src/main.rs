@@ -47,15 +47,19 @@ impl Drop for RunningRequest {
 
 fn main() {
     // Keep enough native stack headroom on Windows for the bounded V8 host.
-    let result = std::thread::Builder::new()
-        .name("wega-dom".into())
-        .stack_size(8 * 1024 * 1024)
-        .spawn(|| run().map_err(|error| error.to_string()))
+    let result = wega_platform::launch::validate_worker_start(std::env::args().skip(1))
         .map_err(|error| error.to_string())
-        .and_then(|thread| {
-            thread
-                .join()
-                .unwrap_or_else(|_| Err("DOM worker thread panicked".into()))
+        .and_then(|_| {
+            std::thread::Builder::new()
+                .name("wega-dom".into())
+                .stack_size(8 * 1024 * 1024)
+                .spawn(|| run().map_err(|error| error.to_string()))
+                .map_err(|error| error.to_string())
+                .and_then(|thread| {
+                    thread
+                        .join()
+                        .unwrap_or_else(|_| Err("DOM worker thread panicked".into()))
+                })
         });
     if let Err(error) = result {
         eprintln!("Wega engine worker: {error}");
@@ -63,7 +67,6 @@ fn main() {
     }
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    wega_platform::launch::validate_worker_start(std::env::args().skip(1))?;
     if std::env::args().any(|arg| arg == "--lite") {
         deno_core::v8_set_flags(vec![String::new(), "--lite-mode".into()]);
     }
@@ -227,19 +230,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ),
         _ => return Err("Expected versioned Init as the first private command".into()),
     };
+    let required =
+        std::env::args().any(|argument| argument == wega_platform::sandbox::REQUIRED_ARGUMENT);
+    if required
+        && (version < 14
+            || storage_dir.is_some()
+            || broker_address.is_some()
+            || broker_fds.len() != 4
+            || frame_path.is_some()
+            || frame_fd.is_none()
+            || identity.and_then(|identity| identity.service).is_none())
+    {
+        return Err(
+            "Required worker received an ambient path or incomplete resource grants".into(),
+        );
+    }
     let has_endpoint = broker_address.is_some() || !broker_fds.is_empty();
     if (version < 13 && frame_fd.is_some()) || (frame_fd.is_some() && frame_path.is_some()) {
         return Err("Invalid frame grant negotiation".into());
     }
     let frame_store = if let Some(descriptor) = frame_fd {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             Some(wega_platform::FrameStore::from_file(
                 wega_platform::inherited::duplicate_file(descriptor)?,
                 protocol::MAX_PIXELS * 4,
             )?)
         }
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = descriptor;
             return Err("Inherited frame descriptors are unavailable on this platform".into());
@@ -264,18 +282,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
         let _ = wake.try_send(Work::Wake);
     });
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     let inherited = if broker_fds.is_empty() {
         None
     } else {
         Some(wega_platform::inherited::duplicate_channels(&broker_fds)?)
     };
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     if !broker_fds.is_empty() {
         return Err("Inherited Unix broker channels are unavailable on this platform".into());
     }
+    if required {
+        wega_platform::sandbox::finish_grants()?;
+    }
     let mut engine = if let Some(token) = broker_token {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         let remote = if let Some(channels) = inherited {
             wega_network::Remote::inherited(
                 channels,
@@ -298,7 +319,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 wega_network::Remote::new(&address, token)?
             }
         };
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         let remote = if version >= 11 {
             let address = broker_address.ok_or("Missing broker endpoint")?;
             wega_network::Remote::bound(
@@ -544,6 +565,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         view.poll();
         report_commit(&view, serial)?;
+        if let Some(reason) = view.take_script_failure() {
+            write(&protocol::content_event(
+                version,
+                document_context(&view, serial, version),
+                ContentEvent::ScriptStopped(reason.chars().take(4096).collect()),
+            ))?;
+            return Err(format!("Script execution stopped: {reason}").into());
+        }
         let snapshot = Event::State {
             serial,
             rss_bytes,
@@ -734,7 +763,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         supported: protocol::capabilities(version)
                             .into_iter()
                             .filter(|capability| {
-                                cfg!(unix)
+                                cfg!(any(unix, windows))
                                     || !matches!(
                                         capability,
                                         protocol::Capability::InheritedBroker

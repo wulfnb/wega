@@ -4,10 +4,17 @@ use std::{
 };
 use wega_engine::{Engine, Limits, NetworkPolicy, Url};
 fn page(limits: Limits) -> wega_engine::View {
-    Engine::new(limits, NetworkPolicy::default(), Arc::new(|| {}))
-        .unwrap()
-        .create_view(Url::parse("about:blank").unwrap())
-        .unwrap()
+    Engine::new(
+        limits,
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap()
+    .create_view(Url::parse("about:blank").unwrap())
+    .unwrap()
 }
 #[test]
 fn document_titles_collapse_html_whitespace_but_preserve_nonbreaking_spaces() {
@@ -161,7 +168,15 @@ fn heap_exhaustion_is_local_and_timers_pause_in_background() {
 }
 #[test]
 fn failed_navigation_replaces_old_content_and_policy_updates_take_effect() {
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let engine = Engine::new(
+        Limits::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap();
     let mut view = engine
         .create_view(Url::parse("about:blank").unwrap())
         .unwrap();

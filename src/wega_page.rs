@@ -25,6 +25,15 @@ pub(crate) fn executable() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| {
             std::env::current_exe().ok()?.parent().map(|p| {
+                if cfg!(target_os = "macos")
+                    && let Some(contents) = p.parent()
+                {
+                    let helper =
+                        contents.join("Helpers/WegaContent.app/Contents/MacOS/wega-engine");
+                    if helper.is_file() {
+                        return helper;
+                    }
+                }
                 p.join(if cfg!(windows) {
                     "wega-engine.exe"
                 } else {
@@ -466,13 +475,14 @@ impl Page {
         let mut command = Command::new(&executable);
         let launch = wega_platform::launch::PreparedLaunch::browser(
             &mut command,
-            if cfg!(unix) {
+            if cfg!(any(unix, windows)) {
                 wega_platform::launch::BrokerTransport::InheritedEndpoint
             } else {
                 wega_platform::launch::BrokerTransport::Tcp
             },
         )
         .map_err(|error| error.to_string())?;
+        let development = launch.is_development();
         let budget = wega_platform::supervision::Supervisor::shared()?
             .reserve((protocol::MAX_PIXELS * 4 * 2) as u64)
             .map_err(|error| error.to_string())?;
@@ -498,11 +508,11 @@ impl Page {
         let state = Arc::new(Mutex::new(Snapshot {
             authority: Some(FrameAuthority::new(identity)),
             url: url.to_string(),
-            notices: [
-                "Unsandboxed development worker. OS content sandbox integration is pending."
-                    .to_string(),
-            ]
-            .into(),
+            notices: if development {
+                ["Explicit unsandboxed development worker".to_string()].into()
+            } else {
+                Default::default()
+            },
             ..Default::default()
         }));
         let frames = Arc::new(
@@ -512,13 +522,13 @@ impl Page {
         );
         let frame_path = frames.path().unwrap().to_string_lossy().into_owned();
         let (broker_address, broker_token) = broker.endpoint();
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         let channels = broker.inherited_channels(4)?;
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         let broker_fds = launch
             .inherit_broker_channels(&mut command, &channels)
             .map_err(|error| error.to_string())?;
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         let broker_fds = Vec::new();
         let broker_address = if broker_fds.is_empty() {
             Some(broker_address)
@@ -526,7 +536,7 @@ impl Page {
             None
         };
         command.env("MALLOC_ARENA_MAX", "2");
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         let frame_fd = Some(
             launch
                 .inherit_frame_file(
@@ -535,7 +545,7 @@ impl Page {
                 )
                 .map_err(|error| error.to_string())?,
         );
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         let frame_fd = None;
         let frame_path = if frame_fd.is_some() {
             None
@@ -557,11 +567,11 @@ impl Page {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000); // Private worker, no console window.
         }
-        let child = command
-            .spawn()
+        let child = launch
+            .spawn(&mut command)
             .map_err(|e| format!("Cannot start Wega engine: {e}"))?;
         drop(command);
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         drop(channels);
         let mut child = wega_platform::process::OwnedProcess::new(child, |report| {
             wega::diagnostics::record(
@@ -710,6 +720,18 @@ impl Page {
                             }
                         }
                         Event::Content { context, event } => {
+                            if let ContentEvent::ScriptStopped(reason) = &event
+                                && shared
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .accepts_context(context)
+                            {
+                                return Err(format!(
+                                    "Script execution stopped: {}",
+                                    reason.chars().take(4096).collect::<String>()
+                                ));
+                            }
+
                             if let ContentEvent::Notice(message)
                             | ContentEvent::Compatibility(message) = &event
                             {
@@ -946,7 +968,7 @@ impl Page {
                         }
                         Event::State {
                             serial,
-                            rss_bytes,
+                            rss_bytes: _,
                             url,
                             title,
                             loading,
@@ -963,7 +985,7 @@ impl Page {
                             {
                                 continue;
                             }
-                            state.rss_bytes = rss_bytes;
+                            state.rss_bytes = reader_budget.resident_bytes();
                             state.document_back = back;
                             state.document_forward = forward;
                             if state.lifecycle.loading()
@@ -1026,12 +1048,7 @@ impl Page {
             broker_fds,
             frame_path,
             frame_fd,
-            storage_dir: Some(
-                profile_dir
-                    .join("wega-storage")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
+            storage_dir: None,
         })?;
         page.send(Request::Capabilities)?;
         Ok(page)
@@ -1343,6 +1360,9 @@ impl Page {
             state.frame = None;
         }
         self.viewport = None;
+    }
+    pub fn resident_bytes(&self) -> Option<u64> {
+        self._budget.resident_bytes()
     }
     pub fn pid(&self) -> u32 {
         self.child.id()

@@ -231,96 +231,14 @@ impl NavigationProvider for Navigation {
     }
 }
 
-enum ScriptState {
-    Ready(String),
-    Fetching(mpsc::Receiver<FetchResult>),
-    Failed(String),
-}
-/// A script waiting to run: parser-blocking, deferred, ordered or async.
-struct PendingScript {
-    node: Option<NodeId>,
-    module: bool,
-    name: String,
-    external: bool,
-    state: ScriptState,
-}
-impl PendingScript {
-    fn ready(&mut self, fallback: &'static Encoding) -> bool {
-        let ScriptState::Fetching(receiver) = &self.state else {
-            return true;
-        };
-        match receiver.try_recv() {
-            Ok(Ok(response)) => {
-                self.name = response.url.to_string();
-                self.state = ScriptState::Ready(encoding::decode_text(
-                    &response.bytes,
-                    response.header("content-type"),
-                    fallback,
-                ));
-                true
-            }
-            Ok(Err(error)) => {
-                self.state = ScriptState::Failed(format!("{}: {error}", self.name));
-                true
-            }
-            Err(mpsc::TryRecvError::Empty) => false,
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.state = ScriptState::Failed(format!("{}: fetch was cancelled", self.name));
-                true
-            }
-        }
-    }
-}
-
-/// Script attributes read from the DOM.
-struct ScriptElement {
-    kind: Option<bool>,
-    src: Option<String>,
-    is_async: bool,
-    defer: bool,
-    nomodule: bool,
-    nonce: String,
-    text: String,
-}
-/// `Some(true)` for module scripts, `Some(false)` for classic, `None` for data blocks.
-fn script_kind(kind: &str, language: Option<&str>) -> Option<bool> {
-    let kind = kind.trim().to_ascii_lowercase();
-    if kind == "module" {
-        return Some(true);
-    }
-    let classic = [
-        "application/ecmascript",
-        "application/javascript",
-        "application/x-ecmascript",
-        "application/x-javascript",
-        "text/ecmascript",
-        "text/javascript",
-        "text/javascript1.0",
-        "text/javascript1.1",
-        "text/javascript1.2",
-        "text/javascript1.3",
-        "text/javascript1.4",
-        "text/javascript1.5",
-        "text/jscript",
-        "text/livescript",
-        "text/x-ecmascript",
-        "text/x-javascript",
-    ];
-    if kind.is_empty() {
-        return match language.map(|l| l.trim().to_ascii_lowercase()) {
-            None => Some(false),
-            Some(language) if language.is_empty() => Some(false),
-            Some(language) => classic
-                .contains(&format!("text/{language}").as_str())
-                .then_some(false),
-        };
-    }
-    classic.contains(&kind.as_str()).then_some(false)
-}
-
-const MAX_SCRIPTS: usize = 1024;
+#[path = "document_host.rs"]
+mod document_host;
+#[cfg(test)]
+use document_host::script_kind;
 
 pub struct View {
+    host: document_host::DocumentHost,
+    scheduler: crate::event_loop::Scheduler,
     document: Rc<RefCell<BaseDocument>>,
     document_revision: u64,
     navigation_generation: u64,
@@ -330,15 +248,6 @@ pub struct View {
     limits: Limits,
     abort: Option<AbortController>,
     pending: Option<mpsc::Receiver<FetchResult>>,
-    parser: Option<Parser>,
-    blocking: Option<PendingScript>,
-    deferred: VecDeque<PendingScript>,
-    ordered: VecDeque<PendingScript>,
-    asynchronous: Vec<PendingScript>,
-    started_scripts: Rc<RefCell<HashSet<NodeId>>>,
-    script_count: usize,
-    applied_meta: HashSet<NodeId>,
-    encoding: &'static Encoding,
     referrer_policy: Option<String>,
     csp: Arc<RwLock<Csp>>,
     dialog: Rc<RefCell<Option<crate::dom::DocumentDialogHandler>>>,
@@ -349,15 +258,13 @@ pub struct View {
     last_revision: u64,
     raster: crate::raster::Raster,
     pub compatibility: Option<String>,
+    script_failure: Option<String>,
     in_flight: Arc<AtomicUsize>,
     completed: Arc<Mutex<Vec<(String, bool)>>>,
     started: Instant,
     dirty: bool,
     reported_frames: bool,
     frozen: bool,
-    ready_event_sent: bool,
-    load_event_sent: bool,
-    ready_at: Option<Instant>,
     refresh: Option<(Instant, Url)>,
     composing: bool,
     showing_error: bool,
@@ -371,13 +278,21 @@ impl View {
     pub(crate) fn new(url: Url, network: Network, limits: Limits) -> Result<Self, String> {
         let document = HtmlDocument::from_html(
             "<!doctype html><title>Wega</title>",
-            DocumentConfig::default(),
+            DocumentConfig {
+                font_ctx: network
+                    .fonts
+                    .as_ref()
+                    .map(|font| blitz_dom::build_broker_font_ctx(font)),
+                ..Default::default()
+            },
         )
         .into_inner();
         let (_tx, navigation_rx) = mpsc::channel();
         let raster = crate::raster::Raster::new(network.wake.clone())?;
         let csp = Arc::new(RwLock::new(Csp::default()));
         let mut view = Self {
+            host: document_host::DocumentHost::default(),
+            scheduler: crate::event_loop::Scheduler::default(),
             document: Rc::new(RefCell::new(document)),
             document_revision: 0,
             navigation_generation: 0,
@@ -387,15 +302,6 @@ impl View {
             limits,
             abort: None,
             pending: None,
-            parser: None,
-            blocking: None,
-            deferred: VecDeque::new(),
-            ordered: VecDeque::new(),
-            asynchronous: Vec::new(),
-            started_scripts: Default::default(),
-            script_count: 0,
-            applied_meta: HashSet::new(),
-            encoding: encoding_rs::UTF_8,
             referrer_policy: None,
             csp,
             dialog: Rc::new(RefCell::new(None)),
@@ -406,15 +312,13 @@ impl View {
             last_revision: 0,
             raster,
             compatibility: None,
+            script_failure: None,
             in_flight: Arc::new(AtomicUsize::new(0)),
             completed: Arc::new(Mutex::new(Vec::new())),
             started: Instant::now(),
             dirty: true,
             reported_frames: false,
             frozen: false,
-            ready_event_sent: false,
-            load_event_sent: false,
-            ready_at: None,
             refresh: None,
             composing: false,
             showing_error: false,
@@ -438,7 +342,7 @@ impl View {
         *self.dialog.borrow_mut() = Some(handler);
     }
     fn local_base(&self) -> Option<std::path::PathBuf> {
-        if self.url.scheme() == "file" {
+        if self.url.scheme() == "file" && self.network.remote.is_none() {
             self.url
                 .to_file_path()
                 .ok()
@@ -503,10 +407,14 @@ impl View {
     }
     fn load_request(&mut self, url: Url, context: FetchContext) -> Result<(), String> {
         self.stop_pending();
+        self.scheduler.suspend();
+        if let Some(script) = &mut self.script {
+            script.freeze(true);
+        }
         self.url = url.clone();
         self.loading = true;
         self.compatibility = None;
-        self.ready_event_sent = false;
+        self.host.ready_event_sent = false;
         self.composing = false;
         if url.as_str() == "about:blank" {
             self.set_html("<!doctype html><title>New tab</title><body></body>")?;
@@ -519,6 +427,10 @@ impl View {
     /// its scripts stay.
     pub fn stop(&mut self) {
         self.stop_pending();
+        self.scheduler.resume();
+        if let Some(script) = &mut self.script {
+            script.freeze(self.frozen);
+        }
         self.document_generation.set(self.navigation_generation);
         self.url = self.document.borrow().url().clone();
     }
@@ -527,15 +439,16 @@ impl View {
             abort.abort();
         }
         self.pending = None;
-        self.parser = None;
-        self.blocking = None;
-        self.deferred.clear();
-        self.ordered.clear();
-        self.asynchronous.clear();
+        self.host.parser = None;
+        self.host.blocking = None;
+        self.host.deferred.clear();
+        self.host.ordered.clear();
+        self.host.asynchronous.clear();
         self.loading = false;
     }
     /// Replace the document with `html` (UTF-8, no response headers).
     pub fn set_html(&mut self, html: &str) -> Result<(), String> {
+        self.stop_pending();
         self.set_document(html, encoding_rs::UTF_8, None, false)
     }
     fn set_document(
@@ -575,6 +488,11 @@ impl View {
         self.in_flight = Arc::new(AtomicUsize::new(0));
         self.completed = Arc::new(Mutex::new(Vec::new()));
         let config = DocumentConfig {
+            font_ctx: self
+                .network
+                .fonts
+                .as_ref()
+                .map(|font| blitz_dom::build_broker_font_ctx(font)),
             base_url: Some(self.url.to_string()),
             abort_signal: Some(abort.signal.clone()),
             net_provider: Some(Arc::new(Resources {
@@ -592,22 +510,24 @@ impl View {
             ..Default::default()
         };
         self.script = None;
-        self.parser = None;
-        self.blocking = None;
-        self.deferred.clear();
-        self.ordered.clear();
-        self.asynchronous.clear();
-        self.started_scripts = Default::default();
-        self.applied_meta.clear();
-        self.script_count = 0;
-        self.encoding = encoding;
+        self.host.parser = None;
+        self.host.blocking = None;
+        self.host.deferred.clear();
+        self.host.ordered.clear();
+        self.host.asynchronous.clear();
+        self.host.started_scripts = Default::default();
+        self.host.applied_meta.clear();
+        self.host.script_count = 0;
+        self.host.encoding = encoding;
         let document = if xml {
             HtmlDocument::from_xml(html, config).into_inner()
         } else {
             blitz_dom::BaseDocument::new(config)
         };
         self.document = Rc::new(RefCell::new(document));
+        self.script_failure = None;
         self.document_revision = document_revision;
+        self.scheduler.replace(document_revision);
         self.document_generation = Rc::new(Cell::new(self.navigation_generation));
         self.events.clear();
         self.navigate.borrow_mut().clear();
@@ -625,7 +545,7 @@ impl View {
                 document_generation: self.document_generation.clone(),
                 document_revision: self.document_revision,
                 activation: self.activation.clone(),
-                started_scripts: self.started_scripts.clone(),
+                started_scripts: self.host.started_scripts.clone(),
             },
             &self.limits,
             html.len(),
@@ -649,16 +569,16 @@ impl View {
                 self.prepare_script(node, true, true);
             }
         } else {
-            self.parser = Some(Parser::new(
+            self.host.parser = Some(Parser::new(
                 self.document.clone(),
                 html,
                 self.limits.dom_nodes,
             ));
         }
         self.dirty = true;
-        self.ready_event_sent = false;
-        self.load_event_sent = false;
-        self.ready_at = None;
+        self.host.ready_event_sent = false;
+        self.host.load_event_sent = false;
+        self.host.ready_at = None;
         self.composing = false;
         self.loading = true;
         // Parse (and run inline scripts) as far as possible before returning.
@@ -706,26 +626,37 @@ impl View {
                 Err(error) => self.load_error(error),
             }
         }
+        // A provisional navigation retains pixels, but cannot run the old realm.
+        if !self.scheduler.script_allowed() {
+            return;
+        }
         self.document.borrow_mut().handle_messages();
         let revision = self.revision.load(Ordering::Relaxed);
         if revision != self.last_revision {
             self.last_revision = revision;
             self.dirty = true;
         }
-        self.advance();
-        self.lifecycle();
-        if let Some(script) = &mut self.script {
-            let due = script.next_timer().is_some_and(|t| t.is_zero());
-            if due {
-                let result = script.tick();
-                if let Err(error) = result {
-                    self.script_error(error);
+        use crate::event_loop::Task;
+        for task in [Task::Parser, Task::Lifecycle, Task::Timers, Task::Resources] {
+            self.scheduler.enqueue(task);
+        }
+        while let Some(task) = self.scheduler.next() {
+            match task {
+                Task::Parser => self.advance(),
+                Task::Lifecycle => self.lifecycle(),
+                Task::Resources => self.resource_events(),
+                Task::Timers => {
+                    if let Some(script) = &mut self.script {
+                        let result = script.tick();
+                        if let Err(error) = result {
+                            self.script_error(error);
+                        }
+                        self.dirty = true;
+                        self.drain_requests();
+                    }
                 }
-                self.dirty = true;
-                self.drain_requests();
             }
         }
-        self.resource_events();
         if let Some(script) = &mut self.script {
             for error in script.take_errors() {
                 if error.contains("; missing:") {
@@ -742,7 +673,7 @@ impl View {
         }
         if let Some((due, url)) = self.refresh.clone()
             && Instant::now() >= due
-            && self.load_event_sent
+            && self.host.load_event_sent
         {
             self.refresh = None;
             self.navigate.borrow_mut().push(url);
@@ -764,6 +695,10 @@ impl View {
         );
         let result = match kind {
             DocumentKind::Download => {
+                self.scheduler.resume();
+                if let Some(script) = &mut self.script {
+                    script.freeze(self.frozen);
+                }
                 self.document_generation.set(self.navigation_generation);
                 self.events
                     .push_back(PageEvent::Download(response.url.clone()));
@@ -818,402 +753,6 @@ impl View {
         };
         if let Err(error) = result {
             self.load_error(error);
-        }
-    }
-    /// Run the parser and the script queues as far as they can go without waiting.
-    fn advance(&mut self) {
-        loop {
-            if self.script.is_none() {
-                // A fatal script error ended scripting; finish parsing without scripts.
-                self.blocking = None;
-            }
-            if let Some(blocking) = &mut self.blocking {
-                if !blocking.ready(self.encoding) {
-                    break;
-                }
-                let script = self.blocking.take().unwrap();
-                self.execute(script);
-                continue;
-            }
-            let Some(parser) = &mut self.parser else {
-                break;
-            };
-            if parser.is_finished() {
-                break;
-            }
-            match parser.step() {
-                Step::Script(node) => {
-                    self.apply_meta();
-                    self.prepare_script(node, true, false);
-                }
-                Step::Finished => {
-                    self.apply_meta();
-                    self.parsed();
-                }
-                Step::Overflow => {
-                    if self.showing_error {
-                        // Even the error page exceeds the budget; show what parsed.
-                        self.parser = None;
-                        break;
-                    }
-                    self.load_error("DOM node limit exceeded; use Servo for this page".into());
-                    continue;
-                }
-            }
-            self.drain_requests();
-        }
-        self.run_queues();
-    }
-    /// After parsing: enforce the node budget and read meta refresh.
-    fn parsed(&mut self) {
-        let count = self.node_count();
-        if count > self.limits.dom_nodes {
-            self.load_error("DOM node limit exceeded; use Servo for this page".into());
-            return;
-        }
-        if let Some(script) = &mut self.script {
-            script.sync_nodes(count);
-        }
-        if self.refresh.is_none() {
-            let value = {
-                let doc = self.document.borrow();
-                doc.query_selector_all("meta[http-equiv]")
-                    .ok()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|id| doc.get_node(id).and_then(|n| n.element_data()))
-                    .find(|e| {
-                        e.attr(LocalName::from("http-equiv"))
-                            .is_some_and(|v| v.eq_ignore_ascii_case("refresh"))
-                    })
-                    .and_then(|e| e.attr(LocalName::from("content")).map(str::to_owned))
-            };
-            if let Some(value) = value {
-                self.refresh = self.parse_refresh(&value);
-            }
-        }
-    }
-    /// Apply `<meta http-equiv=content-security-policy>` seen so far.
-    fn apply_meta(&mut self) {
-        let found: Vec<(NodeId, String)> = {
-            let doc = self.document.borrow();
-            doc.query_selector_all("meta[http-equiv]")
-                .ok()
-                .into_iter()
-                .flatten()
-                .filter(|id| !self.applied_meta.contains(id))
-                .filter_map(|id| {
-                    let element = doc.get_node(id)?.element_data()?;
-                    element
-                        .attr(LocalName::from("http-equiv"))
-                        .is_some_and(|v| v.eq_ignore_ascii_case("content-security-policy"))
-                        .then(|| {
-                            element
-                                .attr(LocalName::from("content"))
-                                .map(|c| (id, c.to_owned()))
-                        })
-                        .flatten()
-                })
-                .collect()
-        };
-        if found.is_empty() {
-            return;
-        }
-        let mut csp = self
-            .csp
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (id, value) in found {
-            self.applied_meta.insert(id);
-            csp.add(&value);
-        }
-        let eval = csp.allows_eval();
-        drop(csp);
-        if let Some(script) = &mut self.script {
-            script.allow_eval(eval);
-        }
-    }
-    fn read_script(&self, node: NodeId) -> Option<ScriptElement> {
-        let doc = self.document.borrow();
-        let element = doc.get_node(node)?.element_data()?;
-        let attr = |name: &str| element.attr(LocalName::from(name)).map(str::to_owned);
-        Some(ScriptElement {
-            kind: script_kind(
-                &attr("type").unwrap_or_default(),
-                attr("language").as_deref(),
-            ),
-            src: attr("src"),
-            is_async: attr("async").is_some(),
-            defer: attr("defer").is_some(),
-            nomodule: attr("nomodule").is_some(),
-            nonce: attr("nonce").unwrap_or_default(),
-            text: doc.get_node(node)?.text_content(),
-        })
-    }
-    /// Prepare a script element: run it now, fetch it, or queue it.
-    /// `parser`: inserted by the parser (else by script). `in_order`: queue
-    /// even blocking scripts in document order (XML documents).
-    fn prepare_script(&mut self, node: NodeId, parser: bool, in_order: bool) {
-        if !self.started_scripts.borrow_mut().insert(node) {
-            return;
-        }
-        let Some(element) = self.read_script(node) else {
-            return;
-        };
-        let Some(module) = element.kind else { return };
-        if element.nomodule && !module {
-            return;
-        }
-        if self.script_count >= MAX_SCRIPTS {
-            self.notice(format!(
-                "Script limit of {MAX_SCRIPTS} reached; remaining scripts are skipped"
-            ));
-            return;
-        }
-        self.script_count += 1;
-        let document = self.document.borrow().url().clone();
-        if let Some(src) = element.src {
-            let Ok(url) = document.join(src.trim()) else {
-                self.script_failed(node, format!("Invalid script address: {src}"));
-                return;
-            };
-            let csp = self.csp();
-            let allowed = csp.allows_url("script-src-elem", &url, &document, Some(&element.nonce))
-                || (!parser && csp.allows_dynamic_script(&url, &document));
-            drop(csp);
-            if !allowed {
-                self.script_failed(
-                    node,
-                    format!("Refused to load script {url}: Content Security Policy"),
-                );
-                return;
-            }
-            let mut context = FetchContext::subresource(&document, Destination::Script);
-            context.referrer_policy = self.referrer_policy.clone();
-            let state = match self.fetch(url.clone(), self.limits.resource_bytes, context) {
-                Ok(receiver) => ScriptState::Fetching(receiver),
-                Err(error) => ScriptState::Failed(error),
-            };
-            let pending = PendingScript {
-                node: Some(node),
-                module,
-                name: url.to_string(),
-                external: true,
-                state,
-            };
-            match (parser, module, element.is_async, element.defer) {
-                (_, _, true, _) => self.asynchronous.push(pending),
-                (true, true, _, _) | (true, false, false, true) => self.deferred.push_back(pending),
-                (true, false, false, false) if in_order => self.deferred.push_back(pending),
-                (true, false, false, false) => self.blocking = Some(pending),
-                // Script-inserted scripts: async unless script cleared `async`.
-                (false, ..) => self.ordered.push_back(pending),
-            }
-            return;
-        }
-        if !self
-            .csp()
-            .allows_inline_script(Some(&element.nonce), &element.text)
-        {
-            self.notice("Refused to run an inline script: Content Security Policy".into());
-            return;
-        }
-        let name = if module {
-            let mut url = document.clone();
-            url.set_query(Some(&format!("__wega_inline_module={}", self.script_count)));
-            url.to_string()
-        } else {
-            format!("{document} inline #{}", self.script_count)
-        };
-        let pending = PendingScript {
-            node: Some(node),
-            module,
-            name,
-            external: false,
-            state: ScriptState::Ready(element.text),
-        };
-        if (module && parser && !element.is_async) || in_order {
-            self.deferred.push_back(pending);
-        } else {
-            self.execute(pending);
-        }
-    }
-    fn script_failed(&mut self, node: NodeId, message: String) {
-        self.notice(message);
-        self.run(
-            &format!(
-                "__wega_script_done({}, false)",
-                serde_json::json!(node.as_u64().to_string())
-            ),
-            "wega:script-error",
-        );
-    }
-    fn execute(&mut self, script: PendingScript) {
-        let node = script
-            .node
-            .map(|id| serde_json::json!(id.as_u64().to_string()));
-        match script.state {
-            ScriptState::Ready(source) => {
-                if let Some(node) = &node {
-                    self.run(
-                        &format!("__wega_current_script({node})"),
-                        "wega:current-script",
-                    );
-                }
-                self.run_program(&source, &script.name, script.module);
-                if let Some(node) = &node {
-                    self.run("__wega_current_script(null)", "wega:current-script");
-                    if script.external {
-                        self.run(
-                            &format!("__wega_script_done({node}, true)"),
-                            &format!("{} load event", script.name),
-                        );
-                    }
-                }
-            }
-            ScriptState::Failed(error) => {
-                self.notice(error);
-                if let Some(node) = &node {
-                    self.run(
-                        &format!("__wega_script_done({node}, false)"),
-                        "wega:script-error",
-                    );
-                }
-            }
-            ScriptState::Fetching(_) => unreachable!("only ready scripts execute"),
-        }
-        self.drain_requests();
-    }
-    /// Deferred, ordered and async scripts.
-    fn run_queues(&mut self) {
-        loop {
-            let mut progressed = false;
-            let parsed =
-                self.parser.as_ref().is_none_or(Parser::is_finished) && self.blocking.is_none();
-            if parsed
-                && let Some(front) = self.deferred.front_mut()
-                && front.ready(self.encoding)
-            {
-                let script = self.deferred.pop_front().unwrap();
-                self.execute(script);
-                progressed = true;
-            }
-            if let Some(front) = self.ordered.front_mut()
-                && front.ready(self.encoding)
-            {
-                let script = self.ordered.pop_front().unwrap();
-                self.execute(script);
-                progressed = true;
-            }
-            if let Some(index) = self
-                .asynchronous
-                .iter_mut()
-                .position(|script| script.ready(self.encoding))
-            {
-                let script = self.asynchronous.swap_remove(index);
-                self.execute(script);
-                progressed = true;
-            }
-            if !progressed {
-                break;
-            }
-        }
-    }
-    /// DOMContentLoaded and load, as their own tasks after parsing and scripts.
-    fn lifecycle(&mut self) {
-        let parsed =
-            self.parser.as_ref().is_none_or(Parser::is_finished) && self.blocking.is_none();
-        let modules = self
-            .script
-            .as_ref()
-            .is_some_and(|script| script.modules_pending());
-        if parsed
-            && self.pending.is_none()
-            && self.deferred.is_empty()
-            && !modules
-            && !self.ready_event_sent
-        {
-            self.ready_event_sent = true;
-            self.ready_at = Some(Instant::now());
-            self.run("document.readyState='interactive';document.dispatchEvent(new Event('readystatechange'));__wega_dispatch('DOMContentLoaded',document._id)", "wega:ready");
-        }
-        let settled = self.asynchronous.is_empty()
-            && self.ordered.is_empty()
-            && self.in_flight.load(Ordering::Relaxed) == 0
-            && !modules;
-        let expired = self
-            .ready_at
-            .is_some_and(|at| at.elapsed() > Duration::from_secs(30));
-        if self.ready_event_sent && !self.load_event_sent && (settled || expired) {
-            self.load_event_sent = true;
-            self.loading = false;
-            self.resource_events();
-            self.run("document.readyState='complete';document.dispatchEvent(new Event('readystatechange'));window.dispatchEvent(new Event('load'))", "wega:load");
-        }
-    }
-    /// `load`/`error` on images and stylesheets whose fetches finished.
-    fn resource_events(&mut self) {
-        let done = std::mem::take(
-            &mut *self
-                .completed
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        if done.is_empty() || self.script.is_none() {
-            return;
-        }
-        self.run(
-            &format!("__wega_resources_done({})", serde_json::json!(done)),
-            "wega:resources",
-        );
-    }
-    /// Act on what page script asked for since the last task.
-    fn drain_requests(&mut self) {
-        let Some(script) = &mut self.script else {
-            return;
-        };
-        let requests = script.take_requests();
-        if !requests.writes.is_empty() {
-            match &mut self.parser {
-                Some(parser) if !parser.is_finished() => parser.write(&requests.writes),
-                _ => self.notice("document.write after the document loaded was ignored".into()),
-            }
-        }
-        for url in requests.opened {
-            self.events.push_back(PageEvent::OpenWindow(url));
-        }
-        for delta in requests.traverse {
-            self.events.push_back(PageEvent::Traverse(delta));
-        }
-        for node in requests.activate {
-            // element.click(): script already saw the event; run the defaults.
-            if self.default_click(node) {
-                continue;
-            }
-            let event = self
-                .document
-                .borrow()
-                .get_node(node)
-                .map(|n| n.synthetic_click_event_data(Modifiers::empty()));
-            if let Some(event) = event {
-                let generated = {
-                    let mut generated = Vec::new();
-                    let mut doc = self.document.borrow_mut();
-                    let mut dom_event = DomEvent::new(node, DomEventData::Click(event));
-                    doc.handle_dom_event(&mut dom_event, |event| generated.push(event));
-                    generated
-                };
-                self.generated_events(generated, serde_json::json!({}), None);
-            }
-        }
-        for request in requests.scripts {
-            let before = self.ordered.len();
-            self.prepare_script(request.node, false, false);
-            // Script-inserted scripts are async unless `async` was set to false.
-            if request.force_async && self.ordered.len() > before {
-                let script = self.ordered.pop_back().unwrap();
-                self.asynchronous.push(script);
-            }
         }
     }
     /// A navigation started by the page (link, form, script).
@@ -1287,16 +826,19 @@ impl View {
             Some(self.url.to_string()),
         )
         .emit();
-        if error.fatal || error.message.contains("; missing:") {
+        if !error.fatal && error.message.contains("; missing:") {
             self.compatibility
                 .get_or_insert_with(|| error.message.clone());
         }
         if error.fatal {
+            self.script_failure = Some(error.message.clone());
+            self.navigate.borrow_mut().clear();
+            self.activation.set(None);
             self.script = None;
-            self.blocking = None;
-            self.deferred.clear();
-            self.ordered.clear();
-            self.asynchronous.clear();
+            self.host.blocking = None;
+            self.host.deferred.clear();
+            self.host.ordered.clear();
+            self.host.asynchronous.clear();
         }
         self.notice(error.to_string());
     }
@@ -1304,13 +846,16 @@ impl View {
         self.run_program(source, name, false);
     }
     fn run_program(&mut self, source: &str, name: &str, module: bool) {
+        if !self.scheduler.script_allowed() {
+            return;
+        }
         if let Some(script) = &mut self.script {
             let result = if module {
                 script.run_module(source, name)
             } else {
                 script.run(source, name)
-            }
-            .and_then(|_| script.tick());
+            };
+            let result = crate::script::finish_task(script.as_mut(), result);
             if let Err(error) = result {
                 self.script_error(error);
             }
@@ -1318,54 +863,35 @@ impl View {
         }
     }
     pub fn evaluate(&mut self, source: &str) -> Result<String, String> {
-        let result = self
-            .script
-            .as_mut()
-            .ok_or("No script context")?
-            .run(source, "evaluate")
-            .and_then(|value| {
-                self.script.as_mut().unwrap().tick()?;
-                Ok(value)
-            });
+        if !self.scheduler.script_allowed() {
+            return Err("Document is suspended for navigation".into());
+        }
+        let script = self.script.as_mut().ok_or("No script context")?;
+        let result = script.run(source, "evaluate");
+        let result = crate::script::finish_task(script.as_mut(), result);
         self.dirty = true;
-        if let Err(error) = &result
-            && error.fatal
-        {
-            crate::diagnostics::Diagnostic::error(
-                crate::diagnostics::Category::Javascript,
-                error.to_string(),
-                Some(self.url.to_string()),
-            )
-            .emit();
-            self.script = None;
+        if let Err(error) = &result {
+            self.script_error(error.clone());
         }
         self.drain_requests();
         result.map_err(|e| e.to_string())
     }
     pub fn evaluate_json(&mut self, source: &str) -> Result<String, String> {
-        let result = self
-            .script
-            .as_mut()
-            .ok_or("No script context")?
-            .evaluate_json(source)
-            .and_then(|value| {
-                self.script.as_mut().unwrap().tick()?;
-                Ok(value)
-            });
+        if !self.scheduler.script_allowed() {
+            return Err("Document is suspended for navigation".into());
+        }
+        let script = self.script.as_mut().ok_or("No script context")?;
+        let result = script.evaluate_json(source);
+        let result = crate::script::finish_task(script.as_mut(), result);
         self.dirty = true;
         if let Err(error) = &result {
-            crate::diagnostics::Diagnostic::error(
-                crate::diagnostics::Category::Javascript,
-                error.to_string(),
-                Some(self.url.to_string()),
-            )
-            .emit();
-            if error.fatal {
-                self.script = None;
-            }
+            self.script_error(error.clone());
         }
         self.drain_requests();
         result.map_err(|e| e.to_string())
+    }
+    pub fn take_script_failure(&mut self) -> Option<String> {
+        self.script_failure.take()
     }
     pub fn title(&self) -> String {
         let doc = self.document.borrow();
@@ -1390,15 +916,16 @@ impl View {
         }
     }
     pub fn next_wakeup(&self) -> Option<Duration> {
-        if self.frozen {
+        if self.frozen || !self.scheduler.script_allowed() {
             return None;
         }
         let parser_runnable = self
+            .host
             .parser
             .as_ref()
             .is_some_and(|parser| !parser.is_finished())
-            && self.blocking.is_none();
-        if parser_runnable {
+            && self.host.blocking.is_none();
+        if parser_runnable || self.host.yielded {
             return Some(Duration::ZERO);
         }
         let mut wake = self.script.as_ref().and_then(|script| script.next_timer());
@@ -1409,8 +936,8 @@ impl View {
         if let Some((due, _)) = &self.refresh {
             at(*due);
         }
-        if let Some(ready) = self.ready_at
-            && !self.load_event_sent
+        if let Some(ready) = self.host.ready_at
+            && !self.host.load_event_sent
         {
             at(ready + Duration::from_secs(30));
         }
@@ -1446,8 +973,9 @@ impl View {
     pub fn freeze(&mut self, freeze: bool) {
         let changed = self.frozen != freeze;
         self.frozen = freeze;
-        if let Some(script) = &mut self.script {
-            script.freeze(freeze);
+        self.scheduler.freeze(freeze);
+        if !freeze && let Some(script) = &mut self.script {
+            script.freeze(false);
         }
         if changed {
             // Pause timers before hiding; resume them before delivering the
@@ -1456,6 +984,9 @@ impl View {
                 &format!("__wega_visibility({freeze})"),
                 "wega:visibilitychange",
             );
+        }
+        if freeze && let Some(script) = &mut self.script {
+            script.freeze(true);
         }
         if freeze {
             self.document.borrow_mut().release_image_cache();
@@ -1525,6 +1056,9 @@ impl View {
     /// Pointer input: hover, mouse/pointer events, Blitz defaults (focus, text
     /// selection, clicks), wheel scrolling and the cursor.
     pub fn pointer(&mut self, pointer: Pointer) {
+        if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
         // Hit testing needs current layout (scrolling and script change it).
         self.document
             .borrow_mut()
@@ -1658,6 +1192,9 @@ impl View {
     }
     /// A primary click at viewport coordinates: down, up and the click it generates.
     pub fn click(&mut self, x: f32, y: f32) {
+        if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
         self.document
             .borrow_mut()
             .resolve(self.started.elapsed().as_secs_f64());
@@ -1816,6 +1353,9 @@ impl View {
     }
     /// Native editing goes through Blitz/Parley after cancelable DOM events.
     pub fn key(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+        if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
         let target = self
             .document
             .borrow()
@@ -1993,6 +1533,9 @@ impl View {
         true
     }
     pub fn ime(&mut self, event: blitz_traits::events::BlitzImeEvent) {
+        if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
         use blitz_traits::events::BlitzImeEvent;
         let target = self
             .document
@@ -2051,6 +1594,9 @@ impl View {
         self.dirty = true;
     }
     pub fn scroll_at(&mut self, x: f64, y: f64, pointer_x: f32, pointer_y: f32) {
+        if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
         let mut doc = self.document.borrow_mut();
         let target = doc
             .hit(pointer_x, pointer_y)
@@ -2064,6 +1610,9 @@ impl View {
     }
     /// Scroll the viewport (or the scroll container under the pointer, via `wheel`).
     pub fn scroll(&mut self, x: f64, y: f64) {
+        if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
         let mut doc = self.document.borrow_mut();
         let p = doc.viewport_scroll();
         doc.set_viewport_scroll(blitz_dom::Point {
@@ -2109,7 +1658,9 @@ impl View {
         });
         doc.resolve(self.started.elapsed().as_secs_f64());
         drop(doc);
-        let another_frame = if let Some(script) = &mut self.script {
+        let another_frame = if let Some(script) = &mut self.script
+            && self.scheduler.script_allowed()
+        {
             match script.frame(self.started.elapsed().as_secs_f64() * 1000.0) {
                 Ok(pending) => pending,
                 Err(error) => {

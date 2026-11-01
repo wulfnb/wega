@@ -599,7 +599,7 @@ impl Browser {
                                 .on_hover_text(self.resources.description());
                                 if let Some(page)=self.tab().wega.as_ref() {
                                     let state=page.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                                    let rss=state.rss_bytes.map_or_else(||"—".into(),|bytes|format!("{} MiB",bytes/1_048_576));
+                                    let rss=page.resident_bytes().map_or_else(||"—".into(),|bytes|format!("{} MiB",bytes/1_048_576));
                                     ui.label(format!("Tab RAM {rss} · JS {:.1} MiB",state.js_heap as f64/1_048_576.0)).on_hover_text("Tab RAM is the worker's current resident memory. JS is its V8 heap, a subset of that memory. Shared pages may be counted by both browser and worker.");
                                 }
                             }

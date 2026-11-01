@@ -146,7 +146,15 @@ fn wait(view: &mut View, script: &str) -> String {
 #[test]
 fn fetch_and_xhr_use_the_local_server() {
     let server = Server::new();
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let engine = Engine::new(
+        Limits::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap();
     let mut view = page(&engine, &server.url);
     view.evaluate("fetch('/data').then(r=>r.json()).then(v=>globalThis.fetched=v.answer).catch(e=>globalThis.fetched=String(e)+' cause: '+String(e.cause)+' stack: '+e.stack)").unwrap();
     assert_eq!(wait(&mut view, "globalThis.fetched??null"), "42");
@@ -203,7 +211,10 @@ fn response_size_limit_is_retained() {
             resource_bytes: 1024,
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap();
@@ -225,7 +236,10 @@ fn storage_is_persistent_origin_partitioned_and_has_a_quota() {
     let _ = std::fs::remove_dir_all(&directory);
     let engine = Engine::new(
         persistent_limits(),
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap()
@@ -256,7 +270,15 @@ fn storage_is_persistent_origin_partitioned_and_has_a_quota() {
 }
 #[test]
 fn deno_web_primitives_are_available_and_core_ops_are_private() {
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let engine = Engine::new(
+        Limits::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap();
     let mut view = page(&engine, "https://fixture.test/");
     assert_eq!(view.evaluate_json("[new URL('/x',location.href).pathname,new TextDecoder().decode(new TextEncoder().encode('hello')),new Blob(['test']).size,structuredClone({x:2}).x,typeof crypto.subtle,typeof ReadableStream,typeof Deno]").unwrap(),"[\"/x\",\"hello\",4,2,\"object\",\"function\",\"undefined\"]");
 }
@@ -269,7 +291,10 @@ fn real_jquery_ajax_uses_the_bounded_xhr_path() {
             script_time: Duration::from_secs(2),
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap();
@@ -283,7 +308,15 @@ fn real_jquery_ajax_uses_the_bounded_xhr_path() {
 #[test]
 fn modules_load_graphs_dynamic_import_and_top_level_await() {
     let server = Server::new();
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let engine = Engine::new(
+        Limits::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap();
     let mut view = page(&engine, &server.url);
     view.set_html("<p id='result'>waiting</p><script type='module'>import {value} from './dep.js';const lazy=await import('./dynamic.js');await new Promise(resolve=>setTimeout(resolve,5));document.getElementById('result').textContent=String(value+lazy.default);</script>").unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -317,7 +350,10 @@ fn cookies_share_http_fetch_and_script_rules_and_persist() {
     let _ = std::fs::remove_dir_all(&directory);
     let engine = Engine::new(
         persistent_limits(),
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap()
@@ -388,7 +424,10 @@ fn cookies_share_http_fetch_and_script_rules_and_persist() {
     drop(engine);
     let engine = Engine::new(
         persistent_limits(),
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap()
@@ -410,7 +449,15 @@ fn cookies_share_http_fetch_and_script_rules_and_persist() {
 #[test]
 fn broker_fetch_retains_response_filtering_immutability_and_redirect_metadata() {
     let server = Server::new();
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let engine = Engine::new(
+        Limits::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap();
     let mut view = page(&engine, &server.url);
     view.evaluate("fetch('/redirect',{redirect:'manual'}).then(r=>globalThis.manual=[r.type,r.status,[...r.headers].length,r.body===null])").unwrap();
     assert_eq!(
@@ -427,7 +474,15 @@ fn broker_fetch_retains_response_filtering_immutability_and_redirect_metadata() 
 #[test]
 fn fetch_preserves_abort_reason_and_status_text() {
     let server = Server::new();
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let engine = Engine::new(
+        Limits::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap();
     let mut view = page(&engine, &server.url);
     view.evaluate("const stopped=new AbortController();stopped.abort('custom reason');fetch('/data',{signal:stopped.signal}).catch(reason=>globalThis.aborted=reason)").unwrap();
     assert_eq!(

@@ -8,6 +8,8 @@ debug = 0
 incremental = false
 
 [patch.crates-io]
+deno_websocket = { path = "vendor/deno/deno_websocket" }
+deno_webstorage = { path = "vendor/deno/deno_webstorage" }
 deno_core = { path = "vendor/deno/deno_core" }
 deno_ops = { path = "vendor/deno/deno_ops" }
 serde_v8 = { path = "vendor/deno/serde_v8" }

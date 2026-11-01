@@ -91,24 +91,50 @@ impl SvgImageData {
     /// decompressed first.
     pub fn from_data(data: &[u8], options: &usvg::Options) -> Result<Self, usvg::Error> {
         // Gzip magic bytes, matching the SVGZ detection in `usvg::Tree::from_data`.
-        let decompressed;
-        let data = if data.starts_with(&[0x1f, 0x8b]) {
-            decompressed = usvg::decompress_svgz(data)?;
+        use std::io::Read;
+        const MAX_SVG: usize=8*1024*1024;
+        let permit=crate::image_budget::DecodePermit::reserve().map_err(|_| usvg::Error::ElementsLimitReached)?;
+        let mut decompressed=Vec::new();
+        let data=if data.starts_with(&[0x1f,0x8b]) {
+            flate2::read::GzDecoder::new(data).take((MAX_SVG+1) as u64).read_to_end(&mut decompressed).map_err(|_| usvg::Error::MalformedGZip)?;
             decompressed.as_slice()
-        } else {
-            data
-        };
+        } else { data };
+        if data.len()>MAX_SVG { return Err(usvg::Error::ElementsLimitReached); }
 
         let text = std::str::from_utf8(data).map_err(|_| usvg::Error::NotAnUtf8Str)?;
         let xml_options = roxmltree::ParsingOptions {
             allow_dtd: true,
+            nodes_limit: 16384,
             ..Default::default()
         };
         let doc = roxmltree::Document::parse_with_options(text, xml_options)
             .map_err(usvg::Error::ParsingFailed)?;
-        let tree = usvg::Tree::from_xmltree(&doc, options)?;
+        let mut options=usvg::Options {
+            dpi: options.dpi, font_family:options.font_family.clone(),font_size:options.font_size,languages:options.languages.clone(),shape_rendering:options.shape_rendering,text_rendering:options.text_rendering,image_rendering:options.image_rendering,default_size:options.default_size,fontdb:options.fontdb.clone(),style_sheet:options.style_sheet.clone(),..Default::default()
+        };
+        // External SVG images never open arbitrary host files. Network resources
+        // are fetched through the document provider; data images are bounded here.
+        options.image_href_resolver.resolve_string=Box::new(|_,_| None);
+        let pixels=std::sync::atomic::AtomicU64::new(0);
+        options.image_href_resolver.resolve_data=Box::new(move |mime,bytes,options| {
+            if bytes.len()>MAX_SVG { return None; }
+            if mime=="image/svg+xml" {
+                let nested=Self::from_data(&bytes,options).ok()?;
+                return Some(usvg::ImageKind::SVG((*nested.tree).clone()));
+            }
+            let dimensions=image::ImageReader::new(std::io::Cursor::new(bytes.as_slice())).with_guessed_format().ok()?.into_dimensions().ok()?;
+            let cost=u64::from(dimensions.0)*u64::from(dimensions.1);
+            pixels.fetch_update(std::sync::atomic::Ordering::Relaxed,std::sync::atomic::Ordering::Relaxed,|used| used.checked_add(cost).filter(|sum| *sum<=8*1024*1024)).ok()?;
+            (usvg::ImageHrefResolver::default_data_resolver())(mime,bytes,options)
+        });
+        let tree=Arc::new(usvg::Tree::from_xmltree(&doc, &options)?);
+        if tree.size().width()>8192.0 || tree.size().height()>8192.0 { return Err(usvg::Error::InvalidSize); }
+        // Tree storage is charged conservatively by source and node count; the
+        // process supervisor remains the backstop for native decoder allocations.
+        let charge=data.len().saturating_mul(8).saturating_add(doc.descendants().count().saturating_mul(1024)).min(128*1024*1024);
+        permit.retain(&tree,charge).map_err(|_| usvg::Error::ElementsLimitReached)?;
         Ok(Self {
-            tree: Arc::new(tree),
+            tree,
             intrinsic_dimensions: SvgIntrinsicDimensions::from_xmltree(&doc),
         })
     }

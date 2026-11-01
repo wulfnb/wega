@@ -6,6 +6,9 @@ use std::{io, path::Path, process::Command};
 #[cfg(target_os = "linux")]
 #[path = "launch_linux.rs"]
 mod linux;
+#[cfg(target_os = "macos")]
+#[path = "launch_macos.rs"]
+mod macos;
 #[cfg(windows)]
 #[path = "launch_windows.rs"]
 mod windows;
@@ -56,8 +59,67 @@ fn unavailable(transport: BrokerTransport) -> io::Error {
 
 pub struct PreparedLaunch {
     directory: tempfile::TempDir,
+    mode: Mode,
+    #[cfg(windows)]
+    grants: std::sync::Mutex<Vec<std::os::windows::io::OwnedHandle>>,
 }
 impl PreparedLaunch {
+    pub fn required_fixture(command: &mut Command) -> io::Result<Self> {
+        Self::prepare(command, BrokerTransport::InheritedEndpoint, Mode::Required)
+    }
+    pub fn is_development(&self) -> bool {
+        self.mode == Mode::Development
+    }
+    pub fn spawn(&self, command: &mut Command) -> io::Result<crate::child::ChildOwner> {
+        #[cfg(windows)]
+        {
+            crate::windows_spawn::spawn(
+                command,
+                self.mode == Mode::Required,
+                &self
+                    .grants
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            )
+            .map(crate::child::ChildOwner::Native)
+        }
+        #[cfg(not(windows))]
+        {
+            command.spawn().map(Into::into)
+        }
+    }
+    #[cfg(windows)]
+    pub fn inherit_frame_file(&self, _: &mut Command, file: &std::fs::File) -> io::Result<u64> {
+        crate::inherited::preserve(
+            &mut self
+                .grants
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            file,
+        )
+    }
+    #[cfg(windows)]
+    pub fn inherit_broker_channels(
+        &self,
+        _: &mut Command,
+        channels: &[crate::ipc::Channel],
+    ) -> io::Result<Vec<u64>> {
+        if channels.len() != 4 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Expected four broker channels",
+            ));
+        }
+        let mut grants = self
+            .grants
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        channels
+            .iter()
+            .map(|channel| crate::inherited::preserve(&mut grants, channel))
+            .collect()
+    }
+
     #[cfg(unix)]
     pub fn inherit_frame_file(
         &self,
@@ -96,7 +158,10 @@ impl PreparedLaunch {
         )
     }
     fn prepare(command: &mut Command, transport: BrokerTransport, mode: Mode) -> io::Result<Self> {
-        if mode == Mode::Required {
+        if mode == Mode::Required
+            && (transport == BrokerTransport::Tcp
+                || !cfg!(any(target_os = "linux", target_os = "macos", windows)))
+        {
             return Err(unavailable(transport));
         }
         if !Path::new(command.get_program()).is_absolute() {
@@ -114,7 +179,11 @@ impl PreparedLaunch {
         }
         let directory = temporary.tempdir()?;
         Self::sanitize(command, directory.path());
-        command.arg(DEVELOPMENT_ARGUMENT);
+        command.arg(if mode == Mode::Development {
+            DEVELOPMENT_ARGUMENT
+        } else {
+            crate::sandbox::REQUIRED_ARGUMENT
+        });
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -122,12 +191,19 @@ impl PreparedLaunch {
         }
         #[cfg(target_os = "linux")]
         linux::prepare(command);
+        #[cfg(target_os = "macos")]
+        macos::prepare(command);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000);
         }
-        Ok(Self { directory })
+        Ok(Self {
+            directory,
+            mode,
+            #[cfg(windows)]
+            grants: Default::default(),
+        })
     }
     fn sanitize(command: &mut Command, directory: &Path) {
         command.env_clear().current_dir(directory);
@@ -159,6 +235,7 @@ impl PreparedLaunch {
         {
             let job = windows::attach(process, maximum_commit_bytes)?;
             process.retain_until_exit(job);
+            process.resume()?;
         }
         #[cfg(not(windows))]
         let _ = maximum_commit_bytes;
@@ -169,9 +246,22 @@ impl PreparedLaunch {
 /// The standalone private worker also refuses an implicit unsandboxed launch.
 /// Library embeddings have their own host policy; the browser must use browser().
 pub fn validate_worker_start(arguments: impl IntoIterator<Item = String>) -> io::Result<()> {
+    let arguments: Vec<_> = arguments.into_iter().collect();
     let opted_in = arguments
-        .into_iter()
+        .iter()
         .any(|argument| argument == DEVELOPMENT_ARGUMENT);
+    let required = arguments
+        .iter()
+        .any(|argument| argument == crate::sandbox::REQUIRED_ARGUMENT);
+    if opted_in && required {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Conflicting worker launch modes",
+        ));
+    }
+    if required {
+        return crate::sandbox::enter();
+    }
     match Mode::select(cfg!(debug_assertions), opted_in)? {
         Mode::Development => {
             #[cfg(target_os = "linux")]

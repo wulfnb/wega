@@ -44,7 +44,7 @@ pub(crate) fn adapt_extension(
                 "Pinned broker fetch transport no longer matches",
             ));
         }
-        let text = text.replace(transport, "  const { requestRid, cancelHandleRid } = op_fetch(\n    req.method, req.currentUrl(), req.headerList, req.clientRid, reqBody !== null || reqRid !== null, reqBody, reqRid, wegaInclude, req.cacheMode ?? \"default\",\n  );");
+        let text = text.replace(transport, "  const { requestRid, cancelHandleRid } = op_fetch(\n    req.method, req.currentUrl(), req.headerList, req.clientRid, reqBody !== null || reqRid !== null, reqBody, reqRid, wegaInclude, req.cacheMode ?? \"default\", req.mode ?? \"cors\",\n  );");
         let before = "  const { requestRid, cancelHandleRid } = op_fetch(";
         let after = "  processUrlList(req.urlList, req.urlListProcessed);\n\n  /** @type {InnerResponse} */";
         let kind = "    statusMessage: resp.statusText,\n    type: \"basic\",";
@@ -192,7 +192,7 @@ async function wegaAwaitBroker(promise, terminator) {
   finally { terminator[abortSignal.remove](abort); }
 }
 
-function wegaBrokerFetch(method, address, headerList, clientRid, hasBody, bytes, bodyRid, include = false, cache = "default") {
+function wegaBrokerFetch(method, address, headerList, clientRid, hasBody, bytes, bodyRid, include = false, cache = "default", mode = "cors") {
   const requestRid = (async () => {
     const limit = core.ops.op_dom_read("limits", "", "", "").resourceBytes;
     if (bodyRid !== null) {
@@ -212,7 +212,7 @@ function wegaBrokerFetch(method, address, headerList, clientRid, hasBody, bytes,
     }
     bytes ??= new Uint8Array();
     if (bytes.length > limit) throw new TypeError("Upload exceeds its size limit");
-    return await core.ops.op_wega_fetch({url:address, method, headers:headerList, origin:"", credentials: include ? "include" : "omit", redirect:"manual", cache, limit}, bytes);
+    return await core.ops.op_wega_fetch({url:address, method, headers:headerList, origin:"", credentials: include ? "include" : "omit", redirect:"manual", cache, mode, limit}, bytes);
   })();
   return {requestRid, cancelHandleRid:null};
 }

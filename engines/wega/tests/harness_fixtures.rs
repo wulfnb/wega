@@ -19,7 +19,9 @@ fn test_react_counter_in_subprocess_worker() {
     };
 
     let url = fixture_url("react");
-    harness.load(&url, Duration::from_secs(10)).expect("Load react fixture");
+    harness
+        .load(&url, Duration::from_secs(10))
+        .expect("Load react fixture");
 
     // Verify initial text
     harness
@@ -49,7 +51,9 @@ fn test_preact_counter_in_subprocess_worker() {
     let mut harness = WorkerHarness::start(store.path().unwrap()).expect("Worker must start");
 
     let url = fixture_url("preact");
-    harness.load(&url, Duration::from_secs(10)).expect("Load preact fixture");
+    harness
+        .load(&url, Duration::from_secs(10))
+        .expect("Load preact fixture");
 
     harness
         .assert_text("#action", "0", Duration::from_secs(5))
@@ -68,7 +72,9 @@ fn test_vue_counter_in_subprocess_worker() {
     let mut harness = WorkerHarness::start(store.path().unwrap()).expect("Worker must start");
 
     let url = fixture_url("vue");
-    harness.load(&url, Duration::from_secs(10)).expect("Load vue fixture");
+    harness
+        .load(&url, Duration::from_secs(10))
+        .expect("Load vue fixture");
 
     harness
         .assert_text("#action", "0", Duration::from_secs(5))
@@ -87,7 +93,9 @@ fn test_jquery_counter_in_subprocess_worker() {
     let mut harness = WorkerHarness::start(store.path().unwrap()).expect("Worker must start");
 
     let url = fixture_url("jquery");
-    harness.load(&url, Duration::from_secs(10)).expect("Load jquery fixture");
+    harness
+        .load(&url, Duration::from_secs(10))
+        .expect("Load jquery fixture");
 
     harness
         .assert_text("#action", "0", Duration::from_secs(5))
@@ -109,7 +117,9 @@ fn test_harness_request_correlated_navigation() {
     let ctx1 = harness.load(&url1, Duration::from_secs(10)).unwrap();
 
     let url2 = fixture_url("react");
-    harness.navigate(&url2, Duration::from_secs(5)).expect("Navigate to react");
+    harness
+        .navigate(&url2, Duration::from_secs(5))
+        .expect("Navigate to react");
 
     // Wait for the new document to commit
     harness
@@ -120,7 +130,10 @@ fn test_harness_request_correlated_navigation() {
         .expect("New document committed");
 
     let ctx2 = harness.current_context();
-    assert_ne!(ctx1.document, ctx2.document, "Document ID must advance on navigation");
+    assert_ne!(
+        ctx1.document, ctx2.document,
+        "Document ID must advance on navigation"
+    );
 }
 
 #[test]

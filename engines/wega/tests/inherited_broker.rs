@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -13,6 +13,14 @@ use wega_protocol::{
 
 #[test]
 fn a_real_worker_uses_inherited_broker_grants_without_a_tcp_broker_address() {
+    run_worker(false);
+}
+#[test]
+#[ignore = "requires WEGA_CONTENT_HELPER and a supported native sandbox host"]
+fn a_required_worker_runs_jit_storage_cookies_and_frames_through_grants() {
+    run_worker(true);
+}
+fn run_worker(required: bool) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
@@ -21,6 +29,7 @@ fn a_real_worker_uses_inherited_broker_grants_without_a_tcp_broker_address() {
         loop {
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    stream.set_nonblocking(false).unwrap();
                     stream
                         .set_read_timeout(Some(Duration::from_secs(2)))
                         .unwrap();
@@ -62,26 +71,39 @@ fn a_real_worker_uses_inherited_broker_grants_without_a_tcp_broker_address() {
         process: ProcessSessionId([5; 16]),
         service: Some(session.identity()),
     };
-    let mut command = Command::new(env!("CARGO_BIN_EXE_wega-engine"));
-    let launch = wega_platform::launch::PreparedLaunch::development_fixture(&mut command).unwrap();
+    let executable = if required {
+        std::env::var_os("WEGA_CONTENT_HELPER").expect("Missing native content helper")
+    } else {
+        env!("CARGO_BIN_EXE_wega-engine").into()
+    };
+    let mut command = Command::new(executable);
+    let launch = if required {
+        wega_platform::launch::PreparedLaunch::required_fixture(&mut command)
+    } else {
+        wega_platform::launch::PreparedLaunch::development_fixture(&mut command)
+    }
+    .unwrap();
     let descriptors = launch
         .inherit_broker_channels(&mut command, &channels)
         .unwrap();
-    let frames = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let frames = std::sync::Arc::new(
+        wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4)
+            .unwrap()
+            .into_reader(),
+    );
     let frame_fd = launch
         .inherit_frame_file(&mut command, &frames.try_clone_file().unwrap())
         .unwrap();
-    let child = command
+    command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::inherit());
+    let child = launch.spawn(&mut command).unwrap();
     drop(command);
     drop(channels);
     let mut child = wega_platform::process::OwnedProcess::new(child, |_| {});
     launch.attach(&mut child, 512 * 1024 * 1024).unwrap();
-    child.retain_until_exit(frames);
+    child.retain_until_exit(frames.clone());
     let mut stdin = child.take_stdin().unwrap();
     let mut stdout = child.take_stdout().unwrap();
     let (events, receiver) = mpsc::sync_channel(32);
@@ -129,6 +151,29 @@ fn a_real_worker_uses_inherited_broker_grants_without_a_tcp_broker_address() {
     };
     session.take_committed_principal(Some(&url));
     wait(&|event| matches!(event, Event::State { loading: false, .. }));
+    let frame = wait(
+        &|event| matches!(event, Event::SharedFrame { revision: rendered,.. } if *rendered==revision),
+    );
+    if let Event::SharedFrame {
+        width,
+        height,
+        slot,
+        sequence,
+        ..
+    } = frame
+    {
+        let length = protocol::frame_bytes(width, height).unwrap();
+        let pixels = frames.read_slot(slot as usize, length).unwrap();
+        assert!(
+            pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0),
+            "Native raster must publish real pixels"
+        );
+        protocol::write(
+            &mut stdin,
+            &identity.command(Request::FrameConsumed { slot, sequence }),
+        )
+        .unwrap();
+    }
     let context = protocol::RequestContext {
         document: protocol::DocumentId(0),
         revision,
@@ -138,12 +183,12 @@ fn a_real_worker_uses_inherited_broker_grants_without_a_tcp_broker_address() {
         &mut stdin,
         &identity.command(Request::EvaluateDocument {
             context,
-            source: "document.cookie='inherited=yes; Path=/'; document.cookie".into(),
+            source: "document.cookie='inherited=yes; Path=/';localStorage.setItem('persistent','broker');sessionStorage.setItem('tab','isolated');[document.cookie,localStorage.getItem('persistent'),sessionStorage.getItem('tab'),(()=>{let total=0;for(let i=0;i<100000;i++)total+=i;return total})()]".into(),
         }),
     )
     .unwrap();
     assert!(
-        matches!(wait(&|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { context: returned, result: Ok(value) } if returned == context && value == "\"inherited=yes\"")
+        matches!(wait(&|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { context: returned, result: Ok(value) } if returned == context && value == "[\"inherited=yes\",\"broker\",\"isolated\",4999950000]")
     );
     session.revoke();
     protocol::write(&mut stdin, &identity.command(Request::Shutdown)).unwrap();

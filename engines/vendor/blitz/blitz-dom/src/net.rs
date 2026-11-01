@@ -570,24 +570,28 @@ impl NetHandler for ResourceHandler<ImageHandler> {
 
 impl ImageHandler {
     fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
-        let image_err = match image::ImageReader::new(Cursor::new(&bytes))
-            .with_guessed_format()
-            .expect("IO errors impossible with Cursor")
-            .decode()
-        {
-            Ok(image) => {
-                let width = image.width();
-                let height = image.height();
-                let raw_rgba8_data = image.into_rgba8().into_raw();
-                return Ok(Resource::Image(
-                    self.kind,
-                    width,
-                    height,
-                    Arc::new(raw_rgba8_data),
-                ));
+        let permit = crate::image_budget::DecodePermit::reserve()?;
+        let mut reader = image::ImageReader::new(Cursor::new(&bytes)).with_guessed_format().map_err(|error| error.to_string())?;
+        let mut limits = image::Limits::default();
+        limits.max_image_width=Some(8192); limits.max_image_height=Some(8192); limits.max_alloc=Some(64*1024*1024);
+        reader.limits(limits);
+        let image_err = match reader.into_decoder() {
+            Ok(decoder) => {
+                use image::ImageDecoder;
+                let (width,height)=decoder.dimensions();
+                if u64::from(width)*u64::from(height)>8*1024*1024 || decoder.total_bytes()>64*1024*1024 { return Err("Decoded image exceeds dimensions/allocation budget".into()); }
+                match image::DynamicImage::from_decoder(decoder) {
+                    Ok(image) => {
+                        let data=Arc::new(image.into_rgba8().into_raw());
+                        permit.retain(&data,data.len())?;
+                        return Ok(Resource::Image(self.kind,width,height,data));
+                    }
+                    Err(error) => error.to_string(),
+                }
             }
-            Err(e) => e.to_string(),
+            Err(error) => error.to_string(),
         };
+        drop(permit);
 
         #[cfg(feature = "svg")]
         let svg_err = {

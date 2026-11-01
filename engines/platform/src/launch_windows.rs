@@ -10,8 +10,11 @@ use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
     JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION, JOB_OBJECT_LIMIT_JOB_MEMORY,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-    SetInformationJobObject,
+    JOB_OBJECT_UILIMIT_DESKTOP, JOB_OBJECT_UILIMIT_DISPLAYSETTINGS, JOB_OBJECT_UILIMIT_EXITWINDOWS,
+    JOB_OBJECT_UILIMIT_GLOBALATOMS, JOB_OBJECT_UILIMIT_HANDLES, JOB_OBJECT_UILIMIT_READCLIPBOARD,
+    JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS, JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
+    JOBOBJECT_BASIC_UI_RESTRICTIONS, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JobObjectBasicUIRestrictions, JobObjectExtendedLimitInformation, SetInformationJobObject,
 };
 
 pub(super) fn attach(process: &OwnedProcess, maximum_commit_bytes: u64) -> io::Result<OwnedHandle> {
@@ -47,6 +50,28 @@ pub(super) fn attach(process: &OwnedProcess, maximum_commit_bytes: u64) -> io::R
             JobObjectExtendedLimitInformation,
             (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
             size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let ui = JOBOBJECT_BASIC_UI_RESTRICTIONS {
+        UIRestrictionsClass: JOB_OBJECT_UILIMIT_DESKTOP
+            | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS
+            | JOB_OBJECT_UILIMIT_EXITWINDOWS
+            | JOB_OBJECT_UILIMIT_GLOBALATOMS
+            | JOB_OBJECT_UILIMIT_HANDLES
+            | JOB_OBJECT_UILIMIT_READCLIPBOARD
+            | JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS
+            | JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
+    };
+    // SAFETY: the job and correctly sized immutable restrictions stay live.
+    if unsafe {
+        SetInformationJobObject(
+            job.as_raw_handle().cast(),
+            JobObjectBasicUIRestrictions,
+            (&ui as *const JOBOBJECT_BASIC_UI_RESTRICTIONS).cast(),
+            size_of::<JOBOBJECT_BASIC_UI_RESTRICTIONS>() as u32,
         )
     } == 0
     {

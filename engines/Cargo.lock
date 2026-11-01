@@ -469,6 +469,7 @@ dependencies = [
  "cursor-icon",
  "debug_timer",
  "euclid",
+ "flate2",
  "html-escape",
  "icu_locale_core",
  "icu_properties",
@@ -1739,8 +1740,6 @@ dependencies = [
 [[package]]
 name = "deno_websocket"
 version = "0.265.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "364d3c2165bd1db60a0a5de1937b2020a92da2b58af3c15d9af7839220aa6745"
 dependencies = [
  "bytes",
  "deno_core",
@@ -1763,12 +1762,12 @@ dependencies = [
 [[package]]
 name = "deno_webstorage"
 version = "0.255.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b962adf844324d1267fb841efa5d46fbee7dbc878542ae9916b00ea52b4697e"
 dependencies = [
  "deno_core",
  "deno_error",
  "rusqlite",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 
@@ -6606,6 +6605,7 @@ version = "0.1.0"
 dependencies = [
  "anyrender",
  "anyrender_skia",
+ "base64 0.22.1",
  "blitz-dom",
  "blitz-html",
  "blitz-paint",
@@ -6633,6 +6633,7 @@ dependencies = [
  "selectors",
  "serde",
  "serde_json",
+ "sha1",
  "sha2",
  "skia-safe",
  "stylo",
@@ -6651,14 +6652,21 @@ dependencies = [
 name = "wega-network"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "cookie_store",
+ "fontdb",
  "getrandom 0.3.4",
  "publicsuffix",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
+ "sha1",
+ "sha2",
  "tempfile",
+ "tokio",
  "url",
+ "wega-platform",
  "wega-protocol",
 ]
 
@@ -6666,6 +6674,7 @@ dependencies = [
 name = "wega-platform"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.3.4",
  "libc",
  "memmap2",
  "tempfile",

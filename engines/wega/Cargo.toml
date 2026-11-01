@@ -74,4 +74,6 @@ deno_tls = "=0.247.0"
 tokio = {version="1",features=["rt","time","net","sync"]}
 
 [dev-dependencies]
+sha1 = "0.10"
+base64 = "0.22"
 tempfile = "3"

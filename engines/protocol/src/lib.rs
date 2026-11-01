@@ -7,7 +7,7 @@ pub mod identity;
 pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 13;
+pub const VERSION: u32 = 14;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -41,6 +41,7 @@ pub enum ContentEvent {
     Navigate(String),
     Notice(String),
     Compatibility(String),
+    ScriptStopped(String),
     Download {
         url: String,
         cookies: String,
@@ -66,6 +67,7 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
         ContentEvent::ActivatedOpenWindow { url, .. } if version < 11 => {
             ContentEvent::OpenWindow(url)
         }
+        ContentEvent::ScriptStopped(reason) if version < 14 => ContentEvent::Notice(reason),
         event => event,
     };
     if version >= 9 {
@@ -73,7 +75,9 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
     }
     match event {
         ContentEvent::Navigate(url) => Event::Navigate(url),
-        ContentEvent::Notice(message) => Event::Notice(message),
+        ContentEvent::Notice(message) | ContentEvent::ScriptStopped(message) => {
+            Event::Notice(message)
+        }
         ContentEvent::Compatibility(reason) => Event::Compatibility {
             serial: context.document.0,
             reason,
@@ -122,6 +126,9 @@ pub enum Capability {
     HarnessObservability,
     InheritedBroker,
     InheritedFrames,
+    ResourceBroker,
+    DocumentTaskScheduling,
+    ScriptRecovery,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -136,6 +143,9 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::HarnessObservability,
     Capability::InheritedBroker,
     Capability::InheritedFrames,
+    Capability::ResourceBroker,
+    Capability::DocumentTaskScheduling,
+    Capability::ScriptRecovery,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,6 +215,9 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::HarnessObservability => 12,
                     Capability::InheritedBroker => 13,
                     Capability::InheritedFrames => 13,
+                    Capability::ResourceBroker
+                    | Capability::DocumentTaskScheduling
+                    | Capability::ScriptRecovery => 14,
                 }
         })
         .collect()

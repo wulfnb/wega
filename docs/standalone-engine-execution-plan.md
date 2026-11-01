@@ -303,13 +303,11 @@ reads, writes, process launch and direct network connections while normal fixtur
 work. Unsupported sandbox setup fails closed for release browsing; any development
 escape hatch is explicit. Killing a worker releases its resources and grants.
 
-**Implementation status (1 November 2026): in progress.** Host supervision,
-resource admission, launch hygiene, Linux baseline hardening, Windows jobs and
-fail-closed required mode, inherited Unix broker/frame grants and bounded browser
-frame copies are implemented in the
-[Step 05 foundation](step-05-sandbox-and-supervision.md). Required browsing remains
-blocked until Step 04's request authority/resource brokers and real platform sandboxes
-are integrated. Runtime tests/probes remain deferred by the owner.
+**Implementation delivered (1 November 2026).** Native Linux/macOS/Windows
+backends, portable inherited grants, font/file/storage/WebSocket brokers,
+decoder budgets and host supervision are implemented. See the
+[Step 05 contract and native evidence](step-05-sandbox-and-supervision.md).
+Three-platform acceptance is tracked separately; a cross-build is not native proof.
 
 ### 06 — Consolidate the document host and event loop
 
@@ -325,6 +323,11 @@ origin policy and browser cancellation behavior.
 **Done when:** parser/script ordering and teardown fixtures pass, navigation cannot
 run old-document callbacks, an ordinary script exception does not disable unrelated
 page functionality, and deadline termination has an explicit recovery outcome.
+
+**Implementation delivered (1 November 2026).** Parser/lifecycle ownership,
+document-scoped task admission, checkpoints, teardown and fatal recovery are
+implemented. See the [Step 06 contract](step-06-document-host-and-event-loop.md)
+and the final validation record.
 
 ### 07 — Build a small, real WebIDL generation pipeline
 
@@ -681,8 +684,8 @@ separate gates in `docs/validation/standalone/progress.json`.
 - [x] 02 Engine contract and lifecycle — implementation complete; runtime acceptance deferred
 - [ ] 03 Worker harness and observability
 - [ ] 04 Authoritative network/storage access
-- [ ] 05 Sandbox and supervision
-- [ ] 06 Document host and scheduling
+- [x] 05 Sandbox and supervision — implementation delivered; native acceptance tracked separately
+- [x] 06 Document host and scheduling — implementation delivered; final regressions recorded separately
 - [ ] 07 WebIDL generation and ownership
 - [ ] 08 DOM/events/Web API families
 - [ ] 09 Navigation and browser integrations

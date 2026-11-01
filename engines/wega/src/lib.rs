@@ -4,12 +4,14 @@ pub use blitz_traits::events;
 pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
 
+mod broker_socket;
 mod cookies;
 mod csp;
 #[path = "../../../src/diagnostic_event.rs"]
 pub mod diagnostics;
 mod dom;
 mod encoding;
+mod event_loop;
 mod extension_adapter;
 mod module_loader;
 mod native_ops;
@@ -17,6 +19,7 @@ mod network;
 mod parser;
 mod raster;
 mod script;
+mod security_context;
 mod v8;
 mod view;
 mod web;

@@ -2,13 +2,21 @@
 //! The DOM/VM crate remains `forbid(unsafe_code)`; native calls live here.
 #![deny(unsafe_op_in_unsafe_fn)]
 use std::{fs::File, io, path::Path};
+pub mod child;
 #[cfg(unix)]
 pub mod inherited;
+#[cfg(windows)]
+#[path = "inherited_windows.rs"]
+pub mod inherited;
+pub mod ipc;
 pub mod launch;
 pub mod process;
+pub mod sandbox;
 pub mod supervision;
+#[cfg(windows)]
+mod windows_spawn;
 
-pub(crate) fn resident_for_child(child: &std::process::Child) -> Option<u64> {
+pub(crate) fn resident_for_child(child: &crate::child::ChildOwner) -> Option<u64> {
     #[cfg(target_os = "macos")]
     {
         let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v0>::uninit();

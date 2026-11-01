@@ -303,6 +303,18 @@ struct Reservation {
     id: u64,
 }
 impl Ticket {
+    pub fn resident_bytes(&self) -> Option<u64> {
+        let state = self
+            .0
+            .owner
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entry = state.entries.get(&self.0.id)?;
+        (!entry.exited && entry.missing_metrics == 0 && entry.resident > 0)
+            .then_some(entry.resident)
+    }
+
     pub fn worker_memory_limit(&self) -> u64 {
         self.0.owner.budgets.worker_resident_bytes
     }

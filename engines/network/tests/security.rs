@@ -2,6 +2,8 @@
 //! Tests spoofed origins, redirect chains, unknown file extensions, private network targets,
 //! HSTS upgrades, and cross-container credential isolation.
 
+mod support;
+
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -117,7 +119,7 @@ fn test_adversarial_cross_container_credential_isolation() {
     let remote_a = Remote::bound(&endpoint_a, token_a.clone(), session_a.identity()).unwrap();
     let remote_b = Remote::bound(&endpoint_b, token_b.clone(), session_b.identity()).unwrap();
 
-    let url = Url::parse("https://shared-service.example/account").unwrap();
+    let url = support::documents(&[(&session_a, &remote_a), (&session_b, &remote_b)]);
 
     // Set cookie in Container A
     remote_a
@@ -278,6 +280,7 @@ fn test_adversarial_resource_destination_authoritative_enforcement_regardless_of
         credentials: "omit".into(),
         redirect: "follow".into(),
         cache: "default".into(),
+        mode: "no-cors".into(),
         destination: ResourceDestination::Script, // Authoritative Script destination!
         limit: 4096,
     };

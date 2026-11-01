@@ -5,15 +5,15 @@ use std::{
 };
 pub(crate) enum Connection {
     Tcp(TcpStream),
-    #[cfg(unix)]
-    Unix(std::os::unix::net::UnixStream),
+    #[cfg(any(unix, windows))]
+    Inherited(wega_platform::ipc::Channel),
 }
 impl Connection {
     pub fn try_clone(&self) -> io::Result<Self> {
         match self {
             Self::Tcp(stream) => stream.try_clone().map(Self::Tcp),
-            #[cfg(unix)]
-            Self::Unix(stream) => stream.try_clone().map(Self::Unix),
+            #[cfg(any(unix, windows))]
+            Self::Inherited(stream) => stream.try_clone().map(Self::Inherited),
         }
     }
 }
@@ -21,8 +21,8 @@ impl Read for Connection {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         match self {
             Self::Tcp(stream) => stream.read(bytes),
-            #[cfg(unix)]
-            Self::Unix(stream) => stream.read(bytes),
+            #[cfg(any(unix, windows))]
+            Self::Inherited(stream) => stream.read(bytes),
         }
     }
 }
@@ -30,26 +30,26 @@ impl Write for Connection {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         match self {
             Self::Tcp(stream) => stream.write(bytes),
-            #[cfg(unix)]
-            Self::Unix(stream) => stream.write(bytes),
+            #[cfg(any(unix, windows))]
+            Self::Inherited(stream) => stream.write(bytes),
         }
     }
     fn flush(&mut self) -> io::Result<()> {
         match self {
             Self::Tcp(stream) => stream.flush(),
-            #[cfg(unix)]
-            Self::Unix(stream) => stream.flush(),
+            #[cfg(any(unix, windows))]
+            Self::Inherited(stream) => stream.flush(),
         }
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) struct Pool {
     channels: Vec<std::sync::Mutex<Option<Connection>>>,
 }
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl Pool {
-    pub fn new(channels: Vec<std::os::unix::net::UnixStream>) -> Result<Self, String> {
+    pub fn new(channels: Vec<wega_platform::ipc::Channel>) -> Result<Self, String> {
         if channels.is_empty() || channels.len() > 4 {
             return Err("Invalid inherited broker channel count".into());
         }
@@ -61,7 +61,7 @@ impl Pool {
             channel
                 .set_write_timeout(Some(std::time::Duration::from_secs(5)))
                 .map_err(|error| error.to_string())?;
-            slots.push(std::sync::Mutex::new(Some(Connection::Unix(channel))));
+            slots.push(std::sync::Mutex::new(Some(Connection::Inherited(channel))));
         }
         Ok(Self { channels: slots })
     }
