@@ -473,7 +473,10 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
             1,
             CREATE_SUSPENDED
                 | CREATE_UNICODE_ENVIRONMENT
-                | CREATE_NO_WINDOW
+                // A hidden console can still require a console host process,
+                // conflicting with the one-process job/child policy during
+                // KERNELBASE startup. This worker uses explicit pipes only.
+                | DETACHED_PROCESS
                 | EXTENDED_STARTUPINFO_PRESENT,
             block.as_ptr().cast(),
             directory.as_ptr(),
