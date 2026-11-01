@@ -16,6 +16,8 @@ use windows_sys::Win32::{
     Security::{Authorization::*, Isolation::*, *},
     System::{Com::CoTaskMemFree, Threading::*},
 };
+#[path = "startup_windows.rs"]
+mod startup;
 fn wide(value: &OsStr) -> io::Result<Vec<u16>> {
     let mut value: Vec<_> = value.encode_wide().collect();
     if value.contains(&0) {
@@ -356,11 +358,16 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
     } else {
         PathBuf::from(command.get_program())
     };
+    let gates = std::sync::Arc::new(startup::Gates::new()?);
     let executable = wide(program.as_os_str())?;
     let mut line = quote(program.as_os_str())?;
     for argument in command.get_args() {
         line.push(32);
         line.extend(quote(argument)?);
+    }
+    for argument in gates.arguments() {
+        line.push(32);
+        line.extend(quote(OsStr::new(&argument))?);
     }
     line.push(0);
     let mut environment: Vec<_> = command
@@ -420,6 +427,7 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
         error.as_raw_handle().cast(),
     ];
     handles.extend(grants.iter().map(|handle| handle.as_raw_handle().cast()));
+    handles.extend(gates.child_handles());
     let mut attributes = Attributes::new(if required { 4 } else { 1 })?;
     attributes.handles(&mut handles)?;
     let mut registry_sid = registry_read_capability()?;
@@ -455,7 +463,7 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
     // USER32 imports must initialize against the standard low-integrity desktop,
     // rather than inheriting a CI/service window station that rejects AppContainer
     // tokens. The attached job denies clipboard, foreign USER handles, desktop
-    // changes and global atoms before the suspended process is resumed. No host
+    // changes and global atoms before the startup gate admits a VM. No host
     // window-station ACL is modified to grant the worker access.
     let mut desktop = string("WinSta0\\Default");
     startup.StartupInfo.lpDesktop = desktop.as_mut_ptr();
@@ -502,6 +510,8 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
             stdout: Some(stdout.into()),
             stderr: Some(stderr.into()),
             _profile: profile,
+            gates,
+            guard: Default::default(),
         }
     })
 }
@@ -513,12 +523,22 @@ pub struct NativeChild {
     pub(crate) stdout: Option<ChildStdout>,
     pub(crate) stderr: Option<ChildStderr>,
     _profile: Option<Profile>,
+    gates: std::sync::Arc<startup::Gates>,
+    guard: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 impl NativeChild {
     pub fn id(&self) -> u32 {
         self.pid
     }
-    pub fn resume(&self) -> io::Result<()> {
+    pub fn resume(&self, job: &OwnedHandle) -> io::Result<()> {
+        let mut guard = self
+            .guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.is_some() {
+            return Err(io::Error::other("Worker already resumed"));
+        }
+        *guard = Some(self.gates.watch(job, &self.process)?);
         if unsafe { ResumeThread(self.thread.as_raw_handle().cast()) } == u32::MAX {
             Err(io::Error::last_os_error())
         } else {
@@ -568,9 +588,20 @@ impl Drop for NativeChild {
             let _ = self.kill();
             let _ = self.wait();
         }
+        if let Some(guard) = self
+            .guard
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            let _ = guard.join();
+        }
     }
 }
 
+pub(crate) fn development_entry() -> io::Result<()> {
+    startup::enter(false)
+}
 pub(crate) fn verify() -> io::Result<()> {
     let mut token = std::ptr::null_mut();
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
@@ -658,5 +689,5 @@ pub(crate) fn verify() -> io::Result<()> {
             "Content job was not attached before execution",
         ));
     }
-    Ok(())
+    startup::enter(true)
 }

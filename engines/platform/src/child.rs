@@ -65,11 +65,11 @@ impl ChildOwner {
         }
     }
     #[cfg(windows)]
-    pub(crate) fn resume(&self) -> io::Result<()> {
-        if let Self::Native(child) = self {
-            child.resume()?;
+    pub(crate) fn resume(&self, job: &std::os::windows::io::OwnedHandle) -> io::Result<()> {
+        match self {
+            Self::Native(child) => child.resume(job),
+            Self::Standard(_) => crate::launch::windows::restrict_ui(job),
         }
-        Ok(())
     }
 }
 #[cfg(windows)]

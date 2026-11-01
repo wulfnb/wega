@@ -112,8 +112,8 @@ impl OwnedProcess {
     }
 
     #[cfg(windows)]
-    pub(crate) fn resume(&self) -> io::Result<()> {
-        self.with_child(|child| child.resume())
+    pub(crate) fn resume(&self, job: &std::os::windows::io::OwnedHandle) -> io::Result<()> {
+        self.with_child(|child| child.resume(job))
     }
     #[cfg(windows)]
     pub(crate) fn with_child<T>(

@@ -11,7 +11,7 @@ mod linux;
 mod macos;
 #[cfg(windows)]
 #[path = "launch_windows.rs"]
-mod windows;
+pub(crate) mod windows;
 
 pub const DEVELOPMENT_ENV: &str = "WEGA_UNSAFE_DEVELOPMENT_WORKER";
 pub const DEVELOPMENT_ARGUMENT: &str = "--development-unsandboxed";
@@ -249,8 +249,8 @@ impl PreparedLaunch {
         #[cfg(windows)]
         {
             let job = windows::attach(process, maximum_commit_bytes)?;
+            process.resume(&job)?;
             process.retain_until_exit(job);
-            process.resume()?;
         }
         #[cfg(not(windows))]
         let _ = maximum_commit_bytes;
@@ -281,6 +281,8 @@ pub fn validate_worker_start(arguments: impl IntoIterator<Item = String>) -> io:
         Mode::Development => {
             #[cfg(target_os = "linux")]
             linux::worker_baseline()?;
+            #[cfg(windows)]
+            crate::windows_spawn::development_entry()?;
             Ok(())
         }
         Mode::Required => Err(unavailable(BrokerTransport::InheritedEndpoint)),

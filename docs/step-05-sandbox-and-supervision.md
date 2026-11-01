@@ -34,6 +34,15 @@ capability; it grants no network, COM or arbitrary user-file capability. The chi
 verifies the exact derived SID rather than accepting any capability count. See
 [Microsoft's LPAC model](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer).
 
+Windows startup has an explicit trusted entry phase. The process starts suspended
+inside AppContainer and the memory/process-limited job. After resume, its initial
+Rust thread blocks on a private release event before any VM/thread/document work.
+A host guard applies job UI restrictions and opens that event; the child verifies
+the resulting bits. Event grants are directional: the child can signal readiness
+but cannot release itself. Guard waits are bounded and use owned process handles;
+DLL/setup failure or a timeout terminates startup. The UI thread never waits on
+this handshake. Direct legacy debug fixtures remain explicitly unsandboxed.
+
 The Rust `wega-content-bundle` tool creates/signs the nested macOS helper at
 `Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine`. Packaging invokes it;
 the browser prefers this helper. Development signatures are ad hoc unless

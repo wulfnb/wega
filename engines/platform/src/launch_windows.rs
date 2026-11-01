@@ -55,6 +55,21 @@ pub(super) fn attach(process: &OwnedProcess, maximum_commit_bytes: u64) -> io::R
     {
         return Err(io::Error::last_os_error());
     }
+    process.with_child(|child| {
+        // SAFETY: both owned kernel handles stay live under the process owner lock.
+        if unsafe {
+            AssignProcessToJobObject(job.as_raw_handle().cast(), child.as_raw_handle().cast())
+        } == 0
+        {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    })?;
+    Ok(job)
+}
+
+pub(crate) fn restrict_ui(job: &OwnedHandle) -> io::Result<()> {
     let ui = JOBOBJECT_BASIC_UI_RESTRICTIONS {
         UIRestrictionsClass: JOB_OBJECT_UILIMIT_DESKTOP
             | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS
@@ -77,18 +92,7 @@ pub(super) fn attach(process: &OwnedProcess, maximum_commit_bytes: u64) -> io::R
     {
         return Err(io::Error::last_os_error());
     }
-    process.with_child(|child| {
-        // SAFETY: both owned kernel handles stay live under the process owner lock.
-        if unsafe {
-            AssignProcessToJobObject(job.as_raw_handle().cast(), child.as_raw_handle().cast())
-        } == 0
-        {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
-    })?;
-    Ok(job)
+    Ok(())
 }
 
 #[cfg(test)]
