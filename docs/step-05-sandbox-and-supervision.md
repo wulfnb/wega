@@ -26,13 +26,14 @@ release builds reject that override. Library embeddings choose their own policy.
 | --- | --- | --- |
 | Linux | Landlock ABI 6 filesystem/network/scoped restrictions, no allowed file paths; architecture-specific seccomp syscall allowlist; thread-only clone; no exec, process creation, arbitrary sockets, foreign signals/debugging; no-new-privileges, no dumps, parent-death handling and descriptor sanitation | ABI <6 or policy installation failure aborts startup. x86_64 and aarch64 syscall policies are explicit. Elevated workers are rejected. |
 | macOS | Separately signed App Sandbox helper; hardened runtime and only App Sandbox/JIT security entitlements; no network or user-file entitlement; no child processes/core dumps; explicit inherited descriptors; ambient bootstrap namespace removed on initial-thread entry | Signature/entitlement checks run on the initial thread. Signing or sandbox setup failure aborts startup. Public Security/Mach APIs are used; no private Seatbelt profile API. |
-| Windows | Suspended process in a per-worker AppContainer with LPAC and exactly the read-only `registryRead` runtime capability; explicit inherited handle list; one-process, memory-limited kill-on-close job attached before resume; child-process policy and job UI/clipboard/desktop restrictions | Missing AppContainer, handle-list or job policy aborts startup. Trusted helper copy/profile are retained through reaping and removed on normal cleanup. |
+| Windows | Suspended process in a per-worker AppContainer with no network, user-file, COM or device capabilities; explicit inherited handle list; one-process, memory-limited kill-on-close job attached before resume; child-process policy and job UI/clipboard/desktop restrictions | Missing AppContainer, handle-list or job policy aborts startup. Trusted helper copy/profile are retained through reaping and removed on normal cleanup. |
 
-Windows LPAC needs the read-only `registryRead` capability for native runtime
-initialization. It grants access where Windows ACLs explicitly permit that
-capability; it grants no network, COM or arbitrary user-file capability. The child
-verifies the exact derived SID rather than accepting any capability count. See
-[Microsoft's LPAC model](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer).
+The Windows policy uses the standard capability-free AppContainer model plus
+explicit handles, child-process policy and a restrictive job. Windows may still
+expose its ordinary AppContainer system resources; this is not an LPAC claim.
+LPAC startup with these native imports did not pass validation, so it is not an
+advertised support tier. There is no automatic downgrade after a launch failure.
+See [Microsoft's AppContainer model](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer).
 
 The Rust `wega-content-bundle` tool creates/signs the nested macOS helper at
 `Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine`. Packaging invokes it;
