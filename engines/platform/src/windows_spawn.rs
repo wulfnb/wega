@@ -211,7 +211,10 @@ impl Attributes {
             )
         } == 0
         {
-            return Err(io::Error::last_os_error());
+            return Err(io::Error::new(
+                io::Error::last_os_error().kind(),
+                format!("Process attribute {key:#x}: {}", io::Error::last_os_error()),
+            ));
         }
         Ok(())
     }
@@ -287,12 +290,21 @@ fn quote(argument: &OsStr) -> io::Result<Vec<u16>> {
 }
 pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::Result<NativeChild> {
     let profile = if required {
-        Some(Profile::create()?)
+        Some(Profile::create().map_err(|error| {
+            io::Error::new(error.kind(), format!("AppContainer profile setup: {error}"))
+        })?)
     } else {
         None
     };
     let program = if let Some(profile) = &profile {
-        profile.executable(Path::new(command.get_program()))?
+        profile
+            .executable(Path::new(command.get_program()))
+            .map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("AppContainer executable setup: {error}"),
+                )
+            })?
     } else {
         PathBuf::from(command.get_program())
     };
@@ -387,7 +399,13 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
         )
     } == 0
     {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::new(
+            io::Error::last_os_error().kind(),
+            format!(
+                "CreateProcessW content helper: {}",
+                io::Error::last_os_error()
+            ),
+        ));
     }
     Ok(unsafe {
         NativeChild {

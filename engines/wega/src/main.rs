@@ -804,6 +804,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             ErrorCode::ResourceLimit,
                             "Evaluation result exceeds the IPC budget",
                         )),
+                        Err(error) if error == "Evaluation result exceeds the IPC budget" => {
+                            Err(ProtocolError::new(ErrorCode::ResourceLimit, error))
+                        }
                         Err(error) => Err(ProtocolError::new(ErrorCode::ScriptException, error)),
                     };
                     write(&Event::DocumentEvaluated { context, result })?;

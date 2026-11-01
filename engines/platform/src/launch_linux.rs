@@ -111,7 +111,7 @@ mod tests {
             .env("WEGA_LINUX_LAUNCH_PROBE", descriptor.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::inherit());
         prepare(&mut command);
         let mut process = OwnedProcess::new(command.spawn().unwrap(), |_| {});
         let output = process.take_stdout().unwrap();
