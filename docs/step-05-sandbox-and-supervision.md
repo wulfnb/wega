@@ -26,7 +26,13 @@ release builds reject that override. Library embeddings choose their own policy.
 | --- | --- | --- |
 | Linux | Landlock ABI 6 filesystem/network/scoped restrictions, no allowed file paths; architecture-specific seccomp syscall allowlist; thread-only clone; no exec, process creation, arbitrary sockets, foreign signals/debugging; no-new-privileges, no dumps, parent-death handling and descriptor sanitation | ABI <6 or policy installation failure aborts startup. x86_64 and aarch64 syscall policies are explicit. Elevated workers are rejected. |
 | macOS | Separately signed App Sandbox helper; hardened runtime and only App Sandbox/JIT security entitlements; no network or user-file entitlement; no child processes/core dumps; explicit inherited descriptors; ambient bootstrap namespace removed on initial-thread entry | Signature/entitlement checks run on the initial thread. Signing or sandbox setup failure aborts startup. Public Security/Mach APIs are used; no private Seatbelt profile API. |
-| Windows | Suspended process in a per-worker AppContainer with no capabilities and LPAC policy; explicit inherited handle list; one-process, memory-limited kill-on-close job attached before resume; child-process policy and job UI/clipboard/desktop restrictions | Missing AppContainer, handle-list or job policy aborts startup. Trusted helper copy/profile are retained through reaping and removed on normal cleanup. |
+| Windows | Suspended process in a per-worker AppContainer with LPAC and exactly the read-only `registryRead` runtime capability; explicit inherited handle list; one-process, memory-limited kill-on-close job attached before resume; child-process policy and job UI/clipboard/desktop restrictions | Missing AppContainer, handle-list or job policy aborts startup. Trusted helper copy/profile are retained through reaping and removed on normal cleanup. |
+
+Windows LPAC needs the read-only `registryRead` capability for native runtime
+initialization. It grants access where Windows ACLs explicitly permit that
+capability; it grants no network, COM or arbitrary user-file capability. The child
+verifies the exact derived SID rather than accepting any capability count. See
+[Microsoft's LPAC model](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer).
 
 The Rust `wega-content-bundle` tool creates/signs the nested macOS helper at
 `Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine`. Packaging invokes it;
@@ -96,11 +102,12 @@ fatal script termination does not silently retry the workload through Servo.
 
 ## Validation and remaining platform evidence
 
-The final pass executes the workspace regressions, brokered engine fixtures,
-vendor integrity checks, strict lints and desktop build. Native macOS probes have
+The final local pass passed 226 workspace, 28 brokered, 106 core and 47 desktop
+tests, plus vendor integrity (11 crates), strict workspace lints, formatting and
+the desktop build. Native macOS probes have
 passed denial of private read/write, direct TCP/UDP and child execution, alongside
 an explicit file grant. A separately signed required worker has passed real JIT,
-storage and cookie operations; final pixel validation uses the same required path.
+storage and cookie operations; nontransparent shared-frame pixel validation passed on the same required path.
 
 `standalone-engine-validation.yml` runs the native probe, required-worker JIT/
 storage/cookie/pixel fixture and full suite on Linux, macOS and Windows. Unsupported

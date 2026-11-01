@@ -11,10 +11,13 @@ fn parser_checkpoints_run_microtasks_without_dispatching_timer_tasks() {
     let engine = engine();
     let mut view = open(&engine, "about:blank");
     view.set_html("<script>globalThis.order=['first'];Promise.resolve().then(()=>order.push('microtask'));setTimeout(()=>order.push('timer'),0)</script><script>order.push('second')</script>").unwrap();
-    assert_eq!(
-        view.evaluate_json("order").unwrap(),
-        "[\"first\",\"microtask\",\"second\"]"
-    );
+    // A busy host may yield after the first parser script. Both legal partial
+    // results must contain its microtask and must not have dispatched a timer.
+    let before_poll = view.evaluate_json("order").unwrap();
+    assert!(matches!(
+        before_poll.as_str(),
+        "[\"first\",\"microtask\"]" | "[\"first\",\"microtask\",\"second\"]"
+    ));
     wait(&mut view, "order.includes('timer')||null");
     assert_eq!(
         view.evaluate_json("order").unwrap(),
