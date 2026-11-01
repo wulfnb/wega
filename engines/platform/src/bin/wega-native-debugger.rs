@@ -43,6 +43,7 @@ fn run() -> std::io::Result<i32> {
         .spawn()?;
     let mut processes: HashMap<u32, OwnedHandle> = HashMap::new();
     let mut root_exit = None;
+    let mut thread_local = HashMap::new();
     let deadline = Instant::now() + Duration::from_secs(40);
     let mut output_bytes = 0_usize;
     loop {
@@ -77,10 +78,19 @@ fn run() -> std::io::Result<i32> {
                         event.dwProcessId,
                         OwnedHandle::from_raw_handle(info.hProcess.cast()),
                     );
+                    thread_local.insert(
+                        (event.dwProcessId, event.dwThreadId),
+                        info.lpThreadLocalBase as usize,
+                    );
                     eprintln!("DEBUG process {} created", event.dwProcessId);
                 }
                 CREATE_THREAD_DEBUG_EVENT => {
-                    CloseHandle(event.u.CreateThread.hThread);
+                    let info = event.u.CreateThread;
+                    thread_local.insert(
+                        (event.dwProcessId, event.dwThreadId),
+                        info.lpThreadLocalBase as usize,
+                    );
+                    CloseHandle(info.hThread);
                 }
                 LOAD_DLL_DEBUG_EVENT => {
                     let info = event.u.LoadDll;
@@ -141,6 +151,32 @@ fn run() -> std::io::Result<i32> {
                                 event.dwProcessId,
                                 text.trim_end_matches('\0')
                             );
+                            // Diagnostic only: Windows x64's TEB LastErrorValue
+                            // layout. Never used for policy or a pass/fail result.
+                            #[cfg(target_arch = "x86_64")]
+                            if text.contains("ERROR")
+                                && let Some(base) =
+                                    thread_local.get(&(event.dwProcessId, event.dwThreadId))
+                            {
+                                let mut error = [0_u8; 4];
+                                let mut read = 0;
+                                if ReadProcessMemory(
+                                    process.as_raw_handle().cast(),
+                                    (base + 0x68) as *const _,
+                                    error.as_mut_ptr().cast(),
+                                    4,
+                                    &mut read,
+                                ) != 0
+                                    && read == 4
+                                {
+                                    eprintln!(
+                                        "DEBUG last error {}: {} ({:#x})",
+                                        event.dwProcessId,
+                                        u32::from_le_bytes(error),
+                                        u32::from_le_bytes(error)
+                                    );
+                                }
+                            }
                         }
                     }
                 }

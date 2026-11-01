@@ -375,7 +375,7 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
         let temporary = profile.folder.join("Temp");
         std::fs::create_dir_all(&temporary)?;
         environment.retain(|(key, _)| {
-            !["LOCALAPPDATA", "TMP", "TEMP", "TMPDIR"]
+            !["LOCALAPPDATA", "APPDATA", "TMP", "TEMP", "TMPDIR"]
                 .iter()
                 .any(|name| key.to_string_lossy().eq_ignore_ascii_case(name))
         });
@@ -383,6 +383,9 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
             "LOCALAPPDATA".into(),
             profile.folder.clone().into_os_string(),
         ));
+        let roaming = profile.folder.join("Roaming");
+        std::fs::create_dir_all(&roaming)?;
+        environment.push(("APPDATA".into(), roaming.into_os_string()));
         for key in ["TMP", "TEMP", "TMPDIR"] {
             environment.push((key.into(), temporary.clone().into_os_string()));
         }
