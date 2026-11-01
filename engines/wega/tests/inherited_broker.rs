@@ -168,6 +168,14 @@ fn run_worker(required: bool) {
             pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0),
             "Native raster must publish real pixels"
         );
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|pixel| pixel[3] != 0 && pixel[..3].iter().all(|channel| *channel < 128)),
+            "Broker-selected fonts must paint dark text on the default light page"
+        );
         protocol::write(
             &mut stdin,
             &identity.command(Request::FrameConsumed { slot, sequence }),

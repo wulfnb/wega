@@ -30,9 +30,10 @@ jobs:
         with:
           shared-key: standalone-engine-${{ matrix.os }}
           workspaces: 'engines -> ../target/wega-engine'
+          cache-on-failure: true
       - name: Native libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libfreetype6-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libfreetype6-dev fonts-dejavu-core fonts-liberation
       - name: Platform regression tests and probe build
         run: |
           cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol --all-targets
@@ -57,6 +58,23 @@ jobs:
           echo "WEGA_SANDBOX_PROBE=$probe" >> "$GITHUB_ENV"
       - name: Native denial and explicit-grant probe
         run: cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform --test native_sandbox -- --ignored --nocapture
+      - name: Diagnose Windows native loader failure
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\wega-engine.exe'
+          $existed = Test-Path $key
+          $previous = (Get-ItemProperty -Path $key -Name GlobalFlag -ErrorAction SilentlyContinue).GlobalFlag
+          try {
+            New-Item -Path $key -Force | Out-Null
+            New-ItemProperty -Path $key -Name GlobalFlag -Value '0x00000002' -PropertyType String -Force | Out-Null
+            $probe = Get-ChildItem target/wega-engine/debug/deps/native_sandbox-*.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            & target/wega-engine/debug/wega-native-debugger.exe $probe.FullName --ignored --nocapture
+          } finally {
+            if ($null -ne $previous) { Set-ItemProperty -Path $key -Name GlobalFlag -Value $previous }
+            elseif ($existed) { Remove-ItemProperty -Path $key -Name GlobalFlag -ErrorAction SilentlyContinue }
+            else { Remove-Item -Path $key -Force -ErrorAction SilentlyContinue }
+          }
       - name: Build content worker
         run: cargo build --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --bin wega-engine
       - name: Prepare content helper

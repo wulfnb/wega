@@ -235,10 +235,41 @@ impl Broker {
                 let db = fonts
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
+                // A fontconfig generic may name an uninstalled preferred font.
+                // Resolve through available platform fallbacks in the host; never
+                // reopen font discovery in the contained renderer.
+                let fallback: &[fontdb::Family<'_>] = match generic.as_str() {
+                    "serif" => &[
+                        family,
+                        fontdb::Family::Name("Noto Serif"),
+                        fontdb::Family::Name("Liberation Serif"),
+                        fontdb::Family::Name("DejaVu Serif"),
+                        fontdb::Family::Name("Times New Roman"),
+                    ],
+                    "monospace" => &[
+                        family,
+                        fontdb::Family::Name("Noto Sans Mono"),
+                        fontdb::Family::Name("Liberation Mono"),
+                        fontdb::Family::Name("DejaVu Sans Mono"),
+                        fontdb::Family::Name("Courier New"),
+                    ],
+                    _ => &[
+                        family,
+                        fontdb::Family::Name("Noto Sans"),
+                        fontdb::Family::Name("Liberation Sans"),
+                        fontdb::Family::Name("DejaVu Sans"),
+                        fontdb::Family::Name("Arial"),
+                    ],
+                };
                 let id = db
                     .query(&fontdb::Query {
-                        families: &[family],
+                        families: fallback,
                         ..Default::default()
+                    })
+                    .or_else(|| {
+                        db.faces()
+                            .find(|face| generic != "monospace" || face.monospaced)
+                            .map(|face| face.id)
                     })
                     .ok_or("No matching host font")?;
                 let (source, _) = db.face_source(id).ok_or("Missing host font source")?;
