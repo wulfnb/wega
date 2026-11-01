@@ -124,17 +124,47 @@ pub(crate) fn extensions(dom: &crate::dom::Dom) -> Vec<deno_core::Extension> {
     // reqwest and Deno enable different Rustls providers; select one explicitly.
     let _ = deno_tls::rustls::crypto::aws_lc_rs::default_provider().install_default();
     let url = dom.document.borrow().url().clone();
-    let directory = if matches!(url.origin(), url::Origin::Tuple(..)) {
-        dom.network.storage_dir.as_ref().map(|root| {
-            root.join(format!(
-                "{:x}",
-                Sha256::digest(url.origin().ascii_serialization().as_bytes())
-            ))
-        })
-    } else {
-        None
-    };
+    let directory =
+        if dom.network.remote.is_none() && matches!(url.origin(), url::Origin::Tuple(..)) {
+            dom.network.storage_dir.as_ref().map(|root| {
+                root.join(format!(
+                    "{:x}",
+                    Sha256::digest(url.origin().ascii_serialization().as_bytes())
+                ))
+            })
+        } else {
+            None
+        };
     crate::web_extensions::extensions(url, directory)
 }
 
 pub(crate) use crate::extension_adapter::adapt_extension;
+
+/// Storage operations stay in Rust; Deno's Web Storage bindings retain their
+/// conversion/proxy semantics while the browser owns the SQLite connection.
+pub(crate) struct BrokerStorage {
+    pub remote: wega_network::Remote,
+    pub origin: String,
+}
+impl deno_webstorage::StorageBackend for BrokerStorage {
+    fn call(
+        &self,
+        persistent: bool,
+        operation: &str,
+        key: &str,
+        value: &str,
+        index: u32,
+    ) -> Result<String, String> {
+        let reply = self.remote.resource(
+            wega_network::ResourceRequest::Storage {
+                origin: self.origin.clone(),
+                persistent,
+                operation: operation.into(),
+                key: key.into(),
+                index,
+            },
+            value.as_bytes(),
+        )?;
+        String::from_utf8(reply).map_err(|error| error.to_string())
+    }
+}

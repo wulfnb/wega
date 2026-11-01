@@ -91,3 +91,17 @@ No duplicate-symbol errors are suppressed.
 The original bindings MIT license and its pinned source/hash are included in
 `blitz/licenses/`, alongside Skia's BSD notice. Run the same vendor verifier to
 check all nine source archives and their documented patches.
+
+## Standalone content services and image budgets (1 November 2026)
+
+`deno_webstorage` 0.255.0 and `deno_websocket` 0.265.0 are pinned published
+sources with MIT license copies. Their `*-broker.patch` files add Rust-injected
+storage/stream backends; upstream JavaScript WebIDL/proxy/framing code is unchanged.
+Bound content workers use the host resource broker; unbound library embeddings
+retain the original backend behavior. Integrity verification now covers 11 crates.
+
+`blitz/patches/content-image-budgets.patch` applies after `blitz-dom.patch` and
+adds bounded bitmap/SVG decode, retained-image accounting, no external SVG file
+resolver, and explicit broker font data with system discovery disabled. SVG charges
+estimate native allocation; process supervision remains a backstop. The same
+archive-and-patch verifier checks these changes.

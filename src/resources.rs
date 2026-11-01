@@ -1,4 +1,5 @@
 //! Low-frequency resource sampling; no subprocesses or system-wide process scans.
+#![forbid(unsafe_code)]
 use std::time::{Duration, Instant};
 
 const INTERVAL: Duration = Duration::from_secs(2);
@@ -114,59 +115,11 @@ fn sample(scope: Scope) -> Option<Sample> {
     }
 }
 
-#[cfg(unix)]
 fn process_sample() -> Option<Sample> {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
-    // SAFETY: getrusage initializes this correctly sized output on success.
-    if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
-        return None;
-    }
-    let usage = unsafe { usage.assume_init() };
-    let cpu_seconds = usage.ru_utime.tv_sec as f64
-        + usage.ru_stime.tv_sec as f64
-        + (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) as f64 / 1_000_000.0;
     Some(Sample {
-        cpu_seconds,
-        memory_bytes: resident_memory()?,
+        cpu_seconds: wega_platform::cpu_seconds()?,
+        memory_bytes: wega_platform::resident_bytes()?,
     })
-}
-
-#[cfg(not(unix))]
-fn process_sample() -> Option<Sample> {
-    None
-}
-
-#[cfg(target_os = "linux")]
-fn resident_memory() -> Option<u64> {
-    let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
-    let pages: u64 = statm.split_whitespace().nth(1)?.parse().ok()?;
-    // SAFETY: sysconf has no pointer arguments or side effects here.
-    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-    (page_size > 0)
-        .then(|| pages.checked_mul(page_size as u64))
-        .flatten()
-}
-
-#[cfg(target_os = "macos")]
-fn resident_memory() -> Option<u64> {
-    let mut info = std::mem::MaybeUninit::<libc::rusage_info_v0>::uninit();
-    // SAFETY: proc_pid_rusage writes the selected v0 structure into this buffer.
-    let result = unsafe {
-        libc::proc_pid_rusage(
-            libc::getpid(),
-            libc::RUSAGE_INFO_V0,
-            info.as_mut_ptr().cast(),
-        )
-    };
-    if result != 0 {
-        return None;
-    }
-    Some(unsafe { info.assume_init() }.ri_resident_size)
-}
-
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
-fn resident_memory() -> Option<u64> {
-    None
 }
 
 #[cfg(any(target_os = "linux", test))]

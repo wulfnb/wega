@@ -1,0 +1,347 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -248,3 +248,6 @@
+ [target.'cfg(any(target_vendor = "apple"))'.dependencies.objc2]
+ version = "0.6"
+ features = ["disable-encoding-assertions"]
++
++[dependencies.flate2]
++version = "1"
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -36,6 +36,7 @@
+ ///
+ /// This is the primary entry point for this crate.
+ mod document;
++mod image_budget;
+ 
+ /// The nodes themsleves, and their data.
+ pub mod node;
+@@ -127,6 +128,8 @@
+ pub use events::{EventDriver, EventHandler, NoopEventHandler};
+ pub use html::{DummyHtmlParserProvider, HtmlParserProvider};
+ pub use util::{Point, decode_font_bytes};
++#[cfg(feature="svg")]
++pub use util::install_broker_fonts;
+ 
+ /// Convenience builder for the one-font case: produces a [`FontContext`] with
+ /// system-font discovery disabled and the supplied font registered as the
+@@ -160,3 +163,19 @@
+     }
+     ctx
+ }
++
++/// Wega contributors, 2026: generic fonts supplied as host-selected bytes. The
++/// content process never discovers a system font path or opens a font file.
++pub fn build_broker_font_ctx(fonts: &[Vec<u8>]) -> FontContext {
++    use parley::fontique::{Blob, Collection, CollectionOptions, GenericFamily, SourceCache};
++    use std::sync::Arc;
++    let mut context=FontContext { source_cache:SourceCache::new_shared(),collection:Collection::new(CollectionOptions {shared:false,system_fonts:false}) };
++    for (index,font) in fonts.iter().enumerate() {
++        let registered=context.collection.register_fonts(Blob::new(Arc::new(font.clone()) as _),None);
++        let families:Vec<_>=registered.iter().map(|(id,_)|*id).collect();
++        let generic=match index {0=>GenericFamily::SansSerif,1=>GenericFamily::Serif,_=>GenericFamily::Monospace};
++        context.collection.append_generic_families(generic,families.iter().copied());
++        if index==0 {context.collection.append_generic_families(GenericFamily::SystemUi,families.iter().copied());}
++    }
++    context
++}
+--- a/src/net.rs
++++ b/src/net.rs
+@@ -570,24 +570,36 @@
+ 
+ impl ImageHandler {
+     fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
+-        let image_err = match image::ImageReader::new(Cursor::new(&bytes))
++        let permit = crate::image_budget::DecodePermit::reserve()?;
++        let mut reader = image::ImageReader::new(Cursor::new(&bytes))
+             .with_guessed_format()
+-            .expect("IO errors impossible with Cursor")
+-            .decode()
+-        {
+-            Ok(image) => {
+-                let width = image.width();
+-                let height = image.height();
+-                let raw_rgba8_data = image.into_rgba8().into_raw();
+-                return Ok(Resource::Image(
+-                    self.kind,
+-                    width,
+-                    height,
+-                    Arc::new(raw_rgba8_data),
+-                ));
+-            }
+-            Err(e) => e.to_string(),
++            .map_err(|error| error.to_string())?;
++        let mut limits = image::Limits::default();
++        limits.max_image_width = Some(8192);
++        limits.max_image_height = Some(8192);
++        limits.max_alloc = Some(64 * 1024 * 1024);
++        reader.limits(limits);
++        let image_err = match reader.into_decoder() {
++            Ok(decoder) => {
++                use image::ImageDecoder;
++                let (width, height) = decoder.dimensions();
++                if u64::from(width) * u64::from(height) > 8 * 1024 * 1024
++                    || decoder.total_bytes() > 64 * 1024 * 1024
++                {
++                    return Err("Decoded image exceeds dimensions/allocation budget".into());
++                }
++                match image::DynamicImage::from_decoder(decoder) {
++                    Ok(image) => {
++                        let data = Arc::new(image.into_rgba8().into_raw());
++                        permit.retain(&data, data.len())?;
++                        return Ok(Resource::Image(self.kind, width, height, data));
++                    }
++                    Err(error) => error.to_string(),
++                }
++            }
++            Err(error) => error.to_string(),
+         };
++        drop(permit);
+ 
+         #[cfg(feature = "svg")]
+         let svg_err = {
+--- a/src/node/svg.rs
++++ b/src/node/svg.rs
+@@ -82,6 +82,11 @@
+     pub intrinsic_dimensions: SvgIntrinsicDimensions,
+ }
+ 
++#[derive(Default)]
++struct SvgBudget {
++    pixels: std::sync::atomic::AtomicU64,
++    nodes: std::sync::atomic::AtomicUsize,
++}
+ impl SvgImageData {
+     /// Parse an SVG image from raw data, capturing both the rendered
+     /// [`usvg::Tree`] and the declared root dimensions from a single XML
+@@ -90,25 +95,119 @@
+     /// Like [`usvg::Tree::from_data`], gzip-compressed data (SVGZ) is
+     /// decompressed first.
+     pub fn from_data(data: &[u8], options: &usvg::Options) -> Result<Self, usvg::Error> {
++        Self::from_data_bounded(data, options, Arc::new(SvgBudget::default()), 0)
++    }
++    fn from_data_bounded(
++        data: &[u8],
++        options: &usvg::Options,
++        budget: Arc<SvgBudget>,
++        depth: usize,
++    ) -> Result<Self, usvg::Error> {
++        if depth > 8 {
++            return Err(usvg::Error::ElementsLimitReached);
++        }
+         // Gzip magic bytes, matching the SVGZ detection in `usvg::Tree::from_data`.
+-        let decompressed;
++        use std::io::Read;
++        const MAX_SVG: usize = 8 * 1024 * 1024;
++        let permit = crate::image_budget::DecodePermit::reserve()
++            .map_err(|_| usvg::Error::ElementsLimitReached)?;
++        let mut decompressed = Vec::new();
+         let data = if data.starts_with(&[0x1f, 0x8b]) {
+-            decompressed = usvg::decompress_svgz(data)?;
++            flate2::read::GzDecoder::new(data)
++                .take((MAX_SVG + 1) as u64)
++                .read_to_end(&mut decompressed)
++                .map_err(|_| usvg::Error::MalformedGZip)?;
+             decompressed.as_slice()
+         } else {
+             data
+         };
++        if data.len() > MAX_SVG {
++            return Err(usvg::Error::ElementsLimitReached);
++        }
+ 
+         let text = std::str::from_utf8(data).map_err(|_| usvg::Error::NotAnUtf8Str)?;
+         let xml_options = roxmltree::ParsingOptions {
+             allow_dtd: true,
++            nodes_limit: 16384,
+             ..Default::default()
+         };
+         let doc = roxmltree::Document::parse_with_options(text, xml_options)
+             .map_err(usvg::Error::ParsingFailed)?;
+-        let tree = usvg::Tree::from_xmltree(&doc, options)?;
++        let nodes = doc.descendants().count();
++        budget
++            .nodes
++            .fetch_update(
++                std::sync::atomic::Ordering::Relaxed,
++                std::sync::atomic::Ordering::Relaxed,
++                |used| used.checked_add(nodes).filter(|sum| *sum <= 16384),
++            )
++            .map_err(|_| usvg::Error::ElementsLimitReached)?;
++        let mut options = usvg::Options {
++            dpi: options.dpi,
++            font_family: options.font_family.clone(),
++            font_size: options.font_size,
++            languages: options.languages.clone(),
++            shape_rendering: options.shape_rendering,
++            text_rendering: options.text_rendering,
++            image_rendering: options.image_rendering,
++            default_size: options.default_size,
++            fontdb: options.fontdb.clone(),
++            style_sheet: options.style_sheet.clone(),
++            ..Default::default()
++        };
++        // External SVG images never open arbitrary host files. Network resources
++        // are fetched through the document provider; data images are bounded here.
++        options.image_href_resolver.resolve_string = Box::new(|_, _| None);
++        let children = budget.clone();
++        options.image_href_resolver.resolve_data = Box::new(move |mime, bytes, options| {
++            if bytes.len() > MAX_SVG {
++                return None;
++            }
++            if mime == "image/svg+xml" {
++                let nested =
++                    Self::from_data_bounded(&bytes, options, children.clone(), depth + 1).ok()?;
++                return Some(usvg::ImageKind::SVG((*nested.tree).clone()));
++            }
++            let dimensions = image::ImageReader::new(std::io::Cursor::new(bytes.as_slice()))
++                .with_guessed_format()
++                .ok()?
++                .into_dimensions()
++                .ok()?;
++            let cost = u64::from(dimensions.0) * u64::from(dimensions.1);
++            children
++                .pixels
++                .fetch_update(
++                    std::sync::atomic::Ordering::Relaxed,
++                    std::sync::atomic::Ordering::Relaxed,
++                    |used| used.checked_add(cost).filter(|sum| *sum <= 8 * 1024 * 1024),
++                )
++                .ok()?;
++            (usvg::ImageHrefResolver::default_data_resolver())(mime, bytes, options)
++        });
++        let tree = Arc::new(usvg::Tree::from_xmltree(&doc, &options)?);
++        if tree.size().width() > 8192.0 || tree.size().height() > 8192.0 {
++            return Err(usvg::Error::InvalidSize);
++        }
++        // Tree storage is charged conservatively by source and node count; the
++        // process supervisor remains the backstop for native decoder allocations.
++        let charge = data
++            .len()
++            .saturating_mul(8)
++            .saturating_add(
++                budget
++                    .nodes
++                    .load(std::sync::atomic::Ordering::Relaxed)
++                    .saturating_mul(1024),
++            )
++            .saturating_add(
++                (budget.pixels.load(std::sync::atomic::Ordering::Relaxed) as usize)
++                    .saturating_mul(4),
++            );
++        permit
++            .retain(&tree, charge)
++            .map_err(|_| usvg::Error::ElementsLimitReached)?;
+         Ok(Self {
+-            tree: Arc::new(tree),
++            tree,
+             intrinsic_dimensions: SvgIntrinsicDimensions::from_xmltree(&doc),
+         })
+     }
+--- a/src/util.rs
++++ b/src/util.rs
+@@ -44,6 +44,16 @@
+ #[cfg(feature = "svg")]
+ use usvg::fontdb;
+ #[cfg(feature = "svg")]
++static BROKER_FONT_DB: std::sync::OnceLock<Arc<fontdb::Database>> = std::sync::OnceLock::new();
++#[cfg(feature = "svg")]
++pub fn install_broker_fonts(fonts: &[Vec<u8>]) {
++    let mut database = fontdb::Database::new();
++    for bytes in fonts {
++        database.load_font_data(bytes.clone());
++    }
++    let _ = BROKER_FONT_DB.set(Arc::new(database));
++}
++#[cfg(feature = "svg")]
+ pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
+     let mut db = fontdb::Database::new();
+     db.load_system_fonts();
+@@ -157,7 +167,10 @@
+ #[cfg(feature = "svg")]
+ pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData, usvg::Error> {
+     let options = usvg::Options {
+-        fontdb: Arc::clone(&*FONT_DB),
++        fontdb: BROKER_FONT_DB
++            .get()
++            .cloned()
++            .unwrap_or_else(|| Arc::clone(&*FONT_DB)),
+         ..Default::default()
+     };
+     crate::node::SvgImageData::from_data(source, &options)
+--- /dev/null
++++ b/src/image_budget.rs
+@@ -0,0 +1,72 @@
++//! Wega contributors, 2026: bound image admission before decoding and retain
++//! charges while decoded bytes/trees survive in nodes, caches or display lists.
++use std::sync::{Arc, Mutex, Weak};
++const DECODE_RESERVATION: usize = 128 * 1024 * 1024;
++const RETAINED_LIMIT: usize = 256 * 1024 * 1024;
++const IMAGE_COUNT: usize = 4096;
++struct Retained {
++    owner: Weak<dyn Send + Sync>,
++    bytes: usize,
++}
++struct Budget {
++    decoding: usize,
++    retained: Vec<Retained>,
++}
++static BUDGET: Mutex<Budget> = Mutex::new(Budget {
++    decoding: 0,
++    retained: Vec::new(),
++});
++pub(crate) struct DecodePermit {
++    active: bool,
++}
++impl DecodePermit {
++    pub fn reserve() -> Result<Self, String> {
++        let mut budget = BUDGET
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner);
++        budget
++            .retained
++            .retain(|entry| entry.owner.strong_count() != 0);
++        let used: usize = budget.retained.iter().map(|entry| entry.bytes).sum();
++        if budget.retained.len() >= IMAGE_COUNT
++            || used
++                .saturating_add(budget.decoding)
++                .saturating_add(DECODE_RESERVATION)
++                > RETAINED_LIMIT
++        {
++            return Err("Decoded-image admission limit exceeded".into());
++        }
++        budget.decoding += DECODE_RESERVATION;
++        Ok(Self { active: true })
++    }
++    pub fn retain<T: Send + Sync + 'static>(
++        mut self,
++        owner: &Arc<T>,
++        bytes: usize,
++    ) -> Result<(), String> {
++        if bytes > DECODE_RESERVATION {
++            return Err("Decoded-image retention exceeds reservation".into());
++        }
++        let owner: Arc<dyn Send + Sync> = owner.clone();
++        let mut budget = BUDGET
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner);
++        budget.retained.push(Retained {
++            owner: Arc::downgrade(&owner),
++            bytes,
++        });
++        budget.decoding -= DECODE_RESERVATION;
++        self.active = false;
++        Ok(())
++    }
++}
++impl Drop for DecodePermit {
++    fn drop(&mut self) {
++        if self.active {
++            BUDGET
++                .lock()
++                .unwrap_or_else(std::sync::PoisonError::into_inner)
++                .decoding -= DECODE_RESERVATION;
++        }
++    }
++}

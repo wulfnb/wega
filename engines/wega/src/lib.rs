@@ -4,12 +4,14 @@ pub use blitz_traits::events;
 pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
 
+mod broker_socket;
 mod cookies;
 mod csp;
 #[path = "../../../src/diagnostic_event.rs"]
 pub mod diagnostics;
 mod dom;
 mod encoding;
+mod event_loop;
 mod extension_adapter;
 mod module_loader;
 mod native_ops;
@@ -17,11 +19,12 @@ mod network;
 mod parser;
 mod raster;
 mod script;
+mod security_context;
 mod v8;
 mod view;
 mod web;
 mod web_extensions;
-pub use dom::DialogHandler;
+pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use network::NetworkPolicy;
 pub use raster::{Painted, Pixels};
 pub use view::{Frame, View};
@@ -79,12 +82,21 @@ impl Engine {
         address: &str,
         token: String,
     ) -> Result<Self, String> {
+        Self::with_broker(
+            limits,
+            policy,
+            wake,
+            wega_network::Remote::new(address, token)?,
+        )
+    }
+    pub fn with_broker(
+        limits: Limits,
+        policy: NetworkPolicy,
+        wake: std::sync::Arc<dyn Fn() + Send + Sync>,
+        remote: wega_network::Remote,
+    ) -> Result<Self, String> {
         Ok(Self {
-            network: network::Network::brokered(
-                policy,
-                wake,
-                wega_network::Remote::new(address, token)?,
-            )?,
+            network: network::Network::brokered(policy, wake, remote)?,
             limits,
         })
     }

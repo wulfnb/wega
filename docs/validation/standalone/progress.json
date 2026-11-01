@@ -1,0 +1,167 @@
+{
+  "schema": 1,
+  "branch": "feature/standalone-wega-engine",
+  "date": "2026-11-01",
+  "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
+  "test_policy": "Final validation pass started after implementation, as requested by the owner",
+  "runtime_tests_executed": true,
+  "servo_retirement_allowed": false,
+  "steps": {
+    "02": {
+      "implementation": "complete",
+      "protocol_version": 11,
+      "acceptance": "deferred until the owner's final test pass",
+      "contract": "docs/step-02-engine-contract.md"
+    },
+    "03": {
+      "implementation": "partial implementation merged at 62269d9; protocol capture/navigation/diagnostics and Rust subprocess harness integrated",
+      "acceptance": "deferred; complete framework and WPT paths still pending"
+    },
+    "04": {
+      "implementation": "Merged partial implementation plus document-bound broker storage/cookies/WebSockets, CORS and DNS pinning in Steps 05/06",
+      "acceptance": "Full authority/CSP/redirect/cache audit and renderer-initiated navigation grants remain separate"
+    },
+    "05": {
+      "implementation": "delivered; final regression and cross-platform native acceptance in progress",
+      "protocol_version": 14,
+      "acceptance": "macOS native checks passed; exact-head final suites and Linux/Windows native CI pending",
+      "contract": "docs/step-05-sandbox-and-supervision.md",
+      "required_browsing": "Native required policy enforced; unsupported setup aborts, no unsandboxed release override"
+    },
+    "06": {
+      "implementation": "delivered; final regression and cross-platform native acceptance in progress",
+      "protocol_version": 14,
+      "acceptance": "macOS native checks passed; exact-head final suites and Linux/Windows native CI pending",
+      "contract": "docs/step-06-document-host-and-event-loop.md"
+    }
+  },
+  "substeps": {
+    "01.a": "Source inventory and provisional family ledger prepared; effective exposure audit pending",
+    "01.b": "Runtime baseline deferred",
+    "01.c": "Source-only profile/data-path audit prepared; migration fixtures pending",
+    "02.a": "Shared Rust protocol crate implemented and pushed",
+    "02.b": "Scoped evaluation/edit-state requests, bounded correlation and cancellation on navigation/crash implemented; tests pending",
+    "02.c1": "Actual document commit/revision tracking and stale-frame rejection implemented; tests pending",
+    "02.c2": "Negotiated queued cancellation, pre-execution deadlines and bounded admission implemented; tests pending",
+    "02.c3": "Host-owned lifecycle, actual navigation commit binding, scoped native events and identified dialog replies implemented; tests pending",
+    "02.c4": "Shutdown acknowledgement, owned child process reaping and normal browser-exit draining implemented; tests pending",
+    "02.c5": "Session/frame/service identity envelopes, native principal and activation authority, scoped permission cancellation, immediate broker revocation and replay protection implemented; tests pending",
+    "02.c": "Implementation complete; all runtime acceptance verification deferred",
+    "03.integration": "Bounded harness/events, development-worker opt-in, strict correlation and failure handling integrated; tests pending",
+    "04.integration": "Worker initiator/destination metadata and HSTS input/storage bounds integrated; remaining authority bypasses documented",
+    "05.a": "Threat model, allowlist, fail-closed native launch and explicit debug-only escape hatch delivered",
+    "05.b": "Host admission, native RSS supervision, retained ownership and explicit crash recovery delivered",
+    "05.c": "Landlock/seccomp, signed App Sandbox helper and Windows AppContainer/job backends delivered; macOS native proof passed; Linux/Windows native CI pending",
+    "05.d": "Portable inherited channels/frame grants, revocation, brokered fonts/files/storage/WebSockets and image decode budgets delivered",
+    "06.a": "Document host parser/lifecycle ownership and bounded document-scoped task admission delivered",
+    "06.b": "Microtask checkpoints, provisional suspension, replacement teardown, visibility/freeze and fatal-script recovery delivered",
+    "06.c": "Deno adaptation/secure-context audit recorded; existing upstream JS semantics retained"
+  },
+  "compile_checks": [
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine -p wega-network -p wega-protocol -p wega-platform --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Worker, network, platform, protocol and regression-source type checking only; no tests executed; existing Deno vendor warnings remain"
+    },
+    {
+      "command": "cargo check --locked --offline --no-default-features --lib",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Core compilation only; no tests executed"
+    },
+    {
+      "command": "cargo check --locked --offline --features test-harness --bin wega --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Desktop and test-source type checking only; existing Servo vendor warnings remain"
+    }
+  ],
+  "step05_compile_checks": [
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine -p wega-platform -p wega-protocol -p wega-network --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Worker/platform/protocol/network integration and regression-source type checking only; no tests executed; existing Deno vendor warnings remain"
+    },
+    {
+      "command": "cargo clippy --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol -p wega-network --all-targets -- -D warnings",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Platform/protocol/network implementation and regression-source lints only; no tests executed"
+    },
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine-platform-linux --target x86_64-unknown-linux-gnu -p wega-platform -p wega-protocol --all-targets",
+      "platform": "Linux x86_64 cross-compiled on macOS arm64",
+      "result": "passed",
+      "scope": "Platform/protocol implementation and Linux probe/test sources only; no native Linux execution"
+    },
+    {
+      "command": "cargo check --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine-platform-windows --target x86_64-pc-windows-gnu -p wega-platform -p wega-protocol --all-targets",
+      "platform": "Windows x86_64 GNU cross-compiled on macOS arm64",
+      "result": "passed",
+      "scope": "Platform/protocol implementation and Windows job/test sources only; no native Windows execution"
+    },
+    {
+      "command": "cargo check --locked --offline --features test-harness --bin wega --all-targets",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Desktop integration and regression-source compilation only; existing Servo vendor warnings remain"
+    },
+    {
+      "command": "cargo check --locked --offline --no-default-features --lib",
+      "platform": "macOS arm64",
+      "result": "passed",
+      "scope": "Browser core compilation only; no tests executed"
+    }
+  ],
+  "pending_verification": [
+    "Frozen Servo/direct-Wega baseline runtime captures",
+    "Feature/API exposure and behavioral parity",
+    "Full Linux/Windows browser-worker builds and native runtime evidence; Step 05 platform-only cross-checks are recorded separately",
+    "Profile migration and data preservation fixtures",
+    "Resource and release validation",
+    "Step 03 full offline framework matrix and WPT asynchronous/reftest/testdriver paths",
+    "Exact-head final workspace/brokered regression and lint results",
+    "Step 05 Linux/Windows native containment and required-worker CI, parent-crash/pressure/restart stress, signed distribution validation",
+    "Step 04 full authority/CSP/cache audit and new renderer navigation grants"
+  ],
+  "current_protocol_version": 14,
+  "validation_05_06": [
+    {
+      "kind": "native macOS sandbox probe",
+      "result": "passed",
+      "scope": "private read/write, direct TCP/UDP and child denial; explicit inherited file grant works"
+    },
+    {
+      "kind": "signed required macOS worker",
+      "result": "passed",
+      "scope": "JIT loop, broker storage/cookies and shared-frame nontransparent pixels"
+    },
+    {
+      "kind": "service/platform/protocol regressions",
+      "result": "passed",
+      "scope": "all-targets run; native ignored test executed separately on macOS"
+    },
+    {
+      "kind": "desktop all-targets build",
+      "result": "passed",
+      "scope": "macOS source integration"
+    },
+    {
+      "kind": "vendor integrity",
+      "result": "passed",
+      "scope": "11 pinned archives and exact patches"
+    },
+    {
+      "kind": "full workspace final suite",
+      "result": "in progress",
+      "scope": "parser-yield fixture updated to await actual load rather than one poll"
+    },
+    {
+      "kind": "Linux/Windows native validation",
+      "result": "pending CI",
+      "scope": "platform/protocol cross-compiles passed; not runtime proof"
+    }
+  ]
+}

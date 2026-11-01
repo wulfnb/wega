@@ -147,7 +147,7 @@ impl Browser {
                             .state
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        json!({"engine":"wega","pid":page.pid(),"workerRssBytes":state.rss_bytes,"jsHeapBytes":state.js_heap,"frozen":state.frozen,"loading":state.loading,"compatibility":state.compatibility})
+                        json!({"engine":"wega","pid":page.pid(),"workerRssBytes":page.resident_bytes(),"jsHeapBytes":state.js_heap,"frozen":state.lifecycle.frozen(),"loading":state.lifecycle.loading(),"phase":state.lifecycle.phase(),"compatibility":state.compatibility})
                     } else {
                         json!({"engine":"servo","pid":std::process::id(),"workerRssBytes":null,"jsHeapBytes":null,"frozen":null,"loading":tab.loading()})
                     }

@@ -441,6 +441,15 @@ jobs:
         env:
           RUSTFLAGS: "-C link-arg=msvcprt.lib"
         run: cargo build --locked --no-default-features --features desktop,brotli-streams,media
+      - name: Browser executable has no console subsystem
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products '*' -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'Visual Studio dumpbin is unavailable' }
+          $headers = & $dumpbin /HEADERS target/debug/wega.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect browser PE headers' }
+          if (-not ($headers -match '2 subsystem \(Windows GUI\)')) { throw 'Browser must be a Windows GUI executable' }
       - name: Launch the browser
         shell: pwsh
         run: |

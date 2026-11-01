@@ -2,10 +2,17 @@
 use std::{sync::Arc, time::Duration};
 use wega_engine::{Engine, Limits, NetworkPolicy, Url, View};
 fn page(html: &str) -> View {
-    let mut view = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {}))
-        .unwrap()
-        .create_view(Url::parse("about:blank").unwrap())
-        .unwrap();
+    let mut view = Engine::new(
+        Limits::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap()
+    .create_view(Url::parse("about:blank").unwrap())
+    .unwrap();
     // Cancel the initial network request; the tests never require a server.
     view.stop();
     view.url = Url::parse("https://fixture.test/errors.html").unwrap();
@@ -119,7 +126,10 @@ fn event_loop_deadlines_are_named_and_remain_fatal() {
             script_time: Duration::from_millis(100),
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap()

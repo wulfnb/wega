@@ -30,6 +30,7 @@ impl crate::native_ops::NativeHost for Dom {
         request.origin = document.origin().ascii_serialization();
         request.initiator = Some(document);
         request.top_level = false;
+        request.destination = wega_network::ResourceDestination::Fetch;
         request.redirect = "manual".into();
         request.limit = self.limits.resource_bytes.min(wega_network::MAX_BODY);
         let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -276,6 +277,7 @@ impl V8Host {
         let executor = Rc::new(
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
+                .max_blocking_threads(8)
                 .build()
                 .map_err(|e| e.to_string())?,
         );
@@ -328,6 +330,26 @@ impl V8Host {
             .op_state()
             .borrow_mut()
             .put(crate::web::permissions(dom.network.policy.clone()));
+        if let Some(remote) = dom
+            .network
+            .remote
+            .clone()
+            .filter(|remote| remote.is_bound())
+        {
+            deno_websocket::set_broker(
+                &mut runtime.op_state().borrow_mut(),
+                Arc::new(crate::broker_socket::Connector {
+                    network: dom.network.clone(),
+                }),
+            );
+            deno_webstorage::set_backend(
+                &mut runtime.op_state().borrow_mut(),
+                Arc::new(crate::web::BrokerStorage {
+                    remote,
+                    origin: document_url.origin().ascii_serialization(),
+                }),
+            );
+        }
         runtime.op_state().borrow_mut().put(String::new());
         runtime
             .execute_script(
@@ -336,6 +358,7 @@ impl V8Host {
             )
             .map_err(|error| error.to_string())?;
         runtime.op_state().borrow_mut().put(String::new());
+        crate::security_context::configure(&mut runtime, &document_url)?;
         let bootstrap_heap = heap_bytes(&mut runtime);
         let oom = Arc::new(AtomicBool::new(false));
         let flag = oom.clone();
@@ -440,6 +463,30 @@ impl V8Host {
     }
 }
 impl ScriptHost for V8Host {
+    fn checkpoint(&mut self) -> Result<(), ScriptError> {
+        // HTML's microtask checkpoint follows each script task. Timer dispatch
+        // belongs to the timer task source, never to a parser-blocking script.
+        if self.frozen || self.runtime.is_none() {
+            return Ok(());
+        }
+        let executor = self.executor.clone();
+        let _entered = executor.enter();
+        let (_, timed_out) = self.bounded("microtask checkpoint", |host| {
+            host.runtime
+                .as_mut()
+                .unwrap()
+                .v8_isolate()
+                .perform_microtask_checkpoint();
+        });
+        self.heap = heap_bytes(self.runtime.as_mut().unwrap());
+        if timed_out || self.oom.load(Ordering::Relaxed) || self.heap > self.heap_limit {
+            return Err(ScriptError {
+                fatal: true,
+                message: "Microtask checkpoint exceeded its execution or heap limit".into(),
+            });
+        }
+        Ok(())
+    }
     fn run(&mut self, source: &str, name: &str) -> Result<String, ScriptError> {
         if self.runtime.is_none() {
             if self.queued.len() >= 64 {
@@ -457,13 +504,18 @@ impl ScriptHost for V8Host {
             && !error.fatal
         {
             let message = error.message.clone();
-            let _ = self.execute(
+            let reported = self.execute(
                 &format!(
                     "__wega_report(new Error({}));__wega_missing()",
                     json!(message)
                 ),
                 "wega:error",
             );
+            if let Err(error) = reported
+                && error.fatal
+            {
+                return Err(error);
+            }
         }
         result
     }
@@ -502,11 +554,46 @@ impl ScriptHost for V8Host {
     /// (which a page's CSP may disable).
     fn evaluate_json(&mut self, source: &str) -> Result<String, ScriptError> {
         let value = self.execute_value(source, "evaluate_json")?;
-        let runtime = self.runtime.as_mut().unwrap();
-        deno_core::scope!(scope, runtime);
-        let local = deno_core::v8::Local::new(scope, value);
-        Ok(deno_core::v8::json::stringify(scope, local)
-            .map(|text| text.to_rust_string_lossy(scope))
+        // JSON serialization calls user-defined toJSON/getters and must carry
+        // the same watchdog/heap budget as the original evaluation.
+        let executor = self.executor.clone();
+        let _entered = executor.enter();
+        let (output, timed_out) = self.bounded("JSON serialization", |host| {
+            deno_core::scope!(scope, host.runtime.as_mut().unwrap());
+            deno_core::v8::tc_scope!(let scope, scope);
+            let local = deno_core::v8::Local::new(scope, value);
+            let result = deno_core::v8::json::stringify(scope, local)
+                .map(|text| {
+                    if text.utf8_length(scope) > wega_protocol::MAX_RESULT_BYTES {
+                        return Err(ScriptError {
+                            fatal: false,
+                            message: "Evaluation result exceeds the IPC budget".into(),
+                        });
+                    }
+                    Ok(text.to_rust_string_lossy(scope))
+                })
+                .transpose()?;
+            if let Some(exception) = scope.exception() {
+                let message = exception
+                    .to_string(scope)
+                    .map(|text| text.to_rust_string_lossy(scope))
+                    .unwrap_or_else(|| "JSON serialization failed".into());
+                Err(ScriptError {
+                    fatal: false,
+                    message,
+                })
+            } else {
+                Ok(result)
+            }
+        });
+        self.heap = heap_bytes(self.runtime.as_mut().unwrap());
+        if timed_out || self.oom.load(Ordering::Relaxed) || self.heap > self.heap_limit {
+            return Err(ScriptError {
+                fatal: true,
+                message: "JSON serialization exceeded its execution or heap limit".into(),
+            });
+        }
+        Ok(output?
             .filter(|text| text != "undefined")
             .unwrap_or_else(|| "null".into()))
     }
@@ -527,6 +614,12 @@ impl ScriptHost for V8Host {
             self.polled_at = Instant::now();
             match result {
                 Poll::Pending => {
+                    if expired || self.oom.load(Ordering::Relaxed) {
+                        return Err(ScriptError {
+                            fatal: true,
+                            message: "Module loading exceeded its execution or heap limit".into(),
+                        });
+                    }
                     self.pending = true;
                     return Ok(());
                 }
@@ -652,7 +745,7 @@ impl ScriptHost for V8Host {
             return Ok(false);
         }
         self.run("__wega_frame(performance.now())", "wega:animation-frame")?;
-        self.tick()?;
+        self.checkpoint()?;
         if self.runtime.is_none() {
             return Ok(false);
         }

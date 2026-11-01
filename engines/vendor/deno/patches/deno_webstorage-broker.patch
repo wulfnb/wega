@@ -1,0 +1,123 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -55,3 +55,9 @@
+ 
+ [dependencies.thiserror]
+ version = "2.0.12"
++
++[dependencies.serde]
++version = "1"
++
++[dependencies.serde_json]
++version = "1"
+--- a/lib.rs
++++ b/lib.rs
+@@ -1,4 +1,5 @@
+ // Copyright 2018-2026 the Deno authors. MIT license.
++// Modified by Wega contributors, 2026: host-brokered content resources.
+ 
+ // NOTE to all: use **cached** prepared statements when interfacing with SQLite.
+ 
+@@ -17,6 +18,12 @@
+   #[class("DOMExceptionNotSupportedError")]
+   #[error("LocalStorage is not supported in this context.")]
+   ContextNotSupported,
++  #[class(generic)]
++  #[error("{0}")]
++  Broker(String),
++  #[class("DOMExceptionQuotaExceededError")]
++  #[error("Storage quota exceeded")]
++  BrokerQuota,
+   #[class(generic)]
+   #[error(transparent)]
+   Sqlite(#[from] rusqlite::Error),
+@@ -26,6 +33,21 @@
+   #[class("DOMExceptionQuotaExceededError")]
+   #[error("Exceeded maximum storage size")]
+   StorageExceeded,
++}
++
++// Wega contributors, 2026: host-owned storage without profile paths in content.
++/// The embedder supplies an origin-bound backend before untrusted script runs.
++pub trait StorageBackend: Send + Sync {
++  fn call(&self, persistent: bool, operation: &str, key: &str, value: &str, index: u32) -> Result<String, String>;
++}
++pub fn set_backend(state: &mut OpState, backend: std::sync::Arc<dyn StorageBackend>) {
++  state.put(backend);
++}
++fn backend<T: serde::de::DeserializeOwned>(state: &OpState, persistent: bool, operation: &str, key: &str, value: &str, index: u32) -> Option<Result<T, WebStorageError>> {
++  state.try_borrow::<std::sync::Arc<dyn StorageBackend>>().map(|backend| {
++    let reply = backend.call(persistent, operation, key, value, index).map_err(|error| if error.starts_with("QuotaExceededError:") { WebStorageError::BrokerQuota } else { WebStorageError::Broker(error) })?;
++    serde_json::from_str(&reply).map_err(|error| WebStorageError::Broker(error.to_string()))
++  })
+ }
+ 
+ #[derive(Clone)]
+@@ -144,7 +166,8 @@
+   #[getter]
+   #[smi]
+   fn length(&self, state: &mut OpState) -> Result<u32, WebStorageError> {
+-    let conn = get_webstorage(state, self.persistent)?;
++    if let Some(result) = backend(state, self.persistent, "length", "", "", 0) { return result; }
++  let conn = get_webstorage(state, self.persistent)?;
+ 
+     let mut stmt = conn.prepare_cached("SELECT COUNT(*) FROM data")?;
+     let length: u32 = stmt.query_row(params![], |row| row.get(0))?;
+@@ -159,7 +182,8 @@
+     state: &mut OpState,
+     #[smi] index: u32,
+   ) -> Result<Option<String>, WebStorageError> {
+-    let conn = get_webstorage(state, self.persistent)?;
++    if let Some(result) = backend(state, self.persistent, "key", "", "", index) { return result; }
++  let conn = get_webstorage(state, self.persistent)?;
+ 
+     let mut stmt =
+       conn.prepare_cached("SELECT key FROM data LIMIT 1 OFFSET ?")?;
+@@ -179,7 +203,8 @@
+     #[string] key: &str,
+     #[string] value: &str,
+   ) -> Result<(), WebStorageError> {
+-    let conn = get_webstorage(state, self.persistent)?;
++    if let Some(result) = backend(state, self.persistent, "set", key, value, 0) { return result; }
++  let conn = get_webstorage(state, self.persistent)?;
+ 
+     size_check(key.len() + value.len())?;
+ 
+@@ -204,7 +229,8 @@
+     state: &mut OpState,
+     #[string] key: &str,
+   ) -> Result<Option<String>, WebStorageError> {
+-    let conn = get_webstorage(state, self.persistent)?;
++    if let Some(result) = backend(state, self.persistent, "get", key, "", 0) { return result; }
++  let conn = get_webstorage(state, self.persistent)?;
+ 
+     let mut stmt =
+       conn.prepare_cached("SELECT value FROM data WHERE key = ?")?;
+@@ -220,7 +246,8 @@
+     state: &mut OpState,
+     #[string] key: &str,
+   ) -> Result<(), WebStorageError> {
+-    let conn = get_webstorage(state, self.persistent)?;
++    if let Some(result) = backend(state, self.persistent, "remove", key, "", 0) { return result; }
++  let conn = get_webstorage(state, self.persistent)?;
+ 
+     let mut stmt = conn.prepare_cached("DELETE FROM data WHERE key = ?")?;
+     stmt.execute(params![key])?;
+@@ -230,7 +257,8 @@
+ 
+   #[fast]
+   fn clear(&self, state: &mut OpState) -> Result<(), WebStorageError> {
+-    let conn = get_webstorage(state, self.persistent)?;
++    if let Some(result) = backend(state, self.persistent, "clear", "", "", 0) { return result; }
++  let conn = get_webstorage(state, self.persistent)?;
+ 
+     let mut stmt = conn.prepare_cached("DELETE FROM data")?;
+     stmt.execute(params![])?;
+@@ -244,6 +272,7 @@
+   #[cppgc] storage: &Storage,
+   state: &mut OpState,
+ ) -> Result<Vec<String>, WebStorageError> {
++  if let Some(result) = backend(state, storage.persistent, "keys", "", "", 0) { return result; }
+   let conn = get_webstorage(state, storage.persistent)?;
+ 
+   let mut stmt = conn.prepare_cached("SELECT key FROM data")?;

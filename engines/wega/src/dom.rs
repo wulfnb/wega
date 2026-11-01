@@ -20,6 +20,7 @@ pub(crate) struct ScriptRequest {
 }
 /// Synchronous dialogs (`alert`, `confirm`, `prompt`) answered by the browser.
 pub type DialogHandler = Box<dyn FnMut(&str, &str, &str) -> Option<String>>;
+pub type DocumentDialogHandler = Box<dyn FnMut(u64, u64, &str, &str, &str, &str) -> Option<String>>;
 
 /// Requests from page script that the view or the browser must act on.
 #[derive(Default)]
@@ -40,7 +41,9 @@ pub(crate) struct Dom {
     pub errors: Rc<RefCell<Vec<String>>>,
     pub requests: RefCell<Requests>,
     pub csp: std::sync::Arc<std::sync::RwLock<crate::csp::Csp>>,
-    pub dialog: Rc<RefCell<Option<DialogHandler>>>,
+    pub dialog: Rc<RefCell<Option<DocumentDialogHandler>>>,
+    pub document_generation: Rc<Cell<u64>>,
+    pub document_revision: u64,
     /// Transient user activation, for popups.
     pub activation: Rc<Cell<Option<Instant>>>,
     pub started_scripts: Rc<RefCell<HashSet<NodeId>>>,
@@ -69,6 +72,8 @@ impl Dom {
             requests: Default::default(),
             csp: context.csp,
             dialog: context.dialog,
+            document_generation: context.document_generation,
+            document_revision: context.document_revision,
             activation: context.activation,
             started_scripts: context.started_scripts,
             history: Cell::new((0, 1)),
@@ -145,9 +150,13 @@ impl Dom {
         }
         // Dialogs block this thread on the browser's answer; never hold the DOM.
         if text(0) == "dialog" {
+            let document_url = self.document.borrow().url().to_string();
             let mut handler = self.dialog.borrow_mut();
             let answer = handler.as_mut().and_then(|handler| {
                 handler(
+                    self.document_generation.get(),
+                    self.document_revision,
+                    &document_url,
                     text(1),
                     &text(2).chars().take(4096).collect::<String>(),
                     text(3),

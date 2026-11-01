@@ -47,7 +47,7 @@ impl Default for Cookies {
 impl Cookies {
     /// The registrable domain ("site") of a host; IP addresses and single-label
     /// hosts are their own site.
-    fn site(url: &Url) -> Option<(String, String)> {
+    pub fn site(url: &Url) -> Option<(String, String)> {
         let host = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
         let registrable = match url.host() {
             Some(url::Host::Domain(_)) => suffixes()

@@ -307,13 +307,22 @@ fn broker_honors_fetch_cache_modes_and_live_engine_policy_without_reloading() {
     let directory = tempfile::tempdir().unwrap();
     let broker = wega_network::Broker::new().unwrap();
     let session = broker
-        .open_session(directory.path().to_owned(), NetworkPolicy::default())
+        .open_session(
+            directory.path().to_owned(),
+            NetworkPolicy {
+                allow_loopback: true,
+                ..Default::default()
+            },
+        )
         .unwrap();
     let (address, token) = session.endpoint();
     let keep = (session, directory);
     let engine = Engine::brokered(
         Limits::default(),
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(move || {
             let _ = &keep;
         }),

@@ -43,7 +43,8 @@
     "directory": "blitz/blitz-dom",
     "sha256": "a814bfd3ad19e6d8d26f99c75188062baca499564f9abe44250230962427d183",
     "patches": [
-      "blitz/patches/blitz-dom.patch"
+      "blitz/patches/blitz-dom.patch",
+      "blitz/patches/content-image-budgets.patch"
     ]
   },
   "blitz-paint": {
@@ -76,6 +77,28 @@
     "sha256": "eb325787c91b3f6c34a7c6f2b8a2297b20292d733ca53a08c233e5028aec49af",
     "patches": [
       "blitz/patches/skia-bindings.patch"
+    ]
+  },
+  "deno_webstorage": {
+    "version": "0.255.0",
+    "directory": "deno/deno_webstorage",
+    "sha256": "1b962adf844324d1267fb841efa5d46fbee7dbc878542ae9916b00ea52b4697e",
+    "patches": [
+      "deno/patches/deno_webstorage-broker.patch"
+    ],
+    "extra_licenses": [
+      "LICENSE.md"
+    ]
+  },
+  "deno_websocket": {
+    "version": "0.265.0",
+    "directory": "deno/deno_websocket",
+    "sha256": "364d3c2165bd1db60a0a5de1937b2020a92da2b58af3c15d9af7839220aa6745",
+    "patches": [
+      "deno/patches/deno_websocket-broker.patch"
+    ],
+    "extra_licenses": [
+      "LICENSE.md"
     ]
   }
 }

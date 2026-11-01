@@ -1,0 +1,98 @@
+name: Standalone engine validation
+on:
+  push:
+    branches: [feature/standalone-wega-engine]
+    paths: ['engines/**', 'src/wega_page.rs', '.github/workflows/standalone-engine-validation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: standalone-engine-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    name: Native confinement and engine (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: standalone-engine-${{ matrix.os }}
+          workspaces: 'engines -> ../target/wega-engine'
+          cache-on-failure: true
+      - name: Native libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libfreetype6-dev fonts-dejavu-core fonts-liberation
+      - name: Platform regression tests and probe build
+        run: |
+          cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol --all-targets
+          cargo build --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform --bins
+      - name: Inspect Windows probe dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products '*' -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'Visual Studio dumpbin is unavailable' }
+          & $dumpbin /DEPENDENTS target/wega-engine/debug/wega-containment-probe.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect native helper imports' }
+      - name: Prepare native confinement probe
+        run: |
+          suffix=''; if [ "$RUNNER_OS" = Windows ]; then suffix='.exe'; fi
+          probe="$GITHUB_WORKSPACE/target/wega-engine/debug/wega-containment-probe$suffix"
+          if [ "$RUNNER_OS" = macOS ]; then
+            target/wega-engine/debug/wega-content-bundle "$probe" "$RUNNER_TEMP/Probe.app"
+            probe="$RUNNER_TEMP/Probe.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine"
+          fi
+          echo "WEGA_SANDBOX_PROBE=$probe" >> "$GITHUB_ENV"
+      - name: Native denial and explicit-grant probe
+        run: cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform --test native_sandbox -- --ignored --nocapture
+      - name: Diagnose Windows native loader failure
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\wega-engine.exe'
+          $existed = Test-Path $key
+          $previous = (Get-ItemProperty -Path $key -Name GlobalFlag -ErrorAction SilentlyContinue).GlobalFlag
+          try {
+            New-Item -Path $key -Force | Out-Null
+            New-ItemProperty -Path $key -Name GlobalFlag -Value '0x00000002' -PropertyType String -Force | Out-Null
+            $probe = Get-ChildItem target/wega-engine/debug/deps/native_sandbox-*.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            & target/wega-engine/debug/wega-native-debugger.exe $probe.FullName --ignored --nocapture
+          } finally {
+            if ($null -ne $previous) { Set-ItemProperty -Path $key -Name GlobalFlag -Value $previous }
+            elseif ($existed) { Remove-ItemProperty -Path $key -Name GlobalFlag -ErrorAction SilentlyContinue }
+            else { Remove-Item -Path $key -Force -ErrorAction SilentlyContinue }
+          }
+      - name: Build content worker
+        run: cargo build --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --bin wega-engine
+      - name: Prepare content helper
+        run: |
+          suffix=''; if [ "$RUNNER_OS" = Windows ]; then suffix='.exe'; fi
+          helper="$GITHUB_WORKSPACE/target/wega-engine/debug/wega-engine$suffix"
+          if [ "$RUNNER_OS" = macOS ]; then
+            target/wega-engine/debug/wega-content-bundle "$helper" "$RUNNER_TEMP/Engine.app"
+            helper="$RUNNER_TEMP/Engine.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine"
+          fi
+          echo "WEGA_CONTENT_HELPER=$helper" >> "$GITHUB_ENV"
+      - name: Required worker JIT, storage, cookies and pixels
+        run: cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test inherited_broker a_required_worker_runs_jit_storage_cookies_and_frames_through_grants -- --ignored --nocapture
+      - name: Engine regression suite
+        run: |
+          cargo test --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets
+          WEGA_TEST_BROKER=1 cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test security --test forms --test scripts --test documents --test history
+      - name: Formatting and lints
+        run: |
+          cargo fmt --manifest-path engines/Cargo.toml --all --check
+          cargo clippy --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets -- -D warnings

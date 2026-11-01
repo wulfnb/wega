@@ -35,6 +35,7 @@ impl Client {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Destination {
     Document,
+    Module,
     Script,
     Style,
     Image,
@@ -159,6 +160,8 @@ pub(crate) struct Network {
     pub wake: Arc<dyn Fn() + Send + Sync>,
     pub cookies: Arc<Cookies>,
     pub storage_dir: Option<std::path::PathBuf>,
+    pub remote: Option<wega_network::Remote>,
+    pub fonts: Option<Arc<Vec<Vec<u8>>>>,
 }
 impl Network {
     pub fn new(policy: NetworkPolicy, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
@@ -178,6 +181,28 @@ impl Network {
     ) -> Result<Self, String> {
         let policy = Arc::new(std::sync::RwLock::new(policy));
         let brokered = remote.is_some();
+        let broker = remote.clone();
+        let fonts = remote
+            .as_ref()
+            .filter(|remote| remote.is_bound())
+            .map(|remote| {
+                ["sans-serif", "serif", "monospace"]
+                    .into_iter()
+                    .map(|generic| {
+                        remote.resource(
+                            wega_network::ResourceRequest::Font {
+                                generic: generic.into(),
+                            },
+                            &[],
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Arc::new)
+            })
+            .transpose()?;
+        if let Some(fonts) = &fonts {
+            blitz_dom::install_broker_fonts(fonts);
+        }
         let (client, cookies) = if let Some(remote) = remote {
             (
                 Client::Remote(remote.clone()),
@@ -223,6 +248,8 @@ impl Network {
             policy,
             wake,
             storage_dir: None,
+            remote: broker,
+            fonts,
             cookies,
         })
     }
@@ -248,6 +275,22 @@ impl Network {
         match url.scheme() {
             "http" | "https" => self.fetch_http(client, url, context, limit),
             "file" => {
+                if let Client::Remote(remote) = client {
+                    let bytes = remote.resource(
+                        wega_network::ResourceRequest::File {
+                            url: url.to_string(),
+                            limit,
+                        },
+                        &[],
+                    )?;
+                    let html = url.path().ends_with(".html") || url.path().ends_with(".htm");
+                    return Ok(Response::local(
+                        url.clone(),
+                        bytes,
+                        html.then_some("text/html"),
+                    ));
+                }
+
                 let path = url
                     .to_file_path()
                     .map_err(|_| "Invalid file address")?
@@ -317,6 +360,26 @@ impl Network {
             request.body = body.clone().unwrap_or_default();
             request.initiator = context.initiator.clone();
             request.top_level = top_level;
+            request.origin = context
+                .initiator
+                .as_ref()
+                .map(|url| url.origin().ascii_serialization())
+                .unwrap_or_else(|| "null".into());
+            request.destination = match context.destination {
+                Destination::Document => wega_network::ResourceDestination::Document,
+                Destination::Module => wega_network::ResourceDestination::Module,
+                Destination::Script => wega_network::ResourceDestination::Script,
+                Destination::Style => wega_network::ResourceDestination::Style,
+                Destination::Image => wega_network::ResourceDestination::Image,
+                Destination::Font => wega_network::ResourceDestination::Font,
+                Destination::Other => wega_network::ResourceDestination::Subresource,
+            };
+            if matches!(context.destination, Destination::Module | Destination::Font) {
+                request.mode = "cors".into();
+                request.credentials = "same-origin".into();
+            } else if context.destination != Destination::Document {
+                request.mode = "no-cors".into();
+            }
             request.redirect = "manual".into();
             if let Some(initiator) = &context.initiator
                 && let Some(value) = referrer(initiator, &url, context.referrer_policy.as_deref())

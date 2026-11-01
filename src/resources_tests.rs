@@ -9,7 +9,7 @@ fn cpu_uses_interval_and_keeps_multicore_usage() {
 }
 #[test]
 fn live_process_sample_has_current_memory_and_cpu() {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     {
         let sample = process_sample().expect("native resource counters");
         assert!(sample.memory_bytes > 0);
@@ -33,4 +33,18 @@ fn container_uses_total_cpu_and_excludes_inactive_cache() {
             .memory_bytes,
         0
     );
+}
+
+#[test]
+fn native_monitor_populates_cpu_and_ram_after_its_first_interval() {
+    let mut monitor = Monitor::new();
+    assert!(monitor.memory_bytes.is_some_and(|bytes| bytes > 0));
+    monitor.sampled_at -= INTERVAL;
+    assert!(monitor.refresh());
+    assert!(
+        monitor
+            .cpu_percent
+            .is_some_and(|percent| percent.is_finite() && percent >= 0.0)
+    );
+    assert!(!monitor.label().contains('—'));
 }
