@@ -17,6 +17,37 @@ struct Worker {
 }
 
 #[test]
+fn a_fatal_script_reports_its_document_and_exits_before_explicit_restart() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    let revision = worker.revision;
+    worker.evaluate("while(true){}".into());
+    assert!(
+        matches!(worker.until(|event| matches!(event, Event::Content { event: protocol::ContentEvent::ScriptStopped(_), .. })),
+        Event::Content { context, event: protocol::ContentEvent::ScriptStopped(reason) }
+        if context.document == protocol::DocumentId(0) && context.revision == revision && reason.contains("deadline"))
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(status) = worker.child.try_wait().unwrap() {
+            assert!(!status.success());
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Fatal realm retained a live worker"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let mut replacement = Worker::start(store.path().unwrap());
+    replacement.evaluate("6*7".into());
+    assert!(
+        matches!(replacement.until(|event| matches!(event, Event::DocumentEvaluated { .. })),
+        Event::DocumentEvaluated { result: Ok(value), .. } if value == "42")
+    );
+}
+
+#[test]
 fn a_completed_evaluation_id_cannot_execute_again() {
     let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
     let mut worker = Worker::start(store.path().unwrap());

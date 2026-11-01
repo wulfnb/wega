@@ -216,7 +216,10 @@ impl PreparedLaunch {
             }
         }
         #[cfg(windows)]
-        for name in ["SystemRoot", "WINDIR"] {
+        // CreateProcess resolves AppContainer profile redirection from these OS
+        // environment entries. They are path strings, not filesystem grants;
+        // the child token still denies access to the host profile.
+        for name in ["SystemRoot", "WINDIR", "USERPROFILE", "LOCALAPPDATA"] {
             if let Some(value) = std::env::var_os(name) {
                 command.env(name, value);
             }

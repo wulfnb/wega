@@ -63,6 +63,7 @@ fn ordinary_script_failure_does_not_disable_the_following_script_or_timer() {
     let engine = engine();
     let mut view = open(&engine, "about:blank");
     view.set_html("<script>Promise.resolve().then(()=>globalThis.checkpoint=true);throw Error('ordinary')</script><script>globalThis.after=checkpoint;setTimeout(()=>globalThis.timer=true,0)</script>").unwrap();
+    settle(&mut view);
     assert_eq!(view.evaluate_json("after").unwrap(), "true");
     assert_eq!(wait(&mut view, "globalThis.timer??null"), "true");
     assert!(view.take_script_failure().is_none());

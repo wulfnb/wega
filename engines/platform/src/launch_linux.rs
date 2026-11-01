@@ -84,9 +84,8 @@ mod tests {
         worker_baseline().unwrap();
         // SAFETY: query-only native calls use scalar values or a valid writable int.
         unsafe {
-            let mut signal = 0_i32;
-            assert_eq!(libc::prctl(libc::PR_GET_PDEATHSIG, &mut signal, 0, 0, 0), 0);
-            assert_eq!(signal, libc::SIGKILL);
+            // PDEATHSIG is per-thread and is not inherited by this Rust test
+            // harness thread. The containment binary checks it on its main thread.
             assert_eq!(libc::prctl(libc::PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0), 1);
             assert_eq!(libc::prctl(libc::PR_GET_DUMPABLE, 0, 0, 0, 0), 0);
             assert_eq!(libc::fcntl(descriptor, libc::F_GETFD), -1);

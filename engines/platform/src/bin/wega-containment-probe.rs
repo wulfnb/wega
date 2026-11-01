@@ -16,6 +16,17 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
+    #[cfg(target_os = "linux")]
+    {
+        let mut signal = 0_i32;
+        // SAFETY: query this initial thread before native policy entry. A test
+        // harness thread would not inherit the initial thread's PDEATHSIG.
+        if unsafe { libc::prctl(libc::PR_GET_PDEATHSIG, &mut signal, 0, 0, 0) } != 0
+            || signal != libc::SIGKILL
+        {
+            return Err("Missing parent-death policy on initial thread".into());
+        }
+    }
     wega_platform::launch::validate_worker_start(args.clone())?;
     let argument = |name: &str| {
         args.windows(2)
