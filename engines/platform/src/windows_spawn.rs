@@ -402,7 +402,7 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
     let mut registry_sid = registry_read_capability()?;
     let mut runtime_capability = SID_AND_ATTRIBUTES {
         Sid: registry_sid.as_mut_ptr().cast(),
-        Attributes: windows_sys::Win32::System::SystemServices::SE_GROUP_ENABLED,
+        Attributes: windows_sys::Win32::System::SystemServices::SE_GROUP_ENABLED as u32,
     };
     let capabilities = SECURITY_CAPABILITIES {
         AppContainerSid: profile
