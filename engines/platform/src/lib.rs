@@ -66,6 +66,57 @@ pub(crate) fn resident_for_child(child: &crate::child::ChildOwner) -> Option<u64
     }
 }
 
+/// Cumulative CPU time for the calling process, including all its threads.
+/// The UI computes an interval rate; separate content processes are not included.
+pub fn cpu_seconds() -> Option<f64> {
+    #[cfg(unix)]
+    {
+        let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
+        // SAFETY: the kernel fills this correctly sized output on success.
+        if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
+            return None;
+        }
+        let usage = unsafe { usage.assume_init() };
+        Some(
+            usage.ru_utime.tv_sec as f64
+                + usage.ru_stime.tv_sec as f64
+                + (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) as f64 / 1_000_000.0,
+        )
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Foundation::FILETIME,
+            System::Threading::{GetCurrentProcess, GetProcessTimes},
+        };
+        let mut created: FILETIME = unsafe { std::mem::zeroed() };
+        let mut exited = created;
+        let mut kernel = created;
+        let mut user = created;
+        // SAFETY: the pseudo-handle is this process, and all four FILETIMEs are
+        // initialized, live, correctly sized output buffers. Units are 100 ns.
+        if unsafe {
+            GetProcessTimes(
+                GetCurrentProcess(),
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+        } == 0
+        {
+            return None;
+        }
+        let ticks =
+            |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
+        Some(ticks(kernel).checked_add(ticks(user))? as f64 / 10_000_000.0)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        None
+    }
+}
+
 /// Current resident/working-set bytes, never peak usage or the JS heap.
 pub fn resident_bytes() -> Option<u64> {
     resident()
