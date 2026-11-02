@@ -181,6 +181,7 @@ jobs:
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: 4
+      WEGA_TEST_ALLOW_LOOPBACK: '1'
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
@@ -216,6 +217,9 @@ jobs:
       - name: Build and test the independent Wega engine
         run: |
           python scripts/build-wega-engine.py --debug
+          cargo build --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform --bin wega-content-bundle
+          helper=$(target/wega-engine/debug/wega-content-bundle target/debug/wega-engine "$RUNNER_TEMP/DesktopEngine.app")
+          echo "WEGA_ENGINE_BINARY=$helper" >> "$GITHUB_ENV"
           cargo test --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine
           WEGA_TEST_BROKER=1 cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test security --test forms --test scripts --test documents --test history
           cargo clippy --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets -- -D warnings
@@ -357,6 +361,7 @@ jobs:
           docker run --rm --user "$(id -u):$(id -g)" --entrypoint sh \
             -e HOME=/tmp -e XDG_CONFIG_HOME=/tmp/config -e XDG_CACHE_HOME=/tmp/cache -e XDG_DATA_HOME=/tmp/data \
             -e DISPLAY=:97 -e LIBGL_ALWAYS_SOFTWARE=1 -e GITHUB_SHA \
+            -e WEGA_TEST_ALLOW_LOOPBACK=1 \
             -v "$PWD:/source:ro" -v "$PWD/target/browser-bench-linux/${{ github.run_id }}-${{ github.run_attempt }}:/results" \
             "$(docker compose images -q wega)" -eu -c '
               Xvfb :97 -screen 0 1440x900x24 -nolisten tcp -ac >/tmp/bench-display.log 2>&1 &
@@ -460,9 +465,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Media runtime bundling failed" }
           scripts\windows-launch-check.ps1 -Directory target\debug
       - name: Real media playback and same-profile launch handoff
+        env:
+          WEGA_TEST_ALLOW_LOOPBACK: '1'
         run: python scripts/windows-runtime-test.py --binary target/debug/wega.exe
       - name: Two-engine compatibility and process-tree baseline
         if: github.event_name != 'pull_request'
+        env:
+          WEGA_TEST_ALLOW_LOOPBACK: '1'
         run: python scripts/browser-bench.py --binary target/debug/wega.exe --output target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }} --repeats 1 --tabs 1 5 --idle-seconds 10
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always() && github.event_name != 'pull_request'

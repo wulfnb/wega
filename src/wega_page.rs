@@ -20,6 +20,13 @@ use wega::{
 };
 use winit::event_loop::EventLoopProxy;
 
+// The test harness serves deterministic pages on localhost. This host-side
+// opt-in is absent from production builds and scrubbed from worker environments.
+fn test_loopback_allowed() -> bool {
+    cfg!(feature = "test-harness")
+        && std::env::var_os("WEGA_TEST_ALLOW_LOOPBACK").is_some_and(|value| value == "1")
+}
+
 pub(crate) fn executable() -> Option<PathBuf> {
     let path = std::env::var_os("WEGA_ENGINE_BINARY")
         .map(PathBuf::from)
@@ -492,6 +499,7 @@ impl Page {
                 offline: policy.offline,
                 blocked_hosts: policy.blocked_hosts.clone(),
                 allowed_hosts: policy.allowed_hosts.clone(),
+                allow_loopback: test_loopback_allowed(),
                 ..Default::default()
             },
         )?);
@@ -1177,6 +1185,7 @@ impl Page {
                 offline: *offline,
                 blocked_hosts: blocked_hosts.clone(),
                 allowed_hosts: allowed_hosts.clone(),
+                allow_loopback: test_loopback_allowed(),
                 ..Default::default()
             });
         }

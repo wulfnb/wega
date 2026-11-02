@@ -104,6 +104,17 @@ fn run_worker(required: bool) {
     let mut child = wega_platform::process::OwnedProcess::new(child, |_| {});
     launch.attach(&mut child, 512 * 1024 * 1024).unwrap();
     child.retain_until_exit(frames.clone());
+    if let Some(stderr) = child.take_stderr() {
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let mut reader = std::io::BufReader::new(stderr.take(64 * 1024));
+            let mut line = String::new();
+            while reader.read_line(&mut line).is_ok_and(|length| length > 0) {
+                eprint!("Content helper: {line}");
+                line.clear();
+            }
+        });
+    }
     let mut stdin = child.take_stdin().unwrap();
     let mut stdout = child.take_stdout().unwrap();
     let (events, receiver) = mpsc::sync_channel(32);
