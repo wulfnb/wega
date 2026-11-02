@@ -6605,7 +6605,7 @@ version = "0.1.0"
 dependencies = [
  "anyrender",
  "anyrender_skia",
- "base64 0.22.1",
+ "base64 0.23.1",
  "blitz-dom",
  "blitz-html",
  "blitz-paint",
@@ -6652,7 +6652,7 @@ dependencies = [
 name = "wega-network"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "cookie_store",
  "fontdb",
  "getrandom 0.3.4",
