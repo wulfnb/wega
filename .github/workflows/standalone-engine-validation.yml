@@ -1,14 +1,11 @@
 name: Standalone engine validation
+# Called by CI for every product change and by CD through its required CI job.
+# Cancellation belongs to the caller, so reusable invocations cannot cancel each other.
 on:
-  push:
-    branches: [feature/standalone-wega-engine, feature/standalone-wega-step14]
-    paths: ['engines/**', 'src/wega_page.rs', '.github/workflows/standalone-engine-validation.yml']
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: standalone-engine-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   native:
     name: Native confinement and engine (${{ matrix.os }})
@@ -34,6 +31,11 @@ jobs:
       - name: Native libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libfreetype6-dev fonts-dejavu-core fonts-liberation
+      - name: Verify pinned engine sources and patches
+        if: runner.os == 'Linux'
+        run: python3 scripts/verify-engine-vendor.py
+      - name: Select verified V8 prebuilt source
+        run: python scripts/v8_prebuilt.py --github-env "$GITHUB_ENV"
       - name: Platform regression tests and probe build
         run: |
           cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol --all-targets

@@ -24,6 +24,45 @@ def load(name):
 
 credentials = load('web-credentials')
 media = load('bundle-macos-media')
+preview = load('sync-preview-release')
+
+
+class PreviewReleaseTests(unittest.TestCase):
+    def test_only_preview_moves_and_only_known_obsolete_assets_are_removed(self):
+        assets = [{'id': index, 'name': name} for index, name in enumerate(sorted(preview.OBSOLETE), 1)]
+        assets += [{'id': 99, 'name': 'Wega-Windows-x64.zip'}, {'id': 100, 'name': 'SHA256SUMS.txt'}]
+        sha = 'a' * 40
+        with patch.object(preview.subprocess, 'run') as run, patch.object(
+            preview.subprocess, 'check_output', return_value=json.dumps({'assets': assets})
+        ):
+            preview.main(['--repository', 'wulfnb/wega', '--tag', 'test-preview', '--sha', sha])
+        self.assertEqual(json.loads(run.call_args_list[0].kwargs['input']), {'sha': sha, 'force': True})
+        self.assertEqual(run.call_args_list[0].args[0][4], 'repos/wulfnb/wega/git/refs/tags/test-preview')
+        self.assertEqual([call.args[0][-1] for call in run.call_args_list[1:]],
+                         [f'repos/wulfnb/wega/releases/assets/{index}' for index in range(1, 5)])
+        for call in run.call_args_list:
+            self.assertTrue(call.kwargs['check'])
+
+    def test_immutable_tags_and_invalid_inputs_never_mutate_github(self):
+        with patch.object(preview.subprocess, 'run') as run:
+            for tag in ['v0.1.0', 'test-preview-' + 'a' * 12, 'custom-preview']:
+                preview.synchronize('wulfnb/wega', tag, 'a' * 40)
+            for repository, sha in [('bad/repo/path', 'a' * 40), ('wulfnb/wega', 'short')]:
+                with self.assertRaises(ValueError):
+                    preview.synchronize(repository, 'test-preview', sha)
+            run.assert_not_called()
+
+    def test_tag_update_failure_prevents_cleanup(self):
+        with patch.object(preview.subprocess, 'run', side_effect=preview.subprocess.CalledProcessError(1, 'gh')):
+            with patch.object(preview.subprocess, 'check_output') as read:
+                with self.assertRaises(preview.subprocess.CalledProcessError):
+                    preview.synchronize('wulfnb/wega', 'test-preview', 'a' * 40)
+                read.assert_not_called()
+
+    def test_cli_entrypoint(self):
+        args = ['sync-preview-release.py', '--repository', 'wulfnb/wega', '--tag', 'v0.1.0', '--sha', 'a' * 40]
+        with patch.object(sys, 'argv', args):
+            runpy.run_path(preview.__file__, run_name='__main__')
 
 class CredentialToolTests(unittest.TestCase):
     def test_rewrite_is_private_and_does_not_print_secrets(self):

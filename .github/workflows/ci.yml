@@ -24,27 +24,34 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-          fetch-depth: 0
-      # Pull requests that only touch the V8 migration are covered by v8-engine.yml.
-      # Everything else, and every push/merge/release (cd.yml calls this workflow),
-      # runs the complete suite.
+          fetch-depth: 2
+      # Compare the tested PR merge against its first parent, without downloading history.
+      # Markdown-only PRs need no product build; V8 spike-only PRs use v8-engine.yml.
+      # Vendored product code and every merge/release still run the complete suite.
       - id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git diff --name-only "$BASE_SHA...$HEAD_SHA" > changed.txt
+          git diff --name-only "$BASE_SHA" HEAD > changed.txt
           cat changed.txt
-          if grep -vE '^(engines/v8-spike/|engines/vendor/|docs/v8-engine-plan\.md$|\.github/workflows/v8-engine\.yml$)' changed.txt | grep -q .; then
+          if grep -vE '^(engines/v8-spike/|docs/.*\.md$|README\.md$|\.github/workflows/v8-engine\.yml$)' changed.txt | grep -q .; then
             echo "full=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Only V8 migration files changed; the V8 Engine workflow covers them."
+            echo "Only Markdown or V8 spike files changed; product builds are unnecessary for this PR."
             echo "full=false" >> "$GITHUB_OUTPUT"
           fi
+
+  engine-validation:
+    name: Required engine validation
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    uses: ./.github/workflows/standalone-engine-validation.yml
+    permissions:
+      contents: read
 
   lint:
     name: Code Quality & Lints
@@ -89,8 +96,22 @@ jobs:
         uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-audit@0.22.2
-      - name: Audit crate dependencies for security vulnerabilities
-        run: cargo audit
+      - name: Audit browser, collector and spike dependencies for security vulnerabilities
+        run: |
+          cargo audit
+          cargo audit --no-fetch --file error-collector/Cargo.lock
+          cargo audit --no-fetch --file engines/v8-spike/Cargo.lock
+      # Pinned Deno currently carries crypto-bigint, Hickory and rustls advisories.
+      # Keep them visible without inventing an ignore list; see docs/ci-release-fixes.md.
+      - name: Report pinned Deno dependency advisories (non-blocking)
+        continue-on-error: true
+        run: cargo audit --no-fetch --file engines/Cargo.lock --json > engine-dependency-audit.json
+      - name: Upload engine dependency audit
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: engine-dependency-audit
+          path: engine-dependency-audit.json
       - name: Scan repository for secret and credential leaks
         run: gitleaks detect --verbose --config .gitleaks.toml
 
@@ -152,14 +173,14 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install Python dev dependencies
-        if: runner.os != 'Windows'
+        if: runner.os == 'Linux'
         run: python -m pip install -r requirements-dev.txt
-      - name: Gateway and tooling unit tests
-        if: runner.os != 'Windows'
-        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      # coverage.sh runs the Python suite on Linux; macOS runs it with desktop coverage.
       - name: Install coverage tool
         if: runner.os == 'Linux'
-        run: cargo install cargo-llvm-cov --version 0.9.1 --locked
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-llvm-cov@0.9.1
       - name: Core coverage and regression gate
         if: runner.os == 'Linux'
         run: sh scripts/coverage.sh
@@ -192,6 +213,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-desktop-macos"
+          workspaces: |
+            . -> target
+            engines -> ../target/wega-engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Native system dependencies
         run: brew install pkgconf gstreamer libnice-gstreamer
@@ -214,20 +238,16 @@ jobs:
           python -m coverage html
           python -m coverage xml
           python -m coverage json
-      - name: Build and test the independent Wega engine
+      # Workspace regressions and native sandbox checks run once in engine-validation.
+      - name: Build the independent Wega engine for desktop integration
         run: |
           python scripts/build-wega-engine.py --debug
           cargo build --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform --bin wega-content-bundle
           helper=$(target/wega-engine/debug/wega-content-bundle target/debug/wega-engine "$RUNNER_TEMP/DesktopEngine.app")
           echo "WEGA_ENGINE_BINARY=$helper" >> "$GITHUB_ENV"
-          cargo test --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine
-          WEGA_TEST_BROKER=1 cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test security --test forms --test scripts --test documents --test history
-          cargo clippy --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets -- -D warnings
-          cargo fmt --manifest-path engines/Cargo.toml --all --check
       - name: Instrumented unit and real engine coverage
         run: python scripts/desktop-coverage.py
-      - name: Native integration suite verification
-        run: python scripts/native-tests.py --suite all
+      # desktop-coverage.py already runs every native suite with the instrumented browser.
       - name: Native container account isolation and window handoff
         run: python tests/containers_smoke.py --binary target/debug/wega --output target/containers-validation/${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -273,6 +293,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-linux-harness"
+          workspaces: |
+            . -> target
+            engines -> ../target/wega-engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build test-harness binaries
         run: bash scripts/build-linux-binaries.sh dist/docker test-harness
@@ -332,7 +355,7 @@ jobs:
         with:
           image-ref: wega-quality:local
           format: 'table'
-          exit-code: '0'
+          exit-code: '1'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
       - name: Launch test environment
@@ -424,6 +447,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-desktop-windows"
+          workspaces: |
+            . -> target
+            engines -> ../target/wega-engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Restore pinned media SDK installer
         id: media-sdk
@@ -440,12 +466,12 @@ jobs:
         with:
           path: ${{ runner.temp }}/gstreamer-msvc-1.28.8.exe
           key: ${{ steps.media-sdk.outputs.cache-primary-key }}
-      - name: Build the independent Wega engine
-        run: python scripts/build-wega-engine.py --debug
       - name: Build the desktop browser
         env:
           RUSTFLAGS: "-C link-arg=msvcprt.lib"
         run: cargo build --locked --no-default-features --features desktop,brotli-streams,media
+      - name: Build the independent Wega engine
+        run: python scripts/build-wega-engine.py --debug
       - name: Browser executable has no console subsystem
         shell: pwsh
         run: |
@@ -487,7 +513,7 @@ jobs:
   ci-gate:
     name: CI Completion Gate
     if: always()
-    needs: [changes, lint, core-matrix, desktop-macos, desktop-windows, linux-binaries, docker-integration]
+    needs: [changes, lint, error-collector, engine-validation, core-matrix, desktop-macos, desktop-windows, linux-binaries, docker-integration]
     runs-on: ubuntu-24.04
     steps:
       - name: Verify all checks passed
@@ -498,7 +524,7 @@ jobs:
         run: |
           echo "Scope: full=$FULL; results: $RESULTS"
           test "$SCOPE" = success
-          # Skips are only acceptable when the scope job chose a V8-only run.
+          # Skips are only acceptable when the scope job chose a Markdown/spike-only PR.
           for result in $RESULTS; do
             case "$result" in
               success) ;;
@@ -509,6 +535,6 @@ jobs:
           if [ "$FULL" = true ]; then
             echo "All parallel CI checks and integration test suites succeeded."
           else
-            echo "V8-only change: the full suite runs again on merge before release packaging."
+            echo "Markdown/spike-only PR: product checks run on merge before release packaging."
           fi
 

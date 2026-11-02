@@ -981,7 +981,7 @@ impl SessionHandle {
                             Ok(Some(done)) => !done.recv().unwrap_or(false),
                             Ok(None) => false,
                             Err(error) => {
-                                let _ = write_packet(&mut connection, &Reply::Error(error), &[]);
+                                reject_inherited_request(&mut connection, error);
                                 true
                             }
                         };
@@ -1000,6 +1000,21 @@ impl SessionHandle {
         *published = controllers;
         Ok(children)
     }
+}
+
+#[cfg(any(unix, windows))]
+fn reject_inherited_request(connection: &mut Connection, error: String) {
+    let delivered = write_packet(connection, &Reply::Rejected(error), &[]).is_ok();
+    // DisconnectNamedPipe discards unread replies. The client closes its channel
+    // after reading a terminal rejection; wait for EOF before disconnecting.
+    // FlushFileBuffers would let hostile content block this thread indefinitely.
+    #[cfg(windows)]
+    if delivered && let Connection::Inherited(channel) = connection {
+        let _ = channel.set_read_timeout(Some(Duration::from_secs(2)));
+        let _ = channel.read(&mut [0_u8]);
+    }
+    #[cfg(not(windows))]
+    let _ = delivered;
 }
 
 struct Completion {
@@ -1554,6 +1569,11 @@ impl Remote {
                     read_header(stream).map_err(std::io::Error::other)?;
                 let mut body = vec![0; len];
                 stream.read_exact(&mut body)?;
+                // Terminal rejections close the slot after receipt. Ordinary
+                // request errors (CORS, resource failures) keep it reusable.
+                if let Reply::Rejected(error) = reply {
+                    return Err(std::io::Error::other(error));
+                }
                 Ok((reply, body))
             })?;
             return if let Reply::Error(error) = reply {
@@ -1726,6 +1746,8 @@ enum Reply {
     Cookie(String),
     Done,
     Error(String),
+    /// A terminal inherited-channel rejection, acknowledged by closing the client.
+    Rejected(String),
 }
 fn write_packet<T: Serialize>(
     stream: &mut impl Write,
@@ -1778,6 +1800,69 @@ fn read_header_prefix<T: for<'de> Deserialize<'de>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn terminal_rejection_survives_a_delayed_named_pipe_reader() {
+        let (server, mut client) = wega_platform::ipc::Channel::pair().unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let control = Arc::new(server.try_clone().unwrap());
+        let task = std::thread::spawn(move || {
+            let _shutdown = ChannelShutdown(control);
+            reject_inherited_request(
+                &mut Connection::Inherited(server),
+                "Broker endpoint/session mismatch".into(),
+            );
+        });
+        // Immediate DisconnectNamedPipe loses the queued reply while the reader waits.
+        std::thread::sleep(Duration::from_millis(100));
+        let (reply, length): (Reply, usize) = read_header(&mut client).unwrap();
+        assert_eq!(length, 0);
+        assert!(
+            matches!(reply, Reply::Rejected(error) if error.contains("endpoint/session mismatch"))
+        );
+        drop(client);
+        task.join().unwrap();
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn request_errors_preserve_the_inherited_channel() {
+        let (mut server, client) = wega_platform::ipc::Channel::pair().unwrap();
+        let (finished, finish) = mpsc::channel();
+        server
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        server
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let task = std::thread::spawn(move || {
+            let _: (WireRequest, usize) = read_header(&mut server).unwrap();
+            write_packet(&mut server, &Reply::Error("Request denied".into()), &[]).unwrap();
+            let _: (WireRequest, usize) = read_header(&mut server).unwrap();
+            write_packet(&mut server, &Reply::Done, &[]).unwrap();
+            finish.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        let remote = Remote::inherited(
+            vec![client],
+            "a".repeat(64),
+            ServiceIdentity {
+                service: ServiceSessionId([1; 16]),
+                partition: PartitionId([2; 16]),
+            },
+        )
+        .unwrap();
+        let url = Url::parse("https://channel.example/").unwrap();
+        assert_eq!(
+            remote.cookie_set(&url, "first=denied", true).unwrap_err(),
+            "Request denied"
+        );
+        remote.cookie_set(&url, "second=accepted", true).unwrap();
+        finished.send(()).unwrap();
+        task.join().unwrap();
+    }
+
     #[test]
     fn server_controlled_hsts_durations_and_entry_counts_are_bounded() {
         let mut policy = HstsPolicy::default();

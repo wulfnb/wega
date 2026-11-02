@@ -80,11 +80,12 @@ fn a_stolen_token_cannot_change_the_session_owning_an_inherited_endpoint() {
     let (_, stolen) = second.endpoint();
     let forged = Remote::inherited(first_channels, stolen, second.identity()).unwrap();
     let url = Url::parse("https://channel.example/").unwrap();
-    assert!(
-        forged
-            .cookie_set(&url, "foreign=denied", true)
-            .unwrap_err()
-            .contains("endpoint/session mismatch")
+    let error = forged.cookie_set(&url, "foreign=denied", true).unwrap_err();
+    assert!(error.contains("endpoint/session mismatch"), "{error}");
+    assert_eq!(
+        forged.cookie_set(&url, "foreign=denied", true).unwrap_err(),
+        "Inherited broker channels are closed",
+        "Rejected channels must not retry or fall back to TCP"
     );
     let second_channels = second.inherited_channels(1).unwrap();
     let (_, token) = second.endpoint();
