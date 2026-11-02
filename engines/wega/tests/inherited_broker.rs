@@ -76,6 +76,7 @@ fn run_worker(required: bool) {
         }
     });
     let profile = tempfile::tempdir().unwrap();
+    eprintln!("Inherited worker fixture: creating host broker");
     let broker = wega_network::Broker::new().unwrap();
     let session = broker
         .open_bound_session(
@@ -87,7 +88,9 @@ fn run_worker(required: bool) {
         )
         .unwrap();
     session.begin_navigation(&url.parse().unwrap());
+    eprintln!("Inherited worker fixture: creating inherited channels");
     let channels = session.inherited_channels(4).unwrap();
+    eprintln!("Inherited worker fixture: inherited channels ready");
     let (_, token) = session.endpoint();
     let identity = SessionIdentity {
         tab: TabId(5),
