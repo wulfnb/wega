@@ -6655,7 +6655,7 @@ dependencies = [
  "base64 0.22.1",
  "cookie_store",
  "fontdb",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "publicsuffix",
  "reqwest",
  "rusqlite",
@@ -6674,7 +6674,7 @@ dependencies = [
 name = "wega-platform"
 version = "0.1.0"
 dependencies = [
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "libc",
  "memmap2",
  "tempfile",

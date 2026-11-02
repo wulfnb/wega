@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 memmap2 = "0.9"
 tempfile = "3"
-getrandom = "0.3"
+getrandom = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
