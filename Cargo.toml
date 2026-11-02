@@ -16,11 +16,17 @@ test-harness = ["desktop"]
 brotli-streams = ["desktop", "servo/brotli-compression-stream"]
 multiprocess = ["desktop", "servo/multiprocess"]
 media = ["desktop", "servo/media-gstreamer"]
+migration-tools = ["dep:regex", "dep:toml"]
 
 [[bin]]
 name = "wega"
 path = "src/main.rs"
 required-features = ["desktop"]
+
+[[bin]]
+name = "wega-inventory"
+path = "tools/standalone_inventory.rs"
+required-features = ["migration-tools"]
 
 [[test]]
 name = "servo-dom-memory"
@@ -30,6 +36,9 @@ required-features = ["desktop"]
 [dependencies]
 ed25519-dalek = "=3.0.0"
 sha2 = "=0.11.1"
+regex = { version = "=1.13.1", optional = true }
+toml = { version = "=1.1.8", optional = true }
+wega-protocol = { path = "engines/protocol" }
 reqwest = {version="0.12",default-features=false,features=["blocking","rustls-tls"],optional=true}
 log = {version="0.4",optional=true}
 wega-platform = {path="engines/platform",optional=true}
@@ -74,7 +83,7 @@ servo = { path = "vendor/servo" }
 servo-script-bindings = { path = "vendor/servo-script-bindings" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_Registry", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_DataExchange", "Win32_Security", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "=0.61.2", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_Registry", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_DataExchange", "Win32_System_Console", "Win32_Security", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }
 # WGL fails without a full OpenGL driver (VMs, Remote Desktop, basic display adapters).
 # ANGLE runs GL ES on Direct3D, as Servo's own Windows builds do; ship libEGL.dll and libGLESv2.dll.
 servo = { optional = true, version = "=0.7.0", default-features = false, features = ["no-wgl"] }

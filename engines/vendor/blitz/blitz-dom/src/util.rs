@@ -44,6 +44,16 @@ use std::sync::{Arc, LazyLock};
 #[cfg(feature = "svg")]
 use usvg::fontdb;
 #[cfg(feature = "svg")]
+static BROKER_FONT_DB: std::sync::OnceLock<Arc<fontdb::Database>> = std::sync::OnceLock::new();
+#[cfg(feature = "svg")]
+pub fn install_broker_fonts(fonts: &[Vec<u8>]) {
+    let mut database = fontdb::Database::new();
+    for bytes in fonts {
+        database.load_font_data(bytes.clone());
+    }
+    let _ = BROKER_FONT_DB.set(Arc::new(database));
+}
+#[cfg(feature = "svg")]
 pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -157,7 +167,10 @@ pub fn walk_tree(indent: usize, node: &Node) {
 #[cfg(feature = "svg")]
 pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData, usvg::Error> {
     let options = usvg::Options {
-        fontdb: Arc::clone(&*FONT_DB),
+        fontdb: BROKER_FONT_DB
+            .get()
+            .cloned()
+            .unwrap_or_else(|| Arc::clone(&*FONT_DB)),
         ..Default::default()
     };
     crate::node::SvgImageData::from_data(source, &options)

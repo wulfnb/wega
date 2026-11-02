@@ -118,11 +118,9 @@ impl Browser {
     pub(crate) fn pump_wega(&mut self) {
         let active = self.session().active();
         let mut notices = vec![];
-        let mut navigations = vec![];
+        let mut native = vec![];
+        let mut navigated = false;
         let mut visits = vec![];
-        let mut downloads = vec![];
-        let mut windows = vec![];
-        let mut traversals = vec![];
         let mut checks = vec![];
         for (index, tab) in self.session().tabs().iter().enumerate() {
             let Some(page) = &tab.wega else { continue };
@@ -130,10 +128,11 @@ impl Browser {
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let expired = state.expire_requests();
             checks.extend(
                 state
-                    .page_checks
-                    .drain(..)
+                    .take_page_checks()
+                    .into_iter()
                     .map(|(request, dirty)| (request, tab.key, dirty)),
             );
             if let Some(visit) = state.visited.take() {
@@ -141,36 +140,108 @@ impl Browser {
             }
             if index == active {
                 notices.extend(state.notices.drain(..));
-                navigations.extend(state.navigations.drain(..));
-                windows.extend(state.windows.drain(..));
-                traversals.extend(state.traversals.drain(..));
             }
-            downloads.extend(state.downloads.drain(..));
+            native.extend(
+                state
+                    .take_native_events(index == active)
+                    .into_iter()
+                    .map(|(requester, event)| (tab.key, requester, event)),
+            );
+            drop(state);
+            page.cancel_queued(expired);
         }
         for (request, key, dirty) in checks {
             self.page_state_result(request, key, dirty);
         }
-        for (url, cookies) in downloads {
-            let connections = self.download_ui.connections;
-            let message = match self.start_download(&url, "", connections, cookies) {
-                Ok(()) => format!("Downloading {url}"),
-                Err(error) => error,
+        for (owner, requester, event) in native {
+            use wega::engine_protocol::ContentEvent;
+            let Some(index) = self.session().tabs().iter().position(|tab| {
+                tab.key == owner
+                    && tab.wega.as_ref().is_some_and(|page| {
+                        page.state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .accepts_requester(&requester)
+                    })
+            }) else {
+                continue;
             };
-            self.notify(crate::ux::Severity::Info, message, None);
-        }
-        for url in windows {
-            match url::Url::parse(&url) {
-                Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => self.add_tab(&url),
-                _ => self.notify(
-                    crate::ux::Severity::Warning,
-                    "The page tried to open an unsupported address.",
-                    None,
-                ),
-            }
-        }
-        for delta in traversals {
-            for _ in 0..delta.unsigned_abs().min(8) {
-                self.traverse(delta > 0);
+            match event {
+                ContentEvent::Notice(message) => notices.push(message),
+                ContentEvent::Compatibility(reason) => {
+                    let page = self.session().tabs()[index].wega.as_ref().unwrap();
+                    let mut state = page
+                        .state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if state.accepts_requester(&requester) && !state.fallback_reported {
+                        state.compatibility.get_or_insert(reason);
+                    }
+                }
+                ContentEvent::Cursor(cursor) => {
+                    let page = self.session().tabs()[index].wega.as_ref().unwrap();
+                    let mut state = page
+                        .state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if state.accepts_requester(&requester) {
+                        state.cursor = Some(cursor);
+                    }
+                }
+                event => {
+                    let selected = self.tab().key;
+                    self.select_tab(index);
+                    let mut opened = false;
+                    match event {
+                        ContentEvent::Download { url, .. } => {
+                            let cookies = self.tab().wega.as_ref().unwrap().download_cookies(&url);
+                            let connections = self.download_ui.connections;
+                            let message = match cookies.and_then(|cookies| {
+                                self.start_download(&url, "", connections, cookies)
+                            }) {
+                                Ok(()) => format!("Downloading {url}"),
+                                Err(error) => error,
+                            };
+                            self.notify(crate::ux::Severity::Info, message, None);
+                        }
+                        ContentEvent::ActivatedOpenWindow { url, .. } => {
+                            match url::Url::parse(&url) {
+                                Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => {
+                                    self.add_tab(&url);
+                                    opened = true;
+                                }
+                                _ => self.notify(
+                                    crate::ux::Severity::Warning,
+                                    "The page tried to open an unsupported address.",
+                                    None,
+                                ),
+                            }
+                        }
+                        ContentEvent::TraverseUnhandled(delta) => {
+                            for _ in 0..delta.unsigned_abs().min(8) {
+                                self.traverse(delta > 0);
+                            }
+                        }
+                        ContentEvent::Navigate(address) => {
+                            navigated = true;
+                            let current = self.current_url();
+                            match url::Url::parse(&address) {
+                                Ok(url) if wega::navigation::content_navigation_allowed(&url, current.as_ref()) && matches!(url.scheme(), "http" | "https" | "file") => self.navigate(&address),
+                                _ => self.notify(crate::ux::Severity::Warning, "This navigation is unavailable in Wega. Use Servo for this page.", None),
+                            }
+                        }
+                        _ => {}
+                    }
+                    if !opened
+                        && let Some(previous) = self
+                            .session()
+                            .tabs()
+                            .iter()
+                            .position(|tab| tab.key == selected)
+                    {
+                        self.select_tab(previous);
+                    }
+                }
             }
         }
         for message in notices {
@@ -189,12 +260,15 @@ impl Browser {
         // Handle one compatibility report only after any existing prompt is resolved.
         // Initial unedited pages can reload automatically; user input always keeps
         // the existing conservative page-state confirmation path.
-        if !self.modal() && self.profile().policy.wega_fallback && navigations.is_empty() {
+        if !self.modal() && self.profile().policy.wega_fallback && !navigated {
             let fallback = self.tab().wega.as_ref().and_then(|page| {
                 let mut state = page
                     .state
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if state.recovery_reason.is_some() {
+                    return None;
+                }
                 state.compatibility.take().map(|reason| {
                     state.fallback_reported = true;
                     (reason, state.interacted)
@@ -216,37 +290,35 @@ impl Browser {
                 }
             }
         }
-        if let Some(address) = navigations.last() {
-            let current = self.current_url();
-            match url::Url::parse(address) {
-                Ok(url)
-                    if wega::navigation::content_navigation_allowed(&url, current.as_ref())
-                        && matches!(url.scheme(), "http" | "https" | "file") =>
-                {
-                    self.navigate(address)
-                }
-                _ => self.notify(
-                    crate::ux::Severity::Warning,
-                    "This navigation is unavailable in Wega. Use Servo for this page.",
-                    None,
-                ),
-            }
-        }
     }
     pub(crate) fn wega_viewport(&mut self, ui: &mut egui::Ui, rect: egui::Rect, outer: egui::Rect) {
         let failed = self.tab().wega.as_ref().is_some_and(|p| {
             p.state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .failed
+                .lifecycle
+                .failed()
         });
         if failed {
+            let reason = self.tab().wega.as_ref().and_then(|page| {
+                page.state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .recovery_reason
+                    .clone()
+            });
+            if let Some(page) = self.wega_mut() {
+                page.texture = None;
+            }
             let mut restart = false;
             let mut servo = false;
             ui.centered_and_justified(|ui| {
                 ui.vertical_centered(|ui| {
                     ui.heading("Wega engine stopped");
                     ui.label("This tab can be restarted without closing the browser.");
+                    if let Some(reason) = &reason {
+                        ui.label(reason);
+                    }
                     ui.horizontal(|ui| {
                         restart = ui
                             .add(crate::components::primary_button(ui, "Restart Wega"))
@@ -422,8 +494,13 @@ impl Browser {
             .dialog
             .clone();
         let Some(dialog) = dialog else { return };
-        if dialog.kind == "prompt" && page.dialog_input.is_empty() {
-            page.dialog_input = dialog.default.clone();
+        if page.dialog_input_for != Some(dialog.id) {
+            page.dialog_input_for = Some(dialog.id);
+            page.dialog_input = if dialog.kind == "prompt" {
+                dialog.default.clone()
+            } else {
+                String::new()
+            };
         }
         let mut answer = None;
         egui::Window::new("This page says")
@@ -431,6 +508,12 @@ impl Browser {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(context, |ui| {
+                ui.label(match &dialog.requester.principal.origin {
+                    wega::engine_protocol::authority::Origin::Tuple(origin) => origin.as_str(),
+                    wega::engine_protocol::authority::Origin::Opaque => {
+                        "Page with an opaque or unverified origin"
+                    }
+                });
                 ui.label(&dialog.message);
                 if dialog.kind == "prompt" {
                     ui.text_edit_singleline(&mut page.dialog_input);
@@ -449,7 +532,7 @@ impl Browser {
                 });
             });
         if let Some(value) = answer {
-            page.answer_dialog(value);
+            page.answer_dialog(dialog.context, dialog.id, value);
         }
     }
 }

@@ -15,7 +15,7 @@ pub(crate) struct Loader {
 }
 impl Loader {
     pub fn new(network: Network, url: &url::Url, limit: usize) -> Self {
-        let local = if url.scheme() == "file" {
+        let local = if url.scheme() == "file" && network.remote.is_none() {
             url.to_file_path()
                 .ok()
                 .and_then(|path| path.canonicalize().ok())
@@ -41,7 +41,9 @@ impl ModuleLoader for Loader {
         let url = deno_core::resolve_import(specifier, referrer)
             .map_err(|e| JsErrorBox::generic(e.to_string()))?;
         if !matches!(url.scheme(), "http" | "https")
-            && !(url.scheme() == "file" && self.local.is_some())
+            && !(url.scheme() == "file"
+                && (self.local.is_some()
+                    || (self.document.scheme() == "file" && self.network.remote.is_some())))
         {
             return Err(JsErrorBox::generic("Module scheme is not allowed"));
         }
@@ -57,7 +59,7 @@ impl ModuleLoader for Loader {
         let local = self.local.clone();
         let network = self.network.clone();
         let limit = self.limit;
-        let context = FetchContext::subresource(&self.document, Destination::Script);
+        let context = FetchContext::subresource(&self.document, Destination::Module);
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let spawned = self.network.spawn(move |client| {
             let result = network

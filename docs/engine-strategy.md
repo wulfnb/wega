@@ -1,6 +1,9 @@
 # Engine strategy: a low-memory Wega engine
 
 Status: **experimental P4–P6 iteration**, updated 26 October 2026.
+> [!NOTE]
+> **Update (31 October 2026):** Servo retirement and transition to a 100% standalone Wega engine has been adopted. See the comprehensive [Standalone Wega Engine Migration Plan](standalone-engine-migration.md).
+
 The Blitz-based Wega engine now renders real pages in a private worker process;
 the address-bar badge and native footer select Servo or Wega for the active tab. Servo remains the
 general default, with a narrow validated static-site allowlist. The original design below includes future work; it does not describe a

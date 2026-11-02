@@ -30,6 +30,64 @@ fn documents() -> Server {
 }
 
 #[test]
+fn document_revisions_change_on_replacement_but_not_mutation_or_fragments() {
+    let server = documents();
+    let engine = engine();
+    let mut view = open(&engine, &server.url("127.0.0.1", "/"));
+    let first = view.document_revision();
+    assert!(first > 0);
+    view.evaluate_json("document.body.append(document.createElement('p'));true")
+        .unwrap();
+    assert_eq!(view.document_revision(), first);
+    view.load(
+        format!("{}#part", server.url("127.0.0.1", "/"))
+            .parse()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(view.document_revision(), first);
+    view.set_html("<title>Replacement</title>").unwrap();
+    assert!(view.document_revision() > first);
+    let second = view.document_revision();
+    view.load(server.url("127.0.0.1", "/notes.txt").parse().unwrap())
+        .unwrap();
+    settle(&mut view);
+    assert!(view.document_revision() > second);
+}
+
+#[test]
+fn navigation_generation_is_bound_at_commit_or_explicit_retention() {
+    let server = Server::new(|_| {
+        Reply::html("<title>next</title>").delay(std::time::Duration::from_millis(100))
+    });
+    let engine = engine();
+    let mut view = engine.create_view("about:blank".parse().unwrap()).unwrap();
+    settle(&mut view);
+    let revision = view.document_revision();
+    view.load_for_navigation(server.url("127.0.0.1", "/next").parse().unwrap(), 1)
+        .unwrap();
+    assert_eq!(
+        view.document_generation(),
+        0,
+        "pending fetch cannot relabel the retained DOM"
+    );
+    settle(&mut view);
+    assert_eq!(view.document_generation(), 1);
+    assert!(view.document_revision() > revision);
+    let revision = view.document_revision();
+    view.load_for_navigation(server.url("127.0.0.1", "/another").parse().unwrap(), 2)
+        .unwrap();
+    assert_eq!(view.document_generation(), 1);
+    view.stop();
+    assert_eq!(view.document_generation(), 2);
+    assert_eq!(
+        view.document_revision(),
+        revision,
+        "stop keeps the existing DOM/global"
+    );
+}
+
+#[test]
 fn transport_meta_and_bom_charsets_decode_documents() {
     let server = documents();
     let engine = engine();

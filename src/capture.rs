@@ -104,6 +104,7 @@ impl crate::browser::Browser {
             return;
         };
         let shared = page.state.clone();
+        let resident_bytes = page.resident_bytes();
         let sender = page.command_sender().expect("Wega capture command channel");
         let mut state = shared
             .lock()
@@ -111,7 +112,10 @@ impl crate::browser::Browser {
         let Some(capture) = &mut self.capture else {
             return;
         };
-        assert!(!state.failed, "Wega worker failed during capture");
+        assert!(
+            !state.lifecycle.failed(),
+            "Wega worker failed during capture"
+        );
         assert!(
             capture.start.elapsed() < Duration::from_secs(60),
             "Wega page capture timed out"
@@ -131,7 +135,7 @@ impl crate::browser::Browser {
         }
         if let Some(result) = state.capture_result.take() {
             result.expect("Save Wega page capture");
-            let report = serde_json::json!({"engine":"wega","title":title,"url":url,"nodes":state.nodes,"jsHeapBytes":state.js_heap,"workerRssBytes":state.rss_bytes,"servoInitialized":self.servo.initialized(),"loadSeconds":capture.loaded.map(|at|at.duration_since(capture.start).as_secs_f64()),"compatibility":state.compatibility});
+            let report = serde_json::json!({"engine":"wega","title":title,"url":url,"nodes":state.nodes,"jsHeapBytes":state.js_heap,"workerRssBytes":resident_bytes,"servoInitialized":self.servo.initialized(),"loadSeconds":capture.loaded.map(|at|at.duration_since(capture.start).as_secs_f64()),"compatibility":state.compatibility});
             std::fs::write(
                 capture.output.with_extension("json"),
                 serde_json::to_vec_pretty(&report).unwrap(),

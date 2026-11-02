@@ -36,6 +36,7 @@ pub const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.otf");
 ///
 /// This is the primary entry point for this crate.
 mod document;
+mod image_budget;
 
 /// The nodes themsleves, and their data.
 pub mod node;
@@ -127,6 +128,8 @@ pub type SelectorList = selectors::SelectorList<style::selector_parser::Selector
 pub use events::{EventDriver, EventHandler, NoopEventHandler};
 pub use html::{DummyHtmlParserProvider, HtmlParserProvider};
 pub use util::{Point, decode_font_bytes};
+#[cfg(feature="svg")]
+pub use util::install_broker_fonts;
 
 /// Convenience builder for the one-font case: produces a [`FontContext`] with
 /// system-font discovery disabled and the supplied font registered as the
@@ -159,4 +162,20 @@ pub fn build_single_font_ctx(font_data: &[u8]) -> FontContext {
             .append_generic_families(generic, family_ids.iter().copied());
     }
     ctx
+}
+
+/// Wega contributors, 2026: generic fonts supplied as host-selected bytes. The
+/// content process never discovers a system font path or opens a font file.
+pub fn build_broker_font_ctx(fonts: &[Vec<u8>]) -> FontContext {
+    use parley::fontique::{Blob, Collection, CollectionOptions, GenericFamily, SourceCache};
+    use std::sync::Arc;
+    let mut context=FontContext { source_cache:SourceCache::new_shared(),collection:Collection::new(CollectionOptions {shared:false,system_fonts:false}) };
+    for (index,font) in fonts.iter().enumerate() {
+        let registered=context.collection.register_fonts(Blob::new(Arc::new(font.clone()) as _),None);
+        let families:Vec<_>=registered.iter().map(|(id,_)|*id).collect();
+        let generic=match index {0=>GenericFamily::SansSerif,1=>GenericFamily::Serif,_=>GenericFamily::Monospace};
+        context.collection.append_generic_families(generic,families.iter().copied());
+        if index==0 {context.collection.append_generic_families(GenericFamily::SystemUi,families.iter().copied());}
+    }
+    context
 }

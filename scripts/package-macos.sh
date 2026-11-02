@@ -34,6 +34,7 @@ mv -f "$app_dir/Contents/MacOS/wega.new" "$app_dir/Contents/MacOS/wega"
 cp "target/$build_profile/wega-engine" "$app_dir/Contents/MacOS/wega-engine.new"
 mv -f "$app_dir/Contents/MacOS/wega-engine.new" "$app_dir/Contents/MacOS/wega-engine"
 codesign --force --sign - --timestamp=none "$app_dir/Contents/MacOS/wega-engine"
+cargo run --locked --manifest-path engines/Cargo.toml --package wega-platform --bin wega-content-bundle -- "target/$build_profile/wega-engine" "$app_dir"
 cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

@@ -14,7 +14,10 @@ fn fixture(name: &str) -> View {
             js_heap_bytes: 64 * 1024 * 1024,
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap()
@@ -64,7 +67,10 @@ fn trak_in_jquery_363_browser_bundle_initializes_and_manipulates_dom() {
             script_time: Duration::from_secs(2),
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap();

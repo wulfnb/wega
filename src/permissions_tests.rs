@@ -1,5 +1,159 @@
 use super::*;
 use std::{cell::RefCell, rc::Rc};
+#[test]
+fn scoped_permissions_deny_cancelled_expired_replayed_and_replaced_documents() {
+    use crate::engine_protocol::{
+        DocumentId, DocumentRevision,
+        authority::{Origin, Principal},
+        identity::{FrameId, ProcessSessionId, SessionIdentity, TabId},
+    };
+    let answers = Rc::new(RefCell::new(Vec::new()));
+    let session = SessionIdentity {
+        tab: TabId(1),
+        frame: FrameId(1),
+        process: ProcessSessionId([1; 16]),
+        service: None,
+    };
+    let document = DocumentContext {
+        document: DocumentId(1),
+        revision: DocumentRevision(1),
+    };
+    let principal = Principal {
+        origin: Origin::Tuple("https://example.test".into()),
+        top_level_site: None,
+    };
+    let mut authority = FrameAuthority::new(session);
+    authority.bind(document, principal.clone());
+    let request = authority.resolve(document).unwrap();
+    let mut queue = ScopedPermissions::default();
+    let now = Instant::now();
+    assert!(queue.push(
+        request.clone(),
+        "camera".into(),
+        Responder(1, answers.clone()),
+        now
+    ));
+    let first = queue.front().unwrap().0;
+    queue.cancel_document(session, document);
+    assert!(!queue.answer(first, &authority, true, now));
+    assert!(queue.push(
+        request.clone(),
+        "camera".into(),
+        Responder(2, answers.clone()),
+        now
+    ));
+    let next = queue.front().unwrap().0;
+    assert_ne!(first, next);
+    authority.bind(
+        DocumentContext {
+            revision: DocumentRevision(2),
+            ..document
+        },
+        principal,
+    );
+    assert!(queue.answer(next, &authority, true, now));
+    assert!(queue.push(
+        request.clone(),
+        "camera".into(),
+        Responder(3, answers.clone()),
+        now
+    ));
+    let expired = queue.front().unwrap().0;
+    assert!(queue.answer(expired, &authority, true, now + Duration::from_secs(60)));
+    authority.bind(
+        document,
+        Principal {
+            origin: Origin::Opaque,
+            top_level_site: None,
+        },
+    );
+    assert!(!queue.push(
+        authority.resolve(document).unwrap(),
+        "camera".into(),
+        Responder(4, answers.clone()),
+        now
+    ));
+    assert!(queue.push(
+        request.clone(),
+        "camera".into(),
+        Responder(5, answers.clone()),
+        now
+    ));
+    queue.cancel_session(session);
+    assert!(queue.front().is_none());
+    assert!(queue.push(request, "camera".into(), Responder(6, answers.clone()), now));
+    drop(queue);
+    assert_eq!(
+        *answers.borrow(),
+        [
+            (1, false),
+            (2, false),
+            (3, false),
+            (4, false),
+            (5, false),
+            (6, false)
+        ]
+    );
+}
+
+#[test]
+fn scoped_permission_grants_require_the_exact_host_authority_and_ids_never_wrap() {
+    use crate::engine_protocol::{
+        DocumentId, DocumentRevision,
+        authority::{Origin, Principal},
+        identity::{FrameId, ProcessSessionId, SessionIdentity, TabId},
+    };
+    let answers = Rc::new(RefCell::new(Vec::new()));
+    let session = SessionIdentity {
+        tab: TabId(1),
+        frame: FrameId(1),
+        process: ProcessSessionId([1; 16]),
+        service: None,
+    };
+    let document = DocumentContext {
+        document: DocumentId(1),
+        revision: DocumentRevision(1),
+    };
+    let principal = Principal {
+        origin: Origin::Tuple("https://example.test".into()),
+        top_level_site: None,
+    };
+    let mut authority = FrameAuthority::new(session);
+    authority.bind(document, principal.clone());
+    let mut queue = ScopedPermissions::default();
+    let now = Instant::now();
+    let request = authority.resolve(document).unwrap();
+    assert!(queue.push(
+        request.clone(),
+        "camera".into(),
+        Responder(1, answers.clone()),
+        now
+    ));
+    assert!(queue.answer(queue.front().unwrap().0, &authority, true, now));
+    assert!(queue.push(
+        request.clone(),
+        "camera".into(),
+        Responder(2, answers.clone()),
+        now
+    ));
+    let mut wrong = FrameAuthority::new(SessionIdentity {
+        process: ProcessSessionId([2; 16]),
+        ..session
+    });
+    wrong.bind(document, principal);
+    assert!(queue.answer(queue.front().unwrap().0, &wrong, true, now));
+    queue.next = u64::MAX;
+    assert!(!queue.push(request, "camera".into(), Responder(3, answers.clone()), now));
+    assert_eq!(*answers.borrow(), [(1, true), (2, false), (3, false)]);
+    let mut legacy = Permissions::default();
+    legacy.next = u64::MAX;
+    assert!(!legacy.push(
+        "https://example.test".into(),
+        "camera".into(),
+        Responder(4, answers.clone())
+    ));
+    assert_eq!(answers.borrow().last(), Some(&(4, false)));
+}
 struct Responder(usize, Rc<RefCell<Vec<(usize, bool)>>>);
 impl PermissionPort for Responder {
     fn respond(self, allow: bool) {
