@@ -115,7 +115,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-v8-spike-${{ matrix.os }}"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Only Linux keeps a cache; the 6-minute macOS/Windows spikes are not on any
+          # critical path and their 0.5 GB caches crowd out CI's (10 GB limit).
+          save-if: ${{ github.ref == 'refs/heads/main' && runner.os == 'Linux' }}
           workspaces: "engines/v8-spike -> target"
       - name: Native system dependencies
         if: runner.os == 'Linux'

@@ -148,7 +148,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2022]
+        # macOS runs these checks inside desktop-macos: macOS runners are the scarce ones.
+        os: [ubuntu-24.04, windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -159,6 +160,7 @@ jobs:
         shell: bash
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: runner.os == 'Linux'
         with:
           shared-key: "wega-core-${{ matrix.os }}"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -197,8 +199,9 @@ jobs:
     if: needs.changes.outputs.desktop-macos == 'true'
     runs-on: macos-15
     timeout-minutes: 90
+    # No job-level CARGO_* variables: they are part of rust-cache's key, and the
+    # engine cache below must match the key engine validation saved.
     env:
-      CARGO_BUILD_JOBS: 4
       WEGA_TEST_ALLOW_LOOPBACK: '1'
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
@@ -210,16 +213,25 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-desktop-macos"
-          workspaces: |
-            . -> target
-            engines -> ../target/wega-engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Restore engine validation's cache for this OS (read-only) instead of keeping a
+      # second copy here. It must come after the root cache: a partial root restore
+      # cleans target/, which contains target/wega-engine.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: standalone-engine-native-worker-v4-macos-15
+          workspaces: 'engines -> ../target/wega-engine'
+          save-if: false
       - name: Native system dependencies
         run: brew install pkgconf gstreamer libnice-gstreamer
       - name: Production lints
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Harness lints
         run: cargo clippy --locked --all-targets --features test-harness -- -D warnings
+      - name: Core unit and documentation tests (no default features)
+        run: |
+          cargo test --locked --no-default-features --lib
+          cargo test --locked --no-default-features --doc
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
@@ -287,12 +299,17 @@ jobs:
         run: apt-get update && xargs -a docker/builder-packages.txt apt-get install -y --no-install-recommends
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
+      # Shared with CD's Linux build (same script, container and release profile).
+      # Root and engine are separate caches: one cache for both would prune the
+      # engine's dependencies, because target/wega-engine sits inside target/.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: "wega-linux-harness"
-          workspaces: |
-            . -> target
-            engines -> ../target/wega-engine
+          shared-key: "wega-linux-release"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "wega-linux-release-engine"
+          workspaces: 'engines -> ../target/wega-engine'
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build test-harness binaries
         run: bash scripts/build-linux-binaries.sh dist/docker test-harness
@@ -444,10 +461,24 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-desktop-windows"
-          workspaces: |
-            . -> target
-            engines -> ../target/wega-engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Restore engine validation's cache for this OS (read-only) instead of keeping a
+      # second copy here. It must come after the root cache: a partial root restore
+      # cleans target/, which contains target/wega-engine.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: standalone-engine-native-worker-v4-windows-2022
+          workspaces: 'engines -> ../target/wega-engine'
+          save-if: false
+      # Engine validation saves the MSVC Skia build; this job only reuses it.
+      - name: Restore the MSVC Skia build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/skia-msvc
+          key: skia-msvc-dev-${{ hashFiles('engines/vendor/blitz/skia-bindings/**', 'engines/vendor/blitz/patches/skia-bindings.patch') }}
+      - name: Use the cached MSVC Skia build
+        shell: bash
+        run: python scripts/skia-msvc-cache.py prepare "$RUNNER_TEMP/skia-msvc" --github-env "$GITHUB_ENV"
       - name: Restore pinned media SDK installer
         id: media-sdk
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
