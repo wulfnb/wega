@@ -90,7 +90,7 @@ No duplicate-symbol errors are suppressed.
 
 The original bindings MIT license and its pinned source/hash are included in
 `blitz/licenses/`, alongside Skia's BSD notice. Run the same vendor verifier to
-check all nine source archives and their documented patches.
+check all eleven source archives and their documented patches.
 
 ## Standalone content services and image budgets (1 November 2026)
 

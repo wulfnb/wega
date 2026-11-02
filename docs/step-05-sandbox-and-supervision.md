@@ -59,7 +59,10 @@ FDs/HANDLEs are validated and duplicated into owned objects before VM startup.
 No renderer receives profile paths, a broker listener address or a frame path.
 Revocation shuts down active/idle channels and WebSockets and rejects late grants.
 Unix workers lower the open-descriptor ceiling to 128 after duplicating grants.
-Windows pipes use overlapped I/O with cancellation/draining and disconnect on revoke.
+Windows service pipes use overlapped I/O with cancellation/draining and disconnect
+on revoke. Standard streams have asynchronous parent ends for Rust child-stream
+APIs and synchronous child ends for the worker runtime. The native probe exchanges
+stdin/stdout plus all four service channels before testing denied operations.
 
 | Service | Host-owned authority and bounds |
 | --- | --- |
@@ -112,12 +115,15 @@ fatal script termination does not silently retry the workload through Servo.
 
 ## Validation and remaining platform evidence
 
-The final local pass passed 226 workspace, 28 brokered, 106 core and 47 desktop
-tests, plus vendor integrity (11 crates), strict workspace lints, formatting and
-the desktop build. Native macOS probes have
+The final local pass on 2 November passed 233 workspace, 28 brokered, 106 core and
+50 desktop tests, plus vendor integrity (11 crates), strict workspace and desktop
+lints, formatting and the desktop build. Native macOS probes have
 passed denial of private read/write, direct TCP/UDP and child execution, alongside
 an explicit file grant. A separately signed required worker has passed real JIT,
-storage and cookie operations; nontransparent shared-frame pixel validation passed on the same required path.
+storage and cookie operations; shared-frame pixels and dark text glyphs passed on
+the same required path. Hosted native denial/file-grant probes also passed on
+Linux and Windows. UDP denial is judged by actual host reception after proving
+the listener works: Windows can discard a datagram after a successful submission.
 
 `standalone-engine-validation.yml` runs the native probe, required-worker JIT/
 storage/cookie/pixel fixture and full suite on Linux, macOS and Windows. Unsupported
@@ -125,7 +131,23 @@ sandbox setup is a test failure, never a successful denial. Current exact-head
 results belong in `validation/standalone/progress.json`. Linux/Windows source
 cross-checks alone do not satisfy the three-platform acceptance gate.
 
-Remaining release evidence includes native Linux/Windows results, parent-crash and
+The Windows browser uses the GUI subsystem in debug and release builds. Browsing
+does not attach a console; private content workers use detached startup with
+explicit pipes. Overall CPU/RAM samples combine the browser with registered Wega
+workers using native counters, without process scans or renderer-reported values.
+CPU uses interval deltas; closing/replacing a tab cannot subtract its lifetime CPU
+from the total. Native Windows counter/monitor tests and the browser's actual PE
+GUI-subsystem check passed. Packaged launch/capture remains a separate runtime gate.
+
+Desktop localhost fixtures explicitly set `WEGA_TEST_ALLOW_LOOPBACK=1` in a
+debug or explicit `test-harness` build. The browser applies that host policy before launching the
+required worker; the flag cannot enable local-network access in a regular release
+build and is removed from the worker environment. macOS desktop tests select the
+signed helper assembled by the same Rust bundling tool used for packaging. The
+actual macOS desktop engine UI fixture passed locally with this configuration.
+
+Native required-worker JIT/storage/cookie/text gates passed on all three platforms.
+Remaining release evidence includes final Windows regression/desktop reruns, parent-crash and
 pressure/restart stress across all platforms, distribution signing/notarization,
 and whole-browser resource calibration. A parent crash may leave Windows profile
 metadata/trusted helper copies for later cleanup; kernel job lifetime still kills

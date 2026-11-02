@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "branch": "feature/standalone-wega-engine",
-  "date": "2026-11-01",
+  "date": "2026-11-02",
   "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
-  "test_policy": "Final validation pass started after implementation, as requested by the owner",
+  "test_policy": "Implementation followed by the final local validation pass; hosted native acceptance continues",
   "runtime_tests_executed": true,
   "servo_retirement_allowed": false,
   "steps": {
     "02": {
       "implementation": "complete",
       "protocol_version": 11,
-      "acceptance": "deferred until the owner's final test pass",
+      "acceptance": "Local shared protocol, worker and desktop lifecycle tests passed; hosted matrix remains separate",
       "contract": "docs/step-02-engine-contract.md"
     },
     "03": {
@@ -22,16 +22,16 @@
       "acceptance": "Full authority/CSP/redirect/cache audit and renderer-initiated navigation grants remain separate"
     },
     "05": {
-      "implementation": "delivered; final regression and cross-platform native acceptance in progress",
+      "implementation": "complete",
       "protocol_version": 14,
-      "acceptance": "macOS native checks passed; exact-head final suites and Linux/Windows native CI pending",
+      "acceptance": "Native containment, standard I/O and all four channel/file grants passed on macOS, Linux and Windows. Required-worker JIT/storage/cookies/text fixtures passed on all three at 877e3e1. Complete Windows regression rerun follows a tiny-heap fixture correction.",
       "contract": "docs/step-05-sandbox-and-supervision.md",
       "required_browsing": "Native required policy enforced; unsupported setup aborts, no unsandboxed release override"
     },
     "06": {
-      "implementation": "delivered; final regression and cross-platform native acceptance in progress",
+      "implementation": "complete",
       "protocol_version": 14,
-      "acceptance": "macOS native checks passed; exact-head final suites and Linux/Windows native CI pending",
+      "acceptance": "Parser/order/teardown/exception/recovery regressions and real-worker fatal exit/restart fixtures passed locally; Linux/macOS full hosted jobs passed. Windows native JIT/storage/text and document-host tests passed; complete Windows suite rerun pending after tiny-heap fixture correction.",
       "contract": "docs/step-06-document-host-and-event-loop.md"
     }
   },
@@ -40,18 +40,18 @@
     "01.b": "Runtime baseline deferred",
     "01.c": "Source-only profile/data-path audit prepared; migration fixtures pending",
     "02.a": "Shared Rust protocol crate implemented and pushed",
-    "02.b": "Scoped evaluation/edit-state requests, bounded correlation and cancellation on navigation/crash implemented; tests pending",
-    "02.c1": "Actual document commit/revision tracking and stale-frame rejection implemented; tests pending",
-    "02.c2": "Negotiated queued cancellation, pre-execution deadlines and bounded admission implemented; tests pending",
-    "02.c3": "Host-owned lifecycle, actual navigation commit binding, scoped native events and identified dialog replies implemented; tests pending",
-    "02.c4": "Shutdown acknowledgement, owned child process reaping and normal browser-exit draining implemented; tests pending",
-    "02.c5": "Session/frame/service identity envelopes, native principal and activation authority, scoped permission cancellation, immediate broker revocation and replay protection implemented; tests pending",
-    "02.c": "Implementation complete; all runtime acceptance verification deferred",
-    "03.integration": "Bounded harness/events, development-worker opt-in, strict correlation and failure handling integrated; tests pending",
+    "02.b": "Scoped evaluation/edit-state requests, bounded correlation and cancellation on navigation/crash implemented; local regression tests passed; complete hosted acceptance remains separate",
+    "02.c1": "Actual document commit/revision tracking and stale-frame rejection implemented; local regression tests passed; complete hosted acceptance remains separate",
+    "02.c2": "Negotiated queued cancellation, pre-execution deadlines and bounded admission implemented; local regression tests passed; complete hosted acceptance remains separate",
+    "02.c3": "Host-owned lifecycle, actual navigation commit binding, scoped native events and identified dialog replies implemented; local regression tests passed; complete hosted acceptance remains separate",
+    "02.c4": "Shutdown acknowledgement, owned child process reaping and normal browser-exit draining implemented; local regression tests passed; complete hosted acceptance remains separate",
+    "02.c5": "Session/frame/service identity envelopes, native principal and activation authority, scoped permission cancellation, immediate broker revocation and replay protection implemented; local regression tests passed; complete hosted acceptance remains separate",
+    "02.c": "Implementation complete; local protocol/worker/desktop regression suites passed; release acceptance tracked separately",
+    "03.integration": "Bounded harness/events, development-worker opt-in, strict correlation and failure handling integrated; local regression tests passed; complete hosted acceptance remains separate",
     "04.integration": "Worker initiator/destination metadata and HSTS input/storage bounds integrated; remaining authority bypasses documented",
     "05.a": "Threat model, allowlist, fail-closed native launch and explicit debug-only escape hatch delivered",
     "05.b": "Host admission, native RSS supervision, retained ownership and explicit crash recovery delivered",
-    "05.c": "Landlock/seccomp, signed App Sandbox helper and Windows AppContainer/job backends delivered; macOS native proof passed; Linux/Windows native CI pending",
+    "05.c": "Landlock/seccomp, signed App Sandbox helper and Windows AppContainer/job backends delivered; native containment and required-worker positive fixtures passed on all three platforms.",
     "05.d": "Portable inherited channels/frame grants, revocation, brokered fonts/files/storage/WebSockets and image decode budgets delivered",
     "06.a": "Document host parser/lifecycle ownership and bounded document-scoped task admission delivered",
     "06.b": "Microtask checkpoints, provisional suspension, replacement teardown, visibility/freeze and fatal-script recovery delivered",
@@ -118,50 +118,93 @@
   "pending_verification": [
     "Frozen Servo/direct-Wega baseline runtime captures",
     "Feature/API exposure and behavioral parity",
-    "Full Linux/Windows browser-worker builds and native runtime evidence; Step 05 platform-only cross-checks are recorded separately",
     "Profile migration and data preservation fixtures",
     "Resource and release validation",
     "Step 03 full offline framework matrix and WPT asynchronous/reftest/testdriver paths",
-    "Exact-head final workspace/brokered regression and lint results",
-    "Step 05 Linux/Windows native containment and required-worker CI, parent-crash/pressure/restart stress, signed distribution validation",
-    "Step 04 full authority/CSP/cache audit and new renderer navigation grants"
+    "Step 04 full authority/CSP/cache audit and new renderer navigation grants",
+    "Windows final regression and desktop capture reruns; parent-crash/pressure/restart stress, signed distribution validation"
   ],
   "current_protocol_version": 14,
   "validation_05_06": [
     {
-      "kind": "native macOS sandbox probe",
+      "kind": "engine workspace",
       "result": "passed",
-      "scope": "private read/write, direct TCP/UDP and child denial; explicit inherited file grant works"
+      "tests": 233,
+      "ignored": 2,
+      "command": "cargo test --locked --offline --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets",
+      "scope": "macOS arm64; native ignored fixtures run separately"
     },
     {
-      "kind": "signed required macOS worker",
+      "kind": "brokered engine fixtures",
       "result": "passed",
-      "scope": "JIT loop, broker storage/cookies and shared-frame nontransparent pixels"
+      "tests": 28,
+      "command": "WEGA_TEST_BROKER=1 cargo test --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test security --test forms --test scripts --test documents --test history"
     },
     {
-      "kind": "service/platform/protocol regressions",
+      "kind": "browser core",
       "result": "passed",
-      "scope": "all-targets run; native ignored test executed separately on macOS"
+      "tests": 106,
+      "command": "cargo test --locked --offline --no-default-features --lib"
     },
     {
-      "kind": "desktop all-targets build",
+      "kind": "desktop lifecycle and UI",
       "result": "passed",
-      "scope": "macOS source integration"
+      "tests": 50,
+      "command": "cargo test --locked --offline --features test-harness --bin wega"
+    },
+    {
+      "kind": "native macOS confinement",
+      "result": "passed",
+      "tests": 1,
+      "scope": "Signed required helper: private read/write, TCP/UDP and child denial; explicit inherited file grant; successful normal exit"
+    },
+    {
+      "kind": "native macOS required worker",
+      "result": "passed",
+      "tests": 1,
+      "scope": "Signed required helper: real JIT, broker storage/cookies, shared-frame pixels and dark text glyphs"
+    },
+    {
+      "kind": "native macOS desktop engine UI",
+      "result": "passed",
+      "tests": 1,
+      "command": "WEGA_ENGINE_BINARY=<signed-helper> WEGA_TEST_ALLOW_LOOPBACK=1 python3 scripts/native-tests.py --binary target/debug/wega --suite engine",
+      "scope": "Actual native chrome and required worker, rendering/input, engine switching, page safety and worker failure handling with an isolated profile. Existing fixture runner; Rust implementation."
     },
     {
       "kind": "vendor integrity",
       "result": "passed",
-      "scope": "11 pinned archives and exact patches"
+      "archives": 11,
+      "scope": "pinned published crates and exact checked-in patches"
     },
     {
-      "kind": "full workspace final suite",
-      "result": "in progress",
-      "scope": "parser-yield fixture updated to await actual load rather than one poll"
+      "kind": "format, workspace Clippy and workflow lint",
+      "result": "passed",
+      "scope": "Root/engine format, all-target engine workspace Clippy, production/test-harness desktop Clippy -D warnings and actionlint"
     },
     {
-      "kind": "Linux/Windows native validation",
-      "result": "pending CI",
-      "scope": "platform/protocol cross-compiles passed; not runtime proof"
+      "kind": "desktop build",
+      "result": "passed",
+      "scope": "cargo check --locked --offline --features test-harness --bin wega --all-targets"
+    },
+    {
+      "kind": "Linux/Windows cross-builds",
+      "result": "passed",
+      "scope": "platform/protocol all targets on x86_64 GNU; cross-compilation is not native runtime proof"
+    },
+    {
+      "kind": "hosted native CI",
+      "result": "Linux/macOS complete; Windows required-worker passed, regression rerun pending",
+      "run": "https://github.com/wulfnb/wega/actions/runs/41402832614",
+      "source_commit": "877e3e1bd1ce0daa1cc479f7802e3c505ce5095e",
+      "scope": "At 877e3e1: complete Linux/macOS jobs passed. Windows confinement, stdin/stdout and four channels/file grants, native resource counters, and required-worker JIT/storage/cookies/text passed. Windows pages fixture retained its intentionally tiny quota during a timer check; the fixture now verifies fatal stop, destroys that page and explicitly creates a normal-budget replacement. Desktop production-feature debug capture requires the explicit QA localhost grant.",
+      "previous_run": "https://github.com/wulfnb/wega/actions/runs/41396595995"
     }
-  ]
+  ],
+  "windows_browser_fixes": {
+    "console": "Windows GUI subsystem for the browser in debug/release; private content workers use detached pipe-only startup; no console attachment during browsing. Actual Windows GUI PE check passed in hosted CI.",
+    "metrics": "Native GetProcessTimes and working-set sampling for browser plus supervised Wega workers; interval CPU and current RAM, with independent per-tab reporting. Native Windows resource-counter and monitor tests passed.",
+    "validation_limit": "Actual GUI PE check, native counters, confinement and required-worker JIT/storage/text passed on Windows. Desktop capture fixture grants localhost only in debug/harness builds; full packaged runtime rerun pending.",
+    "worker_stdio": "Native launcher supplies asynchronous parent pipe ends for Rust ChildStdin/Stdout/Stderr and synchronous child ends; complete inherited-grant probe now exchanges stdin/stdout before VM startup."
+  }
 }

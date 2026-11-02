@@ -283,9 +283,10 @@ policy. HTTP/2/3 availability is measured and audited rather than assumed.
 
 **Integration status (1 November 2026): partial implementation merged.** Request
 destinations, origin checks, private-network controls and in-memory HSTS sources
-are present, with inherited Unix service transport added during Step 05. Document
-authority, bypass removal, native resource brokers and adversarial runtime proof
-remain pending; see the [authority audit](step-05-sandbox-and-supervision.md).
+are present. Step 05 added inherited Unix/Windows transport, document-bound
+storage/cookie/font/file/WebSocket brokers, CORS enforcement and DNS pinning.
+The full CSP/cache/redirect audit and renderer-initiated navigation/POST grants
+remain separate; see the [authority audit](step-05-sandbox-and-supervision.md).
 
 ### 05 — Sandbox and supervise content processes
 

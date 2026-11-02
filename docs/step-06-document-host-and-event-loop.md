@@ -76,5 +76,7 @@ navigation callback suppression, pending-navigation replacement, ordinary except
 continuation, hostile serialization termination/recovery and insecure prototype
 exposure. Existing documents/scripts/modules/encoding/write/DOM/error/input tests
 cover preserved behavior. `broker_websocket.rs` exercises a real upgrade and Deno
-message framing; inherited-worker fixtures cover the process boundary. Final test
-results and platform limitations are recorded in `validation/standalone/progress.json`.
+message framing; inherited-worker fixtures cover the process boundary. The worker
+fatal-deadline fixture verifies a scoped stop event, actual exit and an explicit
+clean restart. Final test results and platform limitations are recorded in
+`validation/standalone/progress.json`.
