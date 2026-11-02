@@ -348,6 +348,11 @@ cross-realm handling and reentrant native calls before scaling the generator.
 family; unsupported IDL constructs fail generation explicitly. No interface is
 declared supported solely because its class/prototype was generated.
 
+**Implementation status (2 November 2026): subtask 07.a in progress.** The
+`tools/webidl/` generator, pinned IDL inputs and the `character-data` family
+are being delivered first; the subtask split, construct policy and binding
+conventions are recorded in the [Step 07 contract](step-07-webidl-generation.md).
+
 ### 08 — Expand DOM, events and browser Web APIs by audited families
 
 **Depends on:** 07.

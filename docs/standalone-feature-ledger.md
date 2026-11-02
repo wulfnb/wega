@@ -199,5 +199,11 @@ must be reported explicitly; do not silently discard the old data.
   [complete delivery checklist](step-02-engine-contract.md) and its later-step
   boundaries; network authority, OS sandboxing, device APIs and real subframes
   are not claimed by this contract delivery.
+- Step 07 subtask 07.a is **in progress** (2 November 2026): the `tools/webidl/`
+  Rust generator pins IDL inputs with hashes/origins/licenses and generates the
+  `character-data` family (CharacterData/Text/Comment) bindings plus a semantic
+  hook manifest. Unsupported IDL constructs fail generation explicitly. The
+  generated output is not yet wired into the worker bootstrap (07.b). See the
+  [Step 07 contract](step-07-webidl-generation.md).
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.

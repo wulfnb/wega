@@ -1,0 +1,136 @@
+//! WebIDL AST for the construct subset the generation pipeline supports.
+//! Anything outside this subset is a positioned parser error, not a silent
+//! skip: the pipeline must fail generation explicitly for unsupported syntax.
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type {
+    DomString { nullable: bool },
+    Boolean,
+    UnsignedLong,
+    UnsignedShort,
+    Float,
+    Double,
+    Undefined,
+    Interface { name: String, nullable: bool },
+}
+
+impl Type {
+    /// Stable IDL spelling for hook manifests and conversion selection.
+    pub fn spelling(&self) -> String {
+        match self {
+            Type::DomString { nullable } => {
+                if *nullable { "DOMString?".into() } else { "DOMString".into() }
+            }
+            Type::Boolean => "boolean".into(),
+            Type::UnsignedLong => "unsigned long".into(),
+            Type::UnsignedShort => "unsigned short".into(),
+            Type::Float => "float".into(),
+            Type::Double => "double".into(),
+            Type::Undefined => "undefined".into(),
+            Type::Interface { name, nullable } => {
+                if *nullable { format!("{name}?") } else { name.clone() }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArgumentDefault {
+    String(String),
+    Number(i64),
+    Boolean(bool),
+}
+
+impl ArgumentDefault {
+    /// JavaScript literal for the emitted conversion.
+    pub fn js_literal(&self) -> String {
+        match self {
+            ArgumentDefault::String(text) => format!("{:?}", text),
+            ArgumentDefault::Number(value) => value.to_string(),
+            ArgumentDefault::Boolean(value) => value.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Parameter {
+    pub name: String,
+    pub ty: Type,
+    pub optional: bool,
+    pub default: Option<ArgumentDefault>,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeMember {
+    pub name: String,
+    pub ty: Type,
+    pub readonly: bool,
+    pub pure: bool,
+    pub throws: bool,
+    pub legacy_null_to_empty: bool,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationMember {
+    pub name: String,
+    pub ty: Type,
+    pub params: Vec<Parameter>,
+    pub throws: bool,
+    pub new_object: bool,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstructorMember {
+    pub params: Vec<Parameter>,
+    pub throws: bool,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Member {
+    Attribute(AttributeMember),
+    Operation(OperationMember),
+    Constructor(ConstructorMember),
+}
+
+impl Member {
+    pub fn name(&self) -> &str {
+        match self {
+            Member::Attribute(member) => &member.name,
+            Member::Operation(member) => &member.name,
+            Member::Constructor(_) => "constructor",
+        }
+    }
+    pub fn line(&self) -> usize {
+        match self {
+            Member::Attribute(member) => member.line,
+            Member::Operation(member) => member.line,
+            Member::Constructor(member) => member.line,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Interface {
+    pub name: String,
+    pub base: Option<String>,
+    pub exposed: Vec<String>,
+    pub abstract_: bool,
+    pub members: Vec<Member>,
+    /// `includes` clauses. Members must be provided by the family's native
+    /// base; the generator never implements mixin members itself.
+    pub includes: Vec<String>,
+    pub file: String,
+    pub line: usize,
+}
+
+impl Interface {
+    pub fn has_constructor(&self) -> bool {
+        self.members
+            .iter()
+            .any(|member| matches!(member, Member::Constructor(_)))
+    }
+}

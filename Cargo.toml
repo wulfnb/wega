@@ -17,6 +17,7 @@ brotli-streams = ["desktop", "servo/brotli-compression-stream"]
 multiprocess = ["desktop", "servo/multiprocess"]
 media = ["desktop", "servo/media-gstreamer"]
 migration-tools = ["dep:regex", "dep:toml"]
+webidl-tools = []
 
 [[bin]]
 name = "wega"
@@ -27,6 +28,11 @@ required-features = ["desktop"]
 name = "wega-inventory"
 path = "tools/standalone_inventory.rs"
 required-features = ["migration-tools"]
+
+[[bin]]
+name = "wega-webidl"
+path = "tools/webidl/main.rs"
+required-features = ["webidl-tools"]
 
 [[test]]
 name = "servo-dom-memory"

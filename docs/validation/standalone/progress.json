@@ -57,7 +57,8 @@
     "05.d": "Portable inherited channels/frame grants, revocation, brokered fonts/files/storage/WebSockets and image decode budgets delivered",
     "06.a": "Document host parser/lifecycle ownership and bounded document-scoped task admission delivered",
     "06.b": "Microtask checkpoints, provisional suspension, replacement teardown, visibility/freeze and fatal-script recovery delivered",
-    "06.c": "Deno adaptation/secure-context audit recorded; existing upstream JS semantics retained"
+    "06.c": "Deno adaptation/secure-context audit recorded; existing upstream JS semantics retained",
+    "07.a": "In progress: tools/webidl generator (pinned IDL inputs, deterministic JS emitter, hook manifest, explicit unsupported-construct failures) for the character-data family; see docs/step-07-webidl-generation.md"
   },
   "compile_checks": [
     {

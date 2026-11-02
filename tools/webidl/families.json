@@ -1,0 +1,77 @@
+{
+  "families": [
+    {
+      "name": "character-data",
+      "hook_prefix": "charData",
+      "output": "engines/wega/src/dom/generated/character-data.js",
+      "manifest": "engines/wega/src/dom/generated/character-data.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/webidls/CharacterData.webidl",
+        "vendor/servo-script-bindings/webidls/Text.webidl",
+        "vendor/servo-script-bindings/webidls/Comment.webidl"
+      ],
+      "native_base": {
+        "Node": "dom.base.Node",
+        "CharacterData": "dom.base.Node"
+      },
+      "base_mixins": [
+        "ChildNode",
+        "NonDocumentTypeChildNode"
+      ],
+      "globals": [
+        "Text",
+        "Comment"
+      ],
+      "hooks": {
+        "charData.data": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "charData.data.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "charData.length": {
+          "result": "{ unsigned long }",
+          "reaction": null
+        },
+        "charData.substringData": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "charData.appendData": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "charData.insertData": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "charData.deleteData": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "charData.replaceData": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "charData.wholeText": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "charData.splitText": {
+          "result": "{ string }",
+          "reaction": "splitText"
+        },
+        "charData.construct.text": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "charData.construct.comment": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        }
+      }
+    }
+  ]
+}
