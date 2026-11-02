@@ -1,0 +1,47 @@
+name: Dependabot auto-merge
+
+# Merges only the grouped minor/patch Dependabot PRs ("compatible" groups in
+# dependabot.yml), and only after CI succeeded for the exact head commit.
+# Major bumps and the GitHub Actions group stay manual. This gates itself on the
+# CI result, so it does not depend on branch protection being configured.
+# Merges made with GITHUB_TOKEN do not start push workflows, so they publish no
+# preview; the next regular merge to main validates and releases them together.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  merge:
+    name: Merge CI-validated compatible updates
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/cargo/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Squash-merge the tested commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if ! [[ "$BRANCH" =~ ^dependabot/cargo/([A-Za-z0-9._/-]+/)?compatible-[0-9a-f]+$ ]]; then
+            echo "Not a grouped compatible update: $BRANCH"
+            exit 0
+          fi
+          number=$(gh pr list --head "$BRANCH" --state open --json number,author --jq '.[] | select(.author.login == "app/dependabot") | .number')
+          if [ -z "$number" ]; then
+            echo "No open Dependabot PR for $BRANCH"
+            exit 0
+          fi
+          # Refuses if Dependabot pushed a newer commit than the one CI validated.
+          gh pr merge "$number" --squash --match-head-commit "$HEAD_SHA"
