@@ -8,6 +8,22 @@ use std::{
 #[test]
 #[ignore = "requires a native supported sandbox host and WEGA_SANDBOX_PROBE"]
 fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant() {
+    let (complete, completed) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        if matches!(
+            completed.recv_timeout(Duration::from_secs(30)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ) {
+            eprintln!("Native grant fixture exceeded its complete 30-second deadline");
+            #[cfg(windows)]
+            unsafe {
+                use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+                // The failing fixture must not wait for DLL detach callbacks.
+                TerminateProcess(GetCurrentProcess(), 124);
+            }
+            std::process::abort();
+        }
+    });
     let probe = std::env::var_os("WEGA_SANDBOX_PROBE")
         .expect("Native probe setup requires WEGA_SANDBOX_PROBE");
     let root = tempfile::tempdir().unwrap();
@@ -35,9 +51,40 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     // https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/troubleshooting-uwp-firewall
     udp.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
     let mut command = Command::new(probe);
+    eprintln!("Native grant fixture: preparing launch");
     let launch = wega_platform::launch::PreparedLaunch::required_fixture(&mut command).unwrap();
     let grant = launch.inherit_frame_file(&mut command, &granted).unwrap();
+    let mut channels = Vec::new();
+    let mut servers = Vec::new();
+    for _ in 0..4 {
+        let (mut server, client) = wega_platform::ipc::Channel::pair().unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        server
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        servers.push(std::thread::spawn(move || {
+            let mut request = [0; 5];
+            server.read_exact(&mut request).unwrap();
+            assert_eq!(&request, b"grant");
+            server.write_all(b"reply").unwrap();
+        }));
+        channels.push(client);
+    }
+    eprintln!("Native grant fixture: duplicating four channel grants");
+    let channel_grants = launch
+        .inherit_broker_channels(&mut command, &channels)
+        .unwrap();
     command
+        .arg("--channel-grants")
+        .arg(
+            channel_grants
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        )
         .arg("--secret")
         .arg(&secret)
         .arg("--write")
@@ -52,6 +99,7 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let (exit, exited) = std::sync::mpsc::channel();
+    eprintln!("Native grant fixture: spawning helper");
     let mut process = wega_platform::process::OwnedProcess::new(
         launch.spawn(&mut command).unwrap(),
         move |report| {
@@ -59,7 +107,9 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         },
     );
     launch.attach(&mut process, 128 * 1024 * 1024).unwrap();
+    eprintln!("Native grant fixture: containment attached");
     drop(command);
+    drop(channels);
     let mut stdout = process.take_stdout().unwrap();
     let mut stderr = process.take_stderr().unwrap();
     let (errors, error_output) = std::sync::mpsc::channel();
@@ -99,6 +149,7 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     eprintln!("Native probe exit: {report:?}; stderr: {diagnostics}");
     for item in [
         "granted_file",
+        "granted_channels",
         "private_read_denied",
         "private_write_denied",
         "tcp_denied",
@@ -126,4 +177,8 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         report.status.unwrap().success(),
         "Probe failed: {diagnostics}"
     );
+    for server in servers {
+        server.join().unwrap();
+    }
+    complete.send(()).unwrap();
 }

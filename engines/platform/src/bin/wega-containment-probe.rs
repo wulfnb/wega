@@ -1,7 +1,7 @@
 //! Adversarial child fixture. Run through PreparedLaunch with --content-sandbox;
 //! a setup failure is distinct from a denied operation and never counts as a pass.
 use std::{
-    io::Read,
+    io::{Read, Write},
     net::{TcpStream, UdpSocket},
     path::PathBuf,
     process::Command,
@@ -40,7 +40,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let grant = argument("--grant")?.parse::<u64>()?;
     let udp_address: std::net::SocketAddr = argument("--udp-address")?.parse()?;
     let mut file = wega_platform::inherited::duplicate_file(grant)?;
+    let channel_grants = argument("--channel-grants")?
+        .split(',')
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()?;
+    let channels = wega_platform::inherited::duplicate_channels(&channel_grants)?;
     wega_platform::sandbox::finish_grants()?;
+    let mut channels_granted = channels.len() == 4;
+    for mut channel in channels {
+        channel.set_read_timeout(Some(Duration::from_secs(2)))?;
+        channel.set_write_timeout(Some(Duration::from_secs(2)))?;
+        channel.write_all(b"grant")?;
+        channel.flush()?;
+        let mut reply = [0; 5];
+        channel.read_exact(&mut reply)?;
+        channels_granted &= &reply == b"reply";
+    }
     let mut allowed = String::new();
     file.read_to_string(&mut allowed)?;
     let read_denied = std::fs::read(&secret).is_err();
@@ -66,9 +81,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     let granted = allowed == "explicit-grant";
     println!(
-        "{{\"granted_file\":{granted},\"private_read_denied\":{read_denied},\"private_write_denied\":{write_denied},\"tcp_denied\":{tcp_denied},\"udp_send_rejected\":{udp_send_rejected},\"child_denied\":{child_denied}}}"
+        "{{\"granted_file\":{granted},\"granted_channels\":{channels_granted},\"private_read_denied\":{read_denied},\"private_write_denied\":{write_denied},\"tcp_denied\":{tcp_denied},\"udp_send_rejected\":{udp_send_rejected},\"child_denied\":{child_denied}}}"
     );
-    if !(granted && read_denied && write_denied && tcp_denied && child_denied) {
+    if !(granted && channels_granted && read_denied && write_denied && tcp_denied && child_denied) {
         std::process::exit(1);
     }
     Ok(())
