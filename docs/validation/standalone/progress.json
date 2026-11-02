@@ -3,7 +3,7 @@
   "branch": "feature/standalone-wega-engine",
   "date": "2026-11-02",
   "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
-  "test_policy": "Implementation followed by the final local validation pass; hosted native acceptance continues",
+  "test_policy": "Final local validation and full hosted native/desktop matrices passed; distribution and broader parity gates remain separate",
   "runtime_tests_executed": true,
   "servo_retirement_allowed": false,
   "steps": {
@@ -24,15 +24,17 @@
     "05": {
       "implementation": "complete",
       "protocol_version": 14,
-      "acceptance": "Native containment, standard I/O and all four channel/file grants passed on macOS, Linux and Windows. Required-worker JIT/storage/cookies/text fixtures passed on all three at 877e3e1. Complete Windows regression rerun follows a tiny-heap fixture correction.",
+      "acceptance": "Passed on Windows, Linux and macOS: native containment, standard I/O, four channel/file grants, required-worker JIT/storage/cookies/text, regression suites and strict lints at efe5a87f8923c3c5d98308ce349c9983993759a0",
       "contract": "docs/step-05-sandbox-and-supervision.md",
-      "required_browsing": "Native required policy enforced; unsupported setup aborts, no unsandboxed release override"
+      "required_browsing": "Native required policy enforced; unsupported setup aborts, no unsandboxed release override",
+      "acceptance_verified": true
     },
     "06": {
       "implementation": "complete",
       "protocol_version": 14,
-      "acceptance": "Parser/order/teardown/exception/recovery regressions and real-worker fatal exit/restart fixtures passed locally; Linux/macOS full hosted jobs passed. Windows native JIT/storage/text and document-host tests passed; complete Windows suite rerun pending after tiny-heap fixture correction.",
-      "contract": "docs/step-06-document-host-and-event-loop.md"
+      "acceptance": "Passed on Windows, Linux and macOS: parser/order/teardown/exception/recovery regressions, fatal worker exit/restart and complete engine/brokered suites at efe5a87f8923c3c5d98308ce349c9983993759a0",
+      "contract": "docs/step-06-document-host-and-event-loop.md",
+      "acceptance_verified": true
     }
   },
   "substeps": {
@@ -122,7 +124,7 @@
     "Resource and release validation",
     "Step 03 full offline framework matrix and WPT asynchronous/reftest/testdriver paths",
     "Step 04 full authority/CSP/cache audit and new renderer navigation grants",
-    "Windows final regression and desktop capture reruns; parent-crash/pressure/restart stress, signed distribution validation"
+    "Release qualification beyond the Step 05/06 fixture gate: parent-crash/pressure/restart stress, distribution signing/notarization and whole-browser resource calibration"
   ],
   "current_protocol_version": 14,
   "validation_05_06": [
@@ -194,17 +196,35 @@
     },
     {
       "kind": "hosted native CI",
-      "result": "Linux/macOS complete; Windows required-worker passed, regression rerun pending",
-      "run": "https://github.com/wulfnb/wega/actions/runs/41402832614",
-      "source_commit": "877e3e1bd1ce0daa1cc479f7802e3c505ce5095e",
-      "scope": "At 877e3e1: complete Linux/macOS jobs passed. Windows confinement, stdin/stdout and four channels/file grants, native resource counters, and required-worker JIT/storage/cookies/text passed. Windows pages fixture retained its intentionally tiny quota during a timer check; the fixture now verifies fatal stop, destroys that page and explicitly creates a normal-budget replacement. Desktop production-feature debug capture requires the explicit QA localhost grant.",
-      "previous_run": "https://github.com/wulfnb/wega/actions/runs/41396595995"
+      "result": "passed",
+      "run": "https://github.com/wulfnb/wega/actions/runs/41418501340",
+      "source_commit": "efe5a87f8923c3c5d98308ce349c9983993759a0",
+      "scope": "Complete Windows/Linux/macOS jobs passed: native confinement, stdin/stdout and all four channels/file grants, native resource counters, required-worker JIT/storage/cookies/text, full engine/brokered regressions, formatting and strict lints. Windows heap-stop and fresh-page timer recovery regression passed."
+    },
+    {
+      "kind": "hosted desktop and core CI",
+      "result": "passed",
+      "run": "https://github.com/wulfnb/wega/actions/runs/41418509931",
+      "source_commit": "efe5a87f8923c3c5d98308ce349c9983993759a0",
+      "scope": "Entire CI workflow passed, including Windows GUI PE check, staged desktop launch, real media decode, Wega capture without Servo initialization, and same-profile web/Unicode-file handoff; macOS native desktop/coverage and Linux integration gates passed."
+    },
+    {
+      "kind": "hosted V8 engine matrix",
+      "result": "passed",
+      "run": "https://github.com/wulfnb/wega/actions/runs/41418509870",
+      "source_commit": "efe5a87f8923c3c5d98308ce349c9983993759a0"
+    },
+    {
+      "kind": "hosted security SAST",
+      "result": "passed",
+      "run": "https://github.com/wulfnb/wega/actions/runs/41418509977",
+      "source_commit": "efe5a87f8923c3c5d98308ce349c9983993759a0"
     }
   ],
   "windows_browser_fixes": {
     "console": "Windows GUI subsystem for the browser in debug/release; private content workers use detached pipe-only startup; no console attachment during browsing. Actual Windows GUI PE check passed in hosted CI.",
     "metrics": "Native GetProcessTimes and working-set sampling for browser plus supervised Wega workers; interval CPU and current RAM, with independent per-tab reporting. Native Windows resource-counter and monitor tests passed.",
-    "validation_limit": "Actual GUI PE check, native counters, confinement and required-worker JIT/storage/text passed on Windows. Desktop capture fixture grants localhost only in debug/harness builds; full packaged runtime rerun pending.",
+    "validation_limit": "Hosted Windows GUI PE, native CPU/RAM, containment, required-worker JIT/storage/text, staged desktop capture, media and same-profile handoff passed. Installer distribution and performance calibration remain separate.",
     "worker_stdio": "Native launcher supplies asynchronous parent pipe ends for Rust ChildStdin/Stdout/Stderr and synchronous child ends; complete inherited-grant probe now exchanges stdin/stdout before VM startup."
   }
 }

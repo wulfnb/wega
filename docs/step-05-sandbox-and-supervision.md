@@ -137,7 +137,8 @@ explicit pipes. Overall CPU/RAM samples combine the browser with registered Wega
 workers using native counters, without process scans or renderer-reported values.
 CPU uses interval deltas; closing/replacing a tab cannot subtract its lifetime CPU
 from the total. Native Windows counter/monitor tests and the browser's actual PE
-GUI-subsystem check passed. Packaged launch/capture remains a separate runtime gate.
+GUI-subsystem check passed. The staged Windows desktop launch, Wega capture,
+actual media decode and same-profile web/Unicode-file handoff gates also passed.
 
 Desktop localhost fixtures explicitly set `WEGA_TEST_ALLOW_LOOPBACK=1` in a
 debug or explicit `test-harness` build. The browser applies that host policy before launching the
@@ -147,7 +148,11 @@ signed helper assembled by the same Rust bundling tool used for packaging. The
 actual macOS desktop engine UI fixture passed locally with this configuration.
 
 Native required-worker JIT/storage/cookie/text gates passed on all three platforms.
-Remaining release evidence includes final Windows regression/desktop reruns, parent-crash and
+Complete native suites and strict lints passed on all three platforms at
+`efe5a87`; the main desktop/core CI, V8 matrix and SAST passed on that commit too.
+See the linked runs in the validation record.
+
+Remaining release evidence includes parent-crash and
 pressure/restart stress across all platforms, distribution signing/notarization,
 and whole-browser resource calibration. A parent crash may leave Windows profile
 metadata/trusted helper copies for later cleanup; kernel job lifetime still kills

@@ -80,3 +80,7 @@ message framing; inherited-worker fixtures cover the process boundary. The worke
 fatal-deadline fixture verifies a scoped stop event, actual exit and an explicit
 clean restart. Final test results and platform limitations are recorded in
 `validation/standalone/progress.json`.
+
+Final acceptance passed on Windows, Linux and macOS at `efe5a87`: complete engine
+and brokered regressions, native required-worker fixtures, formatting and strict
+lints. The main desktop/core CI, V8 matrix and SAST passed on the same commit.

@@ -308,7 +308,9 @@ escape hatch is explicit. Killing a worker releases its resources and grants.
 backends, portable inherited grants, font/file/storage/WebSocket brokers,
 decoder budgets and host supervision are implemented. See the
 [Step 05 contract and native evidence](step-05-sandbox-and-supervision.md).
-Three-platform acceptance is tracked separately; a cross-build is not native proof.
+Three-platform native acceptance passed on 2 November at `efe5a87`; full desktop,
+V8 and SAST workflows also passed. Distribution/stress qualification remains
+separate in the validation record.
 
 ### 06 — Consolidate the document host and event loop
 
@@ -328,7 +330,8 @@ page functionality, and deadline termination has an explicit recovery outcome.
 **Implementation delivered (1 November 2026).** Parser/lifecycle ownership,
 document-scoped task admission, checkpoints, teardown and fatal recovery are
 implemented. See the [Step 06 contract](step-06-document-host-and-event-loop.md)
-and the final validation record.
+and the final validation record. Three-platform engine and native fixture
+acceptance passed on 2 November at `efe5a87`.
 
 ### 07 — Build a small, real WebIDL generation pipeline
 
@@ -685,7 +688,7 @@ separate gates in `docs/validation/standalone/progress.json`.
 - [x] 02 Engine contract and lifecycle — implementation complete; runtime acceptance deferred
 - [ ] 03 Worker harness and observability
 - [ ] 04 Authoritative network/storage access
-- [x] 05 Sandbox and supervision — implementation delivered; native acceptance tracked separately
+- [x] 05 Sandbox and supervision — implementation and three-platform native acceptance passed
 - [x] 06 Document host and scheduling — implementation delivered; final regressions recorded separately
 - [ ] 07 WebIDL generation and ownership
 - [ ] 08 DOM/events/Web API families
