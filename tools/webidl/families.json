@@ -329,6 +329,267 @@
           "reaction": null
         }
       }
+    },
+    {
+      "name": "element",
+      "hook_prefix": "element",
+      "output": "engines/wega/src/dom/generated/element.js",
+      "manifest": "engines/wega/src/dom/generated/element.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/Element.simplified.webidl"
+      ],
+      "native_base": {
+        "Node": "dom.base.EventTarget"
+      },
+      "base_mixins": [
+        "ChildNode",
+        "NonDocumentTypeChildNode",
+        "ParentNode",
+        "ActivatableElement",
+        "ARIAMixin",
+        "Animatable"
+      ],
+      "globals": [
+        "Element"
+      ],
+      "hooks": {
+        "element.construct.element": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "element.namespaceURI": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.prefix": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.localName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.tagName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.id": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.id.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "element.className": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.className.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "element.classList": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.slot": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.slot.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "element.hasAttributes": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.attributes": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getAttributeNames": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getAttribute": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getAttributeNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.toggleAttribute": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.setAttribute": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.setAttributeNS": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.removeAttribute": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.removeAttributeNS": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.hasAttribute": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.hasAttributeNS": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.closest": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.matches": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.webkitMatchesSelector": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.getElementsByTagName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getElementsByTagNameNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getElementsByClassName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.insertAdjacentElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.insertAdjacentText": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.insertAdjacentHTML": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.attachShadow": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.shadowRoot": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.customElementRegistry": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getClientRects": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getBoundingClientRect": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.scrollIntoView": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.scroll": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.scrollTo": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.scrollBy": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.scrollTop": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.scrollTop.set": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.scrollLeft": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.scrollLeft.set": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.scrollWidth": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.scrollHeight": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.clientTop": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.clientLeft": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.clientWidth": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.clientHeight": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.currentCSSZoom": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.setHTMLUnsafe": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.getHTML": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.innerHTML": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.innerHTML.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "element.outerHTML": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.outerHTML.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        }
+      }
     }
   ]
 }

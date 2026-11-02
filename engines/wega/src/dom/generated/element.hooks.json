@@ -1,0 +1,915 @@
+{
+  "base_mixins": [
+    "ChildNode",
+    "NonDocumentTypeChildNode",
+    "ParentNode",
+    "ActivatableElement",
+    "ARIAMixin",
+    "Animatable"
+  ],
+  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
+  "family": "element",
+  "generator": "wega-webidl (step 07.a)",
+  "globals": [
+    "Element"
+  ],
+  "hooks": [
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "constructor",
+      "line": 35,
+      "member": "constructor",
+      "name": "element.construct.element",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ id: string, info: object }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 37,
+      "member": "namespaceURI",
+      "name": "element.namespaceURI",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 39,
+      "member": "prefix",
+      "name": "element.prefix",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 41,
+      "member": "localName",
+      "name": "element.localName",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 43,
+      "member": "tagName",
+      "name": "element.tagName",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 46,
+      "member": "id",
+      "name": "element.id",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-setter",
+      "line": 46,
+      "member": "id",
+      "name": "element.id.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 48,
+      "member": "className",
+      "name": "element.className",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-setter",
+      "line": 48,
+      "member": "className",
+      "name": "element.className.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 50,
+      "member": "classList",
+      "name": "element.classList",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 52,
+      "member": "slot",
+      "name": "element.slot",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-setter",
+      "line": 52,
+      "member": "slot",
+      "name": "element.slot.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 54,
+      "member": "hasAttributes",
+      "name": "element.hasAttributes",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 56,
+      "member": "attributes",
+      "name": "element.attributes",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 58,
+      "member": "getAttributeNames",
+      "name": "element.getAttributeNames",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 60,
+      "member": "getAttribute",
+      "name": "element.getAttribute",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 62,
+      "member": "getAttributeNS",
+      "name": "element.getAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "boolean"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 64,
+      "member": "toggleAttribute",
+      "name": "element.toggleAttribute",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 66,
+      "member": "setAttribute",
+      "name": "element.setAttribute",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 68,
+      "member": "setAttributeNS",
+      "name": "element.setAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 70,
+      "member": "removeAttribute",
+      "name": "element.removeAttribute",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 72,
+      "member": "removeAttributeNS",
+      "name": "element.removeAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 74,
+      "member": "hasAttribute",
+      "name": "element.hasAttribute",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 75,
+      "member": "hasAttributeNS",
+      "name": "element.hasAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 77,
+      "member": "closest",
+      "name": "element.closest",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 79,
+      "member": "matches",
+      "name": "element.matches",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 81,
+      "member": "webkitMatchesSelector",
+      "name": "element.webkitMatchesSelector",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 84,
+      "member": "getElementsByTagName",
+      "name": "element.getElementsByTagName",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 85,
+      "member": "getElementsByTagNameNS",
+      "name": "element.getElementsByTagNameNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 86,
+      "member": "getElementsByClassName",
+      "name": "element.getElementsByClassName",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 88,
+      "member": "insertAdjacentElement",
+      "name": "element.insertAdjacentElement",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 90,
+      "member": "insertAdjacentText",
+      "name": "element.insertAdjacentText",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 92,
+      "member": "insertAdjacentHTML",
+      "name": "element.insertAdjacentHTML",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 95,
+      "member": "attachShadow",
+      "name": "element.attachShadow",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 96,
+      "member": "shadowRoot",
+      "name": "element.shadowRoot",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 98,
+      "member": "customElementRegistry",
+      "name": "element.customElementRegistry",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 100,
+      "member": "getClientRects",
+      "name": "element.getClientRects",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 101,
+      "member": "getBoundingClientRect",
+      "name": "element.getBoundingClientRect",
+      "new_object": true,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 104,
+      "member": "scrollIntoView",
+      "name": "element.scrollIntoView",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 105,
+      "member": "scroll",
+      "name": "element.scroll",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 106,
+      "member": "scrollTo",
+      "name": "element.scrollTo",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 107,
+      "member": "scrollBy",
+      "name": "element.scrollBy",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "double"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 108,
+      "member": "scrollTop",
+      "name": "element.scrollTop",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ double }",
+      "throws": false
+    },
+    {
+      "args": [
+        "double"
+      ],
+      "interface": "Element",
+      "kind": "attribute-setter",
+      "line": 108,
+      "member": "scrollTop",
+      "name": "element.scrollTop.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ double }",
+      "throws": false
+    },
+    {
+      "args": [
+        "double"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 109,
+      "member": "scrollLeft",
+      "name": "element.scrollLeft",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ double }",
+      "throws": false
+    },
+    {
+      "args": [
+        "double"
+      ],
+      "interface": "Element",
+      "kind": "attribute-setter",
+      "line": 109,
+      "member": "scrollLeft",
+      "name": "element.scrollLeft.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ double }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 110,
+      "member": "scrollWidth",
+      "name": "element.scrollWidth",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 111,
+      "member": "scrollHeight",
+      "name": "element.scrollHeight",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 112,
+      "member": "clientTop",
+      "name": "element.clientTop",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 113,
+      "member": "clientLeft",
+      "name": "element.clientLeft",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 114,
+      "member": "clientWidth",
+      "name": "element.clientWidth",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 115,
+      "member": "clientHeight",
+      "name": "element.clientHeight",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "double"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 116,
+      "member": "currentCSSZoom",
+      "name": "element.currentCSSZoom",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ double }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 118,
+      "member": "setHTMLUnsafe",
+      "name": "element.setHTMLUnsafe",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 120,
+      "member": "getHTML",
+      "name": "element.getHTML",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 121,
+      "member": "innerHTML",
+      "name": "element.innerHTML",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-setter",
+      "line": 121,
+      "member": "innerHTML",
+      "name": "element.innerHTML.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 123,
+      "member": "outerHTML",
+      "name": "element.outerHTML",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "attribute-setter",
+      "line": 123,
+      "member": "outerHTML",
+      "name": "element.outerHTML.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ string }",
+      "throws": true
+    }
+  ],
+  "idls": [
+    {
+      "file": "vendor/servo-script-bindings/simplified-idls/Element.simplified.webidl",
+      "sha256": "e00e3cef5ee8c57970f68d21272930fb0a8455ac67dd3e0b929c8c5eb92f115e"
+    }
+  ],
+  "native_base": {
+    "Node": "dom.base.EventTarget"
+  }
+}
