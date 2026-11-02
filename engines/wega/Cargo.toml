@@ -38,7 +38,7 @@ deno_webstorage = "=0.255.0"
 deno_crypto = "=0.274.0"
 deno_permissions = "=0.119.0"
 sys_traits = {version="=0.1.29",features=["real","libc","winapi"]}
-sha2 = "0.10"
+sha2 = "0.11"
 
 deno_net = "=0.252.0"
 
