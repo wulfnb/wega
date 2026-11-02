@@ -59,7 +59,7 @@
     "06.b": "Microtask checkpoints, provisional suspension, replacement teardown, visibility/freeze and fatal-script recovery delivered",
     "06.c": "Deno adaptation/secure-context audit recorded; existing upstream JS semantics retained",
     "07.a": "In progress: tools/webidl generator (pinned IDL inputs, deterministic JS emitter, hook manifest, explicit unsupported-construct failures) for the character-data family; see docs/step-07-webidl-generation.md",
-    "08.a": "Planned: generator extensions for const members, [Constant], [SameObject], [SetterThrows] followed by incremental family migration (Event → Attr → Node → Element → Document → collections/mutation/observers); see docs/step-08-dom-events-web-apis.md"
+    "08.a": "In progress: generator extended with const members (static Object.defineProperty), [Constant] (writable:false getter), [SameObject] (Map memoised getter), [SetterThrows] (hook annotation). Parser accepts all four. 8/8 tests pass including generation output verification."
   },
   "compile_checks": [
     {
