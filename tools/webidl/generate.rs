@@ -141,6 +141,9 @@ fn validate_type_names(value: &Value, known: &BTreeSet<String>) -> Result<(), St
     Ok(())
 }
 
+/// (kind, hook name, argument types, result, pure, throws, new object)
+type MemberHook<'k, 't> = (&'k str, String, Vec<String>, &'t Type, bool, bool, bool);
+
 pub fn build_family(
     family: &Family,
     pins: &BTreeMap<String, IdlPin>,
@@ -253,7 +256,7 @@ pub fn build_family(
     for interface in &ordered {
         let mut members = vec![];
         for member in &interface.members {
-            let mut specs: Vec<(&str, String, Vec<String>, &Type, bool, bool, bool)> = vec![];
+            let mut specs: Vec<MemberHook<'_, '_>> = vec![];
             let descriptor = match member {
                 Member::Attribute(a) => {
                     specs.push((

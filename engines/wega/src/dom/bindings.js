@@ -219,6 +219,11 @@
           return result;
         };
         Object.defineProperty(member.static ? Ctor : Ctor.prototype, name, { value: shape(method, name, member.parameters), writable: true, configurable: true, enumerable: true });
+      } else if (member.kind === "iterable" && member.types.length === 1) {
+        // WebIDL value iterators on indexed interfaces use %Array.prototype% methods.
+        const prototype = Ctor.prototype;
+        for (const kind of ["keys", "values", "entries", "forEach"]) Object.defineProperty(prototype, kind, { configurable: true, writable: true, enumerable: true, value: Array.prototype[kind] });
+        Object.defineProperty(prototype, Symbol.iterator, { value: Array.prototype.values, configurable: true, writable: true });
       } else if (member.kind === "iterable") {
         const prototype = Ctor.prototype;
         // Indexed collection algorithms read the live length at every iteration.

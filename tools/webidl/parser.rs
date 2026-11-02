@@ -586,10 +586,8 @@ impl Parser<'_> {
         }
         let readonly = self.word("readonly");
         if readonly || self.word("attribute") {
-            if readonly {
-                if !self.word("attribute") {
-                    return Err(self.err("expected attribute after readonly"));
-                }
+            if readonly && !self.word("attribute") {
+                return Err(self.err("expected attribute after readonly"));
             }
             let extra = self.attrs()?;
             attrs.names.extend(extra.names);
