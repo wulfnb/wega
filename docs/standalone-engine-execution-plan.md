@@ -382,11 +382,14 @@ less common interfaces, to a semantic implementation or an explicit blocker.
 and real framework interactions; wrapper GC, detached nodes, DOM budgets and
 reentrant mutation remain correct. No missing-feature success shims are counted.
 
-**Implementation status (3 November 2026): subtask 08.a in progress.** The Step 07
+**Implementation status (4 November 2026): subtasks 08.a and 08.b in progress.** The Step 07
 generator (07.a) is in place with the `character-data` family. Step 08 will extend the
 generator incrementally and migrate families in the order: Event → Attr → Node → Element
 → Document → collections/mutation/observers. The full subtask split and construct policy
-is recorded in the [Step 08 contract](step-08-dom-events-web-apis.md).
+is recorded in the [Step 08 contract](step-08-dom-events-web-apis.md). Generator extensions
+for `const`, `[Constant]`, `[SameObject]`, `[SetterThrows]` are complete (08.a). EventTarget
+and Event families are generated with simplified IDL pins (08.b); full signatures deferred
+to JS layer.
 
 ### 09 — Preserve navigation and browser integrations
 

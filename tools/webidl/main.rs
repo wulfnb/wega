@@ -452,4 +452,43 @@ interface Fixture {
         // [Constant]: getter should still emit
         assert!(js.contains("get immutable()"), "Constant attribute should have getter");
     }
+
+    #[test]
+    fn event_family_derives_expected_hooks() {
+        let root = root();
+        let pins = pins();
+        for family in load_families(&root).unwrap() {
+            if family.name != "event" && family.name != "event-target" {
+                continue;
+            }
+            let sources = verify_family_files(&root, &family, &pins).unwrap();
+            let model = build_family(&family, &pins, &sources).unwrap();
+            let hook_names: Vec<&str> = model
+                .hooks
+                .iter()
+                .map(|h| h.name.as_str())
+                .collect();
+            let js = emit_js(&model);
+            assert!(
+                !js.is_empty(),
+                "family '{}': JS output must not be empty",
+                family.name
+            );
+            // Every derived hook must appear in the families.json manifest.
+            for hook in &model.hooks {
+                assert!(
+                    family.hooks.contains_key(&hook.name),
+                    "family '{}': hook '{}' missing from families.json",
+                    family.name,
+                    hook.name,
+                );
+            }
+            // Check hook count matches expected members.
+            match family.name.as_str() {
+                "event-target" => assert_eq!(hook_names.len(), 4),
+                "event" => assert_eq!(hook_names.len(), 17),
+                _ => {}
+            }
+        }
+    }
 }

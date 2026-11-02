@@ -1,0 +1,269 @@
+{
+  "base_mixins": [],
+  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
+  "family": "event",
+  "generator": "wega-webidl (step 07.a)",
+  "globals": [
+    "Event"
+  ],
+  "hooks": [
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Event",
+      "kind": "constructor",
+      "line": 9,
+      "member": "constructor",
+      "name": "event.construct.event",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ id: string, info: object }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 10,
+      "member": "type",
+      "name": "event.type",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned short"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 15,
+      "member": "eventPhase",
+      "name": "event.eventPhase",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ unsigned long }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "operation",
+      "line": 16,
+      "member": "stopPropagation",
+      "name": "event.stopPropagation",
+      "new_object": false,
+      "pure": false,
+      "reaction": "stopPropagation",
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 17,
+      "member": "cancelBubble",
+      "name": "event.cancelBubble",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-setter",
+      "line": 17,
+      "member": "cancelBubble",
+      "name": "event.cancelBubble.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "stopPropagation",
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "operation",
+      "line": 18,
+      "member": "stopImmediatePropagation",
+      "name": "event.stopImmediatePropagation",
+      "new_object": false,
+      "pure": false,
+      "reaction": "stopImmediatePropagation",
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 19,
+      "member": "bubbles",
+      "name": "event.bubbles",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 20,
+      "member": "cancelable",
+      "name": "event.cancelable",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 21,
+      "member": "returnValue",
+      "name": "event.returnValue",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-setter",
+      "line": 21,
+      "member": "returnValue",
+      "name": "event.returnValue.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "operation",
+      "line": 22,
+      "member": "preventDefault",
+      "name": "event.preventDefault",
+      "new_object": false,
+      "pure": false,
+      "reaction": "preventDefault",
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 23,
+      "member": "defaultPrevented",
+      "name": "event.defaultPrevented",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 24,
+      "member": "composed",
+      "name": "event.composed",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 25,
+      "member": "isTrusted",
+      "name": "event.isTrusted",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "double"
+      ],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 26,
+      "member": "timeStamp",
+      "name": "event.timeStamp",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ double }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Event",
+      "kind": "operation",
+      "line": 27,
+      "member": "initEvent",
+      "name": "event.initEvent",
+      "new_object": false,
+      "pure": false,
+      "reaction": "initEvent",
+      "result": "{ undefined }",
+      "throws": false
+    }
+  ],
+  "idls": [
+    {
+      "file": "vendor/servo-script-bindings/simplified-idls/Event.simplified.webidl",
+      "sha256": "4008b8e640f1461e692cd8097e3ee4d864e919ed575fa4599d353c6a4fff3211"
+    }
+  ],
+  "native_base": {
+    "Event": "dom.base.EventTarget"
+  }
+}

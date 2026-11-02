@@ -72,6 +72,126 @@
           "reaction": null
         }
       }
+    },
+    {
+      "name": "event-target",
+      "hook_prefix": "evtTarget",
+      "output": "engines/wega/src/dom/generated/event-target.js",
+      "manifest": "engines/wega/src/dom/generated/event-target.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/EventTarget.webidl"
+      ],
+      "native_base": {
+        "EventTarget": "dom.event.EventTarget"
+      },
+      "base_mixins": [],
+      "globals": [
+        "EventTarget"
+      ],
+      "hooks": {
+        "evtTarget.construct.eventtarget": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "evtTarget.addEventListener": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "evtTarget.removeEventListener": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "evtTarget.dispatchEvent": {
+          "result": "{ boolean }",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "event",
+      "hook_prefix": "event",
+      "output": "engines/wega/src/dom/generated/event.js",
+      "manifest": "engines/wega/src/dom/generated/event.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/Event.simplified.webidl"
+      ],
+      "native_base": {
+        "Event": "dom.base.EventTarget"
+      },
+      "base_mixins": [],
+      "globals": [
+        "Event"
+      ],
+      "hooks": {
+        "event.construct.event": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "event.type": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "event.eventPhase": {
+          "result": "{ unsigned long }",
+          "reaction": null
+        },
+        "event.stopPropagation": {
+          "result": "{ undefined }",
+          "reaction": "stopPropagation"
+        },
+        "event.cancelBubble": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.cancelBubble.set": {
+          "result": "{ boolean }",
+          "reaction": "stopPropagation"
+        },
+        "event.stopImmediatePropagation": {
+          "result": "{ undefined }",
+          "reaction": "stopImmediatePropagation"
+        },
+        "event.bubbles": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.cancelable": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.returnValue": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.returnValue.set": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.preventDefault": {
+          "result": "{ undefined }",
+          "reaction": "preventDefault"
+        },
+        "event.defaultPrevented": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.composed": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.isTrusted": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.timeStamp": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "event.initEvent": {
+          "result": "{ undefined }",
+          "reaction": "initEvent"
+        }
+      }
     }
   ]
 }
