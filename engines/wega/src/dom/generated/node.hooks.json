@@ -1,0 +1,467 @@
+{
+  "base_mixins": [],
+  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
+  "family": "node",
+  "generator": "wega-webidl (step 07.a)",
+  "globals": [],
+  "hooks": [
+    {
+      "args": [
+        "unsigned short"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 20,
+      "member": "nodeType",
+      "name": "node.nodeType",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ unsigned long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 21,
+      "member": "nodeName",
+      "name": "node.nodeName",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 22,
+      "member": "baseURI",
+      "name": "node.baseURI",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 23,
+      "member": "isConnected",
+      "name": "node.isConnected",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 24,
+      "member": "ownerDocument",
+      "name": "node.ownerDocument",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 25,
+      "member": "parentNode",
+      "name": "node.parentNode",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 26,
+      "member": "parentElement",
+      "name": "node.parentElement",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 27,
+      "member": "hasChildNodes",
+      "name": "node.hasChildNodes",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 28,
+      "member": "childNodes",
+      "name": "node.childNodes",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 29,
+      "member": "firstChild",
+      "name": "node.firstChild",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 30,
+      "member": "lastChild",
+      "name": "node.lastChild",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 31,
+      "member": "previousSibling",
+      "name": "node.previousSibling",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 32,
+      "member": "nextSibling",
+      "name": "node.nextSibling",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 33,
+      "member": "nodeValue",
+      "name": "node.nodeValue",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-setter",
+      "line": 33,
+      "member": "nodeValue",
+      "name": "node.nodeValue.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 34,
+      "member": "textContent",
+      "name": "node.textContent",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "attribute-setter",
+      "line": 34,
+      "member": "textContent",
+      "name": "node.textContent.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 35,
+      "member": "normalize",
+      "name": "node.normalize",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 36,
+      "member": "cloneNode",
+      "name": "node.cloneNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 37,
+      "member": "isEqualNode",
+      "name": "node.isEqualNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 38,
+      "member": "isSameNode",
+      "name": "node.isSameNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 45,
+      "member": "compareDocumentPosition",
+      "name": "node.compareDocumentPosition",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ unsigned long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 46,
+      "member": "contains",
+      "name": "node.contains",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 47,
+      "member": "lookupPrefix",
+      "name": "node.lookupPrefix",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 48,
+      "member": "lookupNamespaceURI",
+      "name": "node.lookupNamespaceURI",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 49,
+      "member": "isDefaultNamespace",
+      "name": "node.isDefaultNamespace",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 50,
+      "member": "insertBefore",
+      "name": "node.insertBefore",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 51,
+      "member": "appendChild",
+      "name": "node.appendChild",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 52,
+      "member": "replaceChild",
+      "name": "node.replaceChild",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Node",
+      "kind": "operation",
+      "line": 53,
+      "member": "removeChild",
+      "name": "node.removeChild",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": true
+    }
+  ],
+  "idls": [
+    {
+      "file": "vendor/servo-script-bindings/simplified-idls/Node.simplified.webidl",
+      "sha256": "66a0009432e4c0022e680ab4352c9d99ae21cd204ab67cd5cbc2c2e9cead57b7"
+    }
+  ],
+  "native_base": {
+    "EventTarget": "dom.event.EventTarget",
+    "Node": "dom.base.EventTarget"
+  }
+}

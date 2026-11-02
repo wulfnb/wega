@@ -1,0 +1,52 @@
+{
+  "pins": [
+    {
+      "path": "vendor/servo-script-bindings/webidls/CharacterData.webidl",
+      "sha256": "e39377156a6a172c5a6e72b697d76148ff60c50e2dac364461399fd1386cd4ce",
+      "origin": "https://dom.spec.whatwg.org/#characterdata",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "vendor/servo-script-bindings/webidls/Text.webidl",
+      "sha256": "9f2dcac227b53e8011070a8ea1b3430ba092d2915184861486a1cd8ef2bdbc48",
+      "origin": "https://dom.spec.whatwg.org/#text",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "vendor/servo-script-bindings/webidls/Comment.webidl",
+      "sha256": "1b16ed9f9e0e073f33f1f37bb723c322b98d8e2017f61b1e61be538074e3b4ea",
+      "origin": "https://dom.spec.whatwg.org/#comment",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "vendor/servo-script-bindings/simplified-idls/EventTarget.webidl",
+      "sha256": "f9837ef5b6d98eb236bce527888f29d41ba3f2696c0ad224935ea81b9fac3b74",
+      "origin": "https://dom.spec.whatwg.org/#eventtarget (simplified for generator pipeline)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "vendor/servo-script-bindings/simplified-idls/Event.simplified.webidl",
+      "sha256": "4008b8e640f1461e692cd8097e3ee4d864e919ed575fa4599d353c6a4fff3211",
+      "origin": "https://dom.spec.whatwg.org/#event (simplified for generator pipeline)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "vendor/servo-script-bindings/simplified-idls/Node.simplified.webidl",
+      "sha256": "66a0009432e4c0022e680ab4352c9d99ae21cd204ab67cd5cbc2c2e9cead57b7",
+      "origin": "https://dom.spec.whatwg.org/#node (simplified for generator pipeline)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "vendor/servo-script-bindings/simplified-idls/Element.simplified.webidl",
+      "sha256": "e00e3cef5ee8c57970f68d21272930fb0a8455ac67dd3e0b929c8c5eb92f115e",
+      "origin": "https://dom.spec.whatwg.org/#element (simplified for generator pipeline)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "vendor/servo-script-bindings/simplified-idls/Document.simplified.webidl",
+      "sha256": "2bea70dcb3e694310f06b3223de4efd4f0c0da74cdf7ecbc63537106b737aa6d",
+      "origin": "https://dom.spec.whatwg.org/#document (simplified for generator pipeline)",
+      "license": "MPL-2.0"
+    }
+  ]
+}

@@ -15,7 +15,10 @@ fn pinned_dom_wpt_subset_has_no_regressions() {
     for (file, expected) in upstream["files"].as_object().unwrap() {
         let bytes = std::fs::read(directory.join(file)).unwrap();
         assert_eq!(
-            format!("{:x}", Sha256::digest(bytes)),
+            Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
             expected.as_str().unwrap(),
             "Pinned WPT source changed: {file}"
         );
@@ -24,7 +27,10 @@ fn pinned_dom_wpt_subset_has_no_regressions() {
         let source =
             std::fs::read_to_string(directory.join(case["file"].as_str().unwrap())).unwrap();
         assert_eq!(
-            format!("{:x}", Sha256::digest(source.as_bytes())),
+            Sha256::digest(source.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
             case["sha256"].as_str().unwrap()
         );
         let mut remaining = source.as_str();

@@ -881,7 +881,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             use sha2::{Digest, Sha256};
                             let mut hasher = Sha256::new();
                             hasher.update(&frame.rgba);
-                            let hash = format!("{:x}", hasher.finalize());
+                            let hash = hasher
+                                .finalize()
+                                .iter()
+                                .map(|byte| format!("{byte:02x}"))
+                                .collect::<String>();
                             write(&Event::DocumentCaptured {
                                 context,
                                 width: frame.width,

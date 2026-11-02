@@ -1,0 +1,218 @@
+{
+  "base_mixins": [
+    "ChildNode",
+    "NonDocumentTypeChildNode"
+  ],
+  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
+  "family": "character-data",
+  "generator": "wega-webidl (step 07.a)",
+  "globals": [
+    "Text",
+    "Comment"
+  ],
+  "hooks": [
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "CharacterData",
+      "kind": "attribute-getter",
+      "line": 14,
+      "member": "data",
+      "name": "charData.data",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "CharacterData",
+      "kind": "attribute-setter",
+      "line": 14,
+      "member": "data",
+      "name": "charData.data.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "CharacterData",
+      "kind": "attribute-getter",
+      "line": 15,
+      "member": "length",
+      "name": "charData.length",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ unsigned long }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long",
+        "unsigned long"
+      ],
+      "interface": "CharacterData",
+      "kind": "operation",
+      "line": 16,
+      "member": "substringData",
+      "name": "charData.substringData",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "CharacterData",
+      "kind": "operation",
+      "line": 18,
+      "member": "appendData",
+      "name": "charData.appendData",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long",
+        "DOMString"
+      ],
+      "interface": "CharacterData",
+      "kind": "operation",
+      "line": 19,
+      "member": "insertData",
+      "name": "charData.insertData",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "unsigned long",
+        "unsigned long"
+      ],
+      "interface": "CharacterData",
+      "kind": "operation",
+      "line": 21,
+      "member": "deleteData",
+      "name": "charData.deleteData",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "unsigned long",
+        "unsigned long",
+        "DOMString"
+      ],
+      "interface": "CharacterData",
+      "kind": "operation",
+      "line": 23,
+      "member": "replaceData",
+      "name": "charData.replaceData",
+      "new_object": false,
+      "pure": false,
+      "reaction": "characterData",
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Text",
+      "kind": "constructor",
+      "line": 15,
+      "member": "constructor",
+      "name": "charData.construct.text",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ id: string, info: object }",
+      "throws": true
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "Text",
+      "kind": "operation",
+      "line": 16,
+      "member": "splitText",
+      "name": "charData.splitText",
+      "new_object": true,
+      "pure": false,
+      "reaction": "splitText",
+      "result": "{ string }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Text",
+      "kind": "attribute-getter",
+      "line": 18,
+      "member": "wholeText",
+      "name": "charData.wholeText",
+      "new_object": false,
+      "pure": true,
+      "reaction": null,
+      "result": "{ string }",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Comment",
+      "kind": "constructor",
+      "line": 14,
+      "member": "constructor",
+      "name": "charData.construct.comment",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ id: string, info: object }",
+      "throws": true
+    }
+  ],
+  "idls": [
+    {
+      "file": "vendor/servo-script-bindings/webidls/CharacterData.webidl",
+      "sha256": "e39377156a6a172c5a6e72b697d76148ff60c50e2dac364461399fd1386cd4ce"
+    },
+    {
+      "file": "vendor/servo-script-bindings/webidls/Text.webidl",
+      "sha256": "9f2dcac227b53e8011070a8ea1b3430ba092d2915184861486a1cd8ef2bdbc48"
+    },
+    {
+      "file": "vendor/servo-script-bindings/webidls/Comment.webidl",
+      "sha256": "1b16ed9f9e0e073f33f1f37bb723c322b98d8e2017f61b1e61be538074e3b4ea"
+    }
+  ],
+  "native_base": {
+    "CharacterData": "dom.base.Node",
+    "Node": "dom.base.Node"
+  }
+}

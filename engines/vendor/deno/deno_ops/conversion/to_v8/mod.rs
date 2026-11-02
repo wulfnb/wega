@@ -1,4 +1,5 @@
 // Copyright 2018-2026 the Deno authors. MIT license.
+// Modified by Wega contributors, 2026: support Syn 3 generic parameters.
 
 mod r#enum;
 mod r#struct;
@@ -118,7 +119,7 @@ fn create_impl(
       let lifetime = syn::Lifetime::new("'a", proc_macro2::Span::call_site());
       impl_generics
         .params
-        .insert(0, syn::LifetimeParam::new(lifetime.clone()).into());
+        .insert(0, syn::GenericParam::Lifetime(syn::LifetimeParam::new(lifetime.clone())));
       lifetime
     }
   };

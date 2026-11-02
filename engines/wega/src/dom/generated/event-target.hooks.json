@@ -1,0 +1,80 @@
+{
+  "base_mixins": [],
+  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
+  "family": "event-target",
+  "generator": "wega-webidl (step 07.a)",
+  "globals": [
+    "EventTarget"
+  ],
+  "hooks": [
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "EventTarget",
+      "kind": "constructor",
+      "line": 8,
+      "member": "constructor",
+      "name": "evtTarget.construct.eventtarget",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ id: string, info: object }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "EventTarget",
+      "kind": "operation",
+      "line": 9,
+      "member": "addEventListener",
+      "name": "evtTarget.addEventListener",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "EventTarget",
+      "kind": "operation",
+      "line": 10,
+      "member": "removeEventListener",
+      "name": "evtTarget.removeEventListener",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ undefined }",
+      "throws": true
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "EventTarget",
+      "kind": "operation",
+      "line": 11,
+      "member": "dispatchEvent",
+      "name": "evtTarget.dispatchEvent",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "{ boolean }",
+      "throws": false
+    }
+  ],
+  "idls": [
+    {
+      "file": "vendor/servo-script-bindings/simplified-idls/EventTarget.webidl",
+      "sha256": "f9837ef5b6d98eb236bce527888f29d41ba3f2696c0ad224935ea81b9fac3b74"
+    }
+  ],
+  "native_base": {
+    "EventTarget": "dom.event.EventTarget"
+  }
+}

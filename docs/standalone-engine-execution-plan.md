@@ -362,6 +362,11 @@ cross-realm handling and reentrant native calls before scaling the generator.
 family; unsupported IDL constructs fail generation explicitly. No interface is
 declared supported solely because its class/prototype was generated.
 
+**Implementation status (2 November 2026): subtask 07.a in progress.** The
+`tools/webidl/` generator, pinned IDL inputs and the `character-data` family
+are being delivered first; the subtask split, construct policy and binding
+conventions are recorded in the [Step 07 contract](step-07-webidl-generation.md).
+
 ### 08 — Expand DOM, events and browser Web APIs by audited families
 
 **Depends on:** 07.
@@ -376,6 +381,15 @@ less common interfaces, to a semantic implementation or an explicit blocker.
 **Done when:** each migrated family passes its selected upstream IDL/behavior tests
 and real framework interactions; wrapper GC, detached nodes, DOM budgets and
 reentrant mutation remain correct. No missing-feature success shims are counted.
+
+**Implementation status (4 November 2026): subtasks 08.a and 08.b in progress.** The Step 07
+generator (07.a) is in place with the `character-data` family. Step 08 will extend the
+generator incrementally and migrate families in the order: Event → Attr → Node → Element
+→ Document → collections/mutation/observers. The full subtask split and construct policy
+is recorded in the [Step 08 contract](step-08-dom-events-web-apis.md). Generator extensions
+for `const`, `[Constant]`, `[SameObject]`, `[SetterThrows]` are complete (08.a). EventTarget
+and Event families are generated with simplified IDL pins (08.b); full signatures deferred
+to JS layer.
 
 ### 09 — Preserve navigation and browser integrations
 

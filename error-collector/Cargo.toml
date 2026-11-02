@@ -12,7 +12,7 @@ actix-web = {version="4",default-features=false,features=["macros"]}
 serde = {version="1",features=["derive"]}
 serde_json = "1"
 chrono = {version="0.4",features=["serde"]}
-rusqlite = {version="0.38",features=["bundled"]}
+rusqlite = {version="0.41",features=["bundled"]}
 ed25519-dalek = "=3.0.0"
 sha2 = "=0.11.1"
 

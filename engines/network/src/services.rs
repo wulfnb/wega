@@ -97,7 +97,12 @@ impl StorageHub {
             if map.len() >= 32 {
                 map.clear();
             }
-            let directory = root.join(format!("{:x}", Sha256::digest(origin.as_bytes())));
+            let directory = root.join(
+                Sha256::digest(origin.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>(),
+            );
             std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
             // Preserve the existing Deno SQLite schema and origin-directory hash.
             let db = Database::open(directory.join("local_storage"))
@@ -413,7 +418,7 @@ mod tests {
         let origin = "https://storage.example";
         let directory = root
             .path()
-            .join(format!("{:x}", Sha256::digest(origin.as_bytes())));
+            .join("df82d350becf1a61bf61bb984523cb8563b3b9db0e85375e299cd6dce0a4543c");
         std::fs::create_dir_all(&directory).unwrap();
         let old = Database::open(directory.join("local_storage")).unwrap();
         old.execute_batch("CREATE TABLE data (key VARCHAR UNIQUE,value VARCHAR);INSERT INTO data VALUES ('old','retained');").unwrap();

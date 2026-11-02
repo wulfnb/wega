@@ -1,0 +1,974 @@
+{
+  "families": [
+    {
+      "name": "character-data",
+      "hook_prefix": "charData",
+      "output": "engines/wega/src/dom/generated/character-data.js",
+      "manifest": "engines/wega/src/dom/generated/character-data.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/webidls/CharacterData.webidl",
+        "vendor/servo-script-bindings/webidls/Text.webidl",
+        "vendor/servo-script-bindings/webidls/Comment.webidl"
+      ],
+      "native_base": {
+        "Node": "dom.base.Node",
+        "CharacterData": "dom.base.Node"
+      },
+      "base_mixins": [
+        "ChildNode",
+        "NonDocumentTypeChildNode"
+      ],
+      "globals": [
+        "Text",
+        "Comment"
+      ],
+      "hooks": {
+        "charData.data": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "charData.data.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "charData.length": {
+          "result": "{ unsigned long }",
+          "reaction": null
+        },
+        "charData.substringData": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "charData.appendData": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "charData.insertData": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "charData.deleteData": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "charData.replaceData": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "charData.wholeText": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "charData.splitText": {
+          "result": "{ string }",
+          "reaction": "splitText"
+        },
+        "charData.construct.text": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "charData.construct.comment": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "event-target",
+      "hook_prefix": "evtTarget",
+      "output": "engines/wega/src/dom/generated/event-target.js",
+      "manifest": "engines/wega/src/dom/generated/event-target.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/EventTarget.webidl"
+      ],
+      "native_base": {
+        "EventTarget": "dom.event.EventTarget"
+      },
+      "base_mixins": [],
+      "globals": [
+        "EventTarget"
+      ],
+      "hooks": {
+        "evtTarget.construct.eventtarget": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "evtTarget.addEventListener": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "evtTarget.removeEventListener": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "evtTarget.dispatchEvent": {
+          "result": "{ boolean }",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "event",
+      "hook_prefix": "event",
+      "output": "engines/wega/src/dom/generated/event.js",
+      "manifest": "engines/wega/src/dom/generated/event.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/Event.simplified.webidl"
+      ],
+      "native_base": {
+        "Event": "dom.base.EventTarget"
+      },
+      "base_mixins": [],
+      "globals": [
+        "Event"
+      ],
+      "hooks": {
+        "event.construct.event": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "event.type": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "event.eventPhase": {
+          "result": "{ unsigned long }",
+          "reaction": null
+        },
+        "event.stopPropagation": {
+          "result": "{ undefined }",
+          "reaction": "stopPropagation"
+        },
+        "event.cancelBubble": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.cancelBubble.set": {
+          "result": "{ boolean }",
+          "reaction": "stopPropagation"
+        },
+        "event.stopImmediatePropagation": {
+          "result": "{ undefined }",
+          "reaction": "stopImmediatePropagation"
+        },
+        "event.bubbles": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.cancelable": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.returnValue": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.returnValue.set": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.preventDefault": {
+          "result": "{ undefined }",
+          "reaction": "preventDefault"
+        },
+        "event.defaultPrevented": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.composed": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.isTrusted": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "event.timeStamp": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "event.initEvent": {
+          "result": "{ undefined }",
+          "reaction": "initEvent"
+        }
+      }
+    },
+    {
+      "name": "node",
+      "hook_prefix": "node",
+      "output": "engines/wega/src/dom/generated/node.js",
+      "manifest": "engines/wega/src/dom/generated/node.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/Node.simplified.webidl"
+      ],
+      "native_base": {
+        "EventTarget": "dom.event.EventTarget",
+        "Node": "dom.base.EventTarget"
+      },
+      "base_mixins": [],
+      "globals": [],
+      "hooks": {
+        "node.nodeType": {
+          "result": "{ unsigned long }",
+          "reaction": null
+        },
+        "node.nodeName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.baseURI": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.isConnected": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.ownerDocument": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.parentNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.parentElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.hasChildNodes": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.childNodes": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.firstChild": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.lastChild": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.previousSibling": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.nextSibling": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.nodeValue": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.nodeValue.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "node.textContent": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.textContent.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "node.normalize": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "node.cloneNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.isEqualNode": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.isSameNode": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.compareDocumentPosition": {
+          "result": "{ unsigned long }",
+          "reaction": null
+        },
+        "node.contains": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.lookupPrefix": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.lookupNamespaceURI": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.isDefaultNamespace": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.insertBefore": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.appendChild": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.replaceChild": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.removeChild": {
+          "result": "{ string }",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "element",
+      "hook_prefix": "element",
+      "output": "engines/wega/src/dom/generated/element.js",
+      "manifest": "engines/wega/src/dom/generated/element.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/Element.simplified.webidl"
+      ],
+      "native_base": {
+        "Node": "dom.base.EventTarget"
+      },
+      "base_mixins": [
+        "ChildNode",
+        "NonDocumentTypeChildNode",
+        "ParentNode",
+        "ActivatableElement",
+        "ARIAMixin",
+        "Animatable"
+      ],
+      "globals": [
+        "Element"
+      ],
+      "hooks": {
+        "element.construct.element": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "element.namespaceURI": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.prefix": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.localName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.tagName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.id": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.id.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "element.className": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.className.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "element.classList": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.slot": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.slot.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "element.hasAttributes": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.attributes": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getAttributeNames": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getAttribute": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getAttributeNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.toggleAttribute": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.setAttribute": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.setAttributeNS": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.removeAttribute": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.removeAttributeNS": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.hasAttribute": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.hasAttributeNS": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.closest": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.matches": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.webkitMatchesSelector": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "element.getElementsByTagName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getElementsByTagNameNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getElementsByClassName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.insertAdjacentElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.insertAdjacentText": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.insertAdjacentHTML": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.attachShadow": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.shadowRoot": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.customElementRegistry": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getClientRects": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.getBoundingClientRect": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.scrollIntoView": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.scroll": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.scrollTo": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.scrollBy": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "element.scrollTop": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.scrollTop.set": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.scrollLeft": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.scrollLeft.set": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.scrollWidth": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.scrollHeight": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.clientTop": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.clientLeft": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.clientWidth": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.clientHeight": {
+          "result": "{ long }",
+          "reaction": null
+        },
+        "element.currentCSSZoom": {
+          "result": "{ double }",
+          "reaction": null
+        },
+        "element.setHTMLUnsafe": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "element.getHTML": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.innerHTML": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.innerHTML.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "element.outerHTML": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "element.outerHTML.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        }
+      }
+    },
+    {
+      "name": "document",
+      "hook_prefix": "document",
+      "output": "engines/wega/src/dom/generated/document.js",
+      "manifest": "engines/wega/src/dom/generated/document.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/Document.simplified.webidl"
+      ],
+      "native_base": {
+        "Node": "dom.base.EventTarget"
+      },
+      "base_mixins": [
+        "NonElementParentNode",
+        "ParentNode",
+        "DocumentOrShadowRoot",
+        "GlobalEventHandlers"
+      ],
+      "globals": [
+        "Document"
+      ],
+      "hooks": {
+        "document.construct.document": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "document.implementation": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.URL": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.documentURI": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.compatMode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.characterSet": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.charset": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.inputEncoding": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.contentType": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.doctype": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.documentElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getElementsByTagName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getElementsByTagNameNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getElementsByClassName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createElementNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createDocumentFragment": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.createTextNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createCDATASection": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createComment": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createProcessingInstruction": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.importNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.adoptNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createAttribute": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createAttributeNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createEvent": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.createRange": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createNodeIterator": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createTreeWalker": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.domain": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.domain.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.referrer": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.cookie": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.cookie.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.lastModified": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.readyState": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.location": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.namedItem": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.title": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.title.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.dir": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.dir.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.body": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.body.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.head": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.images": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.embeds": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.plugins": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.links": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.forms": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.scripts": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getElementsByName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.currentScript": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.open": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.close": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.write": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.writeln": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.defaultView": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.hasFocus": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.execCommand": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandEnabled": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandIndeterm": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandState": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandSupported": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandValue": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.hidden": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.visibilityState": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onreadystatechange": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onreadystatechange.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.fgColor": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.fgColor.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.bgColor": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.bgColor.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.anchors": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.applets": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.clear": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.captureEvents": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.releaseEvents": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.fullscreenEnabled": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.fullscreen": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.exitFullscreen": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.onfullscreenchange": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onfullscreenchange.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onfullscreenerror": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onfullscreenerror.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.scrollingElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getSelection": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.timeline": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.parseHTML": {
+          "result": "{ string }",
+          "reaction": null
+        }
+      }
+    }
+  ]
+}

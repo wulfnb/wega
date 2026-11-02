@@ -200,5 +200,17 @@ must be reported explicitly; do not silently discard the old data.
   [complete delivery checklist](step-02-engine-contract.md) and its later-step
   boundaries; network authority, OS sandboxing, device APIs and real subframes
   are not claimed by this contract delivery.
+- Step 07 subtask 07.a is **in progress** (2 November 2026): the `tools/webidl/`
+  Rust generator pins IDL inputs with hashes/origins/licenses and generates the
+  `character-data` family (CharacterData/Text/Comment) bindings plus a semantic
+  hook manifest. Unsupported IDL constructs fail generation explicitly. The
+  generated output is not yet wired into the worker bootstrap (07.b). See the
+  [Step 07 contract](step-07-webidl-generation.md).
+- Step 08 subtasks 08.a and 08.b are **in progress** (4 November 2026):
+  generator extended with `const`, `[Constant]`, `[SameObject]`, `[SetterThrows]`
+  support. EventTarget (4 hooks) and Event (17 hooks) families generated with
+  simplified IDL pins. Full signatures (callbacks, unions, dictionaries,
+  nullable interface types, sequence returns) deferred to JS layer. See the
+  [Step 08 contract](step-08-dom-events-web-apis.md).
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.

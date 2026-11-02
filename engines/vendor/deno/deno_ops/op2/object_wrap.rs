@@ -1,4 +1,5 @@
 // Copyright 2018-2026 the Deno authors. MIT license.
+// Modified by Wega contributors, 2026: preserve Syn 3 function modifiers.
 
 use proc_macro2::TokenStream;
 use quote::ToTokens;
@@ -102,6 +103,7 @@ pub(crate) fn generate_impl_ops(
 
       let mut func = ItemFn {
         attrs: item_fn_attrs,
+        modifiers: method.modifiers,
         vis: method.vis,
         sig: method.sig,
         block: Box::new(method.block),
