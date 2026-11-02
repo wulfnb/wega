@@ -1,6 +1,12 @@
 //! Bounded HTTP/cache/cookie broker. Capabilities travel only over private worker IPC.
 //! The loopback socket speaks a binary-framed protocol, never HTTP or WebSocket.
 use serde::{Deserialize, Serialize};
+mod connection;
+mod cors;
+mod services;
+mod websocket;
+use connection::Connection;
+pub use services::ResourceRequest;
 use std::{
     collections::{HashMap, VecDeque},
     io::{Read, Write},
@@ -14,6 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+use websocket::resolve_target;
 use wega_protocol::{
     authority::{Origin, Principal},
     identity::{PartitionId, ServiceIdentity, ServiceSessionId},
@@ -25,7 +32,11 @@ pub const MAX_BODY: usize = 8 * 1024 * 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;
 
 fn is_private_or_loopback(host: &str) -> bool {
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    let host = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
     if host == "localhost" || host.ends_with(".localhost") {
         return true;
     }
@@ -41,7 +52,13 @@ fn is_private_or_loopback(host: &str) -> bool {
                     || octets[0] == 0
             }
             std::net::IpAddr::V6(v6) => {
-                v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00
+                v6.is_loopback()
+                    || v6.is_unspecified()
+                    || (v6.segments()[0] & 0xfe00) == 0xfc00
+                    || (v6.segments()[0] & 0xffc0) == 0xfe80
+                    || v6
+                        .to_ipv4_mapped()
+                        .is_some_and(|ip| is_private_or_loopback(&ip.to_string()))
             }
         }
     } else {
@@ -62,6 +79,7 @@ pub enum ResourceDestination {
     Fetch,
     Xhr,
     WebSocket,
+    Module,
     Subresource,
 }
 
@@ -79,6 +97,9 @@ pub struct HstsPolicy {
 impl HstsPolicy {
     pub fn update(&mut self, host: &str, header_val: &str) {
         let host = host.trim_end_matches('.').to_ascii_lowercase();
+        if host.is_empty() || host.len() > 253 || header_val.len() > MAX_HEADER {
+            return;
+        }
         let mut max_age = None;
         let mut include_subdomains = false;
         for part in header_val.split(';') {
@@ -95,10 +116,29 @@ impl HstsPolicy {
             if age == 0 {
                 self.entries.remove(&host);
             } else {
+                // Bound server-controlled state and duration arithmetic. A hostile
+                // max-age must not panic and permanently remove a broker worker.
+                let now = Instant::now();
+                let Some(expires_at) =
+                    now.checked_add(Duration::from_secs(age.min(365 * 24 * 60 * 60)))
+                else {
+                    return;
+                };
+                self.entries.retain(|_, entry| entry.expires_at > now);
+                if self.entries.len() >= 4096
+                    && !self.entries.contains_key(&host)
+                    && let Some(oldest) = self
+                        .entries
+                        .iter()
+                        .min_by_key(|(_, entry)| entry.expires_at)
+                        .map(|(host, _)| host.clone())
+                {
+                    self.entries.remove(&oldest);
+                }
                 self.entries.insert(
                     host,
                     HstsEntry {
-                        expires_at: Instant::now() + Duration::from_secs(age),
+                        expires_at,
                         include_subdomains,
                     },
                 );
@@ -110,16 +150,17 @@ impl HstsPolicy {
         let now = Instant::now();
         self.entries.retain(|_, entry| entry.expires_at > now);
         let host = host.trim_end_matches('.').to_ascii_lowercase();
-        if let Some(entry) = self.entries.get(&host) {
-            if entry.expires_at > now {
-                return true;
-            }
+        if let Some(entry) = self.entries.get(&host)
+            && entry.expires_at > now
+        {
+            return true;
         }
         for (domain, entry) in &self.entries {
-            if entry.include_subdomains && entry.expires_at > now {
-                if host.ends_with(&format!(".{domain}")) {
-                    return true;
-                }
+            if entry.include_subdomains
+                && entry.expires_at > now
+                && host.ends_with(&format!(".{domain}"))
+            {
+                return true;
             }
         }
         false
@@ -161,14 +202,26 @@ impl Policy {
         if !self.permits(url) {
             return Err("Network request blocked by browsing policy".into());
         }
-        if self.blocked_destinations.contains(&request.destination) {
-            return Err(format!("Resource destination {:?} blocked by policy", request.destination));
+        if self.blocked_destinations.contains(&request.destination)
+            || (request.destination == ResourceDestination::Module
+                && self
+                    .blocked_destinations
+                    .contains(&ResourceDestination::Script))
+        {
+            return Err(format!(
+                "Resource destination {:?} blocked by policy",
+                request.destination
+            ));
         }
         let target_host = url.host_str().unwrap_or_default();
         if is_private_or_loopback(target_host) && !self.allow_loopback {
             let allowed_explicitly = self.allowed_hosts.split_whitespace().any(|rule| {
-                let rule = rule.trim_start_matches("*.").trim_end_matches('.').to_ascii_lowercase();
-                !rule.is_empty() && (target_host == rule || target_host.ends_with(&format!(".{rule}")))
+                let rule = rule
+                    .trim_start_matches("*.")
+                    .trim_end_matches('.')
+                    .to_ascii_lowercase();
+                !rule.is_empty()
+                    && (target_host == rule || target_host.ends_with(&format!(".{rule}")))
             });
             if !allowed_explicitly {
                 let initiator_is_private = request
@@ -185,14 +238,25 @@ impl Policy {
                     .next()
                     .unwrap_or("");
                 let origin_is_private = is_private_or_loopback(origin_host);
-                if !initiator_is_private && !origin_is_private && !request.origin.is_empty() && request.origin != "null" {
-                    return Err(format!("Private network target '{}' blocked by policy", target_host));
+                if !initiator_is_private
+                    && !origin_is_private
+                    && !request.origin.is_empty()
+                    && request.origin != "null"
+                {
+                    return Err(format!(
+                        "Private network target '{}' blocked by policy",
+                        target_host
+                    ));
                 }
             }
         }
         Ok(())
     }
 }
+fn default_mode() -> String {
+    "cors".into()
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Request {
     pub url: String,
@@ -210,6 +274,8 @@ pub struct Request {
     pub cache: String,
     #[serde(default)]
     pub destination: ResourceDestination,
+    #[serde(default = "default_mode")]
+    pub mode: String,
     pub limit: usize,
 }
 impl Request {
@@ -226,6 +292,7 @@ impl Request {
             redirect: "follow".into(),
             cache: "default".into(),
             destination: ResourceDestination::Document,
+            mode: "navigate".into(),
             limit,
         }
     }
@@ -242,11 +309,15 @@ impl Request {
             redirect: "follow".into(),
             cache: "default".into(),
             destination,
+            mode: "cors".into(),
             limit,
         }
     }
     fn validate(&self) -> Result<(), String> {
-        if self.limit == 0
+        if !matches!(
+            self.mode.as_str(),
+            "cors" | "no-cors" | "same-origin" | "navigate"
+        ) || self.limit == 0
             || self.limit > MAX_BODY
             || self.body.len() > MAX_BODY
             || self.headers.len() > 128
@@ -386,6 +457,7 @@ pub struct LocalClient(reqwest::blocking::Client);
 impl LocalClient {
     pub fn new() -> Result<Self, String> {
         reqwest::blocking::Client::builder()
+            .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(15))
             .connect_timeout(Duration::from_secs(5))
@@ -422,9 +494,15 @@ impl LocalClient {
     ) -> Result<Response, String> {
         request.validate()?;
         let mut url = Url::parse(&request.url).map_err(|e| e.to_string())?;
-        if url.scheme() == "http" && let Some(hsts) = hsts {
+        if url.scheme() == "http"
+            && let Some(hsts) = hsts
+        {
             let host = url.host_str().unwrap_or_default();
-            if hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).should_upgrade(host) {
+            if hsts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .should_upgrade(host)
+            {
                 let _ = url.set_scheme("https");
                 if url.port() == Some(80) {
                     let _ = url.set_port(None);
@@ -482,7 +560,27 @@ impl LocalClient {
             if request.cache == "only-if-cached" {
                 return Err("only-if-cached cache miss".into());
             }
-            let mut builder = self.0.request(
+            let current_policy = policy
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            let pinned;
+            let client = if current_policy.allow_loopback {
+                &self.0
+            } else {
+                let addresses = resolve_target(&url, &current_policy)?;
+                pinned = reqwest::blocking::Client::builder()
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .timeout(Duration::from_secs(15))
+                    .connect_timeout(Duration::from_secs(5))
+                    .resolve_to_addrs(url.host_str().ok_or("Missing request host")?, &addresses)
+                    .user_agent("Wega/0.1 (Blitz/V8)")
+                    .build()
+                    .map_err(|error| error.to_string())?;
+                &pinned
+            };
+            let mut builder = client.request(
                 method
                     .parse::<reqwest::Method>()
                     .map_err(|e| e.to_string())?,
@@ -544,7 +642,9 @@ impl LocalClient {
                     if url.scheme() == "https" && next.scheme() == "http" {
                         let next_host = next.host_str().unwrap_or_default();
                         let upgraded = if let Some(hsts) = hsts {
-                            hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).should_upgrade(next_host)
+                            hsts.lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .should_upgrade(next_host)
                         } else {
                             false
                         };
@@ -554,7 +654,9 @@ impl LocalClient {
                                 let _ = next.set_port(None);
                             }
                         } else {
-                            return Err("Insecure redirect downgrade from HTTPS to HTTP forbidden".into());
+                            return Err(
+                                "Insecure redirect downgrade from HTTPS to HTTP forbidden".into()
+                            );
                         }
                     }
                     policy
@@ -594,12 +696,16 @@ impl LocalClient {
                 redirected: hop > 0,
                 body: bytes,
             };
-            if url.scheme() == "https" && let Some(hsts) = hsts {
+            if url.scheme() == "https"
+                && let Some(hsts) = hsts
+            {
                 for (name, val) in &response.headers {
-                    if name.eq_ignore_ascii_case("strict-transport-security") {
-                        if let Some(host) = url.host_str() {
-                            hsts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).update(host, val);
-                        }
+                    if name.eq_ignore_ascii_case("strict-transport-security")
+                        && let Some(host) = url.host_str()
+                    {
+                        hsts.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .update(host, val);
                     }
                 }
             }
@@ -621,8 +727,41 @@ struct Session {
     scope: String,
     identity: ServiceIdentity,
     bound: bool,
+    inherited_only: AtomicBool,
+    #[cfg(any(unix, windows))]
+    channels: Mutex<Vec<Arc<wega_platform::ipc::Channel>>>,
     revoked: AtomicBool,
     navigation: Mutex<NavigationReceipt>,
+}
+
+impl Session {
+    fn document(&self) -> Option<Url> {
+        let receipt = self
+            .navigation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        receipt
+            .committed
+            .clone()
+            .or_else(|| receipt.last.clone())
+            .or_else(|| {
+                receipt
+                    .allowed
+                    .first()
+                    .filter(|url| !matches!(url.scheme(), "http" | "https"))
+                    .cloned()
+            })
+    }
+    fn script_cookie_scope(&self, url: &Url) -> Result<(), String> {
+        if !self.bound {
+            return Ok(());
+        }
+        let document = self.document().ok_or("No document cookie authority")?;
+        if !matches!(document.scheme(), "http" | "https") || document.origin() != url.origin() {
+            return Err("Cookie document origin mismatch".into());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -662,6 +801,9 @@ pub struct SessionHandle {
     token: String,
 }
 impl SessionHandle {
+    pub fn cookie_jar(&self) -> &Cookies {
+        &self.session.cookies
+    }
     pub fn identity(&self) -> ServiceIdentity {
         self.session.identity
     }
@@ -682,6 +824,14 @@ impl SessionHandle {
                 last == base
             })
             .map(|_| url.clone());
+        if committed.is_none() {
+            self.broker
+                .sockets
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .revoke(self.session.identity.service);
+        }
+        receipt.last = None;
         receipt.allowed = vec![url.clone()];
         receipt.committed = committed;
     }
@@ -710,6 +860,24 @@ impl SessionHandle {
     }
     pub fn revoke(&self) {
         self.session.revoked.store(true, Ordering::Release);
+        self.broker
+            .sockets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .revoke(self.session.identity.service);
+        #[cfg(any(unix, windows))]
+        for channel in self
+            .session
+            .channels
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+        {
+            let _ = channel.shutdown(std::net::Shutdown::Both);
+        }
+        if let Ok(mut storage) = self.broker.storage.try_lock() {
+            storage.revoke(self.session.identity.service);
+        }
         self.broker
             .sessions
             .lock()
@@ -748,6 +916,111 @@ impl Drop for SessionHandle {
         self.revoke();
     }
 }
+
+#[cfg(any(unix, windows))]
+impl SessionHandle {
+    /// Each preconnected endpoint is tied to this service, independent of a token
+    /// supplied inside the packet. This session can no longer use the TCP listener.
+    pub fn inherited_channels(
+        &self,
+        count: usize,
+    ) -> Result<Vec<wega_platform::ipc::Channel>, String> {
+        use wega_platform::ipc::Channel;
+        if !self.session.bound
+            || count == 0
+            || count > 4
+            || self.session.revoked.load(Ordering::Acquire)
+        {
+            return Err("Invalid inherited broker session".into());
+        }
+        if self.session.inherited_only.swap(true, Ordering::AcqRel) {
+            return Err("Broker transport already selected".into());
+        }
+        // Serialize publication with revoke(), including the revoked check. A
+        // revocation during setup must not miss a newly created idle endpoint.
+        let mut published = self
+            .session
+            .channels
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.session.revoked.load(Ordering::Acquire) {
+            return Err("Revoked broker capability".into());
+        }
+        let mut children = Vec::new();
+        let mut controllers = Vec::new();
+        for _ in 0..count {
+            let (server, child) = Channel::pair().map_err(|error| error.to_string())?;
+            server
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .map_err(|error| error.to_string())?;
+            let controller = Arc::new(server.try_clone().map_err(|error| error.to_string())?);
+            controllers.push(controller.clone());
+            let broker = self.broker.clone();
+            let expected = self.session.clone();
+            std::thread::Builder::new()
+                .name("wega-broker-channel".into())
+                .spawn(move || {
+                    let _shutdown = ChannelShutdown(controller);
+                    let mut stream = server;
+                    loop {
+                        let _ = stream.set_read_timeout(None);
+                        let mut first = [0_u8];
+                        if stream.read_exact(&mut first).is_err() {
+                            break;
+                        }
+                        if stream
+                            .set_read_timeout(Some(Duration::from_secs(20)))
+                            .is_err()
+                        {
+                            break;
+                        }
+                        let mut connection = Connection::Inherited(stream);
+                        let result =
+                            broker.accept(&mut connection, Some(&expected), Some(first[0]));
+                        let failed = match result {
+                            Ok(Some(done)) => !done.recv().unwrap_or(false),
+                            Ok(None) => false,
+                            Err(error) => {
+                                let _ = write_packet(&mut connection, &Reply::Error(error), &[]);
+                                true
+                            }
+                        };
+                        let Connection::Inherited(returned) = connection else {
+                            unreachable!()
+                        };
+                        stream = returned;
+                        if failed || expected.revoked.load(Ordering::Acquire) {
+                            break;
+                        }
+                    }
+                })
+                .map_err(|error| error.to_string())?;
+            children.push(child);
+        }
+        *published = controllers;
+        Ok(children)
+    }
+}
+
+struct Completion {
+    done: Option<mpsc::Sender<bool>>,
+    reusable: bool,
+}
+#[cfg(any(unix, windows))]
+struct ChannelShutdown(Arc<wega_platform::ipc::Channel>);
+#[cfg(any(unix, windows))]
+impl Drop for ChannelShutdown {
+    fn drop(&mut self) {
+        let _ = self.0.shutdown(std::net::Shutdown::Both);
+    }
+}
+impl Drop for Completion {
+    fn drop(&mut self) {
+        if let Some(done) = self.done.take() {
+            let _ = done.send(self.reusable);
+        }
+    }
+}
 type Job = Box<dyn FnOnce() + Send>;
 pub struct Broker {
     address: SocketAddr,
@@ -755,6 +1028,9 @@ pub struct Broker {
     jars: Mutex<HashMap<PathBuf, Jar>>,
     cache: Mutex<Cache>,
     pub hsts: Mutex<HstsPolicy>,
+    storage: Mutex<services::StorageHub>,
+    sockets: Mutex<websocket::Sockets>,
+    socket_runtime: tokio::runtime::Runtime,
     jobs: mpsc::SyncSender<Job>,
     client: LocalClient,
 }
@@ -797,6 +1073,14 @@ impl Broker {
             jars: Default::default(),
             cache: Default::default(),
             hsts: Default::default(),
+            storage: Default::default(),
+            sockets: Default::default(),
+            socket_runtime: tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .max_blocking_threads(2)
+                .enable_all()
+                .build()
+                .map_err(|error| error.to_string())?,
             jobs,
             client: LocalClient::new()?,
         });
@@ -806,10 +1090,11 @@ impl Broker {
             .spawn(move || {
                 for stream in listener.incoming() {
                     let Some(broker) = weak.upgrade() else { break };
-                    if let Ok(mut stream) = stream {
+                    if let Ok(stream) = stream {
                         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
                         let _ = stream.set_write_timeout(Some(Duration::from_secs(20)));
-                        let result = broker.accept(&mut stream);
+                        let mut stream = Connection::Tcp(stream);
+                        let result = broker.accept(&mut stream, None, None);
                         if let Err(error) = result {
                             let _ = write_packet(&mut stream, &Reply::Error(error), &[]);
                         }
@@ -877,6 +1162,9 @@ impl Broker {
                 partition,
             },
             bound,
+            inherited_only: AtomicBool::new(false),
+            #[cfg(any(unix, windows))]
+            channels: Mutex::new(Vec::new()),
             revoked: AtomicBool::new(false),
             navigation: Mutex::new(NavigationReceipt::default()),
             policy: RwLock::new(policy),
@@ -895,12 +1183,18 @@ impl Broker {
             token,
         })
     }
-    fn accept(self: &Arc<Self>, stream: &mut TcpStream) -> Result<(), String> {
-        let (request, bytes): (WireRequest, usize) = read_header(stream)?;
+    fn accept(
+        self: &Arc<Self>,
+        stream: &mut Connection,
+        expected: Option<&Arc<Session>>,
+        first: Option<u8>,
+    ) -> Result<Option<mpsc::Receiver<bool>>, String> {
+        let (request, bytes): (WireRequest, usize) = read_header_prefix(stream, first)?;
         let token = match &request {
             WireRequest::Fetch { token, .. }
             | WireRequest::CookieGet { token, .. }
-            | WireRequest::CookieSet { token, .. } => token,
+            | WireRequest::CookieSet { token, .. }
+            | WireRequest::Resource { token, .. } => token,
         };
         let session = self
             .sessions
@@ -912,15 +1206,54 @@ impl Broker {
         if session.revoked.load(Ordering::Acquire) {
             return Err("Revoked broker capability".into());
         }
+        if expected.is_some_and(|expected| !Arc::ptr_eq(expected, &session))
+            || (expected.is_none() && session.inherited_only.load(Ordering::Acquire))
+        {
+            return Err("Broker endpoint/session mismatch".into());
+        }
         let identity = match &request {
             WireRequest::Fetch { identity, .. }
             | WireRequest::CookieGet { identity, .. }
-            | WireRequest::CookieSet { identity, .. } => identity,
+            | WireRequest::CookieSet { identity, .. }
+            | WireRequest::Resource { identity, .. } => identity,
         };
         if session.bound && *identity != Some(session.identity) {
             return Err("Broker service/partition mismatch".into());
         }
         match request {
+            WireRequest::Resource { request, .. } => {
+                if !session.bound {
+                    return Err("Resources require a bound service".into());
+                }
+                let mut stream = stream.try_clone().map_err(|error| error.to_string())?;
+                let broker = self.clone();
+                let (done, completed) = mpsc::channel();
+                self.jobs
+                    .try_send(Box::new(move || {
+                        let mut completion = Completion {
+                            done: Some(done),
+                            reusable: false,
+                        };
+                        let mut body = vec![0; bytes];
+                        if stream.read_exact(&mut body).is_err() {
+                            return;
+                        }
+                        let result = broker.resource(&session, request, body);
+                        let result = if session.revoked.load(Ordering::Acquire) {
+                            Err("Revoked resource response".into())
+                        } else {
+                            result
+                        };
+                        let written = match result {
+                            Ok(body) => write_packet(&mut stream, &Reply::Resource, &body),
+                            Err(error) => write_packet(&mut stream, &Reply::Error(error), &[]),
+                        };
+                        completion.reusable = written.is_ok();
+                    }))
+                    .map_err(|_| "Shared resource queue is full".to_string())?;
+                Ok(Some(completed))
+            }
+
             WireRequest::CookieGet {
                 url,
                 script,
@@ -931,7 +1264,16 @@ impl Broker {
                 if bytes != 0 {
                     return Err("Unexpected cookie body".into());
                 };
+                if session.bound && (!script || netscape) {
+                    return write_packet(stream, &Reply::Cookie(String::new()), &[]).map(|_| None);
+                }
                 let url = Url::parse(&url).map_err(|e| e.to_string())?;
+                session.script_cookie_scope(&url)?;
+                let context = if session.bound {
+                    SiteContext::SameSite
+                } else {
+                    context
+                };
                 let mut policy_url = url.clone();
                 if url.scheme() == "ws" {
                     let _ = policy_url.set_scheme("http");
@@ -957,7 +1299,7 @@ impl Broker {
                 } else {
                     String::new()
                 };
-                write_packet(stream, &Reply::Cookie(String::new()), value.as_bytes())
+                write_packet(stream, &Reply::Cookie(String::new()), value.as_bytes()).map(|_| None)
             }
             WireRequest::CookieSet {
                 url,
@@ -969,7 +1311,16 @@ impl Broker {
                 if bytes != 0 || value.len() > 4096 {
                     return Err("Invalid cookie request".into());
                 };
+                if session.bound && !script {
+                    return write_packet(stream, &Reply::Done, &[]).map(|_| None);
+                }
                 let url = Url::parse(&url).map_err(|e| e.to_string())?;
+                session.script_cookie_scope(&url)?;
+                let context = if session.bound {
+                    SiteContext::SameSite
+                } else {
+                    context
+                };
                 let mut policy = session
                     .policy
                     .read()
@@ -981,33 +1332,104 @@ impl Broker {
                 if policy.permits(&url) {
                     session.cookies.set(&url, &value, script, context)
                 };
-                write_packet(stream, &Reply::Done, &[])
+                write_packet(stream, &Reply::Done, &[]).map(|_| None)
             }
             WireRequest::Fetch { mut request, .. } => {
                 request.validate()?;
                 if bytes > MAX_BODY {
                     return Err("Upload exceeds its size limit".into());
                 };
-                if session.bound && !request.top_level {
-                    let receipt = session.navigation.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                    if let Some(ref committed) = receipt.last {
-                        let committed_origin = committed.origin().ascii_serialization();
-                        if !request.origin.is_empty() && request.origin != "null" && request.origin != committed_origin {
-                            return Err(format!("Spoofed request origin '{}' does not match session origin '{}'", request.origin, committed_origin));
+                if session.bound {
+                    let document = session.document();
+                    if request.top_level {
+                        let receipt = session
+                            .navigation
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if request.destination != ResourceDestination::Document
+                            || !receipt
+                                .allowed
+                                .iter()
+                                .any(|url| url.as_str() == request.url)
+                        {
+                            return Err(
+                                "Document request lacks browser navigation authority".into()
+                            );
                         }
-                        if let Some(ref initiator) = request.initiator {
-                            if initiator.origin().ascii_serialization() != committed_origin {
-                                return Err(format!("Spoofed request initiator '{}' does not match session origin '{}'", initiator, committed_origin));
-                            }
+                        request.origin = Url::parse(&request.url)
+                            .map_err(|error| error.to_string())?
+                            .origin()
+                            .ascii_serialization();
+                    } else {
+                        let document = document.ok_or("No document fetch authority")?;
+                        let origin = document.origin().ascii_serialization();
+                        if request.origin != origin {
+                            return Err(format!(
+                                "Spoofed request origin '{}' does not match session origin '{origin}'",
+                                request.origin
+                            ));
                         }
+                        if request.initiator.as_ref().is_some_and(|url| {
+                            url.origin().ascii_serialization() != origin
+                                || (origin == "null" && url != &document)
+                        }) {
+                            return Err("Spoofed request initiator".into());
+                        }
+                        request.origin = origin;
+                        request.initiator = Some(document);
+                    }
+                }
+                if session.bound {
+                    request.redirect = "manual".into();
+                    let referer = request
+                        .headers
+                        .iter()
+                        .find(|(name, _)| name.eq_ignore_ascii_case("referer"))
+                        .and_then(|(_, value)| Url::parse(value).ok())
+                        .filter(|offered| {
+                            request
+                                .initiator
+                                .as_ref()
+                                .is_some_and(|document| offered.origin() == document.origin())
+                        });
+                    request.headers.retain(|(name, _)| {
+                        !name.eq_ignore_ascii_case("origin")
+                            && !name.eq_ignore_ascii_case("referer")
+                    });
+                    if let Some(mut referer) = referer {
+                        referer.set_fragment(None);
+                        let _ = referer.set_username("");
+                        let _ = referer.set_password(None);
+                        request
+                            .headers
+                            .push(("referer".into(), referer.to_string()));
+                    }
+                    if !matches!(request.method.as_str(), "GET" | "HEAD")
+                        || matches!(
+                            request.destination,
+                            ResourceDestination::Fetch
+                                | ResourceDestination::Module
+                                | ResourceDestination::Xhr
+                                | ResourceDestination::Font
+                        )
+                    {
+                        request
+                            .headers
+                            .push(("origin".into(), request.origin.clone()));
                     }
                 }
                 let mut stream = stream.try_clone().map_err(|e| e.to_string())?;
                 let client = self.client.clone();
                 // Cache/session data outlives the native page only for this bounded job.
                 let broker = self.clone();
+                let (done, completed) = mpsc::channel();
                 self.jobs
                     .try_send(Box::new(move || {
+                        let mut completion = Completion {
+                            done: Some(done),
+                            reusable: false,
+                        };
+                        let mut body_read = false;
                         let result = (|| {
                             if session.revoked.load(Ordering::Acquire) {
                                 return Err("Revoked broker capability".into());
@@ -1016,7 +1438,9 @@ impl Broker {
                             stream
                                 .read_exact(&mut request.body)
                                 .map_err(|e| e.to_string())?;
-                            let response = client.fetch_cached(
+                            body_read = true;
+                            broker.cors_before(&mut request, &session)?;
+                            let mut response = client.fetch_cached(
                                 &request,
                                 &session.policy,
                                 &session.cookies,
@@ -1050,42 +1474,53 @@ impl Broker {
                                     }
                                 }
                             }
+                            broker.cors_after(&request, &session, &mut response)?;
                             if session.revoked.load(Ordering::Acquire) {
                                 return Err("Revoked broker response".into());
                             }
                             Ok(response)
                         })();
-                        match result {
+                        let written = match result {
                             Ok(mut response) => {
                                 let body = std::mem::take(&mut response.body);
-                                let _ =
-                                    write_packet(&mut stream, &Reply::Response(response), &body);
+                                write_packet(&mut stream, &Reply::Response(response), &body)
                             }
-                            Err(error) => {
-                                let _ = write_packet(&mut stream, &Reply::Error(error), &[]);
-                            }
-                        }
+                            Err(error) => write_packet(&mut stream, &Reply::Error(error), &[]),
+                        };
+                        // A partial body, failed reply or panic destroys framing.
+                        // Never read another request on that channel afterward.
+                        completion.reusable = body_read && written.is_ok();
                     }))
-                    .map_err(|_| "Shared network queue is full".to_string())
+                    .map_err(|_| "Shared network queue is full".to_string())?;
+                Ok(Some(completed))
             }
         }
     }
 }
 
 #[derive(Clone)]
+enum Endpoint {
+    Tcp(SocketAddr),
+    #[cfg(any(unix, windows))]
+    Inherited(Arc<connection::Pool>),
+}
+#[derive(Clone)]
 pub struct Remote {
-    address: SocketAddr,
+    endpoint: Endpoint,
     token: String,
     identity: Option<ServiceIdentity>,
 }
 impl Remote {
+    pub fn is_bound(&self) -> bool {
+        self.identity.is_some()
+    }
     pub fn new(address: &str, token: String) -> Result<Self, String> {
         let address: SocketAddr = address.parse().map_err(|_| "Invalid broker address")?;
         if !address.ip().is_loopback() || token.len() != 64 {
             return Err("Invalid broker capability".into());
         };
         Ok(Self {
-            address,
+            endpoint: Endpoint::Tcp(address),
             token,
             identity: None,
         })
@@ -1095,8 +1530,44 @@ impl Remote {
         remote.identity = Some(identity);
         Ok(remote)
     }
+    #[cfg(any(unix, windows))]
+    pub fn inherited(
+        channels: Vec<wega_platform::ipc::Channel>,
+        token: String,
+        identity: ServiceIdentity,
+    ) -> Result<Self, String> {
+        if token.len() != 64 {
+            return Err("Invalid broker capability".into());
+        }
+        Ok(Self {
+            endpoint: Endpoint::Inherited(Arc::new(connection::Pool::new(channels)?)),
+            token,
+            identity: Some(identity),
+        })
+    }
     fn call(&self, request: impl Serialize, body: &[u8]) -> Result<(Reply, Vec<u8>), String> {
-        let mut stream = TcpStream::connect_timeout(&self.address, Duration::from_secs(2))
+        #[cfg(any(unix, windows))]
+        if let Endpoint::Inherited(pool) = &self.endpoint {
+            let (reply, body) = pool.call(|stream| {
+                write_packet(stream, &request, body).map_err(std::io::Error::other)?;
+                let (reply, len): (Reply, usize) =
+                    read_header(stream).map_err(std::io::Error::other)?;
+                let mut body = vec![0; len];
+                stream.read_exact(&mut body)?;
+                Ok((reply, body))
+            })?;
+            return if let Reply::Error(error) = reply {
+                Err(error)
+            } else {
+                Ok((reply, body))
+            };
+        }
+        let address = match self.endpoint {
+            Endpoint::Tcp(address) => address,
+            #[cfg(any(unix, windows))]
+            Endpoint::Inherited(_) => unreachable!(),
+        };
+        let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
             .map_err(|e| e.to_string())?;
         stream
             .set_read_timeout(Some(Duration::from_secs(20)))
@@ -1113,6 +1584,22 @@ impl Remote {
         };
         Ok((reply, body))
     }
+    pub fn resource(&self, request: ResourceRequest, body: &[u8]) -> Result<Vec<u8>, String> {
+        let (reply, body) = self.call(
+            WireRequest::Resource {
+                identity: self.identity,
+                token: self.token.clone(),
+                request,
+            },
+            body,
+        )?;
+        if matches!(reply, Reply::Resource) {
+            Ok(body)
+        } else {
+            Err("Invalid resource reply".into())
+        }
+    }
+
     pub fn fetch(&self, request: &Request) -> Result<Response, String> {
         request.validate()?;
         let (reply, body) = self.call(
@@ -1202,6 +1689,11 @@ enum FetchCall<'a> {
 }
 #[derive(Serialize, Deserialize)]
 enum WireRequest {
+    Resource {
+        identity: Option<ServiceIdentity>,
+        token: String,
+        request: ResourceRequest,
+    },
     Fetch {
         #[serde(default)]
         identity: Option<ServiceIdentity>,
@@ -1229,13 +1721,14 @@ enum WireRequest {
 }
 #[derive(Serialize, Deserialize)]
 enum Reply {
+    Resource,
     Response(Response),
     Cookie(String),
     Done,
     Error(String),
 }
 fn write_packet<T: Serialize>(
-    stream: &mut TcpStream,
+    stream: &mut impl Write,
     value: &T,
     body: &[u8],
 ) -> Result<(), String> {
@@ -1251,9 +1744,24 @@ fn write_packet<T: Serialize>(
         .and_then(|_| stream.write_all(body))
         .map_err(|e| e.to_string())
 }
-fn read_header<T: for<'de> Deserialize<'de>>(stream: &mut TcpStream) -> Result<(T, usize), String> {
+fn read_header<T: for<'de> Deserialize<'de>>(stream: &mut impl Read) -> Result<(T, usize), String> {
+    read_header_prefix(stream, None)
+}
+fn read_header_prefix<T: for<'de> Deserialize<'de>>(
+    stream: &mut impl Read,
+    first: Option<u8>,
+) -> Result<(T, usize), String> {
     let mut fixed = [0; 12];
-    stream.read_exact(&mut fixed).map_err(|e| e.to_string())?;
+    if let Some(first) = first {
+        fixed[0] = first;
+        stream
+            .read_exact(&mut fixed[1..])
+            .map_err(|error| error.to_string())?;
+    } else {
+        stream
+            .read_exact(&mut fixed)
+            .map_err(|error| error.to_string())?;
+    }
     let len = u32::from_le_bytes(fixed[4..8].try_into().unwrap()) as usize;
     let bytes = u32::from_le_bytes(fixed[8..12].try_into().unwrap()) as usize;
     if &fixed[..4] != b"WGNB" || len == 0 || len > MAX_HEADER || bytes > MAX_BODY {
@@ -1270,6 +1778,22 @@ fn read_header<T: for<'de> Deserialize<'de>>(stream: &mut TcpStream) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn server_controlled_hsts_durations_and_entry_counts_are_bounded() {
+        let mut policy = HstsPolicy::default();
+        policy.update("huge.example", &format!("max-age={}", u64::MAX));
+        assert!(policy.should_upgrade("huge.example"));
+        assert!(
+            policy.entries["huge.example"]
+                .expires_at
+                .saturating_duration_since(Instant::now())
+                <= Duration::from_secs(365 * 24 * 60 * 60)
+        );
+        for index in 0..4200 {
+            policy.update(&format!("{index}.example"), "max-age=100");
+        }
+        assert!(policy.entries.len() <= 4096);
+    }
     #[test]
     fn bound_services_reject_missing_cross_partition_and_revoked_capabilities() {
         let broker = Broker::new().unwrap();
@@ -1311,6 +1835,10 @@ mod tests {
                 .cookie_set(&url, "bad=2", true)
                 .is_err()
         );
+        first.begin_navigation(&url);
+        second.begin_navigation(&url);
+        first.session.navigation.lock().unwrap().committed = Some(url.clone());
+        second.session.navigation.lock().unwrap().committed = Some(url.clone());
         let remote = Remote::bound(&address, token, first.identity()).unwrap();
         remote.cookie_set(&url, "allowed=1; Path=/", true).unwrap();
         assert_eq!(remote.cookie_get(&url, true).unwrap(), "allowed=1");
@@ -1338,7 +1866,7 @@ mod tests {
         let address = server.local_addr().unwrap();
         let serving = std::thread::spawn(move || {
             let deadline = std::time::Instant::now() + Duration::from_secs(10);
-            for _ in 0..3 {
+            for _ in 0..2 {
                 let mut stream = loop {
                     match server.accept() {
                         Ok((stream, _)) => break stream,
@@ -1352,6 +1880,7 @@ mod tests {
                         Err(error) => panic!("Navigation fixture: {error}"),
                     }
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
@@ -1368,13 +1897,19 @@ mod tests {
         let broker = Broker::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let session = broker
-            .open_bound_session(dir.path().into(), Policy { allow_loopback: true, ..Policy::default() })
+            .open_bound_session(
+                dir.path().into(),
+                Policy {
+                    allow_loopback: true,
+                    ..Policy::default()
+                },
+            )
             .unwrap();
         let (endpoint, token) = session.endpoint();
         let remote = Remote::bound(&endpoint, token, session.identity()).unwrap();
         let mut request = Request::get(&url, 4096);
         request.origin = "https://forged.test".into();
-        remote.fetch(&request).unwrap();
+        assert!(remote.fetch(&request).is_err());
         assert_eq!(
             session.take_committed_principal(Some(url.as_str())).origin,
             Origin::Opaque

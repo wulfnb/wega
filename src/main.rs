@@ -1,3 +1,4 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
 // Browser chrome and engine integration, MPL-2.0.
 mod automation;
 mod brand;
@@ -236,6 +237,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut options =
         Options::parse_from(std::env::args().skip(1)).map_err(std::io::Error::other)?;
     if options.help {
+        // Explicit command-line help may use an existing terminal. Normal GUI
+        // browsing never attaches to or allocates a console.
+        #[cfg(windows)]
+        unsafe {
+            windows_sys::Win32::System::Console::AttachConsole(
+                windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
+            );
+        }
         println!(
             "Wega Browser\nUsage: wega [--engine servo|wega] [--profile-dir PATH] [--capture FILE.png] [URL]\n  --remote-devtools PORT · --webdriver-port PORT\n    Both open UNAUTHENTICATED endpoints on 127.0.0.1. Any local process or user\n    can then read and control open pages (cookies, sessions, input). Use them\n    only on a trusted machine and with a disposable --profile-dir.\n  --multiprocess (requires --features multiprocess)\n  Native tests require --features test-harness and an isolated --profile-dir.\n  Test modes: --engine-test, --smoke-test, --download-test, --toolbox-test, --theme-test, --capabilities-test"
         );

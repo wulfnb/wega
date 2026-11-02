@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct ScriptError {
     pub fatal: bool,
     pub message: String,
@@ -37,6 +37,7 @@ pub(crate) trait ScriptHost {
     fn run_module(&mut self, source: &str, name: &str) -> Result<String, ScriptError>;
     fn modules_pending(&self) -> bool;
     fn evaluate_json(&mut self, source: &str) -> Result<String, ScriptError>;
+    fn checkpoint(&mut self) -> Result<(), ScriptError>;
     fn tick(&mut self) -> Result<(), ScriptError>;
     fn next_timer(&self) -> Option<Duration>;
     fn heap_bytes(&self) -> usize;
@@ -54,7 +55,7 @@ pub(crate) trait ScriptHost {
     fn history(&self) -> (usize, usize);
     fn frame(&mut self, _timestamp: f64) -> Result<bool, ScriptError> {
         self.run("__wega_frame(performance.now())", "wega:animation-frame")?;
-        self.tick()?;
+        self.checkpoint()?;
         Ok(self.evaluate_json("__wega_has_frame()")? == "true")
     }
 }
@@ -68,4 +69,16 @@ pub(crate) fn create(
         limits,
         initial_bytes,
     )?))
+}
+
+/// HTML performs a checkpoint after an ordinary exception too. A fatal limit
+/// tears down the realm and must never run another callback while recovering.
+pub(crate) fn finish_task<T>(
+    host: &mut dyn ScriptHost,
+    result: Result<T, ScriptError>,
+) -> Result<T, ScriptError> {
+    if !result.as_ref().is_err_and(|error| error.fatal) {
+        host.checkpoint()?;
+    }
+    result
 }

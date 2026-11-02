@@ -8,7 +8,10 @@ fn page(html: &str) -> View {
             script_time: Duration::from_secs(2),
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap();

@@ -258,6 +258,11 @@ Keep diagnostics available from this step onward, not only after full DevTools.
 failure and genuine assertion failure; a wrong-engine capture fails validation.
 Record per-suite counts and exclusions rather than a whole-Web pass percentage.
 
+**Integration status (1 November 2026): partial implementation merged.** Protocol
+capture/navigation/diagnostic support and Rust subprocess harness sources are
+present. The full framework/WPT matrix and runtime acceptance remain pending;
+see the [post-merge gaps](step-05-sandbox-and-supervision.md).
+
 ### 04 — Make network, cookies and storage access authoritative
 
 **Depends on:** 02, 03.
@@ -276,6 +281,13 @@ network targets and cross-container credentials are covered by adversarial tests
 policy is enforced at the service boundary. Test loopback access via explicit test
 policy. HTTP/2/3 availability is measured and audited rather than assumed.
 
+**Integration status (1 November 2026): partial implementation merged.** Request
+destinations, origin checks, private-network controls and in-memory HSTS sources
+are present. Step 05 added inherited Unix/Windows transport, document-bound
+storage/cookie/font/file/WebSocket brokers, CORS enforcement and DNS pinning.
+The full CSP/cache/redirect audit and renderer-initiated navigation/POST grants
+remain separate; see the [authority audit](step-05-sandbox-and-supervision.md).
+
 ### 05 — Sandbox and supervise content processes
 
 **Depends on:** 04.
@@ -292,12 +304,13 @@ reads, writes, process launch and direct network connections while normal fixtur
 work. Unsupported sandbox setup fails closed for release browsing; any development
 escape hatch is explicit. Killing a worker releases its resources and grants.
 
-**Implementation status (31 October 2026): in progress.** Host supervision,
-resource admission, launch hygiene, Linux baseline hardening, Windows jobs and
-fail-closed required mode are implemented in the
-[Step 05 foundation](step-05-sandbox-and-supervision.md). Required browsing remains
-blocked until Step 04's transport/resource brokers and real platform sandboxes
-are integrated. Runtime tests/probes remain deferred by the owner.
+**Implementation delivered (1 November 2026).** Native Linux/macOS/Windows
+backends, portable inherited grants, font/file/storage/WebSocket brokers,
+decoder budgets and host supervision are implemented. See the
+[Step 05 contract and native evidence](step-05-sandbox-and-supervision.md).
+Three-platform native acceptance passed on 2 November at `efe5a87`; full desktop,
+V8 and SAST workflows also passed. Distribution/stress qualification remains
+separate in the validation record.
 
 ### 06 — Consolidate the document host and event loop
 
@@ -313,6 +326,12 @@ origin policy and browser cancellation behavior.
 **Done when:** parser/script ordering and teardown fixtures pass, navigation cannot
 run old-document callbacks, an ordinary script exception does not disable unrelated
 page functionality, and deadline termination has an explicit recovery outcome.
+
+**Implementation delivered (1 November 2026).** Parser/lifecycle ownership,
+document-scoped task admission, checkpoints, teardown and fatal recovery are
+implemented. See the [Step 06 contract](step-06-document-host-and-event-loop.md)
+and the final validation record. Three-platform engine and native fixture
+acceptance passed on 2 November at `efe5a87`.
 
 ### 07 — Build a small, real WebIDL generation pipeline
 
@@ -669,8 +688,8 @@ separate gates in `docs/validation/standalone/progress.json`.
 - [x] 02 Engine contract and lifecycle — implementation complete; runtime acceptance deferred
 - [ ] 03 Worker harness and observability
 - [ ] 04 Authoritative network/storage access
-- [ ] 05 Sandbox and supervision
-- [ ] 06 Document host and scheduling
+- [x] 05 Sandbox and supervision — implementation and three-platform native acceptance passed
+- [x] 06 Document host and scheduling — implementation delivered; final regressions recorded separately
 - [ ] 07 WebIDL generation and ownership
 - [ ] 08 DOM/events/Web API families
 - [ ] 09 Navigation and browser integrations

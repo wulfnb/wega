@@ -78,6 +78,7 @@ struct Entry {
     ready: bool,
     exited: bool,
     resident: u64,
+    cpu_time: Option<Duration>,
     missing_metrics: u8,
     terminating: bool,
     control: Option<ProcessControl>,
@@ -94,6 +95,24 @@ pub struct Supervisor {
 }
 static SHARED: OnceLock<Result<Arc<Supervisor>, String>> = OnceLock::new();
 
+/// Host-sampled counters for a registered content process, keyed by a nonreused
+/// supervisor identity. Presentation-only reservations and exited workers vanish.
+#[derive(Clone, Copy)]
+pub struct WorkerUsage {
+    pub id: u64,
+    pub started: Instant,
+    pub resident_bytes: Option<u64>,
+    pub cpu_time: Option<Duration>,
+}
+/// Read cached native counters; never scan processes or start a supervisor for a
+/// readout. The normal 250 ms supervisor poll owns native child-handle queries.
+pub fn shared_usage() -> Vec<WorkerUsage> {
+    SHARED
+        .get()
+        .and_then(|owner| owner.as_ref().ok())
+        .map(|owner| owner.usage())
+        .unwrap_or_default()
+}
 impl Supervisor {
     pub fn shared() -> Result<Arc<Self>, String> {
         SHARED
@@ -120,6 +139,25 @@ impl Supervisor {
                 }
             })?;
         Ok(owner)
+    }
+    /// Cached native measurements for currently owned, live workers.
+    pub fn usage(&self) -> Vec<WorkerUsage> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entries
+            .iter()
+            .filter(|(_, entry)| !entry.exited)
+            .filter_map(|(id, entry)| {
+                Some(WorkerUsage {
+                    id: *id,
+                    started: entry.started?,
+                    resident_bytes: (entry.missing_metrics == 0 && entry.resident > 0)
+                        .then_some(entry.resident),
+                    cpu_time: entry.cpu_time,
+                })
+            })
+            .collect()
     }
     /// Reserve before spawning or allocating frame storage. A stopped tab still
     /// retains its frame reservation until its presentation and process owners drop.
@@ -153,6 +191,7 @@ impl Supervisor {
                 ready: false,
                 exited: false,
                 resident: 0,
+                cpu_time: None,
                 missing_metrics: 0,
                 terminating: false,
                 control: None,
@@ -204,13 +243,17 @@ impl Supervisor {
                     Ok(Sample::Busy) => {}
                     Ok(Sample::Alive {
                         resident_bytes: Some(bytes),
+                        cpu_time,
                     }) => {
+                        entry.cpu_time = cpu_time;
                         entry.resident = bytes;
                         entry.missing_metrics = 0;
                     }
                     Ok(Sample::Alive {
                         resident_bytes: None,
+                        cpu_time,
                     }) => {
+                        entry.cpu_time = cpu_time;
                         entry.missing_metrics = entry.missing_metrics.saturating_add(1);
                         if entry.missing_metrics >= 3 {
                             violation = Some(Violation::UnavailableMetrics);
@@ -303,6 +346,18 @@ struct Reservation {
     id: u64,
 }
 impl Ticket {
+    pub fn resident_bytes(&self) -> Option<u64> {
+        let state = self
+            .0
+            .owner
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entry = state.entries.get(&self.0.id)?;
+        (!entry.exited && entry.missing_metrics == 0 && entry.resident > 0)
+            .then_some(entry.resident)
+    }
+
     pub fn worker_memory_limit(&self) -> u64 {
         self.0.owner.budgets.worker_resident_bytes
     }

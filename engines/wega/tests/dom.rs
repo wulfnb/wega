@@ -11,7 +11,10 @@ fn page(html: &str) -> View {
             script_time: Duration::from_secs(2),
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap();
@@ -159,7 +162,10 @@ fn detached_wrappers_and_listeners_release_the_native_node_budget() {
             script_time: Duration::from_secs(2),
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap();
@@ -350,7 +356,10 @@ fn range_fragment_limits_preserve_existing_dom_and_boundary_points() {
             script_time: Duration::from_secs(2),
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap();
@@ -382,7 +391,10 @@ fn live_collection_caches_do_not_keep_removed_nodes_charged() {
             script_time: Duration::from_secs(2),
             ..Limits::default()
         },
-        NetworkPolicy::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
         Arc::new(|| {}),
     )
     .unwrap();

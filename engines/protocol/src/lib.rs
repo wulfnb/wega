@@ -7,7 +7,7 @@ pub mod identity;
 pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 13;
+pub const VERSION: u32 = 15;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -41,6 +41,7 @@ pub enum ContentEvent {
     Navigate(String),
     Notice(String),
     Compatibility(String),
+    ScriptStopped(String),
     Download {
         url: String,
         cookies: String,
@@ -66,6 +67,7 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
         ContentEvent::ActivatedOpenWindow { url, .. } if version < 11 => {
             ContentEvent::OpenWindow(url)
         }
+        ContentEvent::ScriptStopped(reason) if version < 14 => ContentEvent::Notice(reason),
         event => event,
     };
     if version >= 9 {
@@ -73,7 +75,9 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
     }
     match event {
         ContentEvent::Navigate(url) => Event::Navigate(url),
-        ContentEvent::Notice(message) => Event::Notice(message),
+        ContentEvent::Notice(message) | ContentEvent::ScriptStopped(message) => {
+            Event::Notice(message)
+        }
         ContentEvent::Compatibility(reason) => Event::Compatibility {
             serial: context.document.0,
             reason,
@@ -120,6 +124,11 @@ pub enum Capability {
     SessionIdentity,
     SharedFrames,
     HarnessObservability,
+    InheritedBroker,
+    InheritedFrames,
+    ResourceBroker,
+    DocumentTaskScheduling,
+    ScriptRecovery,
     SiteIsolationFrames,
 }
 
@@ -133,6 +142,11 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::SessionIdentity,
     Capability::SharedFrames,
     Capability::HarnessObservability,
+    Capability::InheritedBroker,
+    Capability::InheritedFrames,
+    Capability::ResourceBroker,
+    Capability::DocumentTaskScheduling,
+    Capability::ScriptRecovery,
     Capability::SiteIsolationFrames,
 ];
 
@@ -201,7 +215,12 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::GracefulShutdown => 10,
                     Capability::SessionIdentity => 11,
                     Capability::HarnessObservability => 12,
-                    Capability::SiteIsolationFrames => 13,
+                    Capability::InheritedBroker => 13,
+                    Capability::InheritedFrames => 13,
+                    Capability::ResourceBroker
+                    | Capability::DocumentTaskScheduling
+                    | Capability::ScriptRecovery => 14,
+                    Capability::SiteIsolationFrames => 15,
                 }
         })
         .collect()
@@ -212,9 +231,7 @@ pub fn scoped_context(command: &Command) -> Option<RequestContext> {
         Command::EvaluateDocument { context, .. }
         | Command::CheckDocumentState(context)
         | Command::CaptureDocument { context, .. }
-        | Command::NavigateDocument { context, .. } => {
-            Some(*context)
-        }
+        | Command::NavigateDocument { context, .. } => Some(*context),
         _ => None,
     }
 }
@@ -251,7 +268,7 @@ pub enum Command {
     CancelRequest(RequestContext),
     Init {
         #[serde(default)]
-        identity: Option<identity::SessionIdentity>,
+        identity: Option<Box<identity::SessionIdentity>>,
         version: u32,
         url: String,
         offline: bool,
@@ -260,7 +277,11 @@ pub enum Command {
         storage_dir: Option<String>,
         broker_address: Option<String>,
         broker_token: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        broker_fds: Vec<u64>,
         frame_path: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frame_fd: Option<u64>,
     },
     Load {
         url: String,
@@ -525,6 +546,33 @@ pub fn read<T: for<'a> Deserialize<'a>>(stream: &mut impl Read) -> io::Result<Op
 mod tests {
     use super::*;
     #[test]
+    fn inherited_resource_fields_and_capabilities_are_versioned() {
+        assert!(!capabilities(12).contains(&Capability::InheritedBroker));
+        assert!(!capabilities(12).contains(&Capability::InheritedFrames));
+        assert!(capabilities(13).contains(&Capability::InheritedBroker));
+        assert!(capabilities(13).contains(&Capability::InheritedFrames));
+        let old = Command::Init {
+            identity: None,
+            version: 4,
+            url: "about:blank".into(),
+            offline: true,
+            blocked_hosts: String::new(),
+            allowed_hosts: String::new(),
+            storage_dir: None,
+            broker_address: None,
+            broker_token: None,
+            broker_fds: Vec::new(),
+            frame_path: None,
+            frame_fd: None,
+        };
+        let packet = serde_json::to_string(&old).unwrap();
+        assert!(!packet.contains("broker_fds"));
+        assert!(!packet.contains("frame_fd"));
+        assert!(
+            matches!(serde_json::from_str::<Command>(&packet).unwrap(), Command::Init { broker_fds, frame_fd: None, .. } if broker_fds.is_empty())
+        );
+    }
+    #[test]
     fn activation_packets_are_downgraded_for_running_v9_and_v10_hosts() {
         #[derive(Deserialize)]
         enum OldContent {
@@ -651,8 +699,8 @@ mod tests {
     }
     #[test]
     fn site_isolation_frames_capability_and_origin_policy() {
-        assert!(capabilities(13).contains(&Capability::SiteIsolationFrames));
-        assert!(!capabilities(12).contains(&Capability::SiteIsolationFrames));
+        assert!(capabilities(15).contains(&Capability::SiteIsolationFrames));
+        assert!(!capabilities(14).contains(&Capability::SiteIsolationFrames));
 
         use crate::authority::{Origin, is_permitted_cross_origin_property};
         let origin_a = Origin::Tuple("https://a.test".into());

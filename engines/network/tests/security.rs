@@ -2,6 +2,8 @@
 //! Tests spoofed origins, redirect chains, unknown file extensions, private network targets,
 //! HSTS upgrades, and cross-container credential isolation.
 
+mod support;
+
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -17,7 +19,8 @@ use wega_network::{Broker, Policy, Remote, Request, ResourceDestination};
 #[test]
 fn test_adversarial_spoofed_origin_and_initiator_rejected_at_broker_boundary() {
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
-    let committed_url = Url::parse(&format!("http://{}/home", server.local_addr().unwrap())).unwrap();
+    let committed_url =
+        Url::parse(&format!("http://{}/home", server.local_addr().unwrap())).unwrap();
     let serving = std::thread::spawn(move || {
         let (mut stream, _) = server.accept().unwrap();
         let mut bytes = [0; 2048];
@@ -28,7 +31,13 @@ fn test_adversarial_spoofed_origin_and_initiator_rejected_at_broker_boundary() {
     let broker = Broker::new().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let session = broker
-        .open_bound_session(dir.path().into(), Policy { allow_loopback: true, ..Policy::default() })
+        .open_bound_session(
+            dir.path().into(),
+            Policy {
+                allow_loopback: true,
+                ..Policy::default()
+            },
+        )
         .unwrap();
     let (endpoint, token) = session.endpoint();
     let remote = Remote::bound(&endpoint, token, session.identity()).unwrap();
@@ -80,10 +89,22 @@ fn test_adversarial_cross_container_credential_isolation() {
     let dir_b = tempfile::tempdir().unwrap();
 
     let session_a = broker
-        .open_bound_session(dir_a.path().into(), Policy { allow_loopback: true, ..Policy::default() })
+        .open_bound_session(
+            dir_a.path().into(),
+            Policy {
+                allow_loopback: true,
+                ..Policy::default()
+            },
+        )
         .unwrap();
     let session_b = broker
-        .open_bound_session(dir_b.path().into(), Policy { allow_loopback: true, ..Policy::default() })
+        .open_bound_session(
+            dir_b.path().into(),
+            Policy {
+                allow_loopback: true,
+                ..Policy::default()
+            },
+        )
         .unwrap();
 
     assert_ne!(
@@ -98,7 +119,7 @@ fn test_adversarial_cross_container_credential_isolation() {
     let remote_a = Remote::bound(&endpoint_a, token_a.clone(), session_a.identity()).unwrap();
     let remote_b = Remote::bound(&endpoint_b, token_b.clone(), session_b.identity()).unwrap();
 
-    let url = Url::parse("https://shared-service.example/account").unwrap();
+    let url = support::documents(&[(&session_a, &remote_a), (&session_b, &remote_b)]);
 
     // Set cookie in Container A
     remote_a
@@ -170,7 +191,9 @@ fn test_adversarial_redirect_chains_and_downgrade_bounds() {
                 );
                 let _ = stream.write_all(reply.as_bytes());
             } else {
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                );
             }
         }
     });
@@ -178,7 +201,13 @@ fn test_adversarial_redirect_chains_and_downgrade_bounds() {
     let broker = Broker::new().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let session = broker
-        .open_session(dir.path().into(), Policy { allow_loopback: true, ..Policy::default() })
+        .open_session(
+            dir.path().into(),
+            Policy {
+                allow_loopback: true,
+                ..Policy::default()
+            },
+        )
         .unwrap();
     let (endpoint, token) = session.endpoint();
     let remote = Remote::new(&endpoint, token).unwrap();
@@ -199,8 +228,10 @@ fn test_adversarial_redirect_chains_and_downgrade_bounds() {
         ..Policy::default()
     });
     // Server redirects to blocked host
-    let mut blocked_policy = Policy::default();
-    blocked_policy.blocked_hosts = address.ip().to_string();
+    let blocked_policy = Policy {
+        blocked_hosts: address.ip().to_string(),
+        ..Default::default()
+    };
     assert!(!blocked_policy.permits(&loop_url));
 
     stopped.store(true, Ordering::Relaxed);
@@ -231,8 +262,10 @@ fn test_adversarial_hsts_automatic_upgrade() {
 
 #[test]
 fn test_adversarial_resource_destination_authoritative_enforcement_regardless_of_extension() {
-    let mut policy = Policy::default();
-    policy.blocked_destinations = vec![ResourceDestination::Script];
+    let policy = Policy {
+        blocked_destinations: vec![ResourceDestination::Script],
+        ..Default::default()
+    };
 
     // 1. Authoritative destination: blocked even if file extension looks like an image (.jpg)
     let disguised_url = Url::parse("https://example.com/innocent.jpg").unwrap();
@@ -247,11 +280,14 @@ fn test_adversarial_resource_destination_authoritative_enforcement_regardless_of
         credentials: "omit".into(),
         redirect: "follow".into(),
         cache: "default".into(),
+        mode: "no-cors".into(),
         destination: ResourceDestination::Script, // Authoritative Script destination!
         limit: 4096,
     };
     assert!(
-        policy.permits_request(&disguised_script, &disguised_url).is_err(),
+        policy
+            .permits_request(&disguised_script, &disguised_url)
+            .is_err(),
         "Disguised script (.jpg) must be blocked by explicit destination check"
     );
 
@@ -288,19 +324,26 @@ fn test_adversarial_private_network_access_requires_explicit_controls() {
     );
 
     // When explicitly permitted via allow_loopback test control:
-    let mut explicit_policy = Policy::default();
-    explicit_policy.allow_loopback = true;
+    let explicit_policy = Policy {
+        allow_loopback: true,
+        ..Default::default()
+    };
     assert!(
-        explicit_policy.permits_request(&attack_request, &loopback_target).is_ok(),
+        explicit_policy
+            .permits_request(&attack_request, &loopback_target)
+            .is_ok(),
         "Explicit allow_loopback control must allow access"
     );
 
     // When explicitly permitted via allowed_hosts:
-    let mut host_policy = Policy::default();
-    host_policy.allowed_hosts = "127.0.0.1".into();
+    let host_policy = Policy {
+        allowed_hosts: "127.0.0.1".into(),
+        ..Default::default()
+    };
     assert!(
-        host_policy.permits_request(&attack_request, &loopback_target).is_ok(),
+        host_policy
+            .permits_request(&attack_request, &loopback_target)
+            .is_ok(),
         "Explicit allowed_hosts must allow access"
     );
 }
-

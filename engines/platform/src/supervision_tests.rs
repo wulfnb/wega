@@ -61,6 +61,7 @@ fn aggregate_pressure_stops_one_consumer_without_treating_a_pending_kill_as_free
     let sample = |process: &OwnedProcess| match process.control().sample().unwrap() {
         Sample::Alive {
             resident_bytes: Some(bytes),
+            cpu_time: Some(_),
         } => bytes,
         sample => panic!("Expected native residency: {sample:?}"),
     };

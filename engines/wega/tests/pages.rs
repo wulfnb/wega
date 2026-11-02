@@ -4,10 +4,17 @@ use std::{
 };
 use wega_engine::{Engine, Limits, NetworkPolicy, Url};
 fn page(limits: Limits) -> wega_engine::View {
-    Engine::new(limits, NetworkPolicy::default(), Arc::new(|| {}))
-        .unwrap()
-        .create_view(Url::parse("about:blank").unwrap())
-        .unwrap()
+    Engine::new(
+        limits,
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap()
+    .create_view(Url::parse("about:blank").unwrap())
+    .unwrap()
 }
 #[test]
 fn document_titles_collapse_html_whitespace_but_preserve_nonbreaking_spaces() {
@@ -137,6 +144,12 @@ fn heap_exhaustion_is_local_and_timers_pause_in_background() {
     .unwrap();
     view.poll();
     assert!(!view.notices.is_empty());
+    assert!(view.take_script_failure().is_some());
+    assert!(view.evaluate("1 + 1").is_err());
+    // Recovery is explicit and must not carry the deliberately tiny exhausted
+    // quota into an unrelated timer test. Platforms have different VM overhead.
+    drop(view);
+    let mut view = page(Limits::default());
     view.set_html(
         "<title>Waiting</title><script>setTimeout(()=>document.title='Timer fired',50)</script>",
     )
@@ -149,12 +162,24 @@ fn heap_exhaustion_is_local_and_timers_pause_in_background() {
     view.poll();
     assert_eq!(view.title(), "Waiting");
     view.freeze(false);
-    view.poll();
+    let until = Instant::now() + Duration::from_secs(2);
+    while view.title() != "Timer fired" && Instant::now() < until {
+        view.poll();
+        std::thread::sleep(Duration::from_millis(1));
+    }
     assert_eq!(view.title(), "Timer fired", "{:?}", view.notices);
 }
 #[test]
 fn failed_navigation_replaces_old_content_and_policy_updates_take_effect() {
-    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let engine = Engine::new(
+        Limits::default(),
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap();
     let mut view = engine
         .create_view(Url::parse("about:blank").unwrap())
         .unwrap();

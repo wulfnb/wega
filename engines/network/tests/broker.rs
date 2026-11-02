@@ -68,7 +68,17 @@ fn real_http_is_shared_but_credentials_policy_and_cache_are_profile_partitioned(
     let broker = Broker::new().unwrap();
     let profile = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
-    let session = |dir| broker.open_session(dir, Policy::default()).unwrap();
+    let session = |dir| {
+        broker
+            .open_session(
+                dir,
+                Policy {
+                    allow_loopback: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    };
     let a = session(profile.path().into());
     let b = session(profile.path().into());
     let c = session(other.path().into());
@@ -146,7 +156,13 @@ fn cookie_values_use_bounded_body_framing_without_a_metadata_size_regression() {
     let broker = Broker::new().unwrap();
     let profile = tempfile::tempdir().unwrap();
     let session = broker
-        .open_session(profile.path().into(), Policy::default())
+        .open_session(
+            profile.path().into(),
+            Policy {
+                allow_loopback: true,
+                ..Default::default()
+            },
+        )
         .unwrap();
     let (address, token) = session.endpoint();
     let remote = Remote::new(&address, token).unwrap();

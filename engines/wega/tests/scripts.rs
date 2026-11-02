@@ -2,7 +2,7 @@
 //! document.write, currentScript, load timing, size and time limits.
 mod support;
 use std::time::Duration;
-use support::{Reply, Server, engine, open, wait};
+use support::{Reply, Server, engine, open, settle, wait};
 
 fn scripts() -> Server {
     Server::new(|seen| match seen.path.as_str() {
@@ -171,5 +171,8 @@ fn more_than_sixty_four_scripts_all_run() {
     view.set_html(&"<script>globalThis.count=(globalThis.count||0)+1</script>".repeat(100))
         .unwrap();
     view.poll();
+    assert!(view.loading, "Yielded parsing must keep the load pending");
+    assert!(view.evaluate_json("count < 100").unwrap() == "true");
+    settle(&mut view);
     assert_eq!(view.evaluate_json("count").unwrap(), "100");
 }

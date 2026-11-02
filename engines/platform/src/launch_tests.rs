@@ -8,9 +8,23 @@ fn release_builds_and_implicit_development_launches_cannot_bypass_sandbox_setup(
         Mode::select(false, true).unwrap_err().kind(),
         io::ErrorKind::PermissionDenied
     );
-    for transport in [BrokerTransport::Tcp, BrokerTransport::InheritedEndpoint] {
-        let mut command = Command::new(std::env::current_exe().unwrap());
-        assert!(PreparedLaunch::prepare(&mut command, transport, Mode::Required).is_err());
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    assert!(PreparedLaunch::prepare(&mut command, BrokerTransport::Tcp, Mode::Required).is_err());
+    let prepared = PreparedLaunch::prepare(
+        &mut command,
+        BrokerTransport::InheritedEndpoint,
+        Mode::Required,
+    );
+    if cfg!(any(target_os = "macos", target_os = "linux", windows)) {
+        let launch = prepared.unwrap();
+        assert!(!launch.is_development());
+        assert!(
+            command
+                .get_args()
+                .any(|argument| argument == crate::sandbox::REQUIRED_ARGUMENT)
+        );
+    } else {
+        assert!(prepared.is_err());
     }
     assert!(validate_worker_start(Vec::<String>::new()).is_err());
 }

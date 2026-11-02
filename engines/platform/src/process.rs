@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 use std::{
     io,
-    process::{Child, ExitStatus},
+    process::ExitStatus,
     sync::{
         Arc, Mutex, OnceLock, Weak,
         atomic::{AtomicBool, Ordering},
@@ -10,6 +10,8 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+
+use crate::child::ChildOwner;
 
 pub const MAX_SHUTDOWN_GRACE: Duration = Duration::from_secs(1);
 
@@ -42,7 +44,7 @@ pub fn wait_for_shutdowns() {
 }
 
 pub struct OwnedProcess {
-    child: Arc<Mutex<Option<Child>>>,
+    child: Arc<Mutex<Option<ChildOwner>>>,
     terminate: Arc<AtomicBool>,
     killed: Arc<AtomicBool>,
     retained: Vec<Box<dyn Send>>,
@@ -52,7 +54,11 @@ pub struct OwnedProcess {
 }
 
 impl OwnedProcess {
-    pub fn new(child: Child, observer: impl FnOnce(ExitReport) + Send + 'static) -> Self {
+    pub fn new(
+        child: impl Into<ChildOwner>,
+        observer: impl FnOnce(ExitReport) + Send + 'static,
+    ) -> Self {
+        let child = child.into();
         Self {
             pid: child.id(),
             child: Arc::new(Mutex::new(Some(child))),
@@ -71,24 +77,21 @@ impl OwnedProcess {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_mut()?
-            .stdin
-            .take()
+            .take_stdin()
     }
     pub fn take_stdout(&mut self) -> Option<std::process::ChildStdout> {
         self.child
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_mut()?
-            .stdout
-            .take()
+            .take_stdout()
     }
     pub fn take_stderr(&mut self) -> Option<std::process::ChildStderr> {
         self.child
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_mut()?
-            .stderr
-            .take()
+            .take_stderr()
     }
     /// The caller must first successfully enqueue the negotiated shutdown command.
     pub fn allow_graceful_shutdown(&mut self, grace: Duration) {
@@ -109,9 +112,13 @@ impl OwnedProcess {
     }
 
     #[cfg(windows)]
+    pub(crate) fn resume(&self, job: &std::os::windows::io::OwnedHandle) -> io::Result<()> {
+        self.with_child(|child| child.resume(job))
+    }
+    #[cfg(windows)]
     pub(crate) fn with_child<T>(
         &self,
-        action: impl FnOnce(&Child) -> io::Result<T>,
+        action: impl FnOnce(&ChildOwner) -> io::Result<T>,
     ) -> io::Result<T> {
         let child = self
             .child
@@ -127,7 +134,7 @@ impl OwnedProcess {
 
 #[derive(Clone)]
 pub struct ProcessControl {
-    child: Weak<Mutex<Option<Child>>>,
+    child: Weak<Mutex<Option<ChildOwner>>>,
     terminate: Arc<AtomicBool>,
     killed: Arc<AtomicBool>,
 }
@@ -136,6 +143,7 @@ pub struct ProcessControl {
 pub enum Sample {
     Alive {
         resident_bytes: Option<u64>,
+        cpu_time: Option<Duration>,
     },
     Exited,
     /// The reaper retains ownership; its exit guard still retains all reservations.
@@ -161,6 +169,7 @@ impl ProcessControl {
         // The child is unreaped while this lock is held, preventing PID reuse on Unix.
         Ok(Sample::Alive {
             resident_bytes: crate::resident_for_child(child),
+            cpu_time: crate::cpu_for_child(child),
         })
     }
     pub fn terminate(&self) -> io::Result<()> {
@@ -186,7 +195,7 @@ impl ProcessControl {
 }
 
 struct Reaper {
-    child: Child,
+    child: ChildOwner,
     deadline: Instant,
     forced: bool,
     observer: Option<Observer>,

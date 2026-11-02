@@ -20,11 +20,27 @@ use wega::{
 };
 use winit::event_loop::EventLoopProxy;
 
+// The test harness serves deterministic pages on localhost. This host-side
+// opt-in is limited to debug/harness builds and scrubbed from worker environments.
+fn test_loopback_allowed() -> bool {
+    (cfg!(debug_assertions) || cfg!(feature = "test-harness"))
+        && std::env::var_os("WEGA_TEST_ALLOW_LOOPBACK").is_some_and(|value| value == "1")
+}
+
 pub(crate) fn executable() -> Option<PathBuf> {
     let path = std::env::var_os("WEGA_ENGINE_BINARY")
         .map(PathBuf::from)
         .or_else(|| {
             std::env::current_exe().ok()?.parent().map(|p| {
+                if cfg!(target_os = "macos")
+                    && let Some(contents) = p.parent()
+                {
+                    let helper =
+                        contents.join("Helpers/WegaContent.app/Contents/MacOS/wega-engine");
+                    if helper.is_file() {
+                        return helper;
+                    }
+                }
                 p.join(if cfg!(windows) {
                     "wega-engine.exe"
                 } else {
@@ -56,6 +72,7 @@ pub(crate) struct Snapshot {
     pub requests: DocumentRequests,
     pub capabilities: Vec<protocol::Capability>,
     pub evaluations: std::collections::VecDeque<(RequestContext, Result<String, ProtocolError>)>,
+    pub harness_results: std::collections::VecDeque<(RequestContext, Result<Event, ProtocolError>)>,
     pub rss_bytes: Option<u64>,
     pub interacted: bool,
     pub compatibility: Option<String>,
@@ -301,7 +318,44 @@ impl Snapshot {
                         .push((request.context, browser_request, true));
                 }
             }
+            RequestKind::Capture | RequestKind::Navigate => {
+                self.harness_result(request.context, Err(error))
+            }
         }
+    }
+
+    fn harness_result(&mut self, context: RequestContext, result: Result<Event, ProtocolError>) {
+        if self.harness_results.len() == protocol::requests::MAX_PENDING {
+            self.harness_results.pop_front();
+        }
+        self.harness_results.push_back((context, result));
+    }
+    fn complete_harness(
+        &mut self,
+        context: RequestContext,
+        kind: RequestKind,
+        event: Event,
+    ) -> Result<(), String> {
+        let Some(request) = self.requests.take(context) else {
+            return Ok(());
+        };
+        if request.kind != kind {
+            self.request_failed(
+                request,
+                ProtocolError::new(ErrorCode::InvalidRequest, "Mismatched harness response"),
+            );
+            return Err("Mismatched harness response".into());
+        }
+        let result = if request.deadline <= std::time::Instant::now() {
+            Err(ProtocolError::new(
+                ErrorCode::Timeout,
+                "Harness operation timed out",
+            ))
+        } else {
+            Ok(event)
+        };
+        self.harness_result(context, result);
+        Ok(())
     }
 
     fn cancel_requests(&mut self, error: ProtocolError) {
@@ -324,7 +378,7 @@ impl Snapshot {
 }
 pub(crate) struct Page {
     child: wega_platform::process::OwnedProcess,
-    frames: Arc<Mutex<wega_platform::FrameStore>>,
+    _frames: Arc<wega_platform::FrameReader>,
     broker: Arc<wega_network::SessionHandle>,
     _budget: wega_platform::supervision::Ticket,
     requests: Option<mpsc::SyncSender<Request>>,
@@ -424,13 +478,23 @@ impl Page {
         profile_dir: &std::path::Path,
         tab: u64,
     ) -> Result<Self, String> {
-        let executable=executable().ok_or("Wega engine worker is not installed. Build it with python3 scripts/build-wega-engine.py --debug first.")?.canonicalize().map_err(|error| error.to_string())?;
+        let executable = executable()
+            .ok_or(
+                "Wega's content helper is missing. Reinstall Wega or rebuild its content helper.",
+            )?
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
         let mut command = Command::new(&executable);
         let launch = wega_platform::launch::PreparedLaunch::browser(
             &mut command,
-            wega_platform::launch::BrokerTransport::Tcp,
+            if cfg!(any(unix, windows)) {
+                wega_platform::launch::BrokerTransport::InheritedEndpoint
+            } else {
+                wega_platform::launch::BrokerTransport::Tcp
+            },
         )
         .map_err(|error| error.to_string())?;
+        let development = launch.is_development();
         let budget = wega_platform::supervision::Supervisor::shared()?
             .reserve((protocol::MAX_PIXELS * 4 * 2) as u64)
             .map_err(|error| error.to_string())?;
@@ -440,6 +504,8 @@ impl Page {
                 offline: policy.offline,
                 blocked_hosts: policy.blocked_hosts.clone(),
                 allowed_hosts: policy.allowed_hosts.clone(),
+                allow_loopback: test_loopback_allowed(),
+                ..Default::default()
             },
         )?);
         broker.begin_navigation(url);
@@ -455,26 +521,50 @@ impl Page {
         let state = Arc::new(Mutex::new(Snapshot {
             authority: Some(FrameAuthority::new(identity)),
             url: url.to_string(),
-            notices: [
-                "Unsandboxed development worker. OS content sandbox integration is pending."
-                    .to_string(),
-            ]
-            .into(),
+            notices: if development {
+                ["Explicit unsandboxed development worker".to_string()].into()
+            } else {
+                Default::default()
+            },
             ..Default::default()
         }));
-        let frames = Arc::new(Mutex::new(
+        let frames = Arc::new(
             wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4)
-                .map_err(|e| e.to_string())?,
-        ));
-        let frame_path = frames
-            .lock()
-            .unwrap()
-            .path()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+                .map_err(|e| e.to_string())?
+                .into_reader(),
+        );
+        let frame_path = frames.path().unwrap().to_string_lossy().into_owned();
         let (broker_address, broker_token) = broker.endpoint();
+        #[cfg(any(unix, windows))]
+        let channels = broker.inherited_channels(4)?;
+        #[cfg(any(unix, windows))]
+        let broker_fds = launch
+            .inherit_broker_channels(&mut command, &channels)
+            .map_err(|error| error.to_string())?;
+        #[cfg(not(any(unix, windows)))]
+        let broker_fds = Vec::new();
+        let broker_address = if broker_fds.is_empty() {
+            Some(broker_address)
+        } else {
+            None
+        };
         command.env("MALLOC_ARENA_MAX", "2");
+        #[cfg(any(unix, windows))]
+        let frame_fd = Some(
+            launch
+                .inherit_frame_file(
+                    &mut command,
+                    &frames.try_clone_file().map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?,
+        );
+        #[cfg(not(any(unix, windows)))]
+        let frame_fd = None;
+        let frame_path = if frame_fd.is_some() {
+            None
+        } else {
+            Some(frame_path)
+        };
         // Workers are private to a view, so process-wide V8 flags stay per-view.
         if std::env::var_os("WEGA_ENGINE_LITE").is_some_and(|value| value == "1")
             || wega::engine_choice::rollout_site(url)
@@ -490,9 +580,12 @@ impl Page {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000); // Private worker, no console window.
         }
-        let child = command
-            .spawn()
+        let child = launch
+            .spawn(&mut command)
             .map_err(|e| format!("Cannot start Wega engine: {e}"))?;
+        drop(command);
+        #[cfg(any(unix, windows))]
+        drop(channels);
         let mut child = wega_platform::process::OwnedProcess::new(child, |report| {
             wega::diagnostics::record(
                 &format!("worker:{}:exit", report.pid),
@@ -508,7 +601,7 @@ impl Page {
         let budget_state = state.clone();
         let budget_proxy = proxy.clone();
         let budget_broker = broker.clone();
-        let budget_frames = frames.clone();
+        child.retain_until_exit(frames.clone());
         budget
             .attach(&mut child, move |violation| {
                 budget_broker.revoke();
@@ -519,10 +612,6 @@ impl Page {
                     state.recovery_reason = Some(violation.to_string());
                 }
                 failed(&budget_state, violation.to_string(), &budget_proxy);
-                budget_frames
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .release_pages();
             })
             .map_err(|error| error.to_string())?;
         let worker_id = child.id();
@@ -644,6 +733,18 @@ impl Page {
                             }
                         }
                         Event::Content { context, event } => {
+                            if let ContentEvent::ScriptStopped(reason) = &event
+                                && shared
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .accepts_context(context)
+                            {
+                                return Err(format!(
+                                    "Script execution stopped: {}",
+                                    reason.chars().take(4096).collect::<String>()
+                                ));
+                            }
+
                             if let ContentEvent::Notice(message)
                             | ContentEvent::Compatibility(message) = &event
                             {
@@ -766,6 +867,60 @@ impl Page {
                                 state.request_failed(request, error);
                             }
                         }
+                        Event::DocumentCaptured {
+                            context,
+                            width,
+                            height,
+                            hash,
+                        } => {
+                            protocol::frame_bytes(width, height)
+                                .map_err(|error| error.to_string())?;
+                            if hash.len() != 64
+                                || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                            {
+                                return Err("Invalid capture digest".into());
+                            }
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .complete_harness(
+                                    context,
+                                    RequestKind::Capture,
+                                    Event::DocumentCaptured {
+                                        context,
+                                        width,
+                                        height,
+                                        hash,
+                                    },
+                                )?;
+                        }
+                        Event::DocumentNavigated { context, status } => {
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .complete_harness(
+                                    context,
+                                    RequestKind::Navigate,
+                                    Event::DocumentNavigated { context, status },
+                                )?;
+                        }
+                        Event::Diagnostic { context, record } => {
+                            let state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if state.lifecycle.accepts_requests()
+                                && context.is_none_or(|context| state.accepts_context(context))
+                            {
+                                wega::diagnostics::record(
+                                    &format!("worker:{worker_id}:diagnostic"),
+                                    &format!(
+                                        "{:?}: {}",
+                                        record.level,
+                                        record.message.chars().take(4096).collect::<String>()
+                                    ),
+                                );
+                            }
+                        }
                         Event::PageState { .. } | Event::Evaluated { .. } => {
                             return Err("Unscoped worker response".into());
                         }
@@ -780,29 +935,25 @@ impl Page {
                             let size =
                                 protocol::frame_bytes(width, height).map_err(|e| e.to_string())?;
                             // Acknowledge stale/frozen frames without faulting their pages back in.
-                            let bytes = {
-                                // Freeze takes these locks in the same order. Keep the
-                                // state lock through the copy so freeze cannot unmap and
-                                // then race with a reader remapping a hidden tab.
+                            let accepted = {
                                 let state = shared
                                     .lock()
                                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                if serial != state.requests.document().0
-                                    || revision != state.requests.revision()
-                                    || !state.lifecycle.presents_frames()
-                                {
-                                    None
-                                } else {
-                                    std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
-                                    Some(
-                                        reader_frames
-                                            .lock()
-                                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                            .slot(slot as usize, size)
-                                            .map_err(|e| e.to_string())?
-                                            .to_vec(),
-                                    )
-                                }
+                                serial == state.requests.document().0
+                                    && revision == state.requests.revision()
+                                    && state.lifecycle.presents_frames()
+                            };
+                            // No UI lock or host mmap spans untrusted backing I/O.
+                            // accept_frame revalidates the scope after the copy.
+                            let bytes = if accepted {
+                                std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
+                                Some(
+                                    reader_frames
+                                        .read_slot(slot as usize, size)
+                                        .map_err(|e| e.to_string())?,
+                                )
+                            } else {
+                                None
                             };
                             acknowledgements
                                 .send(Request::FrameConsumed { slot, sequence })
@@ -830,7 +981,7 @@ impl Page {
                         }
                         Event::State {
                             serial,
-                            rss_bytes,
+                            rss_bytes: _,
                             url,
                             title,
                             loading,
@@ -847,7 +998,7 @@ impl Page {
                             {
                                 continue;
                             }
-                            state.rss_bytes = rss_bytes;
+                            state.rss_bytes = reader_budget.resident_bytes();
                             state.document_back = back;
                             state.document_forward = forward;
                             if state.lifecycle.loading()
@@ -885,7 +1036,7 @@ impl Page {
         });
         let page = Self {
             child,
-            frames,
+            _frames: frames,
             broker,
             _budget: budget,
             requests: Some(sender),
@@ -899,21 +1050,18 @@ impl Page {
             index: 0,
         };
         page.send(Request::Init {
-            identity: Some(identity),
+            identity: Some(Box::new(identity)),
             version: protocol::VERSION,
             url: url.to_string(),
             offline: policy.offline,
             blocked_hosts: policy.blocked_hosts.clone(),
             allowed_hosts: policy.allowed_hosts.clone(),
-            broker_address: Some(broker_address),
+            broker_address,
             broker_token: Some(broker_token),
-            frame_path: Some(frame_path),
-            storage_dir: Some(
-                profile_dir
-                    .join("wega-storage")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
+            broker_fds,
+            frame_path,
+            frame_fd,
+            storage_dir: None,
         })?;
         page.send(Request::Capabilities)?;
         Ok(page)
@@ -1009,18 +1157,17 @@ impl Page {
             if state.lifecycle.accepts_content()
                 && let Some(authority) = &mut state.authority
                 && let Some(activation) = authority.activate(context, std::time::Instant::now())
-            {
-                if !self.requests.as_ref().is_some_and(|sender| {
+                && !self.requests.as_ref().is_some_and(|sender| {
                     sender
                         .try_send(Request::Activate {
                             context,
                             activation,
                         })
                         .is_ok()
-                }) {
-                    authority.clear_activation();
-                    return Err("Worker could not accept trusted input activation".into());
-                }
+                })
+            {
+                authority.clear_activation();
+                return Err("Worker could not accept trusted input activation".into());
             }
         }
         if matches!(
@@ -1043,6 +1190,8 @@ impl Page {
                 offline: *offline,
                 blocked_hosts: blocked_hosts.clone(),
                 allowed_hosts: allowed_hosts.clone(),
+                allow_loopback: test_loopback_allowed(),
+                ..Default::default()
             });
         }
         let result = self
@@ -1051,15 +1200,15 @@ impl Page {
             .ok_or("Worker is closed")?
             .try_send(request)
             .map_err(|_| "Wega engine is busy or stopped. Reload or switch to Servo.".to_string());
-        if result.is_err() && activates {
-            if let Some(authority) = &mut self
+        if result.is_err()
+            && activates
+            && let Some(authority) = &mut self
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .authority
-            {
-                authority.clear_activation();
-            }
+        {
+            authority.clear_activation();
         }
         if result.is_err()
             && let Some(context) = scoped
@@ -1222,12 +1371,11 @@ impl Page {
             }
             self.texture = None;
             state.frame = None;
-            self.frames
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .release_pages();
         }
         self.viewport = None;
+    }
+    pub fn resident_bytes(&self) -> Option<u64> {
+        self._budget.resident_bytes()
     }
     pub fn pid(&self) -> u32 {
         self.child.id()
@@ -1398,6 +1546,53 @@ impl Drop for Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn harness_replies_cannot_consume_an_evaluation_or_complete_after_expiry() {
+        let (mut state, _) = committed_state();
+        let evaluation = state
+            .requests
+            .begin(RequestKind::Evaluate, std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(
+            state
+                .complete_harness(
+                    evaluation,
+                    RequestKind::Capture,
+                    Event::DocumentCaptured {
+                        context: evaluation,
+                        width: 1,
+                        height: 1,
+                        hash: "0".repeat(64)
+                    }
+                )
+                .is_err()
+        );
+        assert!(state.evaluations.back().unwrap().1.is_err());
+        let capture = state
+            .requests
+            .begin(RequestKind::Capture, std::time::Duration::ZERO)
+            .unwrap();
+        state
+            .complete_harness(
+                capture,
+                RequestKind::Capture,
+                Event::DocumentCaptured {
+                    context: capture,
+                    width: 1,
+                    height: 1,
+                    hash: "0".repeat(64),
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            &state.harness_results.back().unwrap().1,
+            Err(ProtocolError {
+                code: ErrorCode::Timeout,
+                ..
+            })
+        ));
+        assert!(state.requests.take(capture).is_none());
+    }
 
     #[test]
     fn native_actions_cannot_transfer_to_a_restarted_worker_with_the_same_document_counters() {
