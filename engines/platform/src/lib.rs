@@ -85,34 +85,82 @@ pub fn cpu_seconds() -> Option<f64> {
     }
     #[cfg(windows)]
     {
-        use windows_sys::Win32::{
-            Foundation::FILETIME,
-            System::Threading::{GetCurrentProcess, GetProcessTimes},
-        };
-        let mut created: FILETIME = unsafe { std::mem::zeroed() };
-        let mut exited = created;
-        let mut kernel = created;
-        let mut user = created;
-        // SAFETY: the pseudo-handle is this process, and all four FILETIMEs are
-        // initialized, live, correctly sized output buffers. Units are 100 ns.
-        if unsafe {
-            GetProcessTimes(
-                GetCurrentProcess(),
-                &mut created,
-                &mut exited,
-                &mut kernel,
-                &mut user,
-            )
-        } == 0
-        {
-            return None;
-        }
-        let ticks =
-            |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
-        Some(ticks(kernel).checked_add(ticks(user))? as f64 / 10_000_000.0)
+        cpu_for_handle(unsafe { windows_sys::Win32::System::Threading::GetCurrentProcess() })
+            .map(|time| time.as_secs_f64())
     }
     #[cfg(not(any(unix, windows)))]
     {
+        None
+    }
+}
+
+#[cfg(windows)]
+fn cpu_for_handle(handle: windows_sys::Win32::Foundation::HANDLE) -> Option<std::time::Duration> {
+    use windows_sys::Win32::{Foundation::FILETIME, System::Threading::GetProcessTimes};
+    let mut created: FILETIME = unsafe { std::mem::zeroed() };
+    let mut exited = created;
+    let mut kernel = created;
+    let mut user = created;
+    // SAFETY: the caller retains this process handle through the query. The four
+    // outputs have the exact FILETIME layout; CPU counts are in 100 ns units.
+    if unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) } == 0 {
+        return None;
+    }
+    let ticks =
+        |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
+    let ticks = ticks(kernel).checked_add(ticks(user))?;
+    Some(std::time::Duration::new(
+        ticks / 10_000_000,
+        ((ticks % 10_000_000) * 100) as u32,
+    ))
+}
+/// The caller holds an unreaped child owner, preventing a recycled PID query.
+pub(crate) fn cpu_for_child(child: &crate::child::ChildOwner) -> Option<std::time::Duration> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        cpu_for_handle(child.as_raw_handle().cast())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut usage = std::mem::MaybeUninit::<libc::rusage_info_v0>::uninit();
+        // SAFETY: the live owner pins the PID and the kernel fills this v0 output.
+        if unsafe {
+            libc::proc_pid_rusage(
+                child.id() as libc::c_int,
+                libc::RUSAGE_INFO_V0,
+                usage.as_mut_ptr().cast(),
+            )
+        } != 0
+        {
+            return None;
+        }
+        let usage = unsafe { usage.assume_init() };
+        Some(std::time::Duration::from_nanos(
+            usage.ri_user_time.checked_add(usage.ri_system_time)?,
+        ))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.id())).ok()?;
+        // comm can contain spaces and parentheses; numeric fields follow its last
+        // closing parenthesis. Fields 14/15 are group user/system CPU ticks.
+        let fields: Vec<_> = stat.rsplit_once(") ")?.1.split_whitespace().collect();
+        let ticks = fields
+            .get(11)?
+            .parse::<u64>()
+            .ok()?
+            .checked_add(fields.get(12)?.parse().ok()?)?;
+        let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+        let hz = u64::try_from(hz).ok().filter(|value| *value > 0)?;
+        Some(std::time::Duration::new(
+            ticks / hz,
+            ((u128::from(ticks % hz) * 1_000_000_000) / u128::from(hz)) as u32,
+        ))
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = child;
         None
     }
 }

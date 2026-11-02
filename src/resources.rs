@@ -1,6 +1,10 @@
 //! Low-frequency resource sampling; no subprocesses or system-wide process scans.
 #![forbid(unsafe_code)]
-use std::time::{Duration, Instant};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
+use wega_platform::supervision::WorkerUsage;
 
 const INTERVAL: Duration = Duration::from_secs(2);
 
@@ -20,6 +24,7 @@ enum Scope {
 pub struct Monitor {
     scope: Scope,
     previous: Option<Sample>,
+    previous_workers: BTreeMap<u64, Duration>,
     sampled_at: Instant,
     started_at: Instant,
     pub cpu_percent: Option<f64>,
@@ -38,14 +43,16 @@ impl Monitor {
             scope
         };
         let initial = sample(scope);
+        let workers = worker_usage(scope);
         let now = Instant::now();
         Self {
             scope,
             previous: initial,
+            previous_workers: worker_clocks(&workers),
             sampled_at: now,
             started_at: now,
             cpu_percent: None,
-            memory_bytes: initial.map(|s| s.memory_bytes),
+            memory_bytes: initial.and_then(|sample| combined_memory(sample.memory_bytes, &workers)),
         }
     }
 
@@ -56,10 +63,20 @@ impl Monitor {
             return false;
         }
         let current = sample(self.scope);
+        let workers = worker_usage(self.scope);
         self.cpu_percent = current.zip(self.previous).and_then(|(new, old)| {
-            cpu_percent(old.cpu_seconds, new.cpu_seconds, elapsed.as_secs_f64())
+            let browser = cpu_percent(old.cpu_seconds, new.cpu_seconds, elapsed.as_secs_f64())?;
+            let content = worker_cpu_percent(
+                &self.previous_workers,
+                &workers,
+                self.sampled_at,
+                elapsed.as_secs_f64(),
+            )?;
+            Some(browser + content).filter(|value| value.is_finite())
         });
-        self.memory_bytes = current.map(|s| s.memory_bytes);
+        self.memory_bytes =
+            current.and_then(|sample| combined_memory(sample.memory_bytes, &workers));
+        self.previous_workers = worker_clocks(&workers);
         self.previous = current;
         self.sampled_at = now;
         true
@@ -83,7 +100,7 @@ impl Monitor {
     pub fn description(&self) -> String {
         let scope = match self.scope {
             Scope::Process => {
-                "Browser process, including all its tabs and engine threads. Separate content processes are excluded."
+                "Browser process and its Wega content processes. Summed resident memory can count shared pages more than once."
             }
             #[cfg(target_os = "linux")]
             Scope::Container => {
@@ -97,6 +114,41 @@ impl Monitor {
             seconds % 60
         )
     }
+}
+
+fn worker_usage(scope: Scope) -> Vec<WorkerUsage> {
+    if matches!(scope, Scope::Process) {
+        wega_platform::supervision::shared_usage()
+    } else {
+        Vec::new()
+    }
+}
+fn worker_clocks(workers: &[WorkerUsage]) -> BTreeMap<u64, Duration> {
+    workers
+        .iter()
+        .filter_map(|worker| Some((worker.id, worker.cpu_time?)))
+        .collect()
+}
+fn combined_memory(browser: u64, workers: &[WorkerUsage]) -> Option<u64> {
+    workers.iter().try_fold(browser, |total, worker| {
+        total.checked_add(worker.resident_bytes?)
+    })
+}
+fn worker_cpu_percent(
+    previous: &BTreeMap<u64, Duration>,
+    workers: &[WorkerUsage],
+    since: Instant,
+    seconds: f64,
+) -> Option<f64> {
+    workers.iter().try_fold(0.0, |total, worker| {
+        let current = worker.cpu_time?;
+        let old = match previous.get(&worker.id) {
+            Some(old) => *old,
+            None if worker.started >= since => Duration::ZERO,
+            None => return None,
+        };
+        Some(total + cpu_percent(old.as_secs_f64(), current.as_secs_f64(), seconds)?)
+    })
 }
 
 fn cpu_percent(previous: f64, current: f64, seconds: f64) -> Option<f64> {

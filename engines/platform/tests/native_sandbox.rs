@@ -1,7 +1,7 @@
 //! Run at the final native-validation stage, with a signed macOS probe helper or
 //! a supported Linux/Windows host. Setup failures are failures, never denials.
 use std::{
-    io::{Read, Write},
+    io::{BufRead, Read, Write},
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
@@ -18,6 +18,9 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     use std::io::{Seek, SeekFrom};
     granted.seek(SeekFrom::Start(0)).unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let udp = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    udp.set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
     let mut command = Command::new(probe);
     let launch = wega_platform::launch::PreparedLaunch::required_fixture(&mut command).unwrap();
     let grant = launch.inherit_frame_file(&mut command, &granted).unwrap();
@@ -28,6 +31,8 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         .arg(root.path().join("forbidden-output"))
         .arg("--address")
         .arg(listener.local_addr().unwrap().to_string())
+        .arg("--udp-address")
+        .arg(udp.local_addr().unwrap().to_string())
         .arg("--grant")
         .arg(grant.to_string())
         .stdin(Stdio::null())
@@ -53,7 +58,10 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     let (sent, received) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut bytes = String::new();
-        let result = stdout.read_to_string(&mut bytes);
+        // Lowbox token/object lifetime can outlive process exit. A complete
+        // result line and the owned process's exit status are the completion
+        // contract; waiting for pipe EOF can hang even after the probe exits.
+        let result = std::io::BufReader::new(stdout.by_ref().take(65536)).read_line(&mut bytes);
         let _ = sent.send((result, bytes));
     });
     let (read, output) = received
@@ -89,6 +97,15 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
             "{item}: stdout={output}; stderr={diagnostics}; exit={report:?}"
         );
     }
+    let mut packet = [0; 64];
+    assert!(
+        udp.recv_from(&mut packet).is_err(),
+        "Sandboxed UDP reached the host listener"
+    );
+    assert!(
+        !root.path().join("forbidden-output").exists(),
+        "Sandboxed write created a host file"
+    );
     assert!(
         !report.forced,
         "Probe required forced termination: {report:?}"

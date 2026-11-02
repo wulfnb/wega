@@ -143,6 +143,7 @@ pub struct ProcessControl {
 pub enum Sample {
     Alive {
         resident_bytes: Option<u64>,
+        cpu_time: Option<Duration>,
     },
     Exited,
     /// The reaper retains ownership; its exit guard still retains all reservations.
@@ -168,6 +169,7 @@ impl ProcessControl {
         // The child is unreaped while this lock is held, preventing PID reuse on Unix.
         Ok(Sample::Alive {
             resident_bytes: crate::resident_for_child(child),
+            cpu_time: crate::cpu_for_child(child),
         })
     }
     pub fn terminate(&self) -> io::Result<()> {

@@ -38,6 +38,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let output = PathBuf::from(argument("--write")?);
     let address = argument("--address")?.parse()?;
     let grant = argument("--grant")?.parse::<u64>()?;
+    let udp_address: std::net::SocketAddr = argument("--udp-address")?.parse()?;
     let mut file = wega_platform::inherited::duplicate_file(grant)?;
     wega_platform::sandbox::finish_grants()?;
     let mut allowed = String::new();
@@ -45,7 +46,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let read_denied = std::fs::read(&secret).is_err();
     let write_denied = std::fs::write(&output, b"escape").is_err();
     let tcp_denied = TcpStream::connect_timeout(&address, Duration::from_secs(1)).is_err();
-    let udp_denied = UdpSocket::bind("127.0.0.1:0").is_err();
+    // Windows may allocate/bind an inert socket while denying communication.
+    // Exercise egress to the parent's real UDP listener, not bind alone.
+    let udp_denied = UdpSocket::bind("127.0.0.1:0")
+        .and_then(|socket| socket.send_to(b"wega-native-probe", udp_address))
+        .is_err();
     let child = Command::new(executable)
         .arg("--should-never-execute")
         .spawn();

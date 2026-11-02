@@ -48,3 +48,52 @@ fn native_monitor_populates_cpu_and_ram_after_its_first_interval() {
     );
     assert!(!monitor.label().contains('—'));
 }
+
+#[test]
+fn overall_usage_includes_existing_and_new_workers_and_handles_tab_close() {
+    let since = Instant::now();
+    let previous = BTreeMap::from([(7, Duration::from_secs(1))]);
+    let workers = [
+        WorkerUsage {
+            id: 7,
+            started: since - Duration::from_secs(5),
+            resident_bytes: Some(64),
+            cpu_time: Some(Duration::from_millis(1500)),
+        },
+        WorkerUsage {
+            id: 8,
+            started: since + Duration::from_millis(1),
+            resident_bytes: Some(32),
+            cpu_time: Some(Duration::from_millis(250)),
+        },
+    ];
+    assert_eq!(combined_memory(128, &workers), Some(224));
+    assert_eq!(
+        worker_cpu_percent(&previous, &workers, since, 2.0),
+        Some(37.5)
+    );
+    // Closing a worker must not subtract its lifetime clock and blank the total.
+    assert_eq!(worker_cpu_percent(&previous, &[], since, 2.0), Some(0.0));
+    assert_eq!(combined_memory(128, &[]), Some(128));
+}
+#[test]
+fn unknown_worker_measurements_do_not_become_zero_or_a_lifetime_cpu_spike() {
+    let since = Instant::now();
+    let mut worker = WorkerUsage {
+        id: 9,
+        started: since - Duration::from_secs(10),
+        resident_bytes: None,
+        cpu_time: Some(Duration::from_secs(3)),
+    };
+    assert_eq!(combined_memory(128, &[worker]), None);
+    assert_eq!(
+        worker_cpu_percent(&BTreeMap::new(), &[worker], since, 2.0),
+        None
+    );
+    worker.started = since;
+    worker.cpu_time = None;
+    assert_eq!(
+        worker_cpu_percent(&BTreeMap::new(), &[worker], since, 2.0),
+        None
+    );
+}
