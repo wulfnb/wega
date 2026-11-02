@@ -258,6 +258,51 @@ Replace handwritten wrappers for migrated families with generated output:
 
 ---
 
+## Closeout (3 November 2026)
+
+Subtasks 08.a–08.l are delivered. Local evidence is recorded in
+`docs/validation/standalone/progress.json` (`step_08_validation`); hosted
+three-platform CI runs on the 08.l pull request.
+
+**Delivered beyond the subtask list, found while wiring 08.k end to end:**
+
+- `install()` keeps upstream non-configurable members (Deno `Event` constants,
+  `[LegacyUnforgeable] isTrusted`); WebIDL constants are non-configurable.
+- The pinned Deno event adapter adds `initEvent`, the spec `cancelBubble`
+  setter, HTML `window.event` and DOM capture-at-target dispatch.
+- `bindingCheck` validates node liveness only; each document owns its realm.
+- DOM algorithms throw `DOMException` (JS errors only for Web IDL simple errors).
+- Pre-insertion/replace validity, ChildNode/ParentNode conversion and viable
+  siblings, and DOMTokenList update/replace steps follow the DOM specification.
+- Value iterators use `%Array.prototype%` methods; indexed-getter interfaces
+  without `iterable<>` (HTMLCollection, NamedNodeMap) expose only `@@iterator`.
+- Location members are `[LegacyUnforgeable]` own properties with unforgeable
+  `valueOf` and `@@toPrimitive`.
+
+**Evidence:**
+
+| Gate | Result |
+|---|---|
+| Pinned DOM WPT subset (`engines/wega/tests/wpt.rs`, revision `68d964a5`) | 35 files, 1685 cases, all pass; floor raised from 31 |
+| Families with upstream WPT coverage | Event/EventTarget, CharacterData, Node, ChildNode, Element, Document, Attr/NamedNodeMap, NodeList, HTMLCollection, DOMTokenList (1420-case `Element-classlist`), MutationObserver, Location |
+| Framework fixtures (`compat.rs`) | React, Vue, Preact and the other pinned fixtures pass |
+| Generated-binding contracts (`dom.rs`) | Brand checks, illegal constructors, typed-argument rejection, constant descriptors, `[SameObject]`, hidden bootstrap internals, reentrant mutation during conversion and dispatch; proven by mutation of the brand check |
+| Detached wrappers, DOM budgets | Existing `dom.rs` budget/detached regressions pass |
+| Engine and protocol suites | 211 tests, all targets, 0 failures; strict Clippy and fmt clean |
+
+**Explicit blockers (not counted as supported):**
+
+| Blocker | Upstream WPT files affected | Owning step |
+|---|---|---|
+| `DOMImplementation` (`createDocument`, `createDocumentType`, `createHTMLDocument`), XML/XHTML documents | Document-createElement, Node-insertBefore, Node-replaceChild, Node-isEqualNode, Node-appendChild, ParentNode-append/prepend, Element-tagName | 08 follow-up |
+| ProcessingInstruction and CDATASection nodes | MutationObserver-characterData, Node-isEqualNode | 08 follow-up |
+| Per-tag HTML element interfaces beyond HTMLElement/HTMLHeadElement/HTMLScriptElement | Document-getElementById, Node-cloneNode | 08 follow-up (HTML element families) |
+| Legacy platform object named properties | HTMLCollection-empty-name, HTMLCollection-own-props, namednodemap-supported-property-names | 08 follow-up |
+| Namespace-aware attribute matching, `Attr.value` mutation records, `toggleAttribute` casing | Element-setAttribute, attributes, MutationObserver-attributes | 08 follow-up |
+| MutationObserver childList records for `textContent`/`normalize` | MutationObserver-childList | 08 follow-up |
+| Selectors `:invalid`, `:has()` | Element-closest | 13 |
+| Fixtures that need iframes or XML documents | Node-removeChild, Node-contains, Node-textContent, location-protocol-setter-non-broken | 14 |
+
 ## Commands
 
 ```sh

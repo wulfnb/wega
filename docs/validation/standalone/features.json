@@ -77,7 +77,7 @@
     {
       "id": "F05",
       "servo_source_observation": "574 IDL source files; scripts/crypto/DOM preferences: `vendor/servo-script-bindings/webidls/`, `src/browser.rs`",
-      "wega_source_observation": "Wega handwritten DOM, parser and Deno adapters exist; generation, complete semantics and task ordering remain open. Every file is indexed, not certified.",
+      "wega_source_observation": "Generated bindings (Step 07/08) cover Event/EventTarget, CharacterData, Node, Element, Document, Attr, NodeList, HTMLCollection, NamedNodeMap, DOMTokenList, MutationObserver/Record and Location, with 35 pinned DOM WPT files (1685 cases) passing. DOMImplementation/XML documents, ProcessingInstruction/CDATA, per-tag HTML elements and named properties are explicit blockers. Other IDL files are indexed, not certified.",
       "replacement_steps": [
         "06",
         "07",

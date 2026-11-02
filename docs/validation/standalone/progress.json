@@ -48,6 +48,28 @@
       "acceptance": "Not complete: full reactions, Blitz/Stylo scoped style and flattened layout, focus/accessibility and component-library gates remain",
       "acceptance_verified": false,
       "contract": "docs/step-14-15-browsing-contexts-and-components.md"
+    },
+    "07": {
+      "implementation": "complete",
+      "acceptance": "Deterministic regeneration, pinned-input hashing, explicit unsupported-construct failures and executed-binding contract tests pass; generated families are compiled into the worker bootstrap and drift-checked by build.rs",
+      "contract": "docs/step-07-webidl-generation.md",
+      "acceptance_verified": true
+    },
+    "08": {
+      "implementation": "complete for subtasks 08.a-08.l: Event/EventTarget, CharacterData/Text/Comment, Node, Element, Document, Attr, NodeList, HTMLCollection, NamedNodeMap, DOMTokenList, MutationObserver/MutationRecord and Location are generated and installed over Rust/JS semantic adapters",
+      "acceptance": "Local macOS arm64: pinned DOM WPT subset 35 files / 1685 cases all passing (was 4 / 31), framework fixtures, DOM/custom-element/page suites and generated-binding brand/conversion/reentrancy regressions pass. Hosted three-platform CI pending on the PR. Explicit blockers recorded in the Step 08 contract.",
+      "contract": "docs/step-08-dom-events-web-apis.md",
+      "acceptance_verified": false,
+      "blockers": [
+        "DOMImplementation (createDocument/createDocumentType/createHTMLDocument), XML/XHTML documents and script-created DocumentType",
+        "ProcessingInstruction and CDATASection nodes",
+        "Per-tag HTML element interfaces (HTMLDivElement, HTMLAreaElement, ...) beyond HTMLElement/HTMLHeadElement/HTMLScriptElement",
+        "Legacy platform object named properties (HTMLCollection/NamedNodeMap named getters, supported property names)",
+        "Namespace-aware attribute matching and Attr.value mutation records",
+        "MutationObserver childList record details for textContent/normalize",
+        "Selectors :invalid and :has()",
+        "WPT files depending on iframes or XML documents (Node-removeChild, Node-contains, Node-textContent, location-protocol-setter-non-broken)"
+      ]
     }
   },
   "substeps": {
@@ -71,13 +93,23 @@
     "06.a": "Document host parser/lifecycle ownership and bounded document-scoped task admission delivered",
     "06.b": "Microtask checkpoints, provisional suspension, replacement teardown, visibility/freeze and fatal-script recovery delivered",
     "06.c": "Deno adaptation/secure-context audit recorded; existing upstream JS semantics retained",
-    "07.a": "In progress: tools/webidl generator (pinned IDL inputs, deterministic JS emitter, hook manifest, explicit unsupported-construct failures) for the character-data family; see docs/step-07-webidl-generation.md",
-    "08.a": "In progress: generator extended with const members (static Object.defineProperty), [Constant] (writable:false getter), [SameObject] (Map memoised getter), [SetterThrows] (hook annotation). Parser accepts all four. 9/9 tests pass including generation output verification.",
-    "08.b": "In progress: EventTarget + Event families generated with simplified IDL pins (stripped multi-realm exposure, callbacks, unions, dictionaries, nullable interface types, sequence returns). 4 hooks for EventTarget (constructor, addEventListener, removeEventListener, dispatchEvent). 17 hooks for Event (constructor, 12 getters, 2 setters, 4 operations, 4 consts). Full signatures deferred to JS layer.",
+    "07.a": "Complete: tools/webidl generator with pinned IDL inputs, deterministic emitter, hook manifest and explicit unsupported-construct failures; the 07.b-07.d scope (DOMTokenList, brands, wrapper identity, reentrancy) was delivered through Step 08 families",
+    "08.a": "Complete: const members, [Constant], [SameObject], [SetterThrows]; WebIDL constants are non-configurable and coexist with upstream non-configurable members",
+    "08.b": "Complete: EventTarget and Event generated; Deno Event gains spec initEvent, cancelBubble setter, window.event and DOM capture-at-target dispatch through the pinned event adapter",
     "14.authority": "Implemented coordinator library; live browser/supervisor wiring pending",
     "14.runtime": "Unsafe synthetic contexts removed; real nested documents and processes pending; capability withheld",
     "15.api": "Rust-owned registration/upgrade/reactions and native shadow/slot/event relationships implemented; nine component API regressions passed locally, full upstream/library acceptance pending",
-    "15.rendering": "Stylo scoped cascade, Blitz flattened layout, focus/accessibility and representative libraries pending"
+    "15.rendering": "Stylo scoped cascade, Blitz flattened layout, focus/accessibility and representative libraries pending",
+    "08.c": "Complete: dictionaries as parameters, enums and typedefs",
+    "08.d": "Complete: Attr family",
+    "08.e": "Complete: interface-typed parameters/returns and [SameObject] operations",
+    "08.f": "Complete: Node family; pre-insertion and replace validity follow the DOM algorithm in specification order",
+    "08.g": "Complete: unions, variadic arguments, partial interfaces and enums in inputs",
+    "08.h": "Complete: Element family; ChildNode/ParentNode use convert-nodes-into-a-node and viable siblings",
+    "08.i": "Complete: Document family",
+    "08.j": "Complete: NodeList, HTMLCollection, NamedNodeMap, DOMTokenList, Location, MutationObserver and MutationRecord; value iterators use %Array.prototype% methods, indexed-getter interfaces get only @@iterator, Location members are [LegacyUnforgeable] own properties",
+    "08.k": "Complete: build.rs regenerates and drift-checks every family into the bootstrap; handwritten semantics live in semantics.js; op_dom_hook rejects unregistered hooks and dead node identities; DOM failures throw real DOMException",
+    "08.l": "Complete locally: pinned DOM WPT subset expanded to 35 files / 1685 cases, generated-binding contract regression added, ledger/plan/contract updated; hosted CI acceptance pending"
   },
   "compile_checks": [
     {
@@ -283,5 +315,40 @@
     "full_workspace_local": "Attempted; parallel test linking exceeded disk capacity. Relevant suites rerun serially and passed with loopback fixture access. No full-suite pass claimed.",
     "hosted": "Pending on the updated PR branch; native Windows/Linux/macOS workflow enabled.",
     "completion_boundary": "These checks prove bounded API and authority regressions. They do not prove real nested frames, scoped style/layout, full custom element semantics or component-library parity."
+  },
+  "step_08_validation": {
+    "date": "2026-11-03",
+    "platform": "macOS arm64",
+    "pinned_dom_wpt": {
+      "revision": "68d964a5f292bc4b2c2eba2f21e2b916190b6ad2",
+      "files": 35,
+      "cases": 1685,
+      "passed": 1685,
+      "previous_baseline": {
+        "files": 4,
+        "cases": 31
+      }
+    },
+    "local_tests": {
+      "engine_and_protocol_all_targets": 211,
+      "failed": 0,
+      "webidl_generator": 6
+    },
+    "passed_checks": [
+      "cargo clippy --workspace --all-targets -D warnings (engines)",
+      "cargo clippy --features webidl-tools --bin wega-webidl -D warnings",
+      "cargo fmt --check (root and engines)",
+      "wega-webidl check (generated outputs and native hook registry current)",
+      "git diff --check",
+      "node --check on DOM bootstrap sources"
+    ],
+    "commands": [
+      "cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine -p wega-protocol --all-targets",
+      "cargo test --locked --features webidl-tools --bin wega-webidl",
+      "cargo run --locked --features webidl-tools --bin wega-webidl -- check"
+    ],
+    "regression_baseline": "Every probed WPT file was also run against the pre-08.k commit d354dae; no file regressed and 16 improved before the 08.l fixes",
+    "hosted": "Pending on the 08.l PR",
+    "completion_boundary": "Proves the listed families against the pinned subset and local suites; does not prove the recorded blockers, per-tag HTML element interfaces or other platforms."
   }
 }

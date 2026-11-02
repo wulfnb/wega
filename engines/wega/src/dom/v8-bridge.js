@@ -6,7 +6,7 @@
       try { ops.op_dom_hook(name, identities); }
       catch (error) {
         const match = /^([A-Za-z]+Error):\s*(.*)/.exec(error.message || "");
-        if (match) { const failure = new Error(match[2]); failure.name = match[1]; throw failure; }
+        if (match) throw ({ TypeError, RangeError }[match[1]] ? new globalThis[match[1]](match[2]) : new DOMException(match[2], match[1]));
         throw error;
       }
     },

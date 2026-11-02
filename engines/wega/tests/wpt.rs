@@ -66,8 +66,8 @@ fn pinned_dom_wpt_subset_has_no_regressions() {
     for case in cases.as_array().unwrap() {
         let engine = Engine::new(
             Limits {
-                script_time: Duration::from_secs(3),
-                js_heap_bytes: 64 * 1024 * 1024,
+                script_time: Duration::from_secs(30),
+                js_heap_bytes: 256 * 1024 * 1024,
                 ..Limits::default()
             },
             NetworkPolicy {
@@ -83,16 +83,17 @@ fn pinned_dom_wpt_subset_has_no_regressions() {
         view.set_html(case["html"].as_str().unwrap()).unwrap();
         view.evaluate(include_str!("fixtures/wpt/testharness.js"))
             .unwrap();
-        view.evaluate("setup({explicit_done:true,output:false});globalThis.__wptResults=null;add_completion_callback((tests,status)=>globalThis.__wptResults={status:status.status,tests:tests.map(t=>({name:t.name,status:t.status,message:t.message}))})").unwrap();
-        if case["file"] == "Node-constants.html" {
-            view.evaluate(include_str!("fixtures/wpt/constants.js"))
-                .unwrap();
+        view.evaluate("setup({explicit_done:true,output:false});globalThis.__wptResults=null;add_completion_callback((tests,status)=>globalThis.__wptResults={status:status.status,total:tests.length,failures:tests.filter(t=>t.status!==0).slice(0,20).map(t=>({name:t.name,status:t.status,message:t.message}))})").unwrap();
+        // Upstream helper scripts the fixture loads by src, in document order.
+        for helper in case["helpers"].as_array().into_iter().flatten() {
+            let helper = std::fs::read_to_string(directory.join(helper.as_str().unwrap())).unwrap();
+            view.evaluate(&helper).unwrap();
         }
         for script in case["scripts"].as_array().unwrap() {
             view.evaluate(script.as_str().unwrap()).unwrap();
         }
         view.evaluate("done()").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(30);
         let report = loop {
             view.poll();
             let report = view.evaluate_json("__wptResults").unwrap();
@@ -108,19 +109,18 @@ fn pinned_dom_wpt_subset_has_no_regressions() {
             std::thread::sleep(Duration::from_millis(2));
         };
         assert_eq!(report["status"], 0, "{}: {report}", case["file"]);
-        let tests = report["tests"].as_array().unwrap();
-        assert!(!tests.is_empty());
-        for test in tests {
-            assert_eq!(test["status"], 0, "{}: {test}", case["file"]);
-        }
-        println!(
-            "WPT {}: {}/{} passed",
-            case["file"],
-            tests.len(),
-            tests.len()
+        // Only failures cross the IPC boundary; large files have 1000+ cases.
+        let count = report["total"].as_u64().unwrap() as usize;
+        assert!(count > 0);
+        assert_eq!(
+            report["failures"],
+            serde_json::json!([]),
+            "{}",
+            case["file"]
         );
-        total += tests.len();
+        println!("WPT {}: {count}/{count} passed", case["file"]);
+        total += count;
     }
-    assert!(total >= 31, "WPT subset must never shrink: {total} cases");
+    assert!(total >= 1685, "WPT subset must never shrink: {total} cases");
     println!("WPT DOM subset: {total}/{total} passed");
 }
