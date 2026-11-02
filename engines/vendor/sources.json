@@ -5,7 +5,8 @@
     "sha256": "7ad7d5294f640fd99db08c455e2453c9860b1fa728b76fbdacf0eed3e308d48a",
     "patches": [
       "deno/patches/embed-extension-sources.patch",
-      "deno/patches/two-platform-workers.patch"
+      "deno/patches/two-platform-workers.patch",
+      "deno/patches/transactional-arraybuffer-transfer.patch"
     ],
     "extra_licenses": [
       "LICENSE.md"
@@ -44,7 +45,8 @@
     "sha256": "a814bfd3ad19e6d8d26f99c75188062baca499564f9abe44250230962427d183",
     "patches": [
       "blitz/patches/blitz-dom.patch",
-      "blitz/patches/content-image-budgets.patch"
+      "blitz/patches/content-image-budgets.patch",
+      "blitz/patches/document-id-scope.patch"
     ]
   },
   "blitz-paint": {

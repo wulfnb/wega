@@ -12,29 +12,77 @@ pub(crate) fn adapt_extension(
     deno_error::JsErrorBox,
 > {
     if name.as_str() == "ext:deno_web/02_event.js" {
-        let original = "return isNode(eventTarget) ? eventTarget.parentNode : null;";
-        let text = source.to_string();
-        if text.matches(original).count() != 1 {
-            return Err(deno_error::JsErrorBox::generic(
-                "Pinned Deno event parent adapter no longer matches",
-            ));
+        let mut adapted = source.to_string();
+        // Refuse a dependency update that changes any pinned semantic hook.
+        // The active Deno dispatcher owns retargeting and closed composed paths;
+        // Rust supplies its native parent, root and slot relationships.
+        for (original, replacement) in [
+            (
+                "function getParent(eventTarget) {\n  return isNode(eventTarget) ? eventTarget.parentNode : null;\n}",
+                "let wegaDomHooks;\nfunction setWegaDomHooks(hooks) { if (wegaDomHooks) throw new TypeError(\"DOM hooks already installed\"); wegaDomHooks = hooks; }\nfunction getParent(eventTarget, event = null, originalRoot = null) {\n  return isNode(eventTarget) ? wegaDomHooks.parent(eventTarget, event, originalRoot) : null;\n}",
+            ),
+            (
+                "    if (data === undefined || !data.listeners[event.type]) {",
+                "    if (data === undefined || (!data.listeners[event.type] && !isNode(self))) {",
+            ),
+            (
+                "isNode(parent) &&\n        isShadowInclusiveAncestor(getRoot(targetImpl), parent)",
+                "(parent === globalThis_ || (isNode(parent) &&\n        isShadowInclusiveAncestor(getRoot(targetImpl), parent)))",
+            ),
+            (
+                "eventTarget.getRootNode({ composed: true })",
+                "eventTarget.getRootNode()",
+            ),
+            (
+                "let parent = getParent(targetImpl);",
+                "let parent = getParent(targetImpl, eventImpl, getRoot(targetOverride));",
+            ),
+            (
+                "parent = getParent(parent);",
+                "parent = getParent(parent, eventImpl, getRoot(targetOverride));",
+            ),
+            (
+                "return target?.[eventTargetData]?.host ?? null;",
+                "return wegaDomHooks?.host(target) ?? null;",
+            ),
+            (
+                "return target?.[eventTargetData]?.mode ?? null;",
+                "return wegaDomHooks?.mode(target) ?? null;",
+            ),
+            (
+                "return Boolean(target?.[eventTargetData]?.assignedSlot);",
+                "return wegaDomHooks?.slot(target) ?? null;",
+            ),
+            ("  setTarget,\n};", "  setTarget,\n  setWegaDomHooks,\n};"),
+            (
+                "function isSlottable(\n  /* nodeImpl, */\n) {\n  // TODO(marcosc90) currently there aren't any slottables nodes\n  // https://dom.spec.whatwg.org/#concept-slotable\n  // return isNode(nodeImpl) && ReflectHas(nodeImpl, \"assignedSlot\");\n  return false;\n}",
+                "function isSlottable(nodeImpl) {\n  return isNode(nodeImpl) && (nodeImpl.nodeType === 1 || nodeImpl.nodeType === 3);\n}",
+            ),
+        ] {
+            if adapted.matches(original).count() != 1 {
+                return Err(deno_error::JsErrorBox::generic(format!(
+                    "Pinned Deno event adapter no longer matches: {original}"
+                )));
+            }
+            adapted = adapted.replace(original, replacement);
         }
-        // Deno skips dispatch when the target itself has no listener; in a DOM the
-        // event still travels to ancestors (event delegation).
-        let shortcut = "    if (data === undefined || !data.listeners[event.type]) {";
-        if text.matches(shortcut).count() != 1 {
-            return Err(deno_error::JsErrorBox::generic(
-                "Pinned Deno dispatch shortcut adapter no longer matches",
-            ));
-        }
-        let adapted=text.replace("isNode(parent) &&\n        isShadowInclusiveAncestor(getRoot(targetImpl), parent)","(parent === globalThis_ || (isNode(parent) &&\n        isShadowInclusiveAncestor(getRoot(targetImpl), parent)))").replace(original,"return isNode(eventTarget) ? (eventTarget.nodeType === 9 ? eventTarget.defaultView : eventTarget.parentNode) : null;").replace(shortcut, "    if (data === undefined || (!data.listeners[event.type] && !isNode(self))) {");
         return Ok((
             format!(
-                "// Modified by Wega contributors, 2026: HTML Document event parent.\n{adapted}"
+                "// Modified by Wega contributors, 2026: native DOM event parent and shadow boundaries.\n{adapted}"
             )
             .into(),
             None,
         ));
+    }
+    if name.as_str() == "ext:deno_web/13_message_port.js" {
+        let text = source.to_string();
+        let original = "  const messageData = serializeJsMessageData(value, options.transfer);\n  return deserializeJsMessageData(messageData)[0];";
+        if text.matches(original).count() != 1 {
+            return Err(deno_error::JsErrorBox::generic(
+                "Pinned structured-clone transfer adapter no longer matches",
+            ));
+        }
+        return Ok((text.replace(original, "  try {\n    const messageData = serializeJsMessageData(value, options.transfer);\n    return deserializeJsMessageData(messageData)[0];\n  } catch (error) {\n    if (ObjectPrototypeIsPrototypeOf(TypeErrorPrototype, error)) throw new DOMException(error.message, \"DataCloneError\");\n    throw error;\n  }").into(),None));
     }
     if name.as_str() == "ext:deno_fetch/26_fetch.js" {
         let text = source.to_string();

@@ -4,3 +4,9 @@ for (const name of ["web", "bridge", "bindings", "observers", "install", "xhr", 
   globalThis[key]();
   delete globalThis[key];
 }
+
+// Native DOM dispatch and Deno's mutable event internals are bootstrap-only.
+// The installed bindings hold private closures rather than page-visible handles.
+delete globalThis.__wega_call;
+delete globalThis.__wega_web;
+delete globalThis.__wega_install_web;
