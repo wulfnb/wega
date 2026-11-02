@@ -1,0 +1,249 @@
+{
+  "base_mixins": [],
+  "family": "mutation-observer",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "MutationObserver"
+  ],
+  "hooks": [
+    {
+      "args": [
+        "MutationCallback"
+      ],
+      "interface": "MutationObserver",
+      "kind": "constructor",
+      "line": 13,
+      "member": "constructor",
+      "name": "mutationObserver.construct.mutationobserver",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [
+        "Node",
+        "MutationObserverInit"
+      ],
+      "interface": "MutationObserver",
+      "kind": "operation",
+      "line": 14,
+      "member": "observe",
+      "name": "mutationObserver.observe",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationObserver",
+      "kind": "operation",
+      "line": 15,
+      "member": "disconnect",
+      "name": "mutationObserver.disconnect",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationObserver",
+      "kind": "operation",
+      "line": 16,
+      "member": "takeRecords",
+      "name": "mutationObserver.takeRecords",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "sequence<MutationRecord>",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/mutation-observer.webidl",
+      "5cb4e6224c18bb48941eb8700f7fdb83688bb8c4666dfb95c9e58a5666aec9a8"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "kind": "constructor",
+          "name": "constructor",
+          "parameters": [
+            {
+              "name": "callback",
+              "optional": false,
+              "type": {
+                "kind": "callback",
+                "name": "MutationCallback",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "observe",
+          "parameters": [
+            {
+              "name": "target",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "default": {},
+              "name": "options",
+              "optional": true,
+              "type": {
+                "kind": "dictionary",
+                "members": [
+                  {
+                    "name": "attributeFilter",
+                    "optional": true,
+                    "type": {
+                      "element": {
+                        "kind": "string",
+                        "nullable": false
+                      },
+                      "kind": "sequence"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "name": "attributeOldValue",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "name": "attributes",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "name": "characterData",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "name": "characterDataOldValue",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "default": false,
+                    "name": "childList",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "default": false,
+                    "name": "subtree",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  }
+                ],
+                "name": "MutationObserverInit",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "disconnect",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "takeRecords",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "element": {
+              "kind": "interface",
+              "name": "MutationRecord",
+              "nullable": false
+            },
+            "kind": "sequence"
+          }
+        }
+      ],
+      "name": "MutationObserver",
+      "prefix": "mutationObserver"
+    }
+  ],
+  "native_base": {
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

@@ -1,5 +1,5 @@
 // Factories are eagerly compiled in build.rs; profile/origin/DOM state is created here.
-for (const name of ["web", "bridge", "bindings", "observers", "install", "xhr", "forms"]) {
+for (const name of ["web", "bridge", "semantics", "observers", "install", "bindings", "generated", "xhr", "forms"]) {
   const key = "__wega_bootstrap_" + name;
   globalThis[key]();
   delete globalThis[key];
@@ -10,3 +10,7 @@ for (const name of ["web", "bridge", "bindings", "observers", "install", "xhr", 
 delete globalThis.__wega_call;
 delete globalThis.__wega_web;
 delete globalThis.__wega_install_web;
+
+delete globalThis.__wega_dom;
+delete globalThis.__wega_semantics;
+delete globalThis.__wega_guard_binding;

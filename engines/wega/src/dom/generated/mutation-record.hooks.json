@@ -1,0 +1,291 @@
+{
+  "base_mixins": [],
+  "family": "mutation-record",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "MutationRecord"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 3,
+      "member": "type",
+      "name": "mutationRecord.type",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 4,
+      "member": "target",
+      "name": "mutationRecord.target",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 5,
+      "member": "addedNodes",
+      "name": "mutationRecord.addedNodes",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "NodeList",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 6,
+      "member": "removedNodes",
+      "name": "mutationRecord.removedNodes",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "NodeList",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 7,
+      "member": "previousSibling",
+      "name": "mutationRecord.previousSibling",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 8,
+      "member": "nextSibling",
+      "name": "mutationRecord.nextSibling",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 9,
+      "member": "attributeName",
+      "name": "mutationRecord.attributeName",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 10,
+      "member": "attributeNamespace",
+      "name": "mutationRecord.attributeNamespace",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "MutationRecord",
+      "kind": "attribute-getter",
+      "line": 11,
+      "member": "oldValue",
+      "name": "mutationRecord.oldValue",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString?",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/mutation-record.webidl",
+      "0409dd6ec9c2d7f13f73b51bdbd910b2c56c205b6c106f4fc7cb09a315694ad9"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "type",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "target",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "addedNodes",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "NodeList",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "removedNodes",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "NodeList",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "previousSibling",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "nextSibling",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "attributeName",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "attributeNamespace",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "oldValue",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        }
+      ],
+      "name": "MutationRecord",
+      "prefix": "mutationRecord"
+    }
+  ],
+  "native_base": {
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

@@ -12,13 +12,36 @@
       ],
       "native_base": {
         "Node": "dom.base.Node",
-        "CharacterData": "dom.base.Node"
+        "CharacterData": "dom.base.Node",
+        "EventTarget": "dom.classes.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
       },
       "base_mixins": [
         "ChildNode",
         "NonDocumentTypeChildNode"
       ],
       "globals": [
+        "CharacterData",
         "Text",
         "Comment"
       ],
@@ -76,13 +99,36 @@
     {
       "name": "event-target",
       "hook_prefix": "evtTarget",
+      "files": [
+        "tools/webidl/idl/event-target.webidl"
+      ],
       "output": "engines/wega/src/dom/generated/event-target.js",
       "manifest": "engines/wega/src/dom/generated/event-target.hooks.json",
-      "files": [
-        "vendor/servo-script-bindings/simplified-idls/EventTarget.webidl"
-      ],
       "native_base": {
-        "EventTarget": "dom.event.EventTarget"
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
       },
       "base_mixins": [],
       "globals": [
@@ -90,19 +136,19 @@
       ],
       "hooks": {
         "evtTarget.construct.eventtarget": {
-          "result": "{ id: string, info: object }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "evtTarget.addEventListener": {
-          "result": "{ undefined }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "evtTarget.removeEventListener": {
-          "result": "{ undefined }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "evtTarget.dispatchEvent": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         }
       }
@@ -110,13 +156,36 @@
     {
       "name": "event",
       "hook_prefix": "event",
+      "files": [
+        "tools/webidl/idl/event.webidl"
+      ],
       "output": "engines/wega/src/dom/generated/event.js",
       "manifest": "engines/wega/src/dom/generated/event.hooks.json",
-      "files": [
-        "vendor/servo-script-bindings/simplified-idls/Event.simplified.webidl"
-      ],
       "native_base": {
-        "Event": "dom.base.EventTarget"
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
       },
       "base_mixins": [],
       "globals": [
@@ -124,208 +193,248 @@
       ],
       "hooks": {
         "event.construct.event": {
-          "result": "{ id: string, info: object }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.type": {
-          "result": "{ string }",
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "event.target": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "event.currentTarget": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "event.composedPath": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.eventPhase": {
-          "result": "{ unsigned long }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.stopPropagation": {
-          "result": "{ undefined }",
-          "reaction": "stopPropagation"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "event.cancelBubble": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.cancelBubble.set": {
-          "result": "{ boolean }",
-          "reaction": "stopPropagation"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "event.stopImmediatePropagation": {
-          "result": "{ undefined }",
-          "reaction": "stopImmediatePropagation"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "event.bubbles": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.cancelable": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.returnValue": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.returnValue.set": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.preventDefault": {
-          "result": "{ undefined }",
-          "reaction": "preventDefault"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "event.defaultPrevented": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.composed": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.isTrusted": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.timeStamp": {
-          "result": "{ double }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "event.initEvent": {
-          "result": "{ undefined }",
-          "reaction": "initEvent"
+          "result": "typed semantic value",
+          "reaction": null
         }
       }
     },
     {
       "name": "node",
       "hook_prefix": "node",
+      "files": [
+        "tools/webidl/idl/node.webidl"
+      ],
       "output": "engines/wega/src/dom/generated/node.js",
       "manifest": "engines/wega/src/dom/generated/node.hooks.json",
-      "files": [
-        "vendor/servo-script-bindings/simplified-idls/Node.simplified.webidl"
-      ],
       "native_base": {
-        "EventTarget": "dom.event.EventTarget",
-        "Node": "dom.base.EventTarget"
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
       },
       "base_mixins": [],
-      "globals": [],
+      "globals": [
+        "Node"
+      ],
       "hooks": {
         "node.nodeType": {
-          "result": "{ unsigned long }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.nodeName": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.baseURI": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.isConnected": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.ownerDocument": {
-          "result": "{ string }",
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "node.getRootNode": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.parentNode": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.parentElement": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.hasChildNodes": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.childNodes": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.firstChild": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.lastChild": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.previousSibling": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.nextSibling": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.nodeValue": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.nodeValue.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "node.textContent": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.textContent.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "node.normalize": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "node.cloneNode": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.isEqualNode": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.isSameNode": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.compareDocumentPosition": {
-          "result": "{ unsigned long }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.contains": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.lookupPrefix": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.lookupNamespaceURI": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.isDefaultNamespace": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.insertBefore": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.appendChild": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.replaceChild": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "node.removeChild": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         }
       }
@@ -333,639 +442,1101 @@
     {
       "name": "element",
       "hook_prefix": "element",
+      "files": [
+        "tools/webidl/idl/element.webidl"
+      ],
       "output": "engines/wega/src/dom/generated/element.js",
       "manifest": "engines/wega/src/dom/generated/element.hooks.json",
-      "files": [
-        "vendor/servo-script-bindings/simplified-idls/Element.simplified.webidl"
-      ],
       "native_base": {
-        "Node": "dom.base.EventTarget"
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
       },
-      "base_mixins": [
-        "ChildNode",
-        "NonDocumentTypeChildNode",
-        "ParentNode",
-        "ActivatableElement",
-        "ARIAMixin",
-        "Animatable"
-      ],
+      "base_mixins": [],
       "globals": [
         "Element"
       ],
       "hooks": {
-        "element.construct.element": {
-          "result": "{ id: string, info: object }",
-          "reaction": null
-        },
         "element.namespaceURI": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.prefix": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.localName": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.tagName": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.id": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.id.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "element.className": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.className.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "element.classList": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
-        "element.slot": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "element.slot.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
-        },
-        "element.hasAttributes": {
-          "result": "{ boolean }",
+        "element.classList.set": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.attributes": {
-          "result": "{ string }",
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.hasAttributes": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.getAttributeNames": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.getAttribute": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.getAttributeNS": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
-        },
-        "element.toggleAttribute": {
-          "result": "{ boolean }",
-          "reaction": null
-        },
-        "element.setAttribute": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
-        },
-        "element.setAttributeNS": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
-        },
-        "element.removeAttribute": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
-        },
-        "element.removeAttributeNS": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
         },
         "element.hasAttribute": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.hasAttributeNS": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.setAttribute": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.setAttributeNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.removeAttribute": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.removeAttributeNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.toggleAttribute": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.getAttributeNode": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.getAttributeNodeNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.setAttributeNode": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.setAttributeNodeNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.removeAttributeNode": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.closest": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.matches": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
-        "element.webkitMatchesSelector": {
-          "result": "{ boolean }",
+        "element.querySelector": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.querySelectorAll": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.getElementsByTagName": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.getElementsByTagNameNS": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.getElementsByClassName": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.insertAdjacentElement": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.insertAdjacentText": {
-          "result": "{ undefined }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.insertAdjacentHTML": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "element.attachShadow": {
-          "result": "{ undefined }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.shadowRoot": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "element.customElementRegistry": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "element.getClientRects": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.getBoundingClientRect": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
-        "element.scrollIntoView": {
-          "result": "{ undefined }",
-          "reaction": null
-        },
-        "element.scroll": {
-          "result": "{ undefined }",
-          "reaction": null
-        },
-        "element.scrollTo": {
-          "result": "{ undefined }",
-          "reaction": null
-        },
-        "element.scrollBy": {
-          "result": "{ undefined }",
-          "reaction": null
-        },
-        "element.scrollTop": {
-          "result": "{ double }",
-          "reaction": null
-        },
-        "element.scrollTop.set": {
-          "result": "{ double }",
-          "reaction": null
-        },
-        "element.scrollLeft": {
-          "result": "{ double }",
-          "reaction": null
-        },
-        "element.scrollLeft.set": {
-          "result": "{ double }",
-          "reaction": null
-        },
-        "element.scrollWidth": {
-          "result": "{ long }",
-          "reaction": null
-        },
-        "element.scrollHeight": {
-          "result": "{ long }",
-          "reaction": null
-        },
-        "element.clientTop": {
-          "result": "{ long }",
-          "reaction": null
-        },
-        "element.clientLeft": {
-          "result": "{ long }",
+        "element.getClientRects": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.clientWidth": {
-          "result": "{ long }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.clientHeight": {
-          "result": "{ long }",
+          "result": "typed semantic value",
           "reaction": null
         },
-        "element.currentCSSZoom": {
-          "result": "{ double }",
+        "element.clientTop": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "element.setHTMLUnsafe": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
+        "element.clientLeft": {
+          "result": "typed semantic value",
+          "reaction": null
         },
-        "element.getHTML": {
-          "result": "{ string }",
+        "element.scrollWidth": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "element.scrollHeight": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.innerHTML": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.innerHTML.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "element.outerHTML": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "element.outerHTML.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         }
       }
     },
     {
       "name": "document",
       "hook_prefix": "document",
+      "files": [
+        "tools/webidl/idl/document.webidl"
+      ],
       "output": "engines/wega/src/dom/generated/document.js",
       "manifest": "engines/wega/src/dom/generated/document.hooks.json",
-      "files": [
-        "vendor/servo-script-bindings/simplified-idls/Document.simplified.webidl"
-      ],
       "native_base": {
-        "Node": "dom.base.EventTarget"
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
       },
-      "base_mixins": [
-        "NonElementParentNode",
-        "ParentNode",
-        "DocumentOrShadowRoot",
-        "GlobalEventHandlers"
-      ],
+      "base_mixins": [],
       "globals": [
         "Document"
       ],
       "hooks": {
         "document.construct.document": {
-          "result": "{ id: string, info: object }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.implementation": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.URL": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.documentURI": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.compatMode": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.characterSet": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.charset": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.inputEncoding": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.contentType": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.doctype": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.documentElement": {
-          "result": "{ string }",
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.querySelector": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.querySelectorAll": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.getElementById": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.getElementsByTagName": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.getElementsByTagNameNS": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.getElementsByClassName": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createElement": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createElementNS": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createDocumentFragment": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
-        },
-        "document.createTextNode": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createCDATASection": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createComment": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createProcessingInstruction": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
-        },
-        "document.importNode": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.adoptNode": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createAttribute": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createAttributeNS": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createEvent": {
-          "result": "{ undefined }",
-          "reaction": null
-        },
-        "document.createRange": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createNodeIterator": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.createTreeWalker": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.domain": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.domain.set": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.referrer": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.cookie": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.cookie.set": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.lastModified": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.readyState": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.location": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.namedItem": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.title": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.title.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
-        },
-        "document.dir": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.dir.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
-        },
-        "document.body": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.body.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
-        },
-        "document.head": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.images": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.embeds": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.plugins": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.links": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.forms": {
-          "result": "{ string }",
-          "reaction": null
-        },
-        "document.scripts": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.getElementsByName": {
-          "result": "{ string }",
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createElement": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createElementNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createDocumentFragment": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createTextNode": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createComment": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.importNode": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.adoptNode": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createAttribute": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createAttributeNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createEvent": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.createRange": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.domain": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.domain.set": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.cookie": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.cookie.set": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.readyState": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.location": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.location.set": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.title": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.title.set": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.body": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.body.set": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.head": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.images": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.embeds": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.plugins": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.links": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.forms": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.scripts": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.currentScript": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.open": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.close": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "document.write": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "document.writeln": {
-          "result": "{ undefined }",
-          "reaction": "characterData"
+          "result": "typed semantic value",
+          "reaction": null
         },
         "document.defaultView": {
-          "result": "{ string }",
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "document.activeElement": {
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.hasFocus": {
-          "result": "{ boolean }",
-          "reaction": null
-        },
-        "document.execCommand": {
-          "result": "{ boolean }",
-          "reaction": null
-        },
-        "document.queryCommandEnabled": {
-          "result": "{ boolean }",
-          "reaction": null
-        },
-        "document.queryCommandIndeterm": {
-          "result": "{ boolean }",
-          "reaction": null
-        },
-        "document.queryCommandState": {
-          "result": "{ boolean }",
-          "reaction": null
-        },
-        "document.queryCommandSupported": {
-          "result": "{ boolean }",
-          "reaction": null
-        },
-        "document.queryCommandValue": {
-          "result": "{ string }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.hidden": {
-          "result": "{ boolean }",
+          "result": "typed semantic value",
           "reaction": null
         },
         "document.visibilityState": {
-          "result": "{ string }",
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "attr",
+      "hook_prefix": "attr",
+      "files": [
+        "tools/webidl/idl/attr.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/attr.js",
+      "manifest": "engines/wega/src/dom/generated/attr.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
+      },
+      "base_mixins": [],
+      "globals": [
+        "Attr"
+      ],
+      "hooks": {
+        "attr.namespaceURI": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.onreadystatechange": {
-          "result": "{ string }",
+        "attr.prefix": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.onreadystatechange.set": {
-          "result": "{ string }",
+        "attr.localName": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.fgColor": {
-          "result": "{ string }",
+        "attr.name": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.fgColor.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
-        },
-        "document.bgColor": {
-          "result": "{ string }",
+        "attr.specified": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.bgColor.set": {
-          "result": "{ string }",
-          "reaction": "characterData"
-        },
-        "document.anchors": {
-          "result": "{ string }",
+        "attr.value": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.applets": {
-          "result": "{ string }",
+        "attr.value.set": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.clear": {
-          "result": "{ undefined }",
+        "attr.ownerElement": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "location",
+      "hook_prefix": "location",
+      "files": [
+        "tools/webidl/idl/location.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/location.js",
+      "manifest": "engines/wega/src/dom/generated/location.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
+      },
+      "base_mixins": [],
+      "globals": [
+        "Location"
+      ],
+      "hooks": {
+        "location.href": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.captureEvents": {
-          "result": "{ undefined }",
+        "location.href.set": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.releaseEvents": {
-          "result": "{ undefined }",
+        "location.origin": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.fullscreenEnabled": {
-          "result": "{ boolean }",
+        "location.protocol": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.fullscreen": {
-          "result": "{ boolean }",
+        "location.protocol.set": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.exitFullscreen": {
-          "result": "{ undefined }",
+        "location.host": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.onfullscreenchange": {
-          "result": "{ string }",
+        "location.host.set": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.onfullscreenchange.set": {
-          "result": "{ string }",
+        "location.hostname": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.onfullscreenerror": {
-          "result": "{ string }",
+        "location.hostname.set": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.onfullscreenerror.set": {
-          "result": "{ string }",
+        "location.port": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.scrollingElement": {
-          "result": "{ string }",
+        "location.port.set": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.getSelection": {
-          "result": "{ string }",
+        "location.pathname": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.timeline": {
-          "result": "{ string }",
+        "location.pathname.set": {
+          "result": "typed semantic value",
           "reaction": null
         },
-        "document.parseHTML": {
-          "result": "{ string }",
+        "location.search": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "location.search.set": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "location.hash": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "location.hash.set": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "location.assign": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "location.replace": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "location.reload": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "location.toString": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "mutation-observer",
+      "hook_prefix": "mutationObserver",
+      "files": [
+        "tools/webidl/idl/mutation-observer.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/mutation-observer.js",
+      "manifest": "engines/wega/src/dom/generated/mutation-observer.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
+      },
+      "base_mixins": [],
+      "globals": [
+        "MutationObserver"
+      ],
+      "hooks": {
+        "mutationObserver.construct.mutationobserver": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationObserver.observe": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationObserver.disconnect": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationObserver.takeRecords": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "mutation-record",
+      "hook_prefix": "mutationRecord",
+      "files": [
+        "tools/webidl/idl/mutation-record.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/mutation-record.js",
+      "manifest": "engines/wega/src/dom/generated/mutation-record.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
+      },
+      "base_mixins": [],
+      "globals": [
+        "MutationRecord"
+      ],
+      "hooks": {
+        "mutationRecord.type": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationRecord.target": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationRecord.addedNodes": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationRecord.removedNodes": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationRecord.previousSibling": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationRecord.nextSibling": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationRecord.attributeName": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationRecord.attributeNamespace": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "mutationRecord.oldValue": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "node-list",
+      "hook_prefix": "nodeList",
+      "files": [
+        "tools/webidl/idl/node-list.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/node-list.js",
+      "manifest": "engines/wega/src/dom/generated/node-list.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
+      },
+      "base_mixins": [],
+      "globals": [
+        "NodeList"
+      ],
+      "hooks": {
+        "nodeList.length": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "nodeList.item": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "html-collection",
+      "hook_prefix": "htmlCollection",
+      "files": [
+        "tools/webidl/idl/html-collection.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/html-collection.js",
+      "manifest": "engines/wega/src/dom/generated/html-collection.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
+      },
+      "base_mixins": [],
+      "globals": [
+        "HTMLCollection"
+      ],
+      "hooks": {
+        "htmlCollection.length": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "htmlCollection.item": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "htmlCollection.namedItem": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "named-node-map",
+      "hook_prefix": "namedNodeMap",
+      "files": [
+        "tools/webidl/idl/named-node-map.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/named-node-map.js",
+      "manifest": "engines/wega/src/dom/generated/named-node-map.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
+      },
+      "base_mixins": [],
+      "globals": [
+        "NamedNodeMap"
+      ],
+      "hooks": {
+        "namedNodeMap.length": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "namedNodeMap.item": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "namedNodeMap.getNamedItem": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "namedNodeMap.getNamedItemNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "namedNodeMap.setNamedItem": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "namedNodeMap.setNamedItemNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "namedNodeMap.removeNamedItem": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "namedNodeMap.removeNamedItemNS": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "dom-token-list",
+      "hook_prefix": "domTokenList",
+      "files": [
+        "tools/webidl/idl/dom-token-list.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/dom-token-list.js",
+      "manifest": "engines/wega/src/dom/generated/dom-token-list.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+        "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "Location": "dom.classes.Location",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "AbortSignal": "dom.classes.AbortSignal",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window",
+        "ShadowRoot": "dom.classes.ShadowRoot"
+      },
+      "base_mixins": [],
+      "globals": [
+        "DOMTokenList"
+      ],
+      "hooks": {
+        "domTokenList.length": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.item": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.contains": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.add": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.remove": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.toggle": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.replace": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.supports": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.value": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.value.set": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domTokenList.toString": {
+          "result": "typed semantic value",
           "reaction": null
         }
       }

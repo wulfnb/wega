@@ -1,0 +1,165 @@
+{
+  "base_mixins": [],
+  "family": "html-collection",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "HTMLCollection"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "HTMLCollection",
+      "kind": "attribute-getter",
+      "line": 3,
+      "member": "length",
+      "name": "htmlCollection.length",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "unsigned long",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "HTMLCollection",
+      "kind": "operation",
+      "line": 4,
+      "member": "item",
+      "name": "htmlCollection.item",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Element?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "HTMLCollection",
+      "kind": "operation",
+      "line": 5,
+      "member": "namedItem",
+      "name": "htmlCollection.namedItem",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Element?",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/html-collection.webidl",
+      "f8846ffaaf0ae4909db673c8eced8ff0fbb9b0cebc003926288a95a780be8a4c"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "length",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "getter": true,
+          "kind": "operation",
+          "name": "item",
+          "parameters": [
+            {
+              "name": "index",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": true,
+          "kind": "operation",
+          "name": "namedItem",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "kind": "iterable",
+          "name": "@@iterator",
+          "types": [
+            {
+              "kind": "interface",
+              "name": "Element",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "name": "HTMLCollection",
+      "prefix": "htmlCollection"
+    }
+  ],
+  "native_base": {
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

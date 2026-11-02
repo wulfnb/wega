@@ -1,0 +1,249 @@
+{
+  "base_mixins": [],
+  "family": "attr",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "Attr"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "Attr",
+      "kind": "attribute-getter",
+      "line": 3,
+      "member": "namespaceURI",
+      "name": "attr.namespaceURI",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Attr",
+      "kind": "attribute-getter",
+      "line": 4,
+      "member": "prefix",
+      "name": "attr.prefix",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Attr",
+      "kind": "attribute-getter",
+      "line": 5,
+      "member": "localName",
+      "name": "attr.localName",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Attr",
+      "kind": "attribute-getter",
+      "line": 6,
+      "member": "name",
+      "name": "attr.name",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Attr",
+      "kind": "attribute-getter",
+      "line": 7,
+      "member": "specified",
+      "name": "attr.specified",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Attr",
+      "kind": "attribute-getter",
+      "line": 8,
+      "member": "value",
+      "name": "attr.value",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Attr",
+      "kind": "attribute-setter",
+      "line": 8,
+      "member": "value",
+      "name": "attr.value.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Attr",
+      "kind": "attribute-getter",
+      "line": 9,
+      "member": "ownerElement",
+      "name": "attr.ownerElement",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Element?",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/attr.webidl",
+      "b2bf3f9dac26aff0ba96c55805a0e675c9eae8f82293bea8a6ab113e4c9799e8"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": "Node",
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "namespaceURI",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "prefix",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "localName",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "name",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "specified",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "value",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "ownerElement",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        }
+      ],
+      "name": "Attr",
+      "prefix": "attr"
+    }
+  ],
+  "native_base": {
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

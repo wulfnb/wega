@@ -3,8 +3,8 @@
 //! not understand.
 
 use crate::ast::{
-    ArgumentDefault, AttributeMember, ConstMember, ConstValue, ConstructorMember, EnumMember,
-    Interface, Member, OperationMember, Parameter, Type,
+    ArgumentDefault, AttributeMember, ConstMember, ConstValue, ConstructorMember, Definitions,
+    Dictionary, EnumMember, Interface, Member, OperationMember, Parameter, Type,
 };
 
 #[derive(Debug)]
@@ -271,608 +271,210 @@ fn tokenize(file: &str, src: &str) -> Result<Vec<(usize, Token)>, ParseError> {
     Ok(out)
 }
 
-/// Extended-attribute bookkeeping for one declaration.
-#[derive(Debug, Default, Clone)]
+#[derive(Default)]
 struct Attrs {
     names: Vec<String>,
     exposed: Vec<String>,
+    forwards: Option<String>,
 }
-
 impl Attrs {
-    fn contains(&self, name: &str) -> bool {
-        self.names.iter().any(|entry| entry == name)
+    fn has(&self, name: &str) -> bool {
+        self.names.iter().any(|n| n == name)
     }
 }
-
 struct Parser<'a> {
     file: &'a str,
     tokens: Vec<(usize, Token)>,
     pos: usize,
-    interfaces: Vec<Interface>,
+    definitions: Definitions,
 }
-
-impl<'a> Parser<'a> {
-    fn err(&self, line: usize, message: impl Into<String>) -> ParseError {
-        ParseError::new(self.file, line, message)
+impl Parser<'_> {
+    fn err(&self, message: impl Into<String>) -> ParseError {
+        ParseError::new(self.file, self.line(), message)
     }
-    fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.pos).map(|(_, t)| t)
-    }
-    fn peek_at(&self, offset: usize) -> Option<&Token> {
-        self.tokens.get(self.pos + offset).map(|(_, t)| t)
-    }
-    fn cur_line(&self) -> usize {
+    fn line(&self) -> usize {
         self.tokens
             .get(self.pos)
-            .map(|(line, _)| *line)
-            .or_else(|| self.tokens.last().map(|(line, _)| *line))
-            .unwrap_or(1)
+            .or_else(|| self.tokens.last())
+            .map_or(1, |t| t.0)
     }
-    fn next(&mut self) -> Option<(usize, Token)> {
-        let entry = self.tokens.get(self.pos)?;
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos).map(|t| &t.1)
+    }
+    fn next(&mut self) -> Result<Token, ParseError> {
+        let t = self
+            .peek()
+            .cloned()
+            .ok_or_else(|| self.err("unexpected end of file"))?;
         self.pos += 1;
-        Some((entry.0, entry.1.clone()))
+        Ok(t)
     }
-    fn expect(&mut self, token: &Token, what: &str) -> Result<usize, ParseError> {
-        let (line, got) = self.next().ok_or_else(|| {
-            self.err(
-                self.cur_line(),
-                format!("unexpected end of file, expected {what}"),
-            )
-        })?;
-        if &got != token {
-            return Err(self.err(line, format!("expected {what}, found {got:?}")));
-        }
-        Ok(line)
-    }
-    fn expect_ident(&mut self, name: &str) -> Result<usize, ParseError> {
-        let (line, got) = self.next().ok_or_else(|| {
-            self.err(
-                self.cur_line(),
-                format!("unexpected end of file, expected '{name}'"),
-            )
-        })?;
-        match &got {
-            Token::Ident(text) if text == name => Ok(line),
-            other => Err(self.err(line, format!("expected '{name}', found {other:?}"))),
+    fn eat(&mut self, t: &Token) -> bool {
+        if self.peek() == Some(t) {
+            self.pos += 1;
+            true
+        } else {
+            false
         }
     }
-    fn ident(&mut self, what: &str) -> Result<(String, usize), ParseError> {
-        let (line, got) = self.next().ok_or_else(|| {
-            self.err(
-                self.cur_line(),
-                format!("unexpected end of file, expected {what}"),
-            )
-        })?;
-        match got {
-            Token::Ident(name) => Ok((name, line)),
-            other => Err(self.err(line, format!("expected {what}, found {other:?}"))),
+    fn word(&mut self, s: &str) -> bool {
+        self.eat(&Token::Ident(s.into()))
+    }
+    fn expect(&mut self, t: Token) -> Result<(), ParseError> {
+        if self.eat(&t) {
+            Ok(())
+        } else {
+            Err(self.err(format!("expected {t:?}, found {:?}", self.peek())))
         }
     }
-
-    fn parse(mut self) -> Result<Vec<Interface>, ParseError> {
+    fn ident(&mut self) -> Result<String, ParseError> {
+        match self.next()? {
+            Token::Ident(s) => Ok(s),
+            t => Err(self.err(format!("expected identifier, found {t:?}"))),
+        }
+    }
+    fn attrs(&mut self) -> Result<Attrs, ParseError> {
+        let mut attrs = Attrs::default();
+        if !self.eat(&Token::LBrack) {
+            return Ok(attrs);
+        }
         loop {
-            match self.peek().cloned() {
-                None => break,
-                Some(Token::LBrack) => {
-                    self.next();
-                    let attrs = self.attr_list()?;
-                    self.declare_interface(attrs)?;
-                }
-                Some(Token::Ident(ref word)) if word == "interface" => {
-                    self.declare_interface(Attrs::default())?;
-                }
-                Some(Token::Ident(name)) if name == "partial" => {
-                    // `partial interface X { ... }` — merge members into existing interface.
-                    self.next(); // consume "partial"
-                    self.expect_ident("interface")?;
-                    let (iface_name, _) = self.ident("interface name")?;
-                    self.expect(&Token::LBrace, "'{' after partial interface header")?;
-                    let mut members = Vec::new();
-                    loop {
-                        match self.peek().cloned() {
-                            None => {
-                                return Err(self.err(
-                                    self.cur_line(),
-                                    "unexpected end of file inside partial interface",
-                                ));
-                            }
-                            Some(Token::RBrace) => break,
-                            _ => self.declare_member(&mut members)?,
-                        }
+            let name = self.ident()?;
+            if name == "Exposed" {
+                self.expect(Token::Eq)?;
+                let list = self.eat(&Token::LParen);
+                loop {
+                    let realm = self.ident()?;
+                    if realm != "Window" {
+                        return Err(self.err(format!("unsupported exposure {realm}")));
                     }
-                    self.expect(&Token::RBrace, "'}' closing partial interface body")?;
-                    self.expect(&Token::Semi, "';' after partial interface body")?;
-                    // Merge members into existing interface with the same name.
-                    if let Some(existing) =
-                        self.interfaces.iter_mut().find(|i| i.name == iface_name)
-                    {
-                        for member in members {
-                            // Check for duplicate member names within the same interface.
-                            if existing.members.iter().any(|m| m.name() == member.name()) {
-                                return Err(self.err(
-                                    member.line(),
-                                    format!(
-                                        "duplicate member '{}' in partial interface '{}'",
-                                        member.name(),
-                                        iface_name
-                                    ),
-                                ));
-                            }
-                            existing.members.push(member);
-                        }
-                    } else {
-                        // No preceding interface found — create a minimal one.
-                        self.interfaces.push(Interface {
-                            name: iface_name,
-                            base: None,
-                            exposed: Vec::new(),
-                            abstract_: false,
-                            members,
-                            includes: Vec::new(),
-                            file: self.file.to_owned(),
-                            line: 0,
-                        });
+                    attrs.exposed.push(realm);
+                    if !list || !self.eat(&Token::Comma) {
+                        break;
                     }
                 }
-                Some(Token::Ident(ref name)) => {
-                    if self.peek_at(1) == Some(&Token::Ident("includes".to_owned())) {
-                        let (owner, _) = self.ident("interface name")?;
-                        self.expect_ident("includes")?;
-                        let (mixin, line) = self.ident("mixin name")?;
-                        self.expect(&Token::Semi, "';' after includes clause")?;
-                        if let Some(last) = self.interfaces.last_mut() {
-                            if last.name != owner {
-                                return Err(self.err(
-                                    line,
-                                    format!("includes clause for '{owner}' does not follow its interface"),
-                                ));
-                            }
-                            last.includes.push(mixin);
-                            continue;
-                        }
-                        return Err(self.err(line, "includes clause before any interface"));
-                    }
-                    match name.as_str() {
-                        "dictionary" | "callback" | "typedef" => {
-                            return Err(self.err(
-                                self.cur_line(),
-                                format!(
-                                    "unsupported declaration '{name}' is not permitted in generated IDL inputs"
-                                ),
-                            ));
-                        }
-                        "enum" => {
-                            self.parse_enum_declaration()?;
-                        }
-                        _ => {
-                            return Err(self.err(
-                                self.cur_line(),
-                                format!("unsupported declaration or stray identifier '{name}'"),
-                            ));
-                        }
-                    }
+                if list {
+                    self.expect(Token::RParen)?;
                 }
-                Some(other) => {
-                    return Err(self.err(
-                        self.cur_line(),
-                        format!("unsupported token {other:?} at top level"),
-                    ));
-                }
-            }
-        }
-        Ok(std::mem::take(&mut self.interfaces))
-    }
-
-    fn parse_enum_declaration(&mut self) -> Result<(), ParseError> {
-        let line = self.cur_line();
-        self.expect_ident("enum")?;
-        let (name, _) = self.ident("enum name")?;
-        self.expect(&Token::LBrace, "'{' after enum name")?;
-        let mut values = Vec::new();
-        loop {
-            match self.peek() {
-                Some(Token::RBrace) => break,
-                Some(Token::Str(v)) => {
-                    let v = v.clone();
-                    self.next();
-                    values.push(v);
-                }
-                Some(other) => {
-                    return Err(self.err(
-                        self.cur_line(),
-                        format!("expected string value in enum, found {other:?}"),
-                    ));
-                }
-                None => return Err(self.err(self.cur_line(), "unexpected end of file inside enum")),
-            }
-            if self.peek() == Some(&Token::Comma) {
-                self.next();
+            } else if name == "PutForwards" {
+                self.expect(Token::Eq)?;
+                attrs.forwards = Some(self.ident()?);
+            } else if matches!(
+                name.as_str(),
+                "Pure"
+                    | "Throws"
+                    | "SetterThrows"
+                    | "NewObject"
+                    | "CEReactions"
+                    | "LegacyNullToEmptyString"
+                    | "Abstract"
+                    | "Constant"
+                    | "SameObject"
+            ) {
+                attrs.names.push(name);
             } else {
+                return Err(self.err(format!("unsupported extended attribute [{name}]")));
+            }
+            if self.eat(&Token::RBrack) {
                 break;
             }
+            self.expect(Token::Comma)?;
         }
-        self.expect(&Token::RBrace, "'}' closing enum body")?;
-        self.expect(&Token::Semi, "';' after enum")?;
-        // Add enum as a member to the last interface (or create a dummy if none exists).
-        // In WebIDL, enums are module-level but we attach them to a nearby interface.
-        // The generator will emit them as static properties on the class.
-        let enum_member = Member::Enum(EnumMember { name, values, line });
-        if let Some(last) = self.interfaces.last_mut() {
-            last.members.push(enum_member);
+        Ok(attrs)
+    }
+    fn ty(&mut self) -> Result<Type, ParseError> {
+        let mut ty = if self.eat(&Token::LParen) {
+            let mut types = vec![self.ty()?];
+            while self.word("or") {
+                types.push(self.ty()?);
+            }
+            self.expect(Token::RParen)?;
+            if types.len() < 2 {
+                return Err(self.err("union needs at least two alternatives"));
+            }
+            Type::Union(types)
         } else {
-            // Standalone enum with no interface — create a dummy interface.
-            self.interfaces.push(Interface {
-                name: "__enum__".to_owned(),
-                base: None,
-                exposed: Vec::new(),
-                abstract_: false,
-                members: vec![enum_member],
-                includes: Vec::new(),
-                file: self.file.to_owned(),
-                line,
-            });
-        }
-        Ok(())
-    }
-
-    /// Parse an enum declaration inside an interface body (as a member).
-    fn parse_enum_member(
-        &mut self,
-        members: &mut Vec<Member>,
-        line: usize,
-    ) -> Result<(), ParseError> {
-        self.expect_ident("enum")?;
-        let (name, _) = self.ident("enum name")?;
-        self.expect(&Token::LBrace, "'{' after enum name")?;
-        let mut values = Vec::new();
-        loop {
-            match self.peek() {
-                Some(Token::RBrace) => break,
-                Some(Token::Str(v)) => {
-                    let v = v.clone();
-                    self.next();
-                    values.push(v);
-                }
-                Some(other) => {
-                    return Err(self.err(
-                        self.cur_line(),
-                        format!("expected string value in enum, found {other:?}"),
-                    ));
-                }
-                None => return Err(self.err(self.cur_line(), "unexpected end of file inside enum")),
-            }
-            if self.peek() == Some(&Token::Comma) {
-                self.next();
-            } else {
-                break;
-            }
-        }
-        self.expect(&Token::RBrace, "'}' closing enum body")?;
-        self.expect(&Token::Semi, "';' after enum member")?;
-        members.push(Member::Enum(EnumMember { name, values, line }));
-        Ok(())
-    }
-
-    fn declare_interface(&mut self, attrs: Attrs) -> Result<(), ParseError> {
-        let line = self.expect_ident("interface")?;
-        if self.peek() == Some(&Token::Ident("mixin".to_owned())) {
-            self.next();
-            let (name, _) = self.ident("mixin name")?;
-            return Err(self.err(
-                line,
-                format!(
-                    "interface mixin '{name}' is not permitted in generated IDL inputs; \
-                     declare it in the family's base-provided mixin registry instead"
-                ),
-            ));
-        }
-        let (name, _) = self.ident("interface name")?;
-        let base = if self.peek() == Some(&Token::Colon) {
-            self.next();
-            let (base, _) = self.ident("base interface name")?;
-            Some(base)
-        } else {
-            None
-        };
-        if attrs.exposed.is_empty() {
-            return Err(self.err(
-                line,
-                format!("interface '{name}' lacks the required [Exposed=...] attribute"),
-            ));
-        }
-        if attrs.contains("NewObject") || attrs.contains("CEReactions") {
-            return Err(self.err(line, "NewObject/CEReactions are member-level attributes"));
-        }
-        self.expect(&Token::LBrace, "'{' after interface header")?;
-        let mut members = Vec::new();
-        loop {
-            match self.peek().cloned() {
-                None => {
-                    return Err(
-                        self.err(self.cur_line(), "unexpected end of file inside interface")
-                    );
-                }
-                Some(Token::RBrace) => break,
-                _ => self.declare_member(&mut members)?,
-            }
-        }
-        self.expect(&Token::RBrace, "'}' closing interface body")?;
-        self.expect(&Token::Semi, "';' after interface body")?;
-        let abstract_ = attrs.contains("Abstract");
-        self.interfaces.push(Interface {
-            name,
-            base,
-            exposed: attrs.exposed,
-            abstract_,
-            members,
-            includes: Vec::new(),
-            file: self.file.to_owned(),
-            line,
-        });
-        Ok(())
-    }
-
-    fn declare_member(&mut self, members: &mut Vec<Member>) -> Result<(), ParseError> {
-        let line = self.cur_line();
-        match self.peek().cloned() {
-            Some(Token::LBrack) => {
-                self.next();
-                let attrs = self.attr_list()?;
-                self.member_from_attrs(attrs, members, line)
-            }
-            Some(Token::Ident(ref word)) => match word.as_str() {
-                "const" => self.parse_const_member(members, line),
-                "enum" => self.parse_enum_member(members, line),
-                "stringifier" => {
-                    Err(self.err(line, "'stringifier' is unsupported in generated IDL inputs"))
-                }
-                "iterable" => Err(self.err(
-                    line,
-                    "'iterable<...>' members are unsupported in generated IDL inputs",
-                )),
-                "getter" | "setter" | "deleter" => Err(self.err(
-                    line,
-                    format!("'{word}' members are unsupported in generated IDL inputs"),
-                )),
-                "attribute" | "readonly" => self.member_from_attrs(Attrs::default(), members, line),
-                other => {
-                    // Attribute or operation with no leading attribute list.
-                    let _ = other;
-                    self.member_from_attrs(Attrs::default(), members, line)
-                }
-            },
-            other => Err(self.err(
-                line,
-                format!("unsupported token {other:?} in interface body"),
-            )),
-        }
-    }
-
-    fn parse_const_member(
-        &mut self,
-        members: &mut Vec<Member>,
-        line: usize,
-    ) -> Result<(), ParseError> {
-        self.expect_ident("const")?;
-        let (ty, _) = self.r#type()?;
-        let (name, _) = self.ident("const name")?;
-        self.expect(&Token::Eq, "'=' after const name")?;
-        let value = self.const_value(&ty, line)?;
-        self.expect(&Token::Semi, "';' after const")?;
-        members.push(Member::Const(ConstMember {
-            name,
-            ty,
-            value,
-            line,
-        }));
-        Ok(())
-    }
-
-    fn const_value(&mut self, ty: &Type, line: usize) -> Result<ConstValue, ParseError> {
-        match self.next() {
-            Some((_, Token::Int(value))) => match ty {
-                Type::UnsignedLong | Type::UnsignedShort => {
-                    if value < 0 {
-                        return Err(self.err(line, "const unsigned must be non-negative"));
-                    }
-                    Ok(ConstValue::Number(value))
-                }
-                other => Err(self.err(
-                    line,
-                    format!("numeric const for non-numeric type {other:?}"),
-                )),
-            },
-            Some((_, Token::Ident(ref word))) => match word.as_str() {
-                "true" | "false" => match ty {
-                    Type::Boolean => Ok(ConstValue::Boolean(word == "true")),
-                    other => Err(self.err(
-                        line,
-                        format!("boolean const for non-boolean type {other:?}"),
-                    )),
+            match self.ident()?.as_str() {
+                "DOMString" | "USVString" | "ByteString" => Type::DomString { nullable: false },
+                "boolean" => Type::Boolean,
+                "unsigned" => match self.ident()?.as_str() {
+                    "long" => Type::UnsignedLong,
+                    "short" => Type::UnsignedShort,
+                    name => return Err(self.err(format!("unsupported unsigned type {name}"))),
                 },
-                _ => Err(self.err(line, format!("unsupported const literal '{word}'"))),
-            },
-            Some((_, Token::Str(text))) => match ty {
-                Type::DomString { .. } => Ok(ConstValue::String(text.clone())),
-                other => Err(self.err(
-                    line,
-                    format!("string const for non-DOMString type {other:?}"),
-                )),
-            },
-            Some((at, other)) => Err(self.err(at, format!("unsupported const literal {other:?}"))),
-            None => Err(self.err(line, "unexpected end of file in const value")),
-        }
-    }
-
-    fn member_from_attrs(
-        &mut self,
-        attrs: Attrs,
-        members: &mut Vec<Member>,
-        line: usize,
-    ) -> Result<(), ParseError> {
-        if !attrs.exposed.is_empty() {
-            return Err(self.err(line, "'[Exposed]' is only valid on interface declarations"));
-        }
-        let peek = self.peek().cloned();
-        match peek {
-            Some(Token::Ident(ref word)) if word == "constructor" => {
-                self.next();
-                self.expect(&Token::LParen, "'(' after constructor name")?;
-                let params = if self.peek() == Some(&Token::RParen) {
-                    Vec::new()
-                } else {
-                    self.parameters()?
-                };
-                self.expect(&Token::RParen, "')' closing constructor parameters")?;
-                self.expect(&Token::Semi, "';' after constructor")?;
-                members.push(Member::Constructor(ConstructorMember {
-                    params,
-                    throws: attrs.contains("Throws"),
-                    line,
-                }));
-                Ok(())
-            }
-            Some(Token::Ident(ref word)) if word == "readonly" || word == "attribute" => {
-                let readonly = *word == "readonly";
-                self.next();
-                if readonly {
-                    self.expect_ident("attribute")?;
-                }
-                // Servo inputs may attach a second attribute list between the
-                // `attribute` keyword and the type; merge it into the first.
-                let mut merged = attrs;
-                if self.peek() == Some(&Token::LBrack) {
-                    self.next();
-                    let second = self.attr_list()?;
-                    if !second.exposed.is_empty() {
-                        return Err(
-                            self.err(line, "'[Exposed]' is only valid on interface declarations")
-                        );
+                "float" => Type::Float,
+                "double" | "DOMHighResTimeStamp" => Type::Double,
+                "undefined" | "void" => Type::Undefined,
+                "any" => Type::Any,
+                "object" => Type::Object,
+                name @ ("sequence" | "FrozenArray" | "Promise") => {
+                    self.expect(Token::Less)?;
+                    let inner = Box::new(self.ty()?);
+                    self.expect(Token::Greater)?;
+                    if name == "Promise" {
+                        Type::Promise(inner)
+                    } else {
+                        Type::Sequence(inner)
                     }
-                    merged.names.extend(second.names);
                 }
-                let (ty, _) = self.r#type()?;
-                let (name, _) = self.ident("attribute name")?;
-                self.expect(&Token::Semi, "';' after attribute")?;
-                if matches!(ty, Type::Interface { .. }) {
-                    return Err(self.err(
-                        line,
-                        format!(
-                            "attribute '{name}' returns an interface; step 07.a supports primitive attributes only"
-                        ),
-                    ));
-                }
-                members.push(Member::Attribute(AttributeMember {
-                    name,
-                    ty,
-                    readonly,
-                    pure: merged.contains("Pure"),
-                    constant: merged.contains("Constant"),
-                    throws: merged.contains("Throws"),
-                    setter_throws: merged.contains("SetterThrows"),
-                    legacy_null_to_empty: merged.contains("LegacyNullToEmptyString"),
-                    same_object: merged.contains("SameObject"),
-                    line,
-                }));
-                Ok(())
+                name => Type::Interface {
+                    name: name.into(),
+                    nullable: false,
+                },
             }
-            Some(Token::Ident(ref word)) if word == "stringifier" => {
-                Err(self.err(line, "'stringifier' is unsupported in generated IDL inputs"))
-            }
-            _ => {
-                // Operation: explicit return type, name, parameters.
-                let (ty, _) = self.r#type()?;
-                let (name, _) = self.ident("operation name")?;
-                self.expect(&Token::LParen, "'(' after operation name")?;
-                let params = if self.peek() == Some(&Token::RParen) {
-                    Vec::new()
-                } else {
-                    self.parameters()?
-                };
-                self.expect(&Token::RParen, "')' closing operation parameters")?;
-                self.expect(&Token::Semi, "';' after operation")?;
-                members.push(Member::Operation(OperationMember {
-                    name,
-                    ty,
-                    params,
-                    throws: attrs.contains("Throws"),
-                    new_object: attrs.contains("NewObject"),
-                    line,
-                }));
-                Ok(())
+        };
+        if self.eat(&Token::Question) {
+            match &mut ty {
+                Type::DomString { nullable } | Type::Interface { nullable, .. } => *nullable = true,
+                _ => return Err(self.err("nullable form is unsupported for this type")),
             }
         }
+        Ok(ty)
     }
-
+    fn default(&mut self) -> Result<ArgumentDefault, ParseError> {
+        match self.next()? {
+            Token::Str(s) => Ok(ArgumentDefault::String(s)),
+            Token::Int(v) => Ok(ArgumentDefault::Number(v)),
+            Token::Ident(s) if s == "true" || s == "false" => {
+                Ok(ArgumentDefault::Boolean(s == "true"))
+            }
+            Token::Ident(s) if s == "null" => Ok(ArgumentDefault::Null),
+            Token::LBrace => {
+                self.expect(Token::RBrace)?;
+                Ok(ArgumentDefault::Dictionary)
+            }
+            Token::LBrack => {
+                self.expect(Token::RBrack)?;
+                Ok(ArgumentDefault::Sequence)
+            }
+            t => Err(self.err(format!("unsupported default {t:?}"))),
+        }
+    }
     fn parameters(&mut self) -> Result<Vec<Parameter>, ParseError> {
-        let mut params = Vec::new();
+        let mut out = Vec::new();
+        let mut saw_optional = false;
+        if self.eat(&Token::RParen) {
+            return Ok(out);
+        }
         loop {
-            if self.peek() == Some(&Token::LBrack) {
-                return Err(self.err(
-                    self.cur_line(),
-                    "parameter extended attributes are unsupported in generated IDL inputs",
-                ));
-            }
-            // Variadic dots before the type keyword.
-            let variadic = if self.peek() == Some(&Token::Dots) {
-                self.next();
-                true
-            } else {
-                false
-            };
-            if variadic {
-                // Variadic parameters cannot be optional or have defaults.
-                let line = self.cur_line();
-                let (ty, _) = self.r#type()?;
-                let (name, _) = self.ident("variadic parameter name")?;
-                params.push(Parameter {
-                    name,
-                    ty,
-                    optional: false,
-                    default: None,
-                    variadic: true,
-                    line,
-                });
-                self.expect(&Token::RParen, "')' closing variadic parameters")?;
-                return Ok(params);
-            }
-            let line = self.cur_line();
-            let optional = self.peek() == Some(&Token::Ident("optional".to_owned()));
-            if optional {
-                self.next();
-            }
-            let (ty, _) = self.r#type()?;
-            let variadic = if self.peek() == Some(&Token::Dots) {
-                self.next();
-                true
-            } else {
-                false
-            };
-            let (name, _) = self.ident("parameter name")?;
-            if variadic && !params.is_empty() {
-                return Err(self.err(
-                    self.cur_line(),
-                    "variadic arguments must be the last parameter",
-                ));
-            }
-            let default = if self.peek() == Some(&Token::Eq) {
-                self.next();
-                let default = self.argument_default(&ty, line)?;
-                if !optional {
-                    return Err(self.err(
-                        line,
-                        "default values are supported only for optional parameters in the supported subset",
-                    ));
-                }
-                Some(default)
+            let line = self.line();
+            let optional = self.word("optional");
+            let ty = self.ty()?;
+            let variadic = self.eat(&Token::Dots);
+            let name = self.ident()?;
+            let default = if self.eat(&Token::Eq) {
+                Some(self.default()?)
             } else {
                 None
             };
-            if optional && default.is_none() {
-                return Err(self.err(line, "optional parameters require a default value"));
+            if (variadic && (optional || default.is_some())) || (!optional && default.is_some()) {
+                return Err(self.err("invalid optional/variadic/default combination"));
             }
-            params.push(Parameter {
+            if saw_optional && !optional && !variadic {
+                return Err(self.err("required argument after optional argument"));
+            }
+            saw_optional |= optional;
+            out.push(Parameter {
                 name,
                 ty,
                 optional,
@@ -880,379 +482,300 @@ impl<'a> Parser<'a> {
                 variadic,
                 line,
             });
-            if self.peek() == Some(&Token::Comma) {
-                self.next();
-            } else {
+            if self.eat(&Token::RParen) {
+                break;
+            }
+            if variadic {
+                return Err(self.err("variadic argument must be last"));
+            }
+            self.expect(Token::Comma)?;
+        }
+        Ok(out)
+    }
+    fn enum_values(&mut self) -> Result<Vec<String>, ParseError> {
+        self.expect(Token::LBrace)?;
+        let mut values = Vec::new();
+        while !self.eat(&Token::RBrace) {
+            match self.next()? {
+                Token::Str(s) => values.push(s),
+                t => return Err(self.err(format!("expected enum string, found {t:?}"))),
+            }
+            if !self.eat(&Token::Comma) {
+                self.expect(Token::RBrace)?;
                 break;
             }
         }
-        Ok(params)
+        self.expect(Token::Semi)?;
+        Ok(values)
     }
-
-    fn argument_default(&mut self, ty: &Type, line: usize) -> Result<ArgumentDefault, ParseError> {
-        match self.next() {
-            Some((_, Token::Str(text))) => match ty {
-                Type::DomString { nullable: _ } => Ok(ArgumentDefault::String(text)),
-                other => Err(self.err(line, format!("string default for non-DOMString type {other:?}"))),
-            },
-            Some((_, Token::Int(value))) => match ty {
-                Type::UnsignedLong | Type::UnsignedShort | Type::Float | Type::Double => {
-                    Ok(ArgumentDefault::Number(value))
+    fn member(&mut self) -> Result<Member, ParseError> {
+        let line = self.line();
+        let mut attrs = self.attrs()?;
+        if self.word("const") {
+            let ty = self.ty()?;
+            let name = self.ident()?;
+            self.expect(Token::Eq)?;
+            let value = match self.default()? {
+                ArgumentDefault::Number(v)
+                    if matches!(ty, Type::UnsignedLong | Type::UnsignedShort) && v >= 0 =>
+                {
+                    ConstValue::Number(v)
                 }
-                other => Err(self.err(line, format!("numeric default for non-numeric type {other:?}"))),
-            },
-            Some((_, Token::Ident(ref word))) => match word.as_str() {
-                "true" | "false" => match ty {
-                    Type::Boolean => Ok(ArgumentDefault::Boolean(word == "true")),
-                    other => Err(self.err(line, format!("boolean default for non-boolean type {other:?}"))),
-                },
-                _ => Err(self.err(
-                    line,
-                    format!("unsupported default literal '{word}' (dictionary/object defaults are not supported)"),
-                )),
-            },
-            Some((_, Token::LBrace)) => Err(self.err(
+                ArgumentDefault::Boolean(v) if matches!(ty, Type::Boolean) => {
+                    ConstValue::Boolean(v)
+                }
+                ArgumentDefault::String(v) if matches!(ty, Type::DomString { .. }) => {
+                    ConstValue::String(v)
+                }
+                _ => return Err(self.err("constant value does not match its type")),
+            };
+            self.expect(Token::Semi)?;
+            return Ok(Member::Const(ConstMember {
+                name,
+                ty,
+                value,
                 line,
-                "dictionary default values are unsupported in generated IDL inputs",
-            )),
-            Some((at, other)) => Err(self.err(at, format!("unsupported default literal {other:?}"))),
-            None => Err(self.err(line, "unexpected end of file in parameter default")),
+            }));
         }
-    }
-
-    fn r#type(&mut self) -> Result<(Type, usize), ParseError> {
-        let (line, first) = self
-            .next()
-            .ok_or_else(|| self.err(self.cur_line(), "unexpected end of file in type position"))?;
-        let (base, _nullable_allowed) = match first {
-            Token::Ident(ref word) => match word.as_str() {
-                "DOMString" => (Type::DomString { nullable: false }, true),
-                "boolean" => (Type::Boolean, true),
-                "unsigned" => {
-                    let (line2, second) = self
-                        .next()
-                        .ok_or_else(|| self.err(line, "unexpected end of file after 'unsigned'"))?;
-                    let ty = match second {
-                        Token::Ident(ref w) if w == "long" => Type::UnsignedLong,
-                        Token::Ident(ref w) if w == "short" => Type::UnsignedShort,
-                        other => {
-                            return Err(self.err(
-                                line2,
-                                format!(
-                                    "unsupported numeric type 'unsigned ...' (found {other:?})"
-                                ),
-                            ));
-                        }
-                    };
-                    (ty, true)
-                }
-                "float" => (Type::Float, true),
-                "double" => (Type::Double, true),
-                "undefined" => (Type::Undefined, false),
-                "any" => return Err(self.err(line, "'any' is unsupported in generated IDL inputs")),
-                "ArrayBuffer" | "BufferSource" | "ArrayBufferView" => {
-                    return Err(self.err(
-                        line,
-                        format!("'{word}' is unsupported in generated IDL inputs"),
-                    ));
-                }
-                "Promise" => {
-                    return Err(self.err(
-                        line,
-                        "'Promise' return types are unsupported in generated IDL inputs",
-                    ));
-                }
-                "optional" => {
-                    return Err(self.err(
-                        line,
-                        "malformed parameter: missing type before 'optional' handling",
-                    ));
-                }
-                other => (
-                    Type::Interface {
-                        name: other.to_owned(),
-                        nullable: false,
-                    },
-                    true,
-                ),
-            },
-            Token::LParen => {
-                // Union type: `(A or B or C)` — extract the last primitive type.
-                // Strategy: walk the union, remember the last "primitive"-typed type.
-                let mut fallback: Option<Type> = None;
-                loop {
-                    let (utype, union_line) = self.parse_union_alternative()?;
-                    let nullable_alt = if self.peek() == Some(&Token::Question) {
-                        self.next();
-                        true
-                    } else {
-                        false
-                    };
-                    // Track last primitive fallback (DOMString, boolean, numeric, etc.)
-                    if is_primitive_type(&utype) {
-                        fallback = Some(make_nullable(utype, nullable_alt));
-                    } else if matches!(utype, Type::Interface { .. }) {
-                        // Interface-typed union alternative — record for nullable check
-                        // but don't use as fallback (interfaces go through toInterfaceId).
-                        if !nullable_alt {
-                            // Can't have non-nullable interface in union without ?
-                            // but the IDL spec allows it, so just record the spelling.
-                        }
-                    }
-                    match self.peek() {
-                        Some(Token::Ident(w)) if w.as_str() == "or" => {
-                            self.next(); // consume "or"
-                        }
-                        Some(Token::RParen) => {
-                            self.next(); // consume ')'
-                            break;
-                        }
-                        Some(other) => {
-                            return Err(self.err(
-                                union_line,
-                                format!("expected 'or' or ')' in union type, found {other:?}"),
-                            ));
-                        }
-                        None => {
-                            return Err(
-                                self.err(union_line, "unexpected end of file in union type")
-                            );
-                        }
-                    }
-                }
-                let fallback_ty = fallback.unwrap_or_else(|| {
-                    // No primitive found — use DOMString as fallback.
-                    // This shouldn't happen in valid WebIDL, but be safe.
-                    Type::DomString { nullable: false }
-                });
-                return Ok((fallback_ty, line));
+        if self.word("enum") {
+            let name = self.ident()?;
+            return Ok(Member::Enum(EnumMember {
+                name,
+                values: self.enum_values()?,
+                line,
+            }));
+        }
+        if self.word("iterable") {
+            self.expect(Token::Less)?;
+            let mut types = vec![self.ty()?];
+            if self.eat(&Token::Comma) {
+                types.push(self.ty()?);
             }
-            other => {
-                return Err(self.err(
-                    line,
-                    format!("unexpected token in type position: {other:?}"),
-                ));
+            self.expect(Token::Greater)?;
+            self.expect(Token::Semi)?;
+            return Ok(Member::Iterable(types, line));
+        }
+        if self.word("constructor") {
+            self.expect(Token::LParen)?;
+            let params = self.parameters()?;
+            self.expect(Token::Semi)?;
+            return Ok(Member::Constructor(ConstructorMember {
+                params,
+                throws: attrs.has("Throws"),
+                line,
+            }));
+        }
+        let stringifier = self.word("stringifier");
+        if stringifier && self.eat(&Token::Semi) {
+            return Ok(Member::Operation(OperationMember {
+                name: "toString".into(),
+                ty: Type::DomString { nullable: false },
+                params: vec![],
+                throws: false,
+                new_object: false,
+                same_object: false,
+                static_: false,
+                getter: false,
+                line,
+            }));
+        }
+        let static_ = self.word("static");
+        let getter = self.word("getter");
+        if self.word("setter") || self.word("deleter") {
+            return Err(self.err("special setters/deleters require a collection adapter"));
+        }
+        let readonly = self.word("readonly");
+        if readonly || self.word("attribute") {
+            if readonly {
+                if !self.word("attribute") {
+                    return Err(self.err("expected attribute after readonly"));
+                }
             }
-        };
-        let nullable = if self.peek() == Some(&Token::Question) {
-            self.next();
-            true
+            let extra = self.attrs()?;
+            attrs.names.extend(extra.names);
+            let ty = self.ty()?;
+            let name = self.ident()?;
+            self.expect(Token::Semi)?;
+            return Ok(Member::Attribute(AttributeMember {
+                name,
+                ty,
+                readonly,
+                pure: attrs.has("Pure"),
+                constant: attrs.has("Constant"),
+                throws: attrs.has("Throws"),
+                setter_throws: attrs.has("SetterThrows"),
+                legacy_null_to_empty: attrs.has("LegacyNullToEmptyString"),
+                same_object: attrs.has("SameObject"),
+                forwards: attrs.forwards,
+                line,
+            }));
+        }
+        let ty = self.ty()?;
+        let name = if getter && self.peek() == Some(&Token::LParen) {
+            "__getter".into()
         } else {
-            false
+            self.ident()?
         };
-        let ty = match (base, nullable) {
-            (Type::DomString { .. }, nullable) => Type::DomString { nullable },
-            (Type::Interface { name, .. }, nullable) => Type::Interface { name, nullable },
-            (other, false) => other,
-            (other, true) => {
-                return Err(self.err(
-                    line,
-                    format!("nullable primitive type {other:?} is unsupported"),
-                ));
-            }
-        };
-        Ok((ty, line))
+        self.expect(Token::LParen)?;
+        let params = self.parameters()?;
+        self.expect(Token::Semi)?;
+        Ok(Member::Operation(OperationMember {
+            name,
+            ty,
+            params,
+            throws: attrs.has("Throws"),
+            new_object: attrs.has("NewObject"),
+            same_object: attrs.has("SameObject"),
+            static_,
+            getter,
+            line,
+        }))
     }
-
-    /// Parse a single alternative inside a union type: `(DOMString or Options or Node)`.
-    fn parse_union_alternative(&mut self) -> Result<(Type, usize), ParseError> {
-        let line = self.cur_line();
-        match self.peek() {
-            Some(Token::Ident(word)) => {
-                let word = word.clone();
-                self.next();
-                match word.as_str() {
-                    "DOMString" => Ok((Type::DomString { nullable: false }, line)),
-                    "boolean" => Ok((Type::Boolean, line)),
-                    "unsigned" => {
-                        let (line2, tok) = self.next().ok_or_else(|| {
-                            self.err(line, "unexpected end of file after 'unsigned' in union")
-                        })?;
-                        let ident = match tok {
-                            Token::Ident(ref w) => w.clone(),
-                            other => {
-                                return Err(self.err(
-                                    line2,
-                                    format!("unsupported numeric type in union: {other:?}"),
-                                ));
-                            }
-                        };
-                        match ident.as_str() {
-                            "long" => Ok((Type::UnsignedLong, line)),
-                            "short" => Ok((Type::UnsignedShort, line)),
-                            other => Err(self.err(
-                                line2,
-                                format!("unsupported numeric type in union: '{other}'"),
-                            )),
-                        }
-                    }
-                    "float" => Ok((Type::Float, line)),
-                    "double" => Ok((Type::Double, line)),
-                    "undefined" => Ok((Type::Undefined, line)),
-                    // Any other identifier is treated as an interface/enum name.
-                    other => Ok((
-                        Type::Interface {
-                            name: other.to_owned(),
-                            nullable: false,
-                        },
-                        line,
-                    )),
+    fn parse(mut self) -> Result<Definitions, ParseError> {
+        while self.peek().is_some() {
+            let line = self.line();
+            let attrs = self.attrs()?;
+            let partial = self.word("partial");
+            if self.word("interface") {
+                let mixin = self.word("mixin");
+                let name = self.ident()?;
+                let base = if self.eat(&Token::Colon) {
+                    Some(self.ident()?)
+                } else {
+                    None
+                };
+                if !mixin && !partial && attrs.exposed.is_empty() {
+                    return Err(self.err("interface lacks [Exposed=Window]"));
                 }
-            }
-            other => Err(self.err(line, format!("unexpected token in union type: {other:?}"))),
-        }
-    }
-
-    /// Extended attribute list. Only the policy-approved attributes are
-    /// accepted; anything else is an explicit generation failure.
-    fn attr_list(&mut self) -> Result<Attrs, ParseError> {
-        let mut attrs = Attrs::default();
-        loop {
-            let (line, name_token) = self.next().ok_or_else(|| {
-                self.err(
-                    self.cur_line(),
-                    "unexpected end of file in extended attribute list",
-                )
-            })?;
-            match name_token {
-                Token::RBrack => break,
-                Token::Ident(ref name) => {
-                    let value = if self.peek() == Some(&Token::Eq) {
-                        self.next();
-                        self.attr_value(name, line)?
+                self.expect(Token::LBrace)?;
+                let mut members = vec![];
+                while !self.eat(&Token::RBrace) {
+                    members.push(self.member()?);
+                }
+                self.expect(Token::Semi)?;
+                self.definitions.interfaces.push(Interface {
+                    name,
+                    base,
+                    exposed: attrs.exposed.clone(),
+                    abstract_: attrs.has("Abstract"),
+                    mixin,
+                    partial,
+                    members,
+                    includes: vec![],
+                    file: self.file.into(),
+                    line,
+                });
+            } else if self.word("dictionary") {
+                let name = self.ident()?;
+                let base = if self.eat(&Token::Colon) {
+                    Some(self.ident()?)
+                } else {
+                    None
+                };
+                self.expect(Token::LBrace)?;
+                let mut members = vec![];
+                while !self.eat(&Token::RBrace) {
+                    let line = self.line();
+                    let required = self.word("required");
+                    let ty = self.ty()?;
+                    let name = self.ident()?;
+                    let default = if self.eat(&Token::Eq) {
+                        Some(self.default()?)
                     } else {
                         None
                     };
-                    let allowed = matches!(
-                        name.as_str(),
-                        "Exposed"
-                            | "Pure"
-                            | "Throws"
-                            | "SetterThrows"
-                            | "NewObject"
-                            | "CEReactions"
-                            | "LegacyNullToEmptyString"
-                            | "Abstract"
-                            | "Constant"
-                            | "SameObject"
-                    );
-                    if !allowed {
-                        return Err(self.err(
-                            line,
-                            format!(
-                                "unsupported extended attribute '[{name}]' in generated IDL inputs"
-                            ),
-                        ));
+                    if required && default.is_some() {
+                        return Err(self.err("required dictionary member cannot have a default"));
                     }
-                    if name == "Exposed" {
-                        let value = value.unwrap_or_else(|| "required".to_owned());
-                        if value != "Window" {
-                            return Err(self.err(
-                                line,
-                                format!("exposure '{value}' is unsupported; only [Exposed=Window] is admitted"),
-                            ));
-                        }
-                        attrs.exposed.push("Window".to_owned());
-                    } else if value.is_some() {
-                        return Err(self.err(
-                            line,
-                            format!("extended attribute '[{name}]' does not take a value"),
-                        ));
-                    } else {
-                        attrs.names.push(name.clone());
+                    self.expect(Token::Semi)?;
+                    if members.iter().any(|m: &Parameter| m.name == name) {
+                        return Err(self.err("duplicate dictionary member"));
                     }
-                }
-                other => {
-                    return Err(self.err(
+                    members.push(Parameter {
+                        name,
+                        ty,
+                        optional: !required,
+                        default,
+                        variadic: false,
                         line,
-                        format!("unsupported token in extended attribute list: {other:?}"),
-                    ));
+                    });
                 }
-            }
-            if self.peek() == Some(&Token::Comma) {
-                self.next();
+                self.expect(Token::Semi)?;
+                members.sort_by(|a, b| a.name.cmp(&b.name));
+                if self
+                    .definitions
+                    .dictionaries
+                    .insert(name, Dictionary { base, members })
+                    .is_some()
+                {
+                    return Err(self.err("duplicate dictionary"));
+                }
+            } else if self.word("typedef") {
+                let ty = self.ty()?;
+                let name = self.ident()?;
+                self.expect(Token::Semi)?;
+                if self.definitions.typedefs.insert(name, ty).is_some() {
+                    return Err(self.err("duplicate typedef"));
+                }
+            } else if self.word("enum") {
+                let name = self.ident()?;
+                let values = self.enum_values()?;
+                if self.definitions.enums.insert(name, values).is_some() {
+                    return Err(self.err("duplicate enum"));
+                }
+            } else if self.word("callback") {
+                let interface = self.word("interface");
+                let name = self.ident()?;
+                let (ty, params) = if interface {
+                    self.expect(Token::LBrace)?;
+                    let Member::Operation(operation) = self.member()? else {
+                        return Err(self.err("callback interface requires one operation"));
+                    };
+                    self.expect(Token::RBrace)?;
+                    (operation.ty, operation.params)
+                } else {
+                    self.expect(Token::Eq)?;
+                    let ty = self.ty()?;
+                    self.expect(Token::LParen)?;
+                    (ty, self.parameters()?)
+                };
+                self.expect(Token::Semi)?;
+                if self
+                    .definitions
+                    .callbacks
+                    .insert(name, (ty, params, !interface))
+                    .is_some()
+                {
+                    return Err(self.err("duplicate callback"));
+                }
+            } else {
+                let owner = self.ident()?;
+                if !self.word("includes") {
+                    return Err(self.err("unsupported declaration (expected interface, dictionary, enum, callback or typedef)"));
+                }
+                let mixin = self.ident()?;
+                self.expect(Token::Semi)?;
+                // Keep includes with the interface even when a partial occurs between them.
+                let Some(interface) = self
+                    .definitions
+                    .interfaces
+                    .iter_mut()
+                    .find(|i| i.name == owner)
+                else {
+                    return Err(self.err("includes has no preceding interface"));
+                };
+                interface.includes.push(mixin);
             }
         }
-        Ok(attrs)
-    }
-
-    fn attr_value(&mut self, name: &str, line: usize) -> Result<Option<String>, ParseError> {
-        if name != "Exposed" {
-            return Err(self.err(
-                line,
-                format!("extended attribute '[{name}]' does not take a value"),
-            ));
-        }
-        let first = match self.peek().cloned() {
-            Some(Token::Ident(ref word)) => {
-                self.next();
-                word.clone()
-            }
-            Some(Token::LParen) => {
-                self.next();
-                let mut first = None;
-                let mut entries = Vec::new();
-                loop {
-                    let (line2, entry) = self
-                        .next()
-                        .ok_or_else(|| self.err(line, "unterminated exposure list"))?;
-                    match entry {
-                        Token::Ident(ref word) => {
-                            entries.push(word.clone());
-                            if first.is_none() {
-                                first = Some(word.clone());
-                            }
-                        }
-                        Token::RParen => break,
-                        other => {
-                            return Err(
-                                self.err(line2, format!("unsupported exposure entry {other:?}"))
-                            );
-                        }
-                    }
-                    if self.peek() == Some(&Token::Comma) {
-                        self.next();
-                    }
-                }
-                // Validate every exposure entry (only Window is admitted).
-                for entry in &entries {
-                    if entry != "Window" {
-                        return Err(self.err(
-                            line,
-                            format!("exposure '{entry}' is unsupported; only [Exposed=Window] is admitted"),
-                        ));
-                    }
-                }
-                let value = first.ok_or_else(|| self.err(line, "empty exposure list"))?;
-                value
-            }
-            _ => return Err(self.err(line, "expected exposure value after '='")),
-        };
-        Ok(Some(first))
+        Ok(self.definitions)
     }
 }
-
-/// Check if a type is a "primitive" that can serve as a union fallback
-/// (anything except Interface types).
-fn is_primitive_type(ty: &Type) -> bool {
-    !matches!(ty, Type::Interface { .. })
-}
-
-fn make_nullable(ty: Type, nullable: bool) -> Type {
-    match ty {
-        Type::DomString { .. } => Type::DomString { nullable },
-        Type::Interface { name, .. } => Type::Interface { name, nullable },
-        other => other, // primitives don't get nullable flag in our model
-    }
-}
-
-/// Parse one IDL file into its interface declarations.
-pub fn parse_file(path: &str, source: &str) -> Result<Vec<Interface>, ParseError> {
+pub fn parse_definitions(path: &str, source: &str) -> Result<Definitions, ParseError> {
     Parser {
         file: path,
         tokens: tokenize(path, source)?,
         pos: 0,
-        interfaces: Vec::new(),
+        definitions: Definitions::default(),
     }
     .parse()
 }

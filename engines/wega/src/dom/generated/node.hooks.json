@@ -1,274 +1,262 @@
 {
   "base_mixins": [],
-  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
   "family": "node",
-  "generator": "wega-webidl (step 07.a)",
-  "globals": [],
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "Node"
+  ],
   "hooks": [
     {
-      "args": [
-        "unsigned short"
-      ],
+      "args": [],
       "interface": "Node",
       "kind": "attribute-getter",
-      "line": 20,
+      "line": 22,
       "member": "nodeType",
       "name": "node.nodeType",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ unsigned long }",
+      "result": "unsigned short",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Node",
-      "kind": "attribute-getter",
-      "line": 21,
-      "member": "nodeName",
-      "name": "node.nodeName",
-      "new_object": false,
-      "pure": true,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Node",
-      "kind": "attribute-getter",
-      "line": 22,
-      "member": "baseURI",
-      "name": "node.baseURI",
-      "new_object": false,
-      "pure": true,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "boolean"
-      ],
+      "args": [],
       "interface": "Node",
       "kind": "attribute-getter",
       "line": 23,
-      "member": "isConnected",
-      "name": "node.isConnected",
+      "member": "nodeName",
+      "name": "node.nodeName",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Node",
       "kind": "attribute-getter",
       "line": 24,
-      "member": "ownerDocument",
-      "name": "node.ownerDocument",
+      "member": "baseURI",
+      "name": "node.baseURI",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Node",
       "kind": "attribute-getter",
       "line": 25,
-      "member": "parentNode",
-      "name": "node.parentNode",
+      "member": "isConnected",
+      "name": "node.isConnected",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 26,
+      "member": "ownerDocument",
+      "name": "node.ownerDocument",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Document?",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "GetRootNodeOptions"
       ],
       "interface": "Node",
+      "kind": "operation",
+      "line": 27,
+      "member": "getRootNode",
+      "name": "node.getRootNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Node",
       "kind": "attribute-getter",
-      "line": 26,
+      "line": 28,
+      "member": "parentNode",
+      "name": "node.parentNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 29,
       "member": "parentElement",
       "name": "node.parentElement",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "Element?",
       "throws": false
     },
     {
       "args": [],
       "interface": "Node",
       "kind": "operation",
-      "line": 27,
+      "line": 30,
       "member": "hasChildNodes",
       "name": "node.hasChildNodes",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Node",
       "kind": "attribute-getter",
-      "line": 28,
+      "line": 31,
       "member": "childNodes",
       "name": "node.childNodes",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "NodeList",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Node",
-      "kind": "attribute-getter",
-      "line": 29,
-      "member": "firstChild",
-      "name": "node.firstChild",
-      "new_object": false,
-      "pure": true,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Node",
-      "kind": "attribute-getter",
-      "line": 30,
-      "member": "lastChild",
-      "name": "node.lastChild",
-      "new_object": false,
-      "pure": true,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Node",
-      "kind": "attribute-getter",
-      "line": 31,
-      "member": "previousSibling",
-      "name": "node.previousSibling",
-      "new_object": false,
-      "pure": true,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Node",
       "kind": "attribute-getter",
       "line": 32,
-      "member": "nextSibling",
-      "name": "node.nextSibling",
+      "member": "firstChild",
+      "name": "node.firstChild",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "Node?",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Node",
       "kind": "attribute-getter",
       "line": 33,
+      "member": "lastChild",
+      "name": "node.lastChild",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 34,
+      "member": "previousSibling",
+      "name": "node.previousSibling",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 35,
+      "member": "nextSibling",
+      "name": "node.nextSibling",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Node",
+      "kind": "attribute-getter",
+      "line": 36,
       "member": "nodeValue",
       "name": "node.nodeValue",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString?",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "DOMString?"
       ],
       "interface": "Node",
       "kind": "attribute-setter",
-      "line": 33,
+      "line": 36,
       "member": "nodeValue",
       "name": "node.nodeValue.set",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Node",
       "kind": "attribute-getter",
-      "line": 34,
+      "line": 37,
       "member": "textContent",
       "name": "node.textContent",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString?",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "DOMString?"
       ],
       "interface": "Node",
       "kind": "attribute-setter",
-      "line": 34,
+      "line": 37,
       "member": "textContent",
       "name": "node.textContent.set",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
       "args": [],
       "interface": "Node",
       "kind": "operation",
-      "line": 35,
+      "line": 38,
       "member": "normalize",
       "name": "node.normalize",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
@@ -277,191 +265,853 @@
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 36,
+      "line": 39,
       "member": "cloneNode",
       "name": "node.cloneNode",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": true
+      "result": "Node",
+      "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "Node?"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 37,
+      "line": 40,
       "member": "isEqualNode",
       "name": "node.isEqualNode",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "Node?"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 38,
+      "line": 41,
       "member": "isSameNode",
       "name": "node.isSameNode",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "Node"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 45,
+      "line": 42,
       "member": "compareDocumentPosition",
       "name": "node.compareDocumentPosition",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ unsigned long }",
+      "result": "unsigned short",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "Node?"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 46,
+      "line": 43,
       "member": "contains",
       "name": "node.contains",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "DOMString?"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 47,
+      "line": 44,
       "member": "lookupPrefix",
       "name": "node.lookupPrefix",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString?",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "DOMString?"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 48,
+      "line": 45,
       "member": "lookupNamespaceURI",
       "name": "node.lookupNamespaceURI",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString?",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "DOMString?"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 49,
+      "line": 46,
       "member": "isDefaultNamespace",
       "name": "node.isDefaultNamespace",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
       "args": [
-        "DOMString",
-        "DOMString"
+        "Node",
+        "Node?"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 50,
+      "line": 47,
       "member": "insertBefore",
       "name": "node.insertBefore",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": true
+      "result": "Node",
+      "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "Node"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 51,
+      "line": 48,
       "member": "appendChild",
       "name": "node.appendChild",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": true
+      "result": "Node",
+      "throws": false
     },
     {
       "args": [
-        "DOMString",
-        "DOMString"
+        "Node",
+        "Node"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 52,
+      "line": 49,
       "member": "replaceChild",
       "name": "node.replaceChild",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": true
+      "result": "Node",
+      "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "Node"
       ],
       "interface": "Node",
       "kind": "operation",
-      "line": 53,
+      "line": 50,
       "member": "removeChild",
       "name": "node.removeChild",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": true
+      "result": "Node",
+      "throws": false
     }
   ],
   "idls": [
+    [
+      "tools/webidl/idl/node.webidl",
+      "34a20d1c8d5362a666c5e4899e56f999ad0a03515ac7ac5d2e2240f80faedd86"
+    ]
+  ],
+  "interfaces": [
     {
-      "file": "vendor/servo-script-bindings/simplified-idls/Node.simplified.webidl",
-      "sha256": "66a0009432e4c0022e680ab4352c9d99ae21cd204ab67cd5cbc2c2e9cead57b7"
+      "base": "EventTarget",
+      "exposed": true,
+      "members": [
+        {
+          "kind": "constant",
+          "name": "ELEMENT_NODE",
+          "value": 1
+        },
+        {
+          "kind": "constant",
+          "name": "ATTRIBUTE_NODE",
+          "value": 2
+        },
+        {
+          "kind": "constant",
+          "name": "TEXT_NODE",
+          "value": 3
+        },
+        {
+          "kind": "constant",
+          "name": "CDATA_SECTION_NODE",
+          "value": 4
+        },
+        {
+          "kind": "constant",
+          "name": "ENTITY_REFERENCE_NODE",
+          "value": 5
+        },
+        {
+          "kind": "constant",
+          "name": "ENTITY_NODE",
+          "value": 6
+        },
+        {
+          "kind": "constant",
+          "name": "PROCESSING_INSTRUCTION_NODE",
+          "value": 7
+        },
+        {
+          "kind": "constant",
+          "name": "COMMENT_NODE",
+          "value": 8
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_NODE",
+          "value": 9
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_TYPE_NODE",
+          "value": 10
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_FRAGMENT_NODE",
+          "value": 11
+        },
+        {
+          "kind": "constant",
+          "name": "NOTATION_NODE",
+          "value": 12
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_POSITION_DISCONNECTED",
+          "value": 1
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_POSITION_PRECEDING",
+          "value": 2
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_POSITION_FOLLOWING",
+          "value": 4
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_POSITION_CONTAINS",
+          "value": 8
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_POSITION_CONTAINED_BY",
+          "value": 16
+        },
+        {
+          "kind": "constant",
+          "name": "DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC",
+          "value": 32
+        },
+        {
+          "constant": true,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "nodeType",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 16,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "nodeName",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "baseURI",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "isConnected",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "ownerDocument",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Document",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getRootNode",
+          "parameters": [
+            {
+              "default": {},
+              "name": "options",
+              "optional": true,
+              "type": {
+                "kind": "dictionary",
+                "members": [
+                  {
+                    "default": false,
+                    "name": "composed",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  }
+                ],
+                "name": "GetRootNodeOptions",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "parentNode",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "parentElement",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "hasChildNodes",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "childNodes",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "NodeList",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "firstChild",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "lastChild",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "previousSibling",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "nextSibling",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "nodeValue",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "textContent",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "normalize",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "cloneNode",
+          "parameters": [
+            {
+              "default": false,
+              "name": "deep",
+              "optional": true,
+              "type": {
+                "kind": "boolean"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "isEqualNode",
+          "parameters": [
+            {
+              "name": "otherNode",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": true
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "isSameNode",
+          "parameters": [
+            {
+              "name": "otherNode",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": true
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "compareDocumentPosition",
+          "parameters": [
+            {
+              "name": "other",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "bits": 16,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "contains",
+          "parameters": [
+            {
+              "name": "other",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": true
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "lookupPrefix",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "lookupNamespaceURI",
+          "parameters": [
+            {
+              "name": "prefix",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "isDefaultNamespace",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "insertBefore",
+          "parameters": [
+            {
+              "name": "node",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "child",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": true
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "appendChild",
+          "parameters": [
+            {
+              "name": "node",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "replaceChild",
+          "parameters": [
+            {
+              "name": "node",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "child",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "removeChild",
+          "parameters": [
+            {
+              "name": "child",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        }
+      ],
+      "name": "Node",
+      "prefix": "node"
     }
   ],
   "native_base": {
-    "EventTarget": "dom.event.EventTarget",
-    "Node": "dom.base.EventTarget"
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
   }
 }

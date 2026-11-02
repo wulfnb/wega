@@ -1,180 +1,139 @@
 {
-  "base_mixins": [
-    "NonElementParentNode",
-    "ParentNode",
-    "DocumentOrShadowRoot",
-    "GlobalEventHandlers"
-  ],
-  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
+  "base_mixins": [],
   "family": "document",
-  "generator": "wega-webidl (step 07.a)",
+  "generator": "wega-webidl typed descriptors v2",
   "globals": [
     "Document"
   ],
   "hooks": [
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "constructor",
-      "line": 45,
+      "line": 6,
       "member": "constructor",
       "name": "document.construct.document",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ id: string, info: object }",
-      "throws": true
+      "result": "undefined",
+      "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 47,
+      "line": 7,
       "member": "implementation",
       "name": "document.implementation",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "object",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 49,
+      "line": 8,
       "member": "URL",
       "name": "document.URL",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 51,
+      "line": 9,
       "member": "documentURI",
       "name": "document.documentURI",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 53,
+      "line": 10,
       "member": "compatMode",
       "name": "document.compatMode",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 54,
+      "line": 11,
       "member": "characterSet",
       "name": "document.characterSet",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 55,
+      "line": 12,
       "member": "charset",
       "name": "document.charset",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 56,
+      "line": 13,
       "member": "inputEncoding",
       "name": "document.inputEncoding",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 57,
+      "line": 14,
       "member": "contentType",
       "name": "document.contentType",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 60,
-      "member": "doctype",
-      "name": "document.doctype",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 61,
+      "line": 15,
       "member": "documentElement",
       "name": "document.documentElement",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "Element?",
       "throws": false
     },
     {
@@ -183,29 +142,74 @@
       ],
       "interface": "Document",
       "kind": "operation",
-      "line": 63,
+      "line": 16,
+      "member": "querySelector",
+      "name": "document.querySelector",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Element?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 17,
+      "member": "querySelectorAll",
+      "name": "document.querySelectorAll",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "NodeList",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 18,
+      "member": "getElementById",
+      "name": "document.getElementById",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Element?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 19,
       "member": "getElementsByTagName",
       "name": "document.getElementsByTagName",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "HTMLCollection",
       "throws": false
     },
     {
       "args": [
-        "DOMString",
+        "DOMString?",
         "DOMString"
       ],
       "interface": "Document",
       "kind": "operation",
-      "line": 64,
+      "line": 20,
       "member": "getElementsByTagNameNS",
       "name": "document.getElementsByTagNameNS",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "HTMLCollection",
       "throws": false
     },
     {
@@ -214,59 +218,13 @@
       ],
       "interface": "Document",
       "kind": "operation",
-      "line": 65,
+      "line": 21,
       "member": "getElementsByClassName",
       "name": "document.getElementsByClassName",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 67,
-      "member": "createElement",
-      "name": "document.createElement",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "DOMString",
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 68,
-      "member": "createElementNS",
-      "name": "document.createElementNS",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 69,
-      "member": "createDocumentFragment",
-      "name": "document.createDocumentFragment",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
+      "result": "HTMLCollection",
       "throws": false
     },
     {
@@ -275,528 +233,59 @@
       ],
       "interface": "Document",
       "kind": "operation",
-      "line": 70,
-      "member": "createTextNode",
-      "name": "document.createTextNode",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 71,
-      "member": "createCDATASection",
-      "name": "document.createCDATASection",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 72,
-      "member": "createComment",
-      "name": "document.createComment",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 73,
-      "member": "createProcessingInstruction",
-      "name": "document.createProcessingInstruction",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "boolean"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 75,
-      "member": "importNode",
-      "name": "document.importNode",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 76,
-      "member": "adoptNode",
-      "name": "document.adoptNode",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 78,
-      "member": "createAttribute",
-      "name": "document.createAttribute",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 79,
-      "member": "createAttributeNS",
-      "name": "document.createAttributeNS",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 81,
-      "member": "createEvent",
-      "name": "document.createEvent",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 83,
-      "member": "createRange",
-      "name": "document.createRange",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "unsigned long",
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 85,
-      "member": "createNodeIterator",
-      "name": "document.createNodeIterator",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "unsigned long",
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 86,
-      "member": "createTreeWalker",
-      "name": "document.createTreeWalker",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 89,
-      "member": "domain",
-      "name": "document.domain",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 89,
-      "member": "domain",
-      "name": "document.domain.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 90,
-      "member": "referrer",
-      "name": "document.referrer",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 91,
-      "member": "cookie",
-      "name": "document.cookie",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 91,
-      "member": "cookie",
-      "name": "document.cookie.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": true
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 92,
-      "member": "lastModified",
-      "name": "document.lastModified",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 93,
-      "member": "readyState",
-      "name": "document.readyState",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 94,
-      "member": "location",
-      "name": "document.location",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 97,
-      "member": "namedItem",
-      "name": "document.namedItem",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 98,
-      "member": "title",
-      "name": "document.title",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 98,
-      "member": "title",
-      "name": "document.title.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 99,
-      "member": "dir",
-      "name": "document.dir",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 99,
-      "member": "dir",
-      "name": "document.dir.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 100,
-      "member": "body",
-      "name": "document.body",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 100,
-      "member": "body",
-      "name": "document.body.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 101,
-      "member": "head",
-      "name": "document.head",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 102,
-      "member": "images",
-      "name": "document.images",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 103,
-      "member": "embeds",
-      "name": "document.embeds",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 104,
-      "member": "plugins",
-      "name": "document.plugins",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 105,
-      "member": "links",
-      "name": "document.links",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 106,
-      "member": "forms",
-      "name": "document.forms",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 107,
-      "member": "scripts",
-      "name": "document.scripts",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 108,
+      "line": 22,
       "member": "getElementsByName",
       "name": "document.getElementsByName",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "NodeList",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "(DOMString or ElementCreationOptions)"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 23,
+      "member": "createElement",
+      "name": "document.createElement",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Element",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString",
+        "(DOMString or ElementCreationOptions)"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 24,
+      "member": "createElementNS",
+      "name": "document.createElementNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Element",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 25,
+      "member": "createDocumentFragment",
+      "name": "document.createDocumentFragment",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DocumentFragment",
       "throws": false
     },
     {
@@ -804,41 +293,403 @@
         "DOMString"
       ],
       "interface": "Document",
+      "kind": "operation",
+      "line": 26,
+      "member": "createTextNode",
+      "name": "document.createTextNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Text",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 27,
+      "member": "createComment",
+      "name": "document.createComment",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Comment",
+      "throws": false
+    },
+    {
+      "args": [
+        "Node",
+        "boolean"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 28,
+      "member": "importNode",
+      "name": "document.importNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node",
+      "throws": false
+    },
+    {
+      "args": [
+        "Node"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 29,
+      "member": "adoptNode",
+      "name": "document.adoptNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 30,
+      "member": "createAttribute",
+      "name": "document.createAttribute",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 31,
+      "member": "createAttributeNS",
+      "name": "document.createAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 32,
+      "member": "createEvent",
+      "name": "document.createEvent",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Event",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "operation",
+      "line": 33,
+      "member": "createRange",
+      "name": "document.createRange",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Range",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
       "kind": "attribute-getter",
-      "line": 109,
+      "line": 34,
+      "member": "domain",
+      "name": "document.domain",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "attribute-setter",
+      "line": 34,
+      "member": "domain",
+      "name": "document.domain.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 35,
+      "member": "cookie",
+      "name": "document.cookie",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "attribute-setter",
+      "line": 35,
+      "member": "cookie",
+      "name": "document.cookie.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 36,
+      "member": "readyState",
+      "name": "document.readyState",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DocumentReadyState",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 37,
+      "member": "location",
+      "name": "document.location",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Location?",
+      "throws": false
+    },
+    {
+      "args": [
+        "Location?"
+      ],
+      "interface": "Document",
+      "kind": "attribute-setter",
+      "line": 37,
+      "member": "location",
+      "name": "document.location.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 38,
+      "member": "title",
+      "name": "document.title",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Document",
+      "kind": "attribute-setter",
+      "line": 38,
+      "member": "title",
+      "name": "document.title.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 39,
+      "member": "body",
+      "name": "document.body",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "HTMLElement?",
+      "throws": false
+    },
+    {
+      "args": [
+        "HTMLElement?"
+      ],
+      "interface": "Document",
+      "kind": "attribute-setter",
+      "line": 39,
+      "member": "body",
+      "name": "document.body.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 40,
+      "member": "head",
+      "name": "document.head",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "HTMLHeadElement?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 41,
+      "member": "images",
+      "name": "document.images",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "HTMLCollection",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 42,
+      "member": "embeds",
+      "name": "document.embeds",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "HTMLCollection",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 43,
+      "member": "plugins",
+      "name": "document.plugins",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "HTMLCollection",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 44,
+      "member": "links",
+      "name": "document.links",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "HTMLCollection",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 45,
+      "member": "forms",
+      "name": "document.forms",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "HTMLCollection",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 46,
+      "member": "scripts",
+      "name": "document.scripts",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "HTMLCollection",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 47,
       "member": "currentScript",
       "name": "document.currentScript",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "HTMLScriptElement?",
       "throws": false
     },
     {
       "args": [],
       "interface": "Document",
       "kind": "operation",
-      "line": 112,
+      "line": 48,
       "member": "open",
       "name": "document.open",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": true
+      "result": "Document",
+      "throws": false
     },
     {
       "args": [],
       "interface": "Document",
       "kind": "operation",
-      "line": 113,
+      "line": 49,
       "member": "close",
       "name": "document.close",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": true
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
     },
     {
       "args": [
@@ -846,14 +697,14 @@
       ],
       "interface": "Document",
       "kind": "operation",
-      "line": 114,
+      "line": 50,
       "member": "write",
       "name": "document.write",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": true
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
     },
     {
       "args": [
@@ -861,494 +712,1070 @@
       ],
       "interface": "Document",
       "kind": "operation",
-      "line": 115,
+      "line": 51,
       "member": "writeln",
       "name": "document.writeln",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": true
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 118,
+      "line": 52,
       "member": "defaultView",
       "name": "document.defaultView",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "Window?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Document",
+      "kind": "attribute-getter",
+      "line": 53,
+      "member": "activeElement",
+      "name": "document.activeElement",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Element?",
       "throws": false
     },
     {
       "args": [],
       "interface": "Document",
       "kind": "operation",
-      "line": 119,
+      "line": 54,
       "member": "hasFocus",
       "name": "document.hasFocus",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
-      "args": [
-        "DOMString",
-        "boolean",
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 120,
-      "member": "execCommand",
-      "name": "document.execCommand",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 121,
-      "member": "queryCommandEnabled",
-      "name": "document.queryCommandEnabled",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 122,
-      "member": "queryCommandIndeterm",
-      "name": "document.queryCommandIndeterm",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 123,
-      "member": "queryCommandState",
-      "name": "document.queryCommandState",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 124,
-      "member": "queryCommandSupported",
-      "name": "document.queryCommandSupported",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 125,
-      "member": "queryCommandValue",
-      "name": "document.queryCommandValue",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "boolean"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 126,
+      "line": 55,
       "member": "hidden",
       "name": "document.hidden",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Document",
       "kind": "attribute-getter",
-      "line": 127,
+      "line": 56,
       "member": "visibilityState",
       "name": "document.visibilityState",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DocumentVisibilityState",
       "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 130,
-      "member": "onreadystatechange",
-      "name": "document.onreadystatechange",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 130,
-      "member": "onreadystatechange",
-      "name": "document.onreadystatechange.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 133,
-      "member": "fgColor",
-      "name": "document.fgColor",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 133,
-      "member": "fgColor",
-      "name": "document.fgColor.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 134,
-      "member": "bgColor",
-      "name": "document.bgColor",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 134,
-      "member": "bgColor",
-      "name": "document.bgColor.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 135,
-      "member": "anchors",
-      "name": "document.anchors",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 136,
-      "member": "applets",
-      "name": "document.applets",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 137,
-      "member": "clear",
-      "name": "document.clear",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 138,
-      "member": "captureEvents",
-      "name": "document.captureEvents",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 139,
-      "member": "releaseEvents",
-      "name": "document.releaseEvents",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "boolean"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 142,
-      "member": "fullscreenEnabled",
-      "name": "document.fullscreenEnabled",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [
-        "boolean"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 143,
-      "member": "fullscreen",
-      "name": "document.fullscreen",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 144,
-      "member": "exitFullscreen",
-      "name": "document.exitFullscreen",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 145,
-      "member": "onfullscreenchange",
-      "name": "document.onfullscreenchange",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 145,
-      "member": "onfullscreenchange",
-      "name": "document.onfullscreenchange.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 146,
-      "member": "onfullscreenerror",
-      "name": "document.onfullscreenerror",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-setter",
-      "line": 146,
-      "member": "onfullscreenerror",
-      "name": "document.onfullscreenerror.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 149,
-      "member": "scrollingElement",
-      "name": "document.scrollingElement",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 152,
-      "member": "getSelection",
-      "name": "document.getSelection",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "attribute-getter",
-      "line": 155,
-      "member": "timeline",
-      "name": "document.timeline",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "DOMString"
-      ],
-      "interface": "Document",
-      "kind": "operation",
-      "line": 158,
-      "member": "parseHTML",
-      "name": "document.parseHTML",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": true
     }
   ],
   "idls": [
+    [
+      "tools/webidl/idl/document.webidl",
+      "9216e701aa0e7e058a6915286925fb870d34e0cb32c41a43a7f8c23fc25056b4"
+    ]
+  ],
+  "interfaces": [
     {
-      "file": "vendor/servo-script-bindings/simplified-idls/Document.simplified.webidl",
-      "sha256": "2bea70dcb3e694310f06b3223de4efd4f0c0da74cdf7ecbc63537106b737aa6d"
+      "base": "Node",
+      "exposed": true,
+      "members": [
+        {
+          "kind": "constructor",
+          "name": "constructor",
+          "parameters": []
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "implementation",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "object"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "URL",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "documentURI",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "compatMode",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "characterSet",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "charset",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "inputEncoding",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "contentType",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "documentElement",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "querySelector",
+          "parameters": [
+            {
+              "name": "selectors",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "querySelectorAll",
+          "parameters": [
+            {
+              "name": "selectors",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "NodeList",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getElementById",
+          "parameters": [
+            {
+              "name": "id",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getElementsByTagName",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getElementsByTagNameNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getElementsByClassName",
+          "parameters": [
+            {
+              "name": "names",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getElementsByName",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "NodeList",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createElement",
+          "parameters": [
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "default": {},
+              "name": "options",
+              "optional": true,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "string",
+                    "nullable": false
+                  },
+                  {
+                    "kind": "dictionary",
+                    "members": [
+                      {
+                        "name": "is",
+                        "optional": true,
+                        "type": {
+                          "kind": "string",
+                          "nullable": false
+                        },
+                        "variadic": false
+                      }
+                    ],
+                    "name": "ElementCreationOptions",
+                    "nullable": false
+                  }
+                ]
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createElementNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "qualifiedName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "default": {},
+              "name": "options",
+              "optional": true,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "string",
+                    "nullable": false
+                  },
+                  {
+                    "kind": "dictionary",
+                    "members": [
+                      {
+                        "name": "is",
+                        "optional": true,
+                        "type": {
+                          "kind": "string",
+                          "nullable": false
+                        },
+                        "variadic": false
+                      }
+                    ],
+                    "name": "ElementCreationOptions",
+                    "nullable": false
+                  }
+                ]
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createDocumentFragment",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "DocumentFragment",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createTextNode",
+          "parameters": [
+            {
+              "name": "data",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Text",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createComment",
+          "parameters": [
+            {
+              "name": "data",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Comment",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "importNode",
+          "parameters": [
+            {
+              "name": "node",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "default": false,
+              "name": "deep",
+              "optional": true,
+              "type": {
+                "kind": "boolean"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "adoptNode",
+          "parameters": [
+            {
+              "name": "node",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Node",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createAttribute",
+          "parameters": [
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createAttributeNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "qualifiedName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createEvent",
+          "parameters": [
+            {
+              "name": "interfaceName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Event",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createRange",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Range",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "domain",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "cookie",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "readyState",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "enum",
+            "name": "DocumentReadyState",
+            "nullable": false,
+            "values": [
+              "loading",
+              "interactive",
+              "complete"
+            ]
+          }
+        },
+        {
+          "constant": false,
+          "forwards": "href",
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "location",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Location",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "title",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "body",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLElement",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "head",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLHeadElement",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "images",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "embeds",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "plugins",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "links",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "forms",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "scripts",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "currentScript",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLScriptElement",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "open",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Document",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "close",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "write",
+          "parameters": [
+            {
+              "name": "text",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": true
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "writeln",
+          "parameters": [
+            {
+              "name": "text",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": true
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "defaultView",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Window",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "activeElement",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "hasFocus",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "hidden",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "visibilityState",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "enum",
+            "name": "DocumentVisibilityState",
+            "nullable": false,
+            "values": [
+              "visible",
+              "hidden"
+            ]
+          }
+        }
+      ],
+      "name": "Document",
+      "prefix": "document"
     }
   ],
   "native_base": {
-    "Node": "dom.base.EventTarget"
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
   }
 }

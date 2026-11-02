@@ -1,5 +1,16 @@
 // Typed native operations; no JSON serialization crosses the V8/DOM boundary.
 ((ops) => {
+  Object.defineProperty(globalThis, "__wega_guard_binding", {
+    configurable: true,
+    value: (name, identities) => {
+      try { ops.op_dom_hook(name, identities); }
+      catch (error) {
+        const match = /^([A-Za-z]+Error):\s*(.*)/.exec(error.message || "");
+        if (match) { const failure = new Error(match[2]); failure.name = match[1]; throw failure; }
+        throw error;
+      }
+    },
+  });
   Object.defineProperty(globalThis, "__wega_evaluate", {
     value: (source) =>
       ops.op_result(JSON.stringify((0, eval)(source)) ?? "null"),
