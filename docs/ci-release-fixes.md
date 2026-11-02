@@ -114,3 +114,33 @@ Existing third-party warnings are not a claim of zero security risk.
   both desktop suites; unknown or shared paths run everything; pushes, merges and CD
   always run the complete suite. The completion gate accepts a skipped job only when
   the scope did not select it.
+
+## Build cache budget
+
+GitHub keeps at most 10 GB of Actions cache per repository and evicts the least
+recently used entries. On 2 November 2026 the cache held 11 GB, more than half of it
+per-PR copies of the engine cache, so `main`'s desktop, Linux and CD caches were
+evicted and most heavy jobs started with "No cache found" (1,300+ crates compiled).
+The rules that keep it inside the limit:
+
+- **Only `main` saves.** Every `rust-cache` step has
+  `save-if: github.ref == 'refs/heads/main'`; pull requests restore `main`'s caches.
+- **One engine cache per OS.** Engine validation owns
+  `standalone-engine-native-worker-v4-<os>`; the desktop jobs restore it read-only
+  (`save-if: false`) after their own root-only cache. Their job-level env must not
+  add `CARGO*`/`RUST*`/`CC*` variables, because those are part of the cache key.
+- **Never cache `.` and `engines` in one `rust-cache` step.** `target/wega-engine`
+  is inside `target/`, and cleaning the root workspace prunes every engine-only
+  dependency. Use two steps (the Linux build does).
+- **CI and CD share the Linux release caches** (`wega-linux-release` and
+  `wega-linux-release-engine`): same script, container and profile.
+- **No Rust cache for CD's macOS and Windows release builds**, the core suite on
+  Windows, or the V8 spike outside Linux: together they would exceed the budget.
+- **Skia on MSVC** is cached as rust-skia's own export (a few MiB) under
+  `skia-msvc-{dev,release}-<hash of skia-bindings and its patch>`, saved by engine
+  validation and CD; see `scripts/skia-msvc-cache.py`. `rust-cache` cannot keep it:
+  vendored path crates are rebuilt from a fresh checkout.
+
+Check usage with `gh api repos/wulfnb/wega/actions/cache/usage` after changing any
+cache step. If CD needs warmer builds than this allows, the options are a larger
+paid cache limit or packaging on a schedule instead of every push to `main`.

@@ -115,7 +115,10 @@ fn main() -> Result<(), io::Error> {
         // std::terminate in SkExecutor. V8's bundled libc++ defines the same
         // symbol. Build Skia with CRT exception declarations on this target;
         // cached upstream binaries cannot contain our compile configuration.
-        let build_skia = cargo_target.builds_with_msvc()
+        // An explicit SKIA_BINARIES_URL may supply binaries this patched build
+        // exported earlier (Wega CI caches its own MSVC build that way).
+        let build_skia = (cargo_target.builds_with_msvc()
+            && cargo::env_var("SKIA_BINARIES_URL").is_none())
             || build_support::binary_cache::try_prepare_download(&binaries_config);
 
         //
