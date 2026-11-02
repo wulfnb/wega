@@ -54,6 +54,11 @@ pub(crate) fn adapt_extension(
                 "return wegaDomHooks?.slot(target) ?? null;",
             ),
             ("  setTarget,\n};", "  setTarget,\n  setWegaDomHooks,\n};"),
+            // Legacy DOM initEvent; the generated Event binding requires it.
+            (
+                "  [SymbolFor(\"Deno.privateCustomInspect\")](inspect, inspectOptions) {\n    return inspect(\n      getCreateFilteredInspectProxy()({\n        object: this,\n        evaluate: ObjectPrototypeIsPrototypeOf(EventPrototype, this),\n        keys: EVENT_PROPS,",
+                "  initEvent(type, bubbles = false, cancelable = false) {\n    if (this[_dispatched]) return;\n    this[_stopPropagationFlag] = false;\n    this[_stopImmediatePropagationFlag] = false;\n    this[_canceledFlag] = false;\n    this[_isTrusted] = false;\n    this[_attributes].target = null;\n    this[_attributes].type = String(type);\n    this[_attributes].bubbles = !!bubbles;\n    this[_attributes].cancelable = !!cancelable;\n  }\n\n  [SymbolFor(\"Deno.privateCustomInspect\")](inspect, inspectOptions) {\n    return inspect(\n      getCreateFilteredInspectProxy()({\n        object: this,\n        evaluate: ObjectPrototypeIsPrototypeOf(EventPrototype, this),\n        keys: EVENT_PROPS,",
+            ),
             (
                 "function isSlottable(\n  /* nodeImpl, */\n) {\n  // TODO(marcosc90) currently there aren't any slottables nodes\n  // https://dom.spec.whatwg.org/#concept-slotable\n  // return isNode(nodeImpl) && ReflectHas(nodeImpl, \"assignedSlot\");\n  return false;\n}",
                 "function isSlottable(nodeImpl) {\n  return isNode(nodeImpl) && (nodeImpl.nodeType === 1 || nodeImpl.nodeType === 3);\n}",

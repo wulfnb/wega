@@ -1,0 +1,377 @@
+{
+  "base_mixins": [],
+  "family": "named-node-map",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "NamedNodeMap"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "NamedNodeMap",
+      "kind": "attribute-getter",
+      "line": 3,
+      "member": "length",
+      "name": "namedNodeMap.length",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "unsigned long",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "NamedNodeMap",
+      "kind": "operation",
+      "line": 4,
+      "member": "item",
+      "name": "namedNodeMap.item",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "NamedNodeMap",
+      "kind": "operation",
+      "line": 5,
+      "member": "getNamedItem",
+      "name": "namedNodeMap.getNamedItem",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString"
+      ],
+      "interface": "NamedNodeMap",
+      "kind": "operation",
+      "line": 6,
+      "member": "getNamedItemNS",
+      "name": "namedNodeMap.getNamedItemNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr?",
+      "throws": false
+    },
+    {
+      "args": [
+        "Attr"
+      ],
+      "interface": "NamedNodeMap",
+      "kind": "operation",
+      "line": 7,
+      "member": "setNamedItem",
+      "name": "namedNodeMap.setNamedItem",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr?",
+      "throws": false
+    },
+    {
+      "args": [
+        "Attr"
+      ],
+      "interface": "NamedNodeMap",
+      "kind": "operation",
+      "line": 8,
+      "member": "setNamedItemNS",
+      "name": "namedNodeMap.setNamedItemNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "NamedNodeMap",
+      "kind": "operation",
+      "line": 9,
+      "member": "removeNamedItem",
+      "name": "namedNodeMap.removeNamedItem",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString"
+      ],
+      "interface": "NamedNodeMap",
+      "kind": "operation",
+      "line": 10,
+      "member": "removeNamedItemNS",
+      "name": "namedNodeMap.removeNamedItemNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/named-node-map.webidl",
+      "99c85a478d40df491674449d739ec8cfaf3b0574e6c33ecbb70ec726672bfa67"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "length",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "getter": true,
+          "kind": "operation",
+          "name": "item",
+          "parameters": [
+            {
+              "name": "index",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": true,
+          "kind": "operation",
+          "name": "getNamedItem",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getNamedItemNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "setNamedItem",
+          "parameters": [
+            {
+              "name": "attr",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Attr",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "setNamedItemNS",
+          "parameters": [
+            {
+              "name": "attr",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Attr",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "removeNamedItem",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "removeNamedItemNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": false
+          }
+        },
+        {
+          "kind": "iterable",
+          "name": "@@iterator",
+          "types": [
+            {
+              "kind": "interface",
+              "name": "Attr",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "name": "NamedNodeMap",
+      "prefix": "namedNodeMap"
+    }
+  ],
+  "native_base": {
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

@@ -461,7 +461,7 @@ impl View {
         {
             self.host.ready_event_sent = true;
             self.host.ready_at = Some(Instant::now());
-            self.run("document.readyState='interactive';document.dispatchEvent(new Event('readystatechange'));__wega_dispatch('DOMContentLoaded',document._id)", "wega:ready");
+            self.run("document._readyState='interactive';document.dispatchEvent(new Event('readystatechange'));__wega_dispatch('DOMContentLoaded',document._id)", "wega:ready");
         }
         let settled = self.host.asynchronous.is_empty()
             && self.host.ordered.is_empty()
@@ -475,7 +475,7 @@ impl View {
             self.host.load_event_sent = true;
             self.loading = false;
             self.resource_events();
-            self.run("document.readyState='complete';document.dispatchEvent(new Event('readystatechange'));window.dispatchEvent(new Event('load'))", "wega:load");
+            self.run("document._readyState='complete';document.dispatchEvent(new Event('readystatechange'));window.dispatchEvent(new Event('load'))", "wega:load");
         }
     }
     /// `load`/`error` on images and stylesheets whose fetches finished.

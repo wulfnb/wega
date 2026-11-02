@@ -1,55 +1,131 @@
 {
   "base_mixins": [],
-  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
   "family": "event",
-  "generator": "wega-webidl (step 07.a)",
+  "generator": "wega-webidl typed descriptors v2",
   "globals": [
     "Event"
   ],
   "hooks": [
     {
       "args": [
-        "DOMString"
+        "DOMString",
+        "EventInit"
       ],
       "interface": "Event",
       "kind": "constructor",
-      "line": 9,
+      "line": 4,
       "member": "constructor",
       "name": "event.construct.event",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ id: string, info: object }",
-      "throws": true
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Event",
-      "kind": "attribute-getter",
-      "line": 10,
-      "member": "type",
-      "name": "event.type",
-      "new_object": false,
-      "pure": true,
-      "reaction": null,
-      "result": "{ string }",
+      "result": "undefined",
       "throws": false
     },
     {
-      "args": [
-        "unsigned short"
-      ],
+      "args": [],
       "interface": "Event",
       "kind": "attribute-getter",
-      "line": 15,
+      "line": 5,
+      "member": "type",
+      "name": "event.type",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 6,
+      "member": "target",
+      "name": "event.target",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "EventTarget?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 7,
+      "member": "currentTarget",
+      "name": "event.currentTarget",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "EventTarget?",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "operation",
+      "line": 8,
+      "member": "composedPath",
+      "name": "event.composedPath",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "sequence<EventTarget>",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 13,
       "member": "eventPhase",
       "name": "event.eventPhase",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ unsigned long }",
+      "result": "unsigned short",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "operation",
+      "line": 14,
+      "member": "stopPropagation",
+      "name": "event.stopPropagation",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Event",
+      "kind": "attribute-getter",
+      "line": 15,
+      "member": "cancelBubble",
+      "name": "event.cancelBubble",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [
+        "boolean"
+      ],
+      "interface": "Event",
+      "kind": "attribute-setter",
+      "line": 15,
+      "member": "cancelBubble",
+      "name": "event.cancelBubble.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
@@ -57,100 +133,51 @@
       "interface": "Event",
       "kind": "operation",
       "line": 16,
-      "member": "stopPropagation",
-      "name": "event.stopPropagation",
-      "new_object": false,
-      "pure": false,
-      "reaction": "stopPropagation",
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "boolean"
-      ],
-      "interface": "Event",
-      "kind": "attribute-getter",
-      "line": 17,
-      "member": "cancelBubble",
-      "name": "event.cancelBubble",
+      "member": "stopImmediatePropagation",
+      "name": "event.stopImmediatePropagation",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [
-        "boolean"
-      ],
-      "interface": "Event",
-      "kind": "attribute-setter",
-      "line": 17,
-      "member": "cancelBubble",
-      "name": "event.cancelBubble.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": "stopPropagation",
-      "result": "{ boolean }",
+      "result": "undefined",
       "throws": false
     },
     {
       "args": [],
       "interface": "Event",
-      "kind": "operation",
-      "line": 18,
-      "member": "stopImmediatePropagation",
-      "name": "event.stopImmediatePropagation",
-      "new_object": false,
-      "pure": false,
-      "reaction": "stopImmediatePropagation",
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "boolean"
-      ],
-      "interface": "Event",
       "kind": "attribute-getter",
-      "line": 19,
+      "line": 17,
       "member": "bubbles",
       "name": "event.bubbles",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
-      "args": [
-        "boolean"
-      ],
+      "args": [],
       "interface": "Event",
       "kind": "attribute-getter",
-      "line": 20,
+      "line": 18,
       "member": "cancelable",
       "name": "event.cancelable",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
-      "args": [
-        "boolean"
-      ],
+      "args": [],
       "interface": "Event",
       "kind": "attribute-getter",
-      "line": 21,
+      "line": 19,
       "member": "returnValue",
       "name": "event.returnValue",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
@@ -159,111 +186,451 @@
       ],
       "interface": "Event",
       "kind": "attribute-setter",
-      "line": 21,
+      "line": 19,
       "member": "returnValue",
       "name": "event.returnValue.set",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "undefined",
       "throws": false
     },
     {
       "args": [],
       "interface": "Event",
       "kind": "operation",
-      "line": 22,
+      "line": 20,
       "member": "preventDefault",
       "name": "event.preventDefault",
       "new_object": false,
       "pure": false,
-      "reaction": "preventDefault",
-      "result": "{ undefined }",
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
-      "args": [
-        "boolean"
-      ],
+      "args": [],
       "interface": "Event",
       "kind": "attribute-getter",
-      "line": 23,
+      "line": 21,
       "member": "defaultPrevented",
       "name": "event.defaultPrevented",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
-      "args": [
-        "boolean"
-      ],
+      "args": [],
       "interface": "Event",
       "kind": "attribute-getter",
-      "line": 24,
+      "line": 22,
       "member": "composed",
       "name": "event.composed",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
-      "args": [
-        "boolean"
-      ],
+      "args": [],
       "interface": "Event",
       "kind": "attribute-getter",
-      "line": 25,
+      "line": 23,
       "member": "isTrusted",
       "name": "event.isTrusted",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     },
     {
-      "args": [
-        "double"
-      ],
+      "args": [],
       "interface": "Event",
       "kind": "attribute-getter",
-      "line": 26,
+      "line": 24,
       "member": "timeStamp",
       "name": "event.timeStamp",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ double }",
+      "result": "double",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "DOMString",
+        "boolean",
+        "boolean"
       ],
       "interface": "Event",
       "kind": "operation",
-      "line": 27,
+      "line": 25,
       "member": "initEvent",
       "name": "event.initEvent",
       "new_object": false,
       "pure": false,
-      "reaction": "initEvent",
-      "result": "{ undefined }",
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     }
   ],
   "idls": [
+    [
+      "tools/webidl/idl/event.webidl",
+      "9e0c1c845b2ee2a87c34268f9b25fb08201952295ea427fe17d20d6b708c0078"
+    ]
+  ],
+  "interfaces": [
     {
-      "file": "vendor/servo-script-bindings/simplified-idls/Event.simplified.webidl",
-      "sha256": "4008b8e640f1461e692cd8097e3ee4d864e919ed575fa4599d353c6a4fff3211"
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "kind": "constructor",
+          "name": "constructor",
+          "parameters": [
+            {
+              "name": "type",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "default": {},
+              "name": "eventInitDict",
+              "optional": true,
+              "type": {
+                "kind": "dictionary",
+                "members": [
+                  {
+                    "default": false,
+                    "name": "bubbles",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "default": false,
+                    "name": "cancelable",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "default": false,
+                    "name": "composed",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  }
+                ],
+                "name": "EventInit",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "type",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "target",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "EventTarget",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "currentTarget",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "EventTarget",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "composedPath",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "element": {
+              "kind": "interface",
+              "name": "EventTarget",
+              "nullable": false
+            },
+            "kind": "sequence"
+          }
+        },
+        {
+          "kind": "constant",
+          "name": "NONE",
+          "value": 0
+        },
+        {
+          "kind": "constant",
+          "name": "CAPTURING_PHASE",
+          "value": 1
+        },
+        {
+          "kind": "constant",
+          "name": "AT_TARGET",
+          "value": 2
+        },
+        {
+          "kind": "constant",
+          "name": "BUBBLING_PHASE",
+          "value": 3
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "eventPhase",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 16,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "stopPropagation",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "cancelBubble",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "stopImmediatePropagation",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "bubbles",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "cancelable",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "returnValue",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "preventDefault",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "defaultPrevented",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "composed",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "isTrusted",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "timeStamp",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "double"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "initEvent",
+          "parameters": [
+            {
+              "name": "type",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "default": false,
+              "name": "bubbles",
+              "optional": true,
+              "type": {
+                "kind": "boolean"
+              },
+              "variadic": false
+            },
+            {
+              "default": false,
+              "name": "cancelable",
+              "optional": true,
+              "type": {
+                "kind": "boolean"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        }
+      ],
+      "name": "Event",
+      "prefix": "event"
     }
   ],
   "native_base": {
-    "Event": "dom.base.EventTarget"
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
   }
 }

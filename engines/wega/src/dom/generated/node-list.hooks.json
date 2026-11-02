@@ -1,0 +1,127 @@
+{
+  "base_mixins": [],
+  "family": "node-list",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "NodeList"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "NodeList",
+      "kind": "attribute-getter",
+      "line": 3,
+      "member": "length",
+      "name": "nodeList.length",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "unsigned long",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "NodeList",
+      "kind": "operation",
+      "line": 4,
+      "member": "item",
+      "name": "nodeList.item",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Node?",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/node-list.webidl",
+      "23bd509c91fc7f4bc25c45d048ebea0dc8a256ac216af609568cb3169ee6db38"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "length",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "getter": true,
+          "kind": "operation",
+          "name": "item",
+          "parameters": [
+            {
+              "name": "index",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Node",
+            "nullable": true
+          }
+        },
+        {
+          "kind": "iterable",
+          "name": "@@iterator",
+          "types": [
+            {
+              "kind": "interface",
+              "name": "Node",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "name": "NodeList",
+      "prefix": "nodeList"
+    }
+  ],
+  "native_base": {
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

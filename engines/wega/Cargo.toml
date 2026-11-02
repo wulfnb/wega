@@ -56,6 +56,7 @@ publicsuffix = "=2.3.0"
 keyboard-types = "=0.8.3"
 
 [build-dependencies]
+sha2 = "0.11"
 wega-network = {path="../network"}
 serde = {version="1",features=["derive"]}
 deno_core = "=0.413.0"

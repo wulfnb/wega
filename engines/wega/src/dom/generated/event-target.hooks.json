@@ -1,80 +1,290 @@
 {
   "base_mixins": [],
-  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
   "family": "event-target",
-  "generator": "wega-webidl (step 07.a)",
+  "generator": "wega-webidl typed descriptors v2",
   "globals": [
     "EventTarget"
   ],
   "hooks": [
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "EventTarget",
       "kind": "constructor",
-      "line": 8,
+      "line": 6,
       "member": "constructor",
       "name": "evtTarget.construct.eventtarget",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ id: string, info: object }",
-      "throws": true
+      "result": "undefined",
+      "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "DOMString",
+        "EventListener?",
+        "(AddEventListenerOptions or boolean)"
       ],
       "interface": "EventTarget",
       "kind": "operation",
-      "line": 9,
+      "line": 7,
       "member": "addEventListener",
       "name": "evtTarget.addEventListener",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ undefined }",
-      "throws": true
+      "result": "undefined",
+      "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "DOMString",
+        "EventListener?",
+        "(EventListenerOptions or boolean)"
       ],
       "interface": "EventTarget",
       "kind": "operation",
-      "line": 10,
+      "line": 8,
       "member": "removeEventListener",
       "name": "evtTarget.removeEventListener",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ undefined }",
-      "throws": true
+      "result": "undefined",
+      "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "Event"
       ],
       "interface": "EventTarget",
       "kind": "operation",
-      "line": 11,
+      "line": 9,
       "member": "dispatchEvent",
       "name": "evtTarget.dispatchEvent",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "boolean",
       "throws": false
     }
   ],
   "idls": [
+    [
+      "tools/webidl/idl/event-target.webidl",
+      "562b928a49438dddf202c48dab049fe38bad1a2d7a44e27291fa8de867fd4f05"
+    ]
+  ],
+  "interfaces": [
     {
-      "file": "vendor/servo-script-bindings/simplified-idls/EventTarget.webidl",
-      "sha256": "f9837ef5b6d98eb236bce527888f29d41ba3f2696c0ad224935ea81b9fac3b74"
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "kind": "constructor",
+          "name": "constructor",
+          "parameters": []
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "addEventListener",
+          "parameters": [
+            {
+              "name": "type",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "callback",
+              "optional": false,
+              "type": {
+                "kind": "callback-interface",
+                "name": "EventListener",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "default": {},
+              "name": "options",
+              "optional": true,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "dictionary",
+                    "members": [
+                      {
+                        "default": false,
+                        "name": "capture",
+                        "optional": true,
+                        "type": {
+                          "kind": "boolean"
+                        },
+                        "variadic": false
+                      },
+                      {
+                        "default": false,
+                        "name": "once",
+                        "optional": true,
+                        "type": {
+                          "kind": "boolean"
+                        },
+                        "variadic": false
+                      },
+                      {
+                        "name": "passive",
+                        "optional": true,
+                        "type": {
+                          "kind": "boolean"
+                        },
+                        "variadic": false
+                      },
+                      {
+                        "name": "signal",
+                        "optional": true,
+                        "type": {
+                          "kind": "interface",
+                          "name": "AbortSignal",
+                          "nullable": false
+                        },
+                        "variadic": false
+                      }
+                    ],
+                    "name": "AddEventListenerOptions",
+                    "nullable": false
+                  },
+                  {
+                    "kind": "boolean"
+                  }
+                ]
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "removeEventListener",
+          "parameters": [
+            {
+              "name": "type",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "callback",
+              "optional": false,
+              "type": {
+                "kind": "callback-interface",
+                "name": "EventListener",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "default": {},
+              "name": "options",
+              "optional": true,
+              "type": {
+                "kind": "union",
+                "types": [
+                  {
+                    "kind": "dictionary",
+                    "members": [
+                      {
+                        "default": false,
+                        "name": "capture",
+                        "optional": true,
+                        "type": {
+                          "kind": "boolean"
+                        },
+                        "variadic": false
+                      }
+                    ],
+                    "name": "EventListenerOptions",
+                    "nullable": false
+                  },
+                  {
+                    "kind": "boolean"
+                  }
+                ]
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "dispatchEvent",
+          "parameters": [
+            {
+              "name": "event",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Event",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        }
+      ],
+      "name": "EventTarget",
+      "prefix": "evtTarget"
     }
   ],
   "native_base": {
-    "EventTarget": "dom.event.EventTarget"
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
   }
 }

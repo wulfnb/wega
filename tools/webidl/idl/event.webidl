@@ -1,0 +1,26 @@
+// Wega contributors, 2026. Audited DOM/HTML binding surface; algorithms in semantic adapters.
+dictionary EventInit { boolean bubbles = false; boolean cancelable = false; boolean composed = false; };
+[Exposed=Window] interface Event {
+ constructor(DOMString type, optional EventInit eventInitDict = {});
+ readonly attribute DOMString type;
+ readonly attribute EventTarget? target;
+ readonly attribute EventTarget? currentTarget;
+ sequence<EventTarget> composedPath();
+ const unsigned short NONE = 0;
+ const unsigned short CAPTURING_PHASE = 1;
+ const unsigned short AT_TARGET = 2;
+ const unsigned short BUBBLING_PHASE = 3;
+ readonly attribute unsigned short eventPhase;
+ undefined stopPropagation();
+ attribute boolean cancelBubble;
+ undefined stopImmediatePropagation();
+ readonly attribute boolean bubbles;
+ readonly attribute boolean cancelable;
+ attribute boolean returnValue;
+ undefined preventDefault();
+ readonly attribute boolean defaultPrevented;
+ readonly attribute boolean composed;
+ readonly attribute boolean isTrusted;
+ readonly attribute double timeStamp;
+ undefined initEvent(DOMString type, optional boolean bubbles = false, optional boolean cancelable = false);
+};

@@ -1,107 +1,74 @@
 {
-  "base_mixins": [
-    "ChildNode",
-    "NonDocumentTypeChildNode",
-    "ParentNode",
-    "ActivatableElement",
-    "ARIAMixin",
-    "Animatable"
-  ],
-  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
+  "base_mixins": [],
   "family": "element",
-  "generator": "wega-webidl (step 07.a)",
+  "generator": "wega-webidl typed descriptors v2",
   "globals": [
     "Element"
   ],
   "hooks": [
     {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "constructor",
-      "line": 35,
-      "member": "constructor",
-      "name": "element.construct.element",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ id: string, info: object }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 37,
+      "line": 5,
       "member": "namespaceURI",
       "name": "element.namespaceURI",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString?",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 39,
+      "line": 6,
       "member": "prefix",
       "name": "element.prefix",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString?",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 41,
+      "line": 7,
       "member": "localName",
       "name": "element.localName",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 43,
+      "line": 8,
       "member": "tagName",
       "name": "element.tagName",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 46,
+      "line": 9,
       "member": "id",
       "name": "element.id",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
@@ -110,28 +77,26 @@
       ],
       "interface": "Element",
       "kind": "attribute-setter",
-      "line": 46,
+      "line": 9,
       "member": "id",
       "name": "element.id.set",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 48,
+      "line": 10,
       "member": "className",
       "name": "element.className",
       "new_object": false,
-      "pure": true,
+      "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
@@ -140,99 +105,80 @@
       ],
       "interface": "Element",
       "kind": "attribute-setter",
-      "line": 48,
+      "line": 10,
       "member": "className",
       "name": "element.className.set",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 50,
+      "line": 11,
       "member": "classList",
       "name": "element.classList",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMTokenList",
       "throws": false
     },
     {
       "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "attribute-getter",
-      "line": 52,
-      "member": "slot",
-      "name": "element.slot",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
+        "DOMTokenList"
       ],
       "interface": "Element",
       "kind": "attribute-setter",
-      "line": 52,
-      "member": "slot",
-      "name": "element.slot.set",
+      "line": 11,
+      "member": "classList",
+      "name": "element.classList.set",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
       "args": [],
       "interface": "Element",
-      "kind": "operation",
-      "line": 54,
-      "member": "hasAttributes",
-      "name": "element.hasAttributes",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ boolean }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
       "kind": "attribute-getter",
-      "line": 56,
+      "line": 12,
       "member": "attributes",
       "name": "element.attributes",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "NamedNodeMap",
       "throws": false
     },
     {
       "args": [],
       "interface": "Element",
       "kind": "operation",
-      "line": 58,
+      "line": 13,
+      "member": "hasAttributes",
+      "name": "element.hasAttributes",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 14,
       "member": "getAttributeNames",
       "name": "element.getAttributeNames",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "sequence<DOMString>",
       "throws": false
     },
     {
@@ -241,13 +187,60 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 60,
+      "line": 15,
       "member": "getAttribute",
       "name": "element.getAttribute",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 16,
+      "member": "getAttributeNS",
+      "name": "element.getAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 17,
+      "member": "hasAttribute",
+      "name": "element.hasAttribute",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 18,
+      "member": "hasAttributeNS",
+      "name": "element.hasAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
       "throws": false
     },
     {
@@ -257,13 +250,61 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 62,
-      "member": "getAttributeNS",
-      "name": "element.getAttributeNS",
+      "line": 19,
+      "member": "setAttribute",
+      "name": "element.setAttribute",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 20,
+      "member": "setAttributeNS",
+      "name": "element.setAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 21,
+      "member": "removeAttribute",
+      "name": "element.removeAttribute",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 22,
+      "member": "removeAttributeNS",
+      "name": "element.removeAttributeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
       "throws": false
     },
     {
@@ -273,77 +314,13 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 64,
+      "line": 23,
       "member": "toggleAttribute",
       "name": "element.toggleAttribute",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
-      "throws": true
-    },
-    {
-      "args": [
-        "DOMString",
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 66,
-      "member": "setAttribute",
-      "name": "element.setAttribute",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": true
-    },
-    {
-      "args": [
-        "DOMString",
-        "DOMString",
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 68,
-      "member": "setAttributeNS",
-      "name": "element.setAttributeNS",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": true
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 70,
-      "member": "removeAttribute",
-      "name": "element.removeAttribute",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString",
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 72,
-      "member": "removeAttributeNS",
-      "name": "element.removeAttributeNS",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
+      "result": "boolean",
       "throws": false
     },
     {
@@ -352,29 +329,74 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 74,
-      "member": "hasAttribute",
-      "name": "element.hasAttribute",
+      "line": 24,
+      "member": "getAttributeNode",
+      "name": "element.getAttributeNode",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "Attr?",
       "throws": false
     },
     {
       "args": [
-        "DOMString",
+        "DOMString?",
         "DOMString"
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 75,
-      "member": "hasAttributeNS",
-      "name": "element.hasAttributeNS",
+      "line": 25,
+      "member": "getAttributeNodeNS",
+      "name": "element.getAttributeNodeNS",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
+      "result": "Attr?",
+      "throws": false
+    },
+    {
+      "args": [
+        "Attr"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 26,
+      "member": "setAttributeNode",
+      "name": "element.setAttributeNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr?",
+      "throws": false
+    },
+    {
+      "args": [
+        "Attr"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 27,
+      "member": "setAttributeNodeNS",
+      "name": "element.setAttributeNodeNS",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr?",
+      "throws": false
+    },
+    {
+      "args": [
+        "Attr"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 28,
+      "member": "removeAttributeNode",
+      "name": "element.removeAttributeNode",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Attr",
       "throws": false
     },
     {
@@ -383,14 +405,14 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 77,
+      "line": 29,
       "member": "closest",
       "name": "element.closest",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": true
+      "result": "Element?",
+      "throws": false
     },
     {
       "args": [
@@ -398,14 +420,14 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 79,
+      "line": 30,
       "member": "matches",
       "name": "element.matches",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
-      "throws": true
+      "result": "boolean",
+      "throws": false
     },
     {
       "args": [
@@ -413,14 +435,14 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 81,
-      "member": "webkitMatchesSelector",
-      "name": "element.webkitMatchesSelector",
+      "line": 31,
+      "member": "querySelector",
+      "name": "element.querySelector",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ boolean }",
-      "throws": true
+      "result": "Element?",
+      "throws": false
     },
     {
       "args": [
@@ -428,29 +450,44 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 84,
+      "line": 32,
+      "member": "querySelectorAll",
+      "name": "element.querySelectorAll",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "NodeList",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 33,
       "member": "getElementsByTagName",
       "name": "element.getElementsByTagName",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "HTMLCollection",
       "throws": false
     },
     {
       "args": [
-        "DOMString",
+        "DOMString?",
         "DOMString"
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 85,
+      "line": 34,
       "member": "getElementsByTagNameNS",
       "name": "element.getElementsByTagNameNS",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "HTMLCollection",
       "throws": false
     },
     {
@@ -459,30 +496,30 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 86,
+      "line": 35,
       "member": "getElementsByClassName",
       "name": "element.getElementsByClassName",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "HTMLCollection",
       "throws": false
     },
     {
       "args": [
         "DOMString",
-        "DOMString"
+        "Element"
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 88,
+      "line": 36,
       "member": "insertAdjacentElement",
       "name": "element.insertAdjacentElement",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": true
+      "result": "Element?",
+      "throws": false
     },
     {
       "args": [
@@ -491,14 +528,14 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 90,
+      "line": 37,
       "member": "insertAdjacentText",
       "name": "element.insertAdjacentText",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ undefined }",
-      "throws": true
+      "result": "undefined",
+      "throws": false
     },
     {
       "args": [
@@ -507,354 +544,158 @@
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 92,
+      "line": 38,
       "member": "insertAdjacentHTML",
       "name": "element.insertAdjacentHTML",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": true
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
     },
     {
       "args": [
-        "DOMString"
+        "ShadowRootInit"
       ],
       "interface": "Element",
       "kind": "operation",
-      "line": 95,
+      "line": 39,
       "member": "attachShadow",
       "name": "element.attachShadow",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ undefined }",
-      "throws": true
+      "result": "ShadowRoot",
+      "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 96,
+      "line": 40,
       "member": "shadowRoot",
       "name": "element.shadowRoot",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "attribute-getter",
-      "line": 98,
-      "member": "customElementRegistry",
-      "name": "element.customElementRegistry",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
+      "result": "ShadowRoot?",
       "throws": false
     },
     {
       "args": [],
       "interface": "Element",
       "kind": "operation",
-      "line": 100,
+      "line": 41,
+      "member": "getBoundingClientRect",
+      "name": "element.getBoundingClientRect",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "object",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Element",
+      "kind": "operation",
+      "line": 42,
       "member": "getClientRects",
       "name": "element.getClientRects",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "sequence<object>",
       "throws": false
     },
     {
       "args": [],
       "interface": "Element",
-      "kind": "operation",
-      "line": 101,
-      "member": "getBoundingClientRect",
-      "name": "element.getBoundingClientRect",
-      "new_object": true,
-      "pure": false,
-      "reaction": null,
-      "result": "{ string }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 104,
-      "member": "scrollIntoView",
-      "name": "element.scrollIntoView",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 105,
-      "member": "scroll",
-      "name": "element.scroll",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 106,
-      "member": "scrollTo",
-      "name": "element.scrollTo",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 107,
-      "member": "scrollBy",
-      "name": "element.scrollBy",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ undefined }",
-      "throws": false
-    },
-    {
-      "args": [
-        "double"
-      ],
-      "interface": "Element",
       "kind": "attribute-getter",
-      "line": 108,
-      "member": "scrollTop",
-      "name": "element.scrollTop",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ double }",
-      "throws": false
-    },
-    {
-      "args": [
-        "double"
-      ],
-      "interface": "Element",
-      "kind": "attribute-setter",
-      "line": 108,
-      "member": "scrollTop",
-      "name": "element.scrollTop.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ double }",
-      "throws": false
-    },
-    {
-      "args": [
-        "double"
-      ],
-      "interface": "Element",
-      "kind": "attribute-getter",
-      "line": 109,
-      "member": "scrollLeft",
-      "name": "element.scrollLeft",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ double }",
-      "throws": false
-    },
-    {
-      "args": [
-        "double"
-      ],
-      "interface": "Element",
-      "kind": "attribute-setter",
-      "line": 109,
-      "member": "scrollLeft",
-      "name": "element.scrollLeft.set",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ double }",
-      "throws": false
-    },
-    {
-      "args": [
-        "unsigned long"
-      ],
-      "interface": "Element",
-      "kind": "attribute-getter",
-      "line": 110,
-      "member": "scrollWidth",
-      "name": "element.scrollWidth",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ long }",
-      "throws": false
-    },
-    {
-      "args": [
-        "unsigned long"
-      ],
-      "interface": "Element",
-      "kind": "attribute-getter",
-      "line": 111,
-      "member": "scrollHeight",
-      "name": "element.scrollHeight",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ long }",
-      "throws": false
-    },
-    {
-      "args": [
-        "unsigned long"
-      ],
-      "interface": "Element",
-      "kind": "attribute-getter",
-      "line": 112,
-      "member": "clientTop",
-      "name": "element.clientTop",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ long }",
-      "throws": false
-    },
-    {
-      "args": [
-        "unsigned long"
-      ],
-      "interface": "Element",
-      "kind": "attribute-getter",
-      "line": 113,
-      "member": "clientLeft",
-      "name": "element.clientLeft",
-      "new_object": false,
-      "pure": false,
-      "reaction": null,
-      "result": "{ long }",
-      "throws": false
-    },
-    {
-      "args": [
-        "unsigned long"
-      ],
-      "interface": "Element",
-      "kind": "attribute-getter",
-      "line": 114,
+      "line": 43,
       "member": "clientWidth",
       "name": "element.clientWidth",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ long }",
+      "result": "unsigned long",
       "throws": false
     },
     {
-      "args": [
-        "unsigned long"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 115,
+      "line": 44,
       "member": "clientHeight",
       "name": "element.clientHeight",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ long }",
+      "result": "unsigned long",
       "throws": false
     },
     {
-      "args": [
-        "double"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 116,
-      "member": "currentCSSZoom",
-      "name": "element.currentCSSZoom",
+      "line": 45,
+      "member": "clientTop",
+      "name": "element.clientTop",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ double }",
+      "result": "unsigned long",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
-      "kind": "operation",
-      "line": 118,
-      "member": "setHTMLUnsafe",
-      "name": "element.setHTMLUnsafe",
-      "new_object": false,
-      "pure": false,
-      "reaction": "characterData",
-      "result": "{ undefined }",
-      "throws": true
-    },
-    {
-      "args": [
-        "DOMString"
-      ],
-      "interface": "Element",
-      "kind": "operation",
-      "line": 120,
-      "member": "getHTML",
-      "name": "element.getHTML",
+      "kind": "attribute-getter",
+      "line": 46,
+      "member": "clientLeft",
+      "name": "element.clientLeft",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "unsigned long",
       "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 121,
+      "line": 47,
+      "member": "scrollWidth",
+      "name": "element.scrollWidth",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "unsigned long",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 48,
+      "member": "scrollHeight",
+      "name": "element.scrollHeight",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "unsigned long",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "Element",
+      "kind": "attribute-getter",
+      "line": 49,
       "member": "innerHTML",
       "name": "element.innerHTML",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
@@ -863,28 +704,26 @@
       ],
       "interface": "Element",
       "kind": "attribute-setter",
-      "line": 121,
+      "line": 49,
       "member": "innerHTML",
       "name": "element.innerHTML.set",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
-      "throws": true
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Element",
       "kind": "attribute-getter",
-      "line": 123,
+      "line": 50,
       "member": "outerHTML",
       "name": "element.outerHTML",
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
@@ -893,23 +732,1021 @@
       ],
       "interface": "Element",
       "kind": "attribute-setter",
-      "line": 123,
+      "line": 50,
       "member": "outerHTML",
       "name": "element.outerHTML.set",
       "new_object": false,
       "pure": false,
-      "reaction": "characterData",
-      "result": "{ string }",
-      "throws": true
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
     }
   ],
   "idls": [
+    [
+      "tools/webidl/idl/element.webidl",
+      "d69cdbc6bba36f3b34d3f15125e8bb86529839edd0ee435ea056c856b5edc004"
+    ]
+  ],
+  "interfaces": [
     {
-      "file": "vendor/servo-script-bindings/simplified-idls/Element.simplified.webidl",
-      "sha256": "e00e3cef5ee8c57970f68d21272930fb0a8455ac67dd3e0b929c8c5eb92f115e"
+      "base": "Node",
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "namespaceURI",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "prefix",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "localName",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "tagName",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "id",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "className",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": "value",
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "classList",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "DOMTokenList",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "attributes",
+          "readonly": true,
+          "sameObject": true,
+          "type": {
+            "kind": "interface",
+            "name": "NamedNodeMap",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "hasAttributes",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getAttributeNames",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "element": {
+              "kind": "string",
+              "nullable": false
+            },
+            "kind": "sequence"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getAttribute",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getAttributeNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "hasAttribute",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "hasAttributeNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "setAttribute",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "value",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "setAttributeNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "value",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "removeAttribute",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "removeAttributeNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "toggleAttribute",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "force",
+              "optional": true,
+              "type": {
+                "kind": "boolean"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getAttributeNode",
+          "parameters": [
+            {
+              "name": "name",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getAttributeNodeNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "setAttributeNode",
+          "parameters": [
+            {
+              "name": "attr",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Attr",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "setAttributeNodeNS",
+          "parameters": [
+            {
+              "name": "attr",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Attr",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "removeAttributeNode",
+          "parameters": [
+            {
+              "name": "attr",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Attr",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Attr",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "closest",
+          "parameters": [
+            {
+              "name": "selectors",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "matches",
+          "parameters": [
+            {
+              "name": "selectors",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "querySelector",
+          "parameters": [
+            {
+              "name": "selectors",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "querySelectorAll",
+          "parameters": [
+            {
+              "name": "selectors",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "NodeList",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getElementsByTagName",
+          "parameters": [
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getElementsByTagNameNS",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getElementsByClassName",
+          "parameters": [
+            {
+              "name": "classNames",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "HTMLCollection",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "insertAdjacentElement",
+          "parameters": [
+            {
+              "name": "where",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "element",
+              "optional": false,
+              "type": {
+                "kind": "interface",
+                "name": "Element",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Element",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "insertAdjacentText",
+          "parameters": [
+            {
+              "name": "where",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "data",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "insertAdjacentHTML",
+          "parameters": [
+            {
+              "name": "position",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "text",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "attachShadow",
+          "parameters": [
+            {
+              "name": "init",
+              "optional": false,
+              "type": {
+                "kind": "dictionary",
+                "members": [
+                  {
+                    "default": false,
+                    "name": "delegatesFocus",
+                    "optional": true,
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "variadic": false
+                  },
+                  {
+                    "name": "mode",
+                    "optional": false,
+                    "type": {
+                      "kind": "enum",
+                      "name": "ShadowRootMode",
+                      "nullable": false,
+                      "values": [
+                        "open",
+                        "closed"
+                      ]
+                    },
+                    "variadic": false
+                  }
+                ],
+                "name": "ShadowRootInit",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "ShadowRoot",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "shadowRoot",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "interface",
+            "name": "ShadowRoot",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getBoundingClientRect",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "object"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "getClientRects",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "element": {
+              "kind": "object"
+            },
+            "kind": "sequence"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "clientWidth",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "clientHeight",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "clientTop",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "clientLeft",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "scrollWidth",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "scrollHeight",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "innerHTML",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "outerHTML",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        }
+      ],
+      "name": "Element",
+      "prefix": "element"
     }
   ],
   "native_base": {
-    "Node": "dom.base.EventTarget"
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
   }
 }

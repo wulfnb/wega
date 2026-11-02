@@ -3,18 +3,16 @@
     "ChildNode",
     "NonDocumentTypeChildNode"
   ],
-  "convention": "node hooks take the node id string as their first argument; hook errors are 'ExceptionName: message' strings",
   "family": "character-data",
-  "generator": "wega-webidl (step 07.a)",
+  "generator": "wega-webidl typed descriptors v2",
   "globals": [
+    "CharacterData",
     "Text",
     "Comment"
   ],
   "hooks": [
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "CharacterData",
       "kind": "attribute-getter",
       "line": 14,
@@ -23,7 +21,7 @@
       "new_object": false,
       "pure": true,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
@@ -38,13 +36,11 @@
       "new_object": false,
       "pure": false,
       "reaction": "characterData",
-      "result": "{ string }",
+      "result": "undefined",
       "throws": false
     },
     {
-      "args": [
-        "unsigned long"
-      ],
+      "args": [],
       "interface": "CharacterData",
       "kind": "attribute-getter",
       "line": 15,
@@ -53,7 +49,7 @@
       "new_object": false,
       "pure": true,
       "reaction": null,
-      "result": "{ unsigned long }",
+      "result": "unsigned long",
       "throws": false
     },
     {
@@ -69,7 +65,7 @@
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": true
     },
     {
@@ -84,7 +80,7 @@
       "new_object": false,
       "pure": false,
       "reaction": "characterData",
-      "result": "{ undefined }",
+      "result": "undefined",
       "throws": false
     },
     {
@@ -100,7 +96,7 @@
       "new_object": false,
       "pure": false,
       "reaction": "characterData",
-      "result": "{ undefined }",
+      "result": "undefined",
       "throws": true
     },
     {
@@ -116,7 +112,7 @@
       "new_object": false,
       "pure": false,
       "reaction": "characterData",
-      "result": "{ undefined }",
+      "result": "undefined",
       "throws": true
     },
     {
@@ -133,7 +129,7 @@
       "new_object": false,
       "pure": false,
       "reaction": "characterData",
-      "result": "{ undefined }",
+      "result": "undefined",
       "throws": true
     },
     {
@@ -148,7 +144,7 @@
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ id: string, info: object }",
+      "result": "undefined",
       "throws": true
     },
     {
@@ -163,13 +159,11 @@
       "new_object": true,
       "pure": false,
       "reaction": "splitText",
-      "result": "{ string }",
+      "result": "Text",
       "throws": true
     },
     {
-      "args": [
-        "DOMString"
-      ],
+      "args": [],
       "interface": "Text",
       "kind": "attribute-getter",
       "line": 18,
@@ -178,7 +172,7 @@
       "new_object": false,
       "pure": true,
       "reaction": null,
-      "result": "{ string }",
+      "result": "DOMString",
       "throws": false
     },
     {
@@ -193,26 +187,319 @@
       "new_object": false,
       "pure": false,
       "reaction": null,
-      "result": "{ id: string, info: object }",
+      "result": "undefined",
       "throws": true
     }
   ],
   "idls": [
+    [
+      "vendor/servo-script-bindings/webidls/CharacterData.webidl",
+      "e39377156a6a172c5a6e72b697d76148ff60c50e2dac364461399fd1386cd4ce"
+    ],
+    [
+      "vendor/servo-script-bindings/webidls/Text.webidl",
+      "9f2dcac227b53e8011070a8ea1b3430ba092d2915184861486a1cd8ef2bdbc48"
+    ],
+    [
+      "vendor/servo-script-bindings/webidls/Comment.webidl",
+      "1b16ed9f9e0e073f33f1f37bb723c322b98d8e2017f61b1e61be538074e3b4ea"
+    ]
+  ],
+  "interfaces": [
     {
-      "file": "vendor/servo-script-bindings/webidls/CharacterData.webidl",
-      "sha256": "e39377156a6a172c5a6e72b697d76148ff60c50e2dac364461399fd1386cd4ce"
+      "base": "Node",
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": true,
+          "name": "data",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "length",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "substringData",
+          "parameters": [
+            {
+              "name": "offset",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            },
+            {
+              "name": "count",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "appendData",
+          "parameters": [
+            {
+              "name": "data",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "insertData",
+          "parameters": [
+            {
+              "name": "offset",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            },
+            {
+              "name": "data",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "deleteData",
+          "parameters": [
+            {
+              "name": "offset",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            },
+            {
+              "name": "count",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "replaceData",
+          "parameters": [
+            {
+              "name": "offset",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            },
+            {
+              "name": "count",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            },
+            {
+              "name": "data",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        }
+      ],
+      "name": "CharacterData",
+      "prefix": "charData"
     },
     {
-      "file": "vendor/servo-script-bindings/webidls/Text.webidl",
-      "sha256": "9f2dcac227b53e8011070a8ea1b3430ba092d2915184861486a1cd8ef2bdbc48"
+      "base": "CharacterData",
+      "exposed": true,
+      "members": [
+        {
+          "kind": "constructor",
+          "name": "constructor",
+          "parameters": [
+            {
+              "default": "",
+              "name": "data",
+              "optional": true,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "splitText",
+          "parameters": [
+            {
+              "name": "offset",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Text",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "wholeText",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        }
+      ],
+      "name": "Text",
+      "prefix": "charData"
     },
     {
-      "file": "vendor/servo-script-bindings/webidls/Comment.webidl",
-      "sha256": "1b16ed9f9e0e073f33f1f37bb723c322b98d8e2017f61b1e61be538074e3b4ea"
+      "base": "CharacterData",
+      "exposed": true,
+      "members": [
+        {
+          "kind": "constructor",
+          "name": "constructor",
+          "parameters": [
+            {
+              "default": "",
+              "name": "data",
+              "optional": true,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ]
+        }
+      ],
+      "name": "Comment",
+      "prefix": "charData"
     }
   ],
   "native_base": {
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
     "CharacterData": "dom.base.Node",
-    "Node": "dom.base.Node"
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.classes.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
   }
 }

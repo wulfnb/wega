@@ -104,6 +104,28 @@ impl Dom {
     }
     pub fn call(&self, args: &[Value]) -> Result<Value, String> {
         let text = |index: usize| args.get(index).and_then(Value::as_str).unwrap_or_default();
+        // Each committed document owns its realm and Dom, so only node
+        // liveness needs checking here.
+        if text(0) == "bindingCheck" {
+            let identities = args
+                .get(2)
+                .and_then(Value::as_array)
+                .ok_or("TypeError: invalid binding identities")?;
+            let document = self
+                .document
+                .try_borrow()
+                .map_err(|_| "InvalidStateError: reentrant native DOM borrow")?;
+            for identity in identities {
+                let id = identity
+                    .as_str()
+                    .and_then(|id| id.parse::<u64>().ok())
+                    .ok_or("TypeError: invalid binding node identity")?;
+                if document.get_node(NodeId::from_u64(id)).is_none() {
+                    return Err("InvalidStateError: binding node no longer exists".into());
+                }
+            }
+            return Ok(Value::Null);
+        }
         match text(0) {
             "customNameValid" => return Ok(json!(crate::components::valid_name(text(1)))),
             "customDefinition" => return Ok(json!(self.components.borrow().get(text(1)))),
@@ -191,6 +213,7 @@ impl Dom {
                 | "setText"
                 | "setAttr"
                 | "removeAttr"
+                | "removeAttrNS"
                 | "create"
                 | "createText"
                 | "append"
@@ -704,6 +727,17 @@ impl Dom {
                 doc.mutate()
                     .clear_attribute(id, QualName::new(None, ns!(), LocalName::from(text(2))));
                 if old.is_some() { self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), None, None); }
+                Value::Null
+            }
+            "removeAttrNS" => {
+                let target = node_id()?;
+                let name = doc.get_node(target).unwrap().attrs().unwrap_or_default().iter()
+                    .find(|attribute| attribute.name.ns.as_str() == text(2) && attribute.name.local.as_str() == text(3))
+                    .map(|attribute| (attribute.name.clone(), attribute.value.clone()));
+                if let Some((name, old)) = name {
+                    doc.mutate().clear_attribute(target, name);
+                    self.components.borrow_mut().attribute(target.as_u64(), text(3), Some(&old), None, (!text(2).is_empty()).then_some(text(2)));
+                }
                 Value::Null
             }
             "create" | "createText" => {

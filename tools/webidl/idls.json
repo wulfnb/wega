@@ -19,33 +19,81 @@
       "license": "MPL-2.0"
     },
     {
-      "path": "vendor/servo-script-bindings/simplified-idls/EventTarget.webidl",
-      "sha256": "f9837ef5b6d98eb236bce527888f29d41ba3f2696c0ad224935ea81b9fac3b74",
-      "origin": "https://dom.spec.whatwg.org/#eventtarget (simplified for generator pipeline)",
+      "path": "tools/webidl/idl/event-target.webidl",
+      "sha256": "562b928a49438dddf202c48dab049fe38bad1a2d7a44e27291fa8de867fd4f05",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
       "license": "MPL-2.0"
     },
     {
-      "path": "vendor/servo-script-bindings/simplified-idls/Event.simplified.webidl",
-      "sha256": "4008b8e640f1461e692cd8097e3ee4d864e919ed575fa4599d353c6a4fff3211",
-      "origin": "https://dom.spec.whatwg.org/#event (simplified for generator pipeline)",
+      "path": "tools/webidl/idl/event.webidl",
+      "sha256": "9e0c1c845b2ee2a87c34268f9b25fb08201952295ea427fe17d20d6b708c0078",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
       "license": "MPL-2.0"
     },
     {
-      "path": "vendor/servo-script-bindings/simplified-idls/Node.simplified.webidl",
-      "sha256": "66a0009432e4c0022e680ab4352c9d99ae21cd204ab67cd5cbc2c2e9cead57b7",
-      "origin": "https://dom.spec.whatwg.org/#node (simplified for generator pipeline)",
+      "path": "tools/webidl/idl/node.webidl",
+      "sha256": "34a20d1c8d5362a666c5e4899e56f999ad0a03515ac7ac5d2e2240f80faedd86",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
       "license": "MPL-2.0"
     },
     {
-      "path": "vendor/servo-script-bindings/simplified-idls/Element.simplified.webidl",
-      "sha256": "e00e3cef5ee8c57970f68d21272930fb0a8455ac67dd3e0b929c8c5eb92f115e",
-      "origin": "https://dom.spec.whatwg.org/#element (simplified for generator pipeline)",
+      "path": "tools/webidl/idl/element.webidl",
+      "sha256": "d69cdbc6bba36f3b34d3f15125e8bb86529839edd0ee435ea056c856b5edc004",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
       "license": "MPL-2.0"
     },
     {
-      "path": "vendor/servo-script-bindings/simplified-idls/Document.simplified.webidl",
-      "sha256": "2bea70dcb3e694310f06b3223de4efd4f0c0da74cdf7ecbc63537106b737aa6d",
-      "origin": "https://dom.spec.whatwg.org/#document (simplified for generator pipeline)",
+      "path": "tools/webidl/idl/document.webidl",
+      "sha256": "9216e701aa0e7e058a6915286925fb870d34e0cb32c41a43a7f8c23fc25056b4",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/attr.webidl",
+      "sha256": "b2bf3f9dac26aff0ba96c55805a0e675c9eae8f82293bea8a6ab113e4c9799e8",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/location.webidl",
+      "sha256": "ba3a60f141fd6a58b9c6517c8af7ae2212288eb9124a96e4435f193a5a638252",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/mutation-observer.webidl",
+      "sha256": "5cb4e6224c18bb48941eb8700f7fdb83688bb8c4666dfb95c9e58a5666aec9a8",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/mutation-record.webidl",
+      "sha256": "0409dd6ec9c2d7f13f73b51bdbd910b2c56c205b6c106f4fc7cb09a315694ad9",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/node-list.webidl",
+      "sha256": "23bd509c91fc7f4bc25c45d048ebea0dc8a256ac216af609568cb3169ee6db38",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/html-collection.webidl",
+      "sha256": "f8846ffaaf0ae4909db673c8eced8ff0fbb9b0cebc003926288a95a780be8a4c",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/named-node-map.webidl",
+      "sha256": "99c85a478d40df491674449d739ec8cfaf3b0574e6c33ecbb70ec726672bfa67",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/dom-token-list.webidl",
+      "sha256": "7e6d4903414776346c462ef22406f20953ad49cac7501ead96d79a688f5fcf7e",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
       "license": "MPL-2.0"
     }
   ]

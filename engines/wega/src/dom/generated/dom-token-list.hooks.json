@@ -1,0 +1,426 @@
+{
+  "base_mixins": [],
+  "family": "dom-token-list",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "DOMTokenList"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "DOMTokenList",
+      "kind": "attribute-getter",
+      "line": 3,
+      "member": "length",
+      "name": "domTokenList.length",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "unsigned long",
+      "throws": false
+    },
+    {
+      "args": [
+        "unsigned long"
+      ],
+      "interface": "DOMTokenList",
+      "kind": "operation",
+      "line": 4,
+      "member": "item",
+      "name": "domTokenList.item",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString?",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "DOMTokenList",
+      "kind": "operation",
+      "line": 5,
+      "member": "contains",
+      "name": "domTokenList.contains",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "DOMTokenList",
+      "kind": "operation",
+      "line": 6,
+      "member": "add",
+      "name": "domTokenList.add",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "DOMTokenList",
+      "kind": "operation",
+      "line": 7,
+      "member": "remove",
+      "name": "domTokenList.remove",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "boolean"
+      ],
+      "interface": "DOMTokenList",
+      "kind": "operation",
+      "line": 8,
+      "member": "toggle",
+      "name": "domTokenList.toggle",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "DOMTokenList",
+      "kind": "operation",
+      "line": 9,
+      "member": "replace",
+      "name": "domTokenList.replace",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "DOMTokenList",
+      "kind": "operation",
+      "line": 10,
+      "member": "supports",
+      "name": "domTokenList.supports",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "DOMTokenList",
+      "kind": "attribute-getter",
+      "line": 11,
+      "member": "value",
+      "name": "domTokenList.value",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "DOMTokenList",
+      "kind": "attribute-setter",
+      "line": 11,
+      "member": "value",
+      "name": "domTokenList.value.set",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "undefined",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "DOMTokenList",
+      "kind": "operation",
+      "line": 12,
+      "member": "toString",
+      "name": "domTokenList.toString",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/dom-token-list.webidl",
+      "7e6d4903414776346c462ef22406f20953ad49cac7501ead96d79a688f5fcf7e"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "length",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "bits": 32,
+            "kind": "unsigned"
+          }
+        },
+        {
+          "getter": true,
+          "kind": "operation",
+          "name": "item",
+          "parameters": [
+            {
+              "name": "index",
+              "optional": false,
+              "type": {
+                "bits": 32,
+                "kind": "unsigned"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "string",
+            "nullable": true
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "contains",
+          "parameters": [
+            {
+              "name": "token",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "add",
+          "parameters": [
+            {
+              "name": "tokens",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": true
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "remove",
+          "parameters": [
+            {
+              "name": "tokens",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": true
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "undefined"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "toggle",
+          "parameters": [
+            {
+              "name": "token",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "force",
+              "optional": true,
+              "type": {
+                "kind": "boolean"
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "replace",
+          "parameters": [
+            {
+              "name": "token",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "newToken",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "supports",
+          "parameters": [
+            {
+              "name": "token",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "value",
+          "readonly": false,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "toString",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "kind": "iterable",
+          "name": "@@iterator",
+          "types": [
+            {
+              "kind": "string",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "name": "DOMTokenList",
+      "prefix": "domTokenList"
+    }
+  ],
+  "native_base": {
+    "AbortSignal": "dom.classes.AbortSignal",
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "HTMLHeadElement": "dom.classes.HTMLHeadElement",
+    "HTMLScriptElement": "dom.classes.HTMLScriptElement",
+    "Location": "dom.classes.Location",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "ShadowRoot": "dom.classes.ShadowRoot",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}
