@@ -1144,18 +1144,17 @@ impl Page {
             if state.lifecycle.accepts_content()
                 && let Some(authority) = &mut state.authority
                 && let Some(activation) = authority.activate(context, std::time::Instant::now())
-            {
-                if !self.requests.as_ref().is_some_and(|sender| {
+                && !self.requests.as_ref().is_some_and(|sender| {
                     sender
                         .try_send(Request::Activate {
                             context,
                             activation,
                         })
                         .is_ok()
-                }) {
-                    authority.clear_activation();
-                    return Err("Worker could not accept trusted input activation".into());
-                }
+                })
+            {
+                authority.clear_activation();
+                return Err("Worker could not accept trusted input activation".into());
             }
         }
         if matches!(
@@ -1187,15 +1186,15 @@ impl Page {
             .ok_or("Worker is closed")?
             .try_send(request)
             .map_err(|_| "Wega engine is busy or stopped. Reload or switch to Servo.".to_string());
-        if result.is_err() && activates {
-            if let Some(authority) = &mut self
+        if result.is_err()
+            && activates
+            && let Some(authority) = &mut self
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .authority
-            {
-                authority.clear_activation();
-            }
+        {
+            authority.clear_activation();
         }
         if result.is_err()
             && let Some(context) = scoped

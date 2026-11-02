@@ -50,6 +50,7 @@ fn main() {
     let result = wega_platform::launch::validate_worker_start(std::env::args().skip(1))
         .map_err(|error| error.to_string())
         .and_then(|_| {
+            eprintln!("Wega content startup: native entry policy verified");
             std::thread::Builder::new()
                 .name("wega-dom".into())
                 .stack_size(8 * 1024 * 1024)
@@ -295,6 +296,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if required {
         wega_platform::sandbox::finish_grants()?;
     }
+    eprintln!("Wega content startup: resource grants accepted");
     let mut engine = if let Some(token) = broker_token {
         #[cfg(any(unix, windows))]
         let remote = if let Some(channels) = inherited {
@@ -340,7 +342,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = storage_dir {
         engine = engine.with_storage_dir(path.into());
     }
+    eprintln!("Wega content startup: engine initialized");
     let mut view = engine.create_view(url)?;
+    eprintln!("Wega content startup: document realm initialized");
     let shared = frame_store.is_some();
     if let Some(store) = frame_store {
         view.configure_shared_store(store)?;

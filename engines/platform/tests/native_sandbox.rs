@@ -21,6 +21,19 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     let udp = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     udp.set_read_timeout(Some(Duration::from_millis(100)))
         .unwrap();
+    // Prove delivery works before using this listener to detect sandbox escape.
+    let sender = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    sender
+        .send_to(b"baseline", udp.local_addr().unwrap())
+        .unwrap();
+    let mut baseline = [0; 64];
+    let (length, _) = udp.recv_from(&mut baseline).unwrap();
+    assert_eq!(&baseline[..length], b"baseline");
+    drop(sender);
+    // AppContainer's WFP filters can drop UDP asynchronously after send_to
+    // succeeds. Actual host reception, not the syscall result, is the verdict.
+    // https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/troubleshooting-uwp-firewall
+    udp.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
     let mut command = Command::new(probe);
     let launch = wega_platform::launch::PreparedLaunch::required_fixture(&mut command).unwrap();
     let grant = launch.inherit_frame_file(&mut command, &granted).unwrap();
@@ -89,7 +102,6 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         "private_read_denied",
         "private_write_denied",
         "tcp_denied",
-        "udp_denied",
         "child_denied",
     ] {
         assert!(

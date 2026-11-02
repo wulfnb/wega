@@ -160,9 +160,15 @@ fn test_harness_failure_classification_distinguishes_crash_timeout_and_assertion
 
     // 3. Worker crash classification
     // Send a SIGKILL / terminate directly to the child process
-    let _ = harness.send(wega_protocol::Command::Shutdown);
-    std::thread::sleep(Duration::from_millis(50));
-    let crash_check = harness.check_alive();
+    harness.terminate().expect("Terminate the child process");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let crash_check = loop {
+        let result = harness.check_alive();
+        if result.is_err() || std::time::Instant::now() >= deadline {
+            break result;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
     assert!(
         matches!(crash_check, Err(TestFailureKind::WorkerCrash { .. })),
         "Expected WorkerCrash detection on process termination, got: {crash_check:?}"

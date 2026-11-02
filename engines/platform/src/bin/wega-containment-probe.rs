@@ -48,7 +48,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let tcp_denied = TcpStream::connect_timeout(&address, Duration::from_secs(1)).is_err();
     // Windows may allocate/bind an inert socket while denying communication.
     // Exercise egress to the parent's real UDP listener, not bind alone.
-    let udp_denied = UdpSocket::bind("127.0.0.1:0")
+    // UDP delivery is judged by the host listener. Windows WFP may silently
+    // discard a datagram after send_to succeeds; its return value is diagnostic.
+    let udp_send_rejected = UdpSocket::bind("127.0.0.1:0")
         .and_then(|socket| socket.send_to(b"wega-native-probe", udp_address))
         .is_err();
     let child = Command::new(executable)
@@ -64,9 +66,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     let granted = allowed == "explicit-grant";
     println!(
-        "{{\"granted_file\":{granted},\"private_read_denied\":{read_denied},\"private_write_denied\":{write_denied},\"tcp_denied\":{tcp_denied},\"udp_denied\":{udp_denied},\"child_denied\":{child_denied}}}"
+        "{{\"granted_file\":{granted},\"private_read_denied\":{read_denied},\"private_write_denied\":{write_denied},\"tcp_denied\":{tcp_denied},\"udp_send_rejected\":{udp_send_rejected},\"child_denied\":{child_denied}}}"
     );
-    if !(granted && read_denied && write_denied && tcp_denied && udp_denied && child_denied) {
+    if !(granted && read_denied && write_denied && tcp_denied && child_denied) {
         std::process::exit(1);
     }
     Ok(())

@@ -262,6 +262,12 @@ impl WorkerHarness {
         }
     }
 
+    pub fn terminate(&mut self) -> Result<(), TestFailureKind> {
+        self.child
+            .kill()
+            .map_err(|error| TestFailureKind::HarnessFailure(error.to_string()))
+    }
+
     pub fn check_alive(&mut self) -> Result<(), TestFailureKind> {
         if self.crashed.load(Ordering::Relaxed) {
             return Err(TestFailureKind::WorkerCrash { code: None });
