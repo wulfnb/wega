@@ -1,8 +1,9 @@
 # Standalone engine feature ledger
 
 Source baseline: `d853e5f` on `feature/standalone-wega-engine`, 31 October 2026.
-Runtime verification: **deferred until the final test pass at the owner's request**.
-No row in this ledger is runtime-verified by the migration work yet.
+Runtime update (2 November 2026): Steps 05/06 have recorded three-platform
+acceptance at `efe5a87`. This source inventory is not a blanket parity certificate.
+Steps 14/15 remain partial; see the [current implementation and outstanding gates](step-14-15-browsing-contexts-and-components.md).
 
 This expands the [execution plan](standalone-engine-execution-plan.md). The generated
 [source inventory](validation/standalone/source-inventory.json) records hashes,

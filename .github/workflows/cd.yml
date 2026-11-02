@@ -49,6 +49,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-cd-macos"
+          workspaces: |
+            . -> target
+            engines -> ../target/wega-engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Native system dependencies
         run: brew install pkgconf gstreamer libnice-gstreamer
@@ -119,6 +122,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-cd-linux"
+          workspaces: |
+            . -> target
+            engines -> ../target/wega-engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install license notice generator
         uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
@@ -185,7 +191,7 @@ jobs:
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: 'table'
-          exit-code: '0'
+          exit-code: '1'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
       - name: Install license notice generator
@@ -260,6 +266,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: "wega-cd-windows"
+          workspaces: |
+            . -> target
+            engines -> ../target/wega-engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Restore pinned media SDK installer
         id: media-sdk
@@ -276,12 +285,12 @@ jobs:
         with:
           path: ${{ runner.temp }}/gstreamer-msvc-1.28.8.exe
           key: ${{ steps.media-sdk.outputs.cache-primary-key }}
-      - name: Build the independent Wega engine
-        run: python scripts/build-wega-engine.py
       - name: Build Windows release executable
         env:
           RUSTFLAGS: "-C link-arg=msvcprt.lib"
         run: cargo build --release --locked --no-default-features --features desktop,brotli-streams,media
+      - name: Build the independent Wega engine
+        run: python scripts/build-wega-engine.py
       - name: Install license notice generator
         uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
@@ -511,6 +520,12 @@ jobs:
           files: |
             release-files/*
           body_path: release-notes.md
+      - name: Align preview source tag and remove pre-rename downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.tag.outputs.RELEASE_TAG }}
+        run: python3 scripts/sync-preview-release.py --repository "$REPOSITORY" --tag "$RELEASE_TAG" --sha "$GITHUB_SHA"
       - name: Create immutable per-commit Pre-Release
         if: steps.tag.outputs.COMMIT_TAG != ''
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2

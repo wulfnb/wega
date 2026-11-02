@@ -31,7 +31,7 @@ fn document_titles_collapse_html_whitespace_but_preserve_nonbreaking_spaces() {
     assert_eq!(view.title(), "Updated title");
 }
 #[test]
-fn visible_frames_report_compatibility_once_but_hidden_feature_probes_do_not() {
+fn visible_frames_report_compatibility_until_real_child_rendering_exists() {
     let mut view = page(Limits::default());
     view.set_html("<iframe id=f style='display:none'></iframe><iframe width=1 height=1></iframe>")
         .unwrap();
@@ -42,17 +42,16 @@ fn visible_frames_report_compatibility_once_but_hidden_feature_probes_do_not() {
     view.paint(300, 200, 1.0, 1.0, false).unwrap();
     assert!(
         view.compatibility
-            .take()
-            .unwrap()
-            .contains("embedded frames")
+            .as_deref()
+            .is_some_and(|reason| reason.contains("iframe"))
     );
-    view.paint(300, 200, 1.0, 1.0, false).unwrap();
-    assert!(view.compatibility.is_none());
     view.set_html("<iframe></iframe>").unwrap();
     view.paint(300, 200, 1.0, 1.0, false).unwrap();
     assert!(
-        view.compatibility.is_some(),
-        "new documents get their own compatibility report"
+        view.compatibility
+            .as_deref()
+            .is_some_and(|reason| reason.contains("iframe")),
+        "a blank iframe box must not count as native child rendering"
     );
 }
 #[test]

@@ -3,11 +3,12 @@
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 pub mod authority;
+pub mod browsing;
 pub mod identity;
 pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 14;
+pub const VERSION: u32 = 15;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -129,6 +130,7 @@ pub enum Capability {
     ResourceBroker,
     DocumentTaskScheduling,
     ScriptRecovery,
+    SiteIsolationFrames,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -218,6 +220,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::ResourceBroker
                     | Capability::DocumentTaskScheduling
                     | Capability::ScriptRecovery => 14,
+                    Capability::SiteIsolationFrames => 15,
                 }
         })
         .collect()
@@ -347,6 +350,18 @@ pub enum Command {
     /// confirm, Some(text) for prompt (alert ignores the value).
     DialogReply(Option<String>),
     Shutdown,
+    /// Instruct child frame browsing context to navigate.
+    FrameNavigate {
+        frame: identity::FrameId,
+        url: String,
+    },
+    /// Route a postMessage from the host or another frame to the designated frame.
+    FramePostMessage {
+        target: identity::FrameId,
+        origin: String,
+        target_origin: Option<String>,
+        message: String,
+    },
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
@@ -461,6 +476,32 @@ pub enum Event {
     },
     /// A traversal outside the page's own entries, for the browser's history.
     TraverseUnhandled(i32),
+    /// A frame element was attached to the document tree.
+    FrameAttached {
+        parent: identity::FrameId,
+        frame: identity::FrameId,
+        url: String,
+        name: Option<String>,
+        sandbox: Option<String>,
+    },
+    /// A frame element was removed from the document tree.
+    FrameDetached {
+        frame: identity::FrameId,
+    },
+    /// A frame navigated to a new URL and committed an origin.
+    FrameNavigated {
+        frame: identity::FrameId,
+        url: String,
+        origin: String,
+    },
+    /// Cross-document message dispatched by `window.postMessage`.
+    FramePostMessage {
+        source: identity::FrameId,
+        target: identity::FrameId,
+        origin: String,
+        target_origin: Option<String>,
+        message: String,
+    },
 }
 pub fn frame_bytes(width: u32, height: u32) -> io::Result<usize> {
     let pixels = (width as usize)
@@ -655,5 +696,33 @@ mod tests {
         assert!(frame_bytes(0, 1).is_err());
         assert!(frame_bytes(u32::MAX, u32::MAX).is_err());
         assert_eq!(frame_bytes(640, 480).unwrap(), 640 * 480 * 4);
+    }
+    #[test]
+    fn site_isolation_frames_capability_and_origin_policy() {
+        assert!(!capabilities(15).contains(&Capability::SiteIsolationFrames));
+        assert!(!capabilities(14).contains(&Capability::SiteIsolationFrames));
+
+        use crate::authority::{Origin, is_permitted_cross_origin_property};
+        let origin_a = Origin::Tuple("https://a.test".into());
+        let origin_b = Origin::Tuple("https://b.test".into());
+        let opaque = Origin::Opaque;
+
+        assert!(origin_a.is_same_origin(&origin_a));
+        assert!(!origin_a.is_same_origin(&origin_b));
+        assert!(!origin_a.is_same_origin(&opaque));
+        assert!(!opaque.is_same_origin(&opaque));
+
+        assert!(origin_a.allows_target_origin("*"));
+        assert!(origin_a.allows_target_origin("https://a.test"));
+        assert!(!origin_a.allows_target_origin("https://b.test"));
+        assert!(!opaque.allows_target_origin("https://a.test"));
+
+        assert!(is_permitted_cross_origin_property("postMessage"));
+        assert!(is_permitted_cross_origin_property("location"));
+        assert!(is_permitted_cross_origin_property("parent"));
+        assert!(is_permitted_cross_origin_property("top"));
+        assert!(!is_permitted_cross_origin_property("document"));
+        assert!(!is_permitted_cross_origin_property("eval"));
+        assert!(!is_permitted_cross_origin_property("cookie"));
     }
 }

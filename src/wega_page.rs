@@ -1020,6 +1020,14 @@ impl Page {
                         | Event::TraverseUnhandled(_)
                         | Event::Cursor(_)
                         | Event::Dialog { .. } => return Err("Unscoped content event".into()),
+                        // The frame coordinator is not connected to this supervisor yet.
+                        // Do not admit renderer-assigned frames or trust their origins.
+                        Event::FrameAttached { .. }
+                        | Event::FrameDetached { .. }
+                        | Event::FrameNavigated { .. }
+                        | Event::FramePostMessage { .. } => {
+                            return Err("Worker frame coordination is unavailable".into());
+                        }
                         Event::Ready { .. } | Event::Session { .. } => {
                             return Err("Unexpected worker handshake/envelope".into());
                         }

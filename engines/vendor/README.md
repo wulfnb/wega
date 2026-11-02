@@ -105,3 +105,24 @@ adds bounded bitmap/SVG decode, retained-image accounting, no external SVG file
 resolver, and explicit broker font data with system discovery disabled. SVG charges
 estimate native allocation; process supervision remains a backstop. The same
 archive-and-patch verifier checks these changes.
+
+## Component boundaries and clone ownership (2 November 2026)
+
+`blitz/patches/document-id-scope.patch` prevents document ID lookup from returning
+single indexed candidates from detached fragment or shadow trees. Scope-local
+selectors continue through the native selector engine; bindings do not duplicate
+tree traversal in JavaScript.
+
+`deno/patches/transactional-arraybuffer-transfer.patch` validates the complete
+ArrayBuffer transfer list before storing backing references. A successful serialize
+detaches sources after V8 has read typed-array views. Failure removes reserved
+backing stores and leaves the sources attached. Wega creates a separate transfer
+store per document; it is not a shared origin or cross-frame message service.
+The Rust extension adapter maps transfer serialization TypeErrors to DataCloneError
+at the pinned Deno structuredClone boundary. Runtime ownership regressions cover
+failure, duplicates and successful typed-array transfer.
+
+Deno event and structured-clone JavaScript sources remain from the pinned crate.
+`engines/wega/src/extension_adapter.rs` applies checked, narrow native DOM hooks at
+runtime/snapshot creation. The hook installer and native DOM call bridge are removed
+from page globals after trusted bootstrap.

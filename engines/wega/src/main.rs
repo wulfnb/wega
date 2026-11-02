@@ -935,6 +935,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
+                Command::FrameNavigate { .. } | Command::FramePostMessage { .. } => {
+                    // Reserved wire types do not grant access to DOM IDs or JS
+                    // evaluation. Real frames require host-issued context keys.
+                    write(&protocol::content_event(
+                        version,
+                        DocumentContext {
+                            document: DocumentId(serial),
+                            revision: protocol::DocumentRevision(view.document_revision()),
+                        },
+                        ContentEvent::Notice(
+                            "Nested browsing contexts are not available in this worker".into(),
+                        ),
+                    ))?;
+                }
                 Command::Shutdown => break,
                 Command::CheckPageState(request) => {
                     let dirty =

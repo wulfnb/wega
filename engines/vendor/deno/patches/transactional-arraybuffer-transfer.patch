@@ -1,0 +1,114 @@
+--- a/ops_builtin_v8.rs
++++ b/ops_builtin_v8.rs
+@@ -1,4 +1,5 @@
+ // Copyright 2018-2026 the Deno authors. MIT license.
++// Modified by Wega contributors, 2026: transactional ArrayBuffer transfers.
+ 
+ use std::cell::RefCell;
+ use std::rc::Rc;
+@@ -892,47 +893,45 @@
+   let value_serializer = v8::ValueSerializer::new(scope, serialize_deserialize);
+   value_serializer.write_header();
+ 
+-  // Buffers whose transfer has been registered with the serializer. They must
+-  // stay attached until after `write_value`, because V8 150.x checks
+-  // `was_detached()` before consulting the transfer map when serializing a
+-  // (typed array) view -- detaching early makes it throw "An ArrayBuffer is
+-  // detached and could not be cloned". They are detached after serialization.
+-  let mut buffers_to_detach: Vec<v8::Local<v8::ArrayBuffer>> =
+-    Vec::with_capacity(
+-      transferred_array_buffers.map_or(0, |b| b.length() as usize),
+-    );
+-
++  // Modified by Wega contributors, 2026: validate all transfers before
++  // reserving backing stores, and detach only after successful serialization.
++  let mut buffers = Vec::new();
+   if let Some(transferred_array_buffers) = transferred_array_buffers {
+     let state = JsRuntime::state_from(scope);
++    if transferred_array_buffers.length() != 0
++      && state.shared_array_buffer_store.is_none()
++    {
++      return Err(JsErrorBox::type_error(
++        "ArrayBuffer transfer store is unavailable",
++      ));
++    }
+     for index in 0..transferred_array_buffers.length() {
+-      let i = v8::Number::new(scope, index as f64).into();
+-      let buf = transferred_array_buffers.get(scope, i).unwrap();
+-      let buf = v8::Local::<v8::ArrayBuffer>::try_from(buf).map_err(|_| {
+-        JsErrorBox::type_error(
+-          "item in transferredArrayBuffers not an ArrayBuffer",
+-        )
+-      })?;
+-      if let Some(shared_array_buffer_store) = &state.shared_array_buffer_store
++      let value = transferred_array_buffers.get_index(scope, index).unwrap();
++      let buffer =
++        v8::Local::<v8::ArrayBuffer>::try_from(value).map_err(|_| {
++          JsErrorBox::type_error("Transfer list item is not an ArrayBuffer")
++        })?;
++      if !buffer.is_detachable()
++        || buffer.was_detached()
++        || buffers.iter().any(|existing| *existing == buffer)
+       {
+-        if !buf.is_detachable() {
+-          return Err(JsErrorBox::type_error(
+-            "item in transferredArrayBuffers is not transferable",
+-          ));
+-        }
+-
+-        if buf.was_detached() {
+-          return Err(JsErrorBox::new(
+-            "DOMExceptionOperationError",
+-            format!("ArrayBuffer at index {index} is already detached"),
+-          ));
+-        }
+-
+-        let backing_store = buf.get_backing_store();
+-        let id = shared_array_buffer_store.insert(backing_store);
+-        value_serializer.transfer_array_buffer(id, buf);
+-        buffers_to_detach.push(buf);
+-        let id = v8::Number::new(scope, id as f64).into();
+-        transferred_array_buffers.set(scope, i, id);
++        return Err(JsErrorBox::type_error(
++          "ArrayBuffer transfer is detached, duplicated or not transferable",
++        ));
++      }
++      buffers.push(buffer);
++    }
++  }
++  let mut reserved = Vec::new();
++  if let Some(transferred_array_buffers) = transferred_array_buffers {
++    let state = JsRuntime::state_from(scope);
++    if let Some(store) = &state.shared_array_buffer_store {
++      for (index, buffer) in buffers.iter().copied().enumerate() {
++        let id = store.insert(buffer.get_backing_store());
++        value_serializer.transfer_array_buffer(id, buffer);
++        reserved.push(id);
++        let value = v8::Number::new(scope, id as f64);
++        transferred_array_buffers.set_index(scope, index as u32, value.into());
+       }
+     }
+   }
+@@ -941,9 +940,19 @@
+ 
+   let ret = value_serializer.write_value(scope.get_current_context(), value);
+ 
+-  // Detach the transferred buffers now that serialization has read them.
+-  for buf in buffers_to_detach {
+-    buf.detach(None);
++  if !scope.has_caught() && !scope.has_terminated() && ret == Some(true) {
++    for buffer in buffers {
++      buffer.detach(None);
++    }
++  } else {
++    // A clone failure must neither detach caller buffers nor retain backing
++    // stores that can never be consumed by a deserializer.
++    let state = JsRuntime::state_from(scope);
++    if let Some(store) = &state.shared_array_buffer_store {
++      for id in reserved {
++        store.take(id);
++      }
++    }
+   }
+ 
+   if scope.has_caught() || scope.has_terminated() {

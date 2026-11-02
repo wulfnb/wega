@@ -2,7 +2,21 @@
 
 Date: 31 October 2026. Branch: `feature/standalone-wega-engine`.
 Planning baseline: `212304b`; source inspected before this documentation-only change.
-Status: **Implementation started. No migration step is runtime-verified yet.**
+Status (2 November 2026): **Steps 02, 05 and 06 implemented; Steps 05/06 have
+three-platform acceptance. Steps 01, 03, 04, 14 and 15 are partial.** See the
+[current Step 14/15 scope and remaining work](step-14-15-browsing-contexts-and-components.md)
+and [machine-readable progress](validation/standalone/progress.json).
+
+| Steps | Current delivery status |
+| --- | --- |
+| 01 | Source inventory and feature ledger prepared; effective runtime exposure/baselines incomplete. |
+| 02 | Shared engine contract and scoped lifecycle implementation complete. |
+| 03–04 | Harness/authority work partially merged; remaining audits and gates recorded below. |
+| 05–06 | Implemented and accepted on Windows, Linux and macOS at `efe5a87`; integrated here at `8de3783`. |
+| 07–13 | Completion not established; dependencies for later parity work remain open. |
+| 14 | Rust coordinator and fail-closed boundaries implemented; real child contexts/workers/composition remain open. |
+| 15 | Rust component state and active event adapter implemented; scoped style/layout/focus/accessibility remain open. |
+| 16–26 | Completion not established by this branch. |
 
 Execution instruction (31 October 2026): commit and push incremental work on this
 branch; run tests at the end only. Source inventory, code review and implementation
@@ -450,6 +464,12 @@ font notes; a screenshot alone does not establish input or API correctness.
 
 ### 14 — Add browsing contexts, iframes and site isolation
 
+**Status (2 November 2026): partial, not accepted.** Rust authority coordination
+and denial regressions are implemented. The original synthetic iframe wrappers
+and unsafe frame command evaluation were removed; visible-frame fallback remains.
+Real frame loading, realms, worker placement, composition and interaction are
+still required. See the [implementation contract](step-14-15-browsing-contexts-and-components.md).
+
 **Depends on:** 05, 08–13.
 
 Build the browser-owned frame tree and process placement rules. Start with real
@@ -465,6 +485,12 @@ rules hold; frame crashes/navigation cannot corrupt another document. Test actua
 frame rendering instead of retaining visible-iframe fallback.
 
 ### 15 — Implement custom elements and Shadow DOM
+
+**Status (2 November 2026): partial, not accepted.** Rust owns registry/reaction
+and shadow/slot state, with the active Deno event dispatcher adapted to it.
+Blitz/Stylo style scoping, flattened layout, complete reactions, focus and
+accessibility remain required. Shadow use reports compatibility degradation.
+See the [implementation contract](step-14-15-browsing-contexts-and-components.md).
 
 **Depends on:** 08, 13, 14.
 

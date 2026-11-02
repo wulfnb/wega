@@ -3,7 +3,7 @@
   "branch": "feature/standalone-wega-engine",
   "date": "2026-11-03",
   "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
-  "test_policy": "Final local validation and full hosted native/desktop matrices passed; distribution and broader parity gates remain separate",
+  "test_policy": "Tests run after implementation. Prior Step 05/06 three-platform acceptance is retained at its recorded commit; current Step 14/15 local bounded checks passed and hosted full-suite validation is pending.",
   "runtime_tests_executed": true,
   "servo_retirement_allowed": false,
   "steps": {
@@ -35,6 +35,19 @@
       "acceptance": "Passed on Windows, Linux and macOS: parser/order/teardown/exception/recovery regressions, fatal worker exit/restart and complete engine/brokered suites at efe5a87f8923c3c5d98308ce349c9983993759a0",
       "contract": "docs/step-06-document-host-and-event-loop.md",
       "acceptance_verified": true
+    },
+    "14": {
+      "implementation": "partial: Rust authority coordinator and unsafe synthetic-frame/command removal",
+      "protocol_version": 15,
+      "acceptance": "Not complete: real realms, frame workers, composition, synchronous access and cross-agent structured-clone transport remain",
+      "acceptance_verified": false,
+      "contract": "docs/step-14-15-browsing-contexts-and-components.md"
+    },
+    "15": {
+      "implementation": "partial: Rust registry, upgrade/reaction state, shadow/slot associations and active Deno event adaptation",
+      "acceptance": "Not complete: full reactions, Blitz/Stylo scoped style and flattened layout, focus/accessibility and component-library gates remain",
+      "acceptance_verified": false,
+      "contract": "docs/step-14-15-browsing-contexts-and-components.md"
     }
   },
   "substeps": {
@@ -59,7 +72,11 @@
     "06.b": "Microtask checkpoints, provisional suspension, replacement teardown, visibility/freeze and fatal-script recovery delivered",
     "06.c": "Deno adaptation/secure-context audit recorded; existing upstream JS semantics retained",
     "07.a": "In progress: tools/webidl generator (pinned IDL inputs, deterministic JS emitter, hook manifest, explicit unsupported-construct failures) for the character-data family; see docs/step-07-webidl-generation.md",
-    "08.a": "In progress: generator extended with const members (static Object.defineProperty), [Constant] (writable:false getter), [SameObject] (Map memoised getter), [SetterThrows] (hook annotation). Parser accepts all four. 8/8 tests pass including generation output verification."
+    "08.a": "In progress: generator extended with const members (static Object.defineProperty), [Constant] (writable:false getter), [SameObject] (Map memoised getter), [SetterThrows] (hook annotation). Parser accepts all four. 8/8 tests pass including generation output verification.",
+    "14.authority": "Implemented coordinator library; live browser/supervisor wiring pending",
+    "14.runtime": "Unsafe synthetic contexts removed; real nested documents and processes pending; capability withheld",
+    "15.api": "Rust-owned registration/upgrade/reactions and native shadow/slot/event relationships implemented; nine component API regressions passed locally, full upstream/library acceptance pending",
+    "15.rendering": "Stylo scoped cascade, Blitz flattened layout, focus/accessibility and representative libraries pending"
   },
   "compile_checks": [
     {
@@ -228,5 +245,42 @@
     "metrics": "Native GetProcessTimes and working-set sampling for browser plus supervised Wega workers; interval CPU and current RAM, with independent per-tab reporting. Native Windows resource-counter and monitor tests passed.",
     "validation_limit": "Hosted Windows GUI PE, native CPU/RAM, containment, required-worker JIT/storage/text, staged desktop capture, media and same-profile handoff passed. Installer distribution and performance calibration remain separate.",
     "worker_stdio": "Native launcher supplies asynchronous parent pipe ends for Rust ChildStdin/Stdout/Stderr and synchronous child ends; complete inherited-grant probe now exchanges stdin/stdout before VM startup."
+  },
+  "delivery_branch": "feature/standalone-wega-step14",
+  "delivery_pr": "https://github.com/wulfnb/wega/pull/26",
+  "step_14_15_validation": {
+    "date": "2026-11-02",
+    "platform": "macOS arm64",
+    "integration_baseline": "8de37835fe31b0b5817151e03cde0fe2fbc94568",
+    "pr_base": "main (569cc61, same source tree as integrated baseline)",
+    "local_tests": {
+      "protocol": 30,
+      "engine_unit": 17,
+      "custom_elements": 9,
+      "dom": 27,
+      "frames_and_current_document_messages": 4,
+      "pages": 11,
+      "worker": 17,
+      "total_passed": 115,
+      "failed": 0,
+      "ignored_in_selected_suites": 0
+    },
+    "passed_checks": [
+      "Engine workspace Clippy, all targets, -D warnings",
+      "Engine and root formatting",
+      "Browser-core locked offline compile with no default features",
+      "Actionlint on native validation workflow",
+      "Pinned source and exact-patch integrity for all 11 vendored crates",
+      "JavaScript syntax for changed bootstrap/binding sources",
+      "git diff --check"
+    ],
+    "commands": [
+      "cargo test --locked --manifest-path engines/Cargo.toml -p wega-protocol",
+      "cargo test -j 1 --locked --manifest-path engines/Cargo.toml -p wega-engine --lib --test custom_elements --test frames --test pages --test worker --test dom",
+      "cargo clippy --locked --workspace --manifest-path engines/Cargo.toml --all-targets -- -D warnings"
+    ],
+    "full_workspace_local": "Attempted; parallel test linking exceeded disk capacity. Relevant suites rerun serially and passed with loopback fixture access. No full-suite pass claimed.",
+    "hosted": "Pending on the updated PR branch; native Windows/Linux/macOS workflow enabled.",
+    "completion_boundary": "These checks prove bounded API and authority regressions. They do not prove real nested frames, scoped style/layout, full custom element semantics or component-library parity."
   }
 }

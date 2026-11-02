@@ -315,6 +315,8 @@ impl V8Host {
                 limits.resource_bytes,
             ))),
             extension_transpiler: Some(Rc::new(crate::web::adapt_extension)),
+            // Per-document ownership: the store is never shared across origins.
+            shared_array_buffer_store: Some(Default::default()),
             create_params: Some(
                 deno_core::v8::CreateParams::default()
                     .heap_limits(0, limits.js_heap_bytes.saturating_add(32 * 1024 * 1024)),

@@ -8,6 +8,48 @@
   const weak =
     typeof WeakRef === "function" && typeof FinalizationRegistry === "function";
   let document;
+  const componentConstructors = new Map();
+  const componentCallbacks = new Map();
+  const constructorDefinitions = new WeakMap();
+  const componentWaiters = new Map();
+  const constructionStack = [];
+  const shadowDescriptors = new WeakMap();
+  const shadowToken = {};
+  let constructorIdentity = 0;
+  let flushingComponents = false;
+  function component(op, a = "", b = "", c = "") {
+    try { return host(op, String(a), String(b), String(c)); }
+    catch (error) {
+      const match = /^([A-Za-z]+Error):\s*(.*)/.exec(error.message || "");
+      if (match) fail(match[1], match[2]);
+      throw error;
+    }
+  }
+  function flushComponents() {
+    if (flushingComponents || constructionStack.length) return;
+    flushingComponents = true;
+    try {
+      for (;;) {
+        const reactions = component("customReactions");
+        if (!reactions.length) break;
+        for (const reaction of reactions) {
+          const element = wrap(reaction.node);
+          const args = reaction.callback === "adoptedCallback" ? reaction.args.map(id => wrap(id)) : reaction.args;
+          try { componentCallbacks.get(reaction.definition)?.[reaction.callback]?.apply(element, args); } catch (error) { report(error); }
+        }
+      }
+    } finally { flushingComponents = false; }
+  }
+  function shadowWrapper(descriptor) {
+    if (!descriptor) return null;
+    const cached = weak ? cache.get(descriptor.root)?.deref() : cache.get(descriptor.root);
+    if (cached instanceof ShadowRoot) return cached;
+    const root = new ShadowRoot(shadowToken, descriptor);
+    cache.set(descriptor.root, weak ? new WeakRef(root) : root);
+    host("retain", descriptor.root);
+    finalizer?.register(root, descriptor.root);
+    return root;
+  }
   const fail = (name, message) => {
     const error = new Error(message);
     error.name = name;
@@ -92,7 +134,7 @@
       this._stopped = this._immediate = true;
     }
     composedPath() {
-      return this._path || [];
+      return [...(this._path || [])];
     }
     initEvent(type, bubbles = false, cancelable = false) {
       this.type = String(type);
@@ -131,18 +173,45 @@
     }
     dispatchEvent(event) {
       if (!event?.type) fail("InvalidStateError", "Event type is empty");
+      const originalTarget = this;
       event.target = this;
       const path = [this];
-      let parent = this.parentNode;
-      while (parent) {
-        path.push(parent);
-        parent = parent.parentNode;
+      let curr = this;
+      while (true) {
+        if (curr.parentNode) {
+          curr = curr.parentNode;
+          path.push(curr);
+        } else if (curr._host) {
+          if (event.composed) {
+            curr = curr._host;
+            path.push(curr);
+          } else {
+            break;
+          }
+        } else {
+          break;
+        }
       }
       if (path.at(-1)?.nodeType === 9) path.push(globalThis);
       event._path = path;
       const invoke = (target, capture, phase) => {
         event.currentTarget = target;
         event.eventPhase = phase;
+        if (originalTarget.getRootNode && target.getRootNode) {
+          const targetRoot = target.getRootNode();
+          if (originalTarget.getRootNode() === targetRoot) {
+            event.target = originalTarget;
+          } else {
+            let retargeted = originalTarget;
+            for (const node of path) {
+              if (node.getRootNode && node.getRootNode() === targetRoot) {
+                retargeted = node;
+                break;
+              }
+            }
+            event.target = retargeted;
+          }
+        }
         for (const entry of [...(target._events?.get(event.type) || [])]) {
           if (entry.capture !== capture) continue;
           if (entry.once)
@@ -174,6 +243,7 @@
           invoke(path[i], false, 3);
       event.currentTarget = null;
       event.eventPhase = 0;
+      event.target = originalTarget;
       event._path = [];
       return !event.defaultPrevented;
     }
@@ -193,6 +263,10 @@
     let result = weak ? cache.get(id)?.deref() : cache.get(id);
     if (result) return result;
     const info = host("info", id);
+    if (info.nodeType === 11) {
+      const owner = component("shadowHost", id);
+      if (owner !== null) return shadowWrapper(component("shadowInternal", owner));
+    }
     const Ctor =
       info.nodeType === 9
         ? Document
@@ -226,6 +300,10 @@
     if (owner) result._owner = owner;
     if (host("connected", id)) connected.set(id, result);
     if (info.nodeType === 1) {
+      if (typeof customElements === "object") {
+        const definition = component("customUpgrade", id);
+        if (definition !== null) upgradeElement(result, definition);
+      }
       for (const attr of host("attributes", id)) {
         if (attr.name.startsWith("on")) {
           ensureHandler(attr.name.slice(2));
@@ -481,15 +559,13 @@
       }
     }
     get isConnected() {
-      return this.getRootNode().nodeType === 9;
+      return this.getRootNode({ composed: true }).nodeType === 9;
     }
     hasChildNodes() {
       return this.childNodes.length > 0;
     }
-    getRootNode() {
-      let root = this;
-      while (root.parentNode) root = root.parentNode;
-      return root;
+    getRootNode(options) {
+      return wrap(component("componentRoot", this._id, !!options?.composed));
     }
     contains(other) {
       for (let node = other; node; node = node.parentNode)
@@ -553,6 +629,7 @@
         return child;
       }
       const oldParent = child.parentNode;
+      const wasConnected = child.isConnected;
       if (child === reference) return child;
       if (oldParent) removedRangeNode(child);
       const index = reference
@@ -562,7 +639,8 @@
       insertedRangeNode(this, index);
       host("insert", this._id, child._id, reference ? reference._id : "");
       child._owner = this.ownerDocument || this;
-      retainTree(child, this.getRootNode() === document);
+      retainTree(child, this.isConnected);
+      if (wasConnected) triggerDisconnected(child);
       if (oldParent) {
         notify(oldParent, "childList", {
           removedNodes: [child],
@@ -570,8 +648,9 @@
         });
       }
       notify(this, "childList", { removedNodes: [], addedNodes: [child] });
-      if (this.getRootNode() === document) {
+      if (this.getRootNode() === document || this.isConnected) {
         prepareInserted(child);
+        triggerConnected(child);
         if (isScript(this)) prepareScript(this);
       }
       return child;
@@ -580,10 +659,14 @@
       if (child?.parentNode !== this) {
         fail("NotFoundError", "Node is not a child");
       }
+      const wasConnected = child.isConnected;
       removedRangeNode(child);
       retainTree(child, false);
       host("remove", child._id);
       notify(this, "childList", { removedNodes: [child], addedNodes: [] });
+      if (wasConnected) {
+        triggerDisconnected(child);
+      }
       return child;
     }
     replaceChild(child, old) {
@@ -808,6 +891,31 @@
       );
     }
   }
+  class ShadowRoot extends DocumentFragment {
+    constructor(token, descriptor) {
+      if (token !== shadowToken) fail("TypeError", "Illegal constructor");
+      super(descriptor.root, host("info", descriptor.root));
+      shadowDescriptors.set(this, descriptor);
+      this._owner = wrap(descriptor.host)?.ownerDocument || document;
+    }
+    get host() { return wrap(shadowDescriptors.get(this).host); }
+    get mode() { return shadowDescriptors.get(this).mode; }
+    get delegatesFocus() { return shadowDescriptors.get(this).delegates_focus; }
+    get innerHTML() {
+      return [...this.childNodes]
+        .map((child) => host("serialize", child._id))
+        .join("");
+    }
+    set innerHTML(value) {
+      Reflect.getOwnPropertyDescriptor(Element.prototype, "innerHTML").set.call(this, value);
+    }
+    getElementById(id) {
+      return (
+        [...this.querySelectorAll("[id]")].find((n) => n.id === String(id)) ||
+        null
+      );
+    }
+  }
   const cssName = (name) =>
     String(name)
       .replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())
@@ -873,6 +981,7 @@
         attributeName: "style",
         oldValue: old,
       });
+      flushComponents();
     }
     removeProperty(name) {
       const old = this.getPropertyValue(name);
@@ -969,16 +1078,19 @@
         this[name] = new Function("event", String(value));
       }
       notify(this, "attributes", { attributeName: name, oldValue: old });
+      flushComponents();
     }
     removeAttribute(name) {
       const old = this.getAttribute(name);
       host("removeAttr", this._id, String(name));
       if (String(name).startsWith("on")) this[name] = null;
-      if (old !== null)
+      if (old !== null) {
         notify(this, "attributes", {
           attributeName: String(name),
           oldValue: old,
         });
+        flushComponents();
+      }
     }
     toggleAttribute(name, force) {
       const add = force === undefined ? !this.hasAttribute(name) : !!force;
@@ -1004,6 +1116,7 @@
         attributeName: String(name),
         oldValue: null,
       });
+      flushComponents();
     }
     removeAttributeNS(namespace, name) {
       const attr = [...this.attributes].find(
@@ -1373,8 +1486,103 @@
         this._clicking = false;
       }
     }
+    attachShadow(options) {
+      const descriptor = component("shadowAttach", this._id, String(options?.mode), !!options?.delegatesFocus);
+      return shadowWrapper(descriptor);
+    }
+    get shadowRoot() { return shadowWrapper(component("shadowRoot", this._id)); }
+    get assignedSlot() { return wrap(component("assignedSlot", this._id)); }
   }
-  class HTMLElement extends Element {}
+  function upgradeElement(element, definition) {
+    const constructor = componentConstructors.get(definition);
+    if (!constructor || !component("customBegin", element._id, definition)) return;
+    Object.setPrototypeOf(element, constructor.prototype);
+    constructionStack.push({ element, constructor, used: false });
+    let success = false;
+    try {
+      const result = Reflect.construct(constructor, [], constructor);
+      if (result !== element) fail("TypeError", "Custom element constructor returned a different object");
+      success = true;
+    } catch (error) { report(error); }
+    finally {
+      constructionStack.pop();
+      component("customComplete", element._id, success);
+    }
+    flushComponents();
+  }
+  function triggerConnected(node) {
+    component("customConnected", node._id); flushComponents();
+  }
+  function triggerDisconnected(node) {
+    component("customDisconnected", node._id); flushComponents();
+  }
+  class CustomElementRegistry {
+    define(name, constructor, options) {
+      if (typeof constructor !== "function" || !constructor.prototype) fail("TypeError", "Custom element constructor must be constructible");
+      const identity = constructorDefinitions.get(constructor)?.constructorIdentity || ++constructorIdentity;
+      const nameString = String(name);
+      const extendsName = options?.extends === undefined ? "" : String(options.extends);
+      component("customPreflight", nameString, identity, extendsName);
+      const callbacks = Object.create(null);
+      for (const name of ["connectedCallback", "disconnectedCallback", "adoptedCallback", "attributeChangedCallback"]) {
+        const callback = constructor.prototype[name];
+        if (callback !== undefined && typeof callback !== "function") fail("TypeError", name + " must be callable");
+        callbacks[name] = callback;
+      }
+      const observed = callbacks.attributeChangedCallback ? Array.from(constructor.observedAttributes || [], String) : [];
+      const definition = component("customDefine", nameString, identity, JSON.stringify({ observed, extends: extendsName || undefined }));
+      constructorDefinitions.set(constructor, { ...definition, constructorIdentity: identity });
+      componentConstructors.set(definition.id, constructor);
+      componentCallbacks.set(definition.id, callbacks);
+      componentWaiters.get(definition.name)?.resolve(constructor);
+      componentWaiters.delete(definition.name);
+      for (const id of component("customCandidates", document._id, definition.id)) upgradeElement(wrap(id), definition.id);
+    }
+    get(name) {
+      const definition = component("customDefinition", String(name));
+      return definition ? componentConstructors.get(definition.id) : undefined;
+    }
+    getName(constructor) { return constructorDefinitions.get(constructor)?.name || null; }
+    whenDefined(name) {
+      name = String(name);
+      if (!component("customNameValid", name)) return Promise.reject(new SyntaxError("Invalid custom element name"));
+      const existing = this.get(name);
+      if (existing) return Promise.resolve(existing);
+      if (!componentWaiters.has(name)) {
+        let resolve;
+        const promise = new Promise(done => { resolve = done; });
+        componentWaiters.set(name, { promise, resolve });
+      }
+      return componentWaiters.get(name).promise;
+    }
+    upgrade(root) {
+      if (!(root instanceof Node)) fail("TypeError", "upgrade requires a Node");
+      for (const [definition] of componentConstructors) {
+        for (const id of component("customCandidates", root._id, definition)) upgradeElement(wrap(id), definition);
+      }
+    }
+  }
+  const customElements = new CustomElementRegistry();
+  class HTMLElement extends Element {
+    constructor(id, info) {
+      const construction = constructionStack[constructionStack.length - 1];
+      if (id === undefined && info === undefined && construction?.constructor === new.target) {
+        if (construction.used) fail("TypeError", "Custom element already constructed");
+        construction.used = true;
+        return construction.element;
+      }
+      if (id === undefined || info === undefined) {
+        const definition = constructorDefinitions.get(new.target);
+        if (!definition) fail("TypeError", "Illegal constructor");
+        id = component("customConstruct", definition.id);
+        info = host("info", id);
+      }
+      super(id, info);
+      cache.set(id, weak ? new WeakRef(this) : this);
+      host("retain", id);
+      finalizer?.register(this, id);
+    }
+  }
   class SVGElement extends Element {}
   for (const key of [
     "title",
@@ -1394,7 +1602,75 @@
       },
     });
 
-  class HTMLIFrameElement extends HTMLElement {}
+  class DOMTokenList {
+    constructor(element, attribute) {
+      this._element = element;
+      this._attr = attribute;
+    }
+    get length() {
+      return this._tokens().length;
+    }
+    _tokens() {
+      const val = this._element.getAttribute(this._attr) || "";
+      return val.trim() ? val.trim().split(/\s+/).filter(Boolean) : [];
+    }
+    item(index) {
+      return this._tokens()[index] || null;
+    }
+    contains(token) {
+      return this._tokens().includes(String(token));
+    }
+    add(...tokens) {
+      const set = new Set(this._tokens());
+      for (const t of tokens) {
+        if (!t || /\s/.test(t)) fail("InvalidCharacterError", "Invalid token");
+        set.add(String(t));
+      }
+      this._element.setAttribute(this._attr, [...set].join(" "));
+    }
+    remove(...tokens) {
+      const names = tokens.map(String);
+      const set = new Set(this._tokens().filter((t) => !names.includes(t)));
+      this._element.setAttribute(this._attr, [...set].join(" "));
+    }
+    toggle(token, force) {
+      const has = this.contains(token);
+      const shouldHave = force !== undefined ? Boolean(force) : !has;
+      if (shouldHave) this.add(token);
+      else this.remove(token);
+      return shouldHave;
+    }
+    toString() {
+      return this._element.getAttribute(this._attr) || "";
+    }
+    get value() {
+      return this.toString();
+    }
+    set value(v) {
+      this._element.setAttribute(this._attr, String(v));
+    }
+    [Symbol.iterator]() {
+      return this._tokens()[Symbol.iterator]();
+    }
+  }
+
+  // Nested documents are not exposed until a browser-issued frame context is
+  // bound to a real worker. A detached synthetic document is not an iframe.
+  class HTMLIFrameElement extends HTMLElement {
+    get contentWindow() { return null; }
+    get contentDocument() { return null; }
+    get src() { return this.getAttribute("src") || ""; }
+    set src(value) { this.setAttribute("src", String(value)); }
+    get srcdoc() { return this.getAttribute("srcdoc") || ""; }
+    set srcdoc(value) { this.setAttribute("srcdoc", String(value)); }
+    get name() { return this.getAttribute("name") || ""; }
+    set name(value) { this.setAttribute("name", String(value)); }
+    get width() { return this.getAttribute("width") || ""; }
+    set width(value) { this.setAttribute("width", String(value)); }
+    get height() { return this.getAttribute("height") || ""; }
+    set height(value) { this.setAttribute("height", String(value)); }
+    get sandbox() { return new DOMTokenList(this, "sandbox"); }
+  }
   Object.defineProperty(Element.prototype, "form", {
     get() {
       if (
@@ -1610,13 +1886,28 @@
   function prepareInserted(node) {
     if (node?.nodeType !== 1) return;
     if (isScript(node)) prepareScript(node);
-    else if (node.firstElementChild)
+    else if (node.firstElementChild) {
       for (const script of node.querySelectorAll("script"))
         prepareScript(script);
+    }
   }
   class HTMLTemplateElement extends HTMLElement {
     get content() {
       return wrap(host("templateContent", this._id), this.ownerDocument);
+    }
+  }
+  class HTMLSlotElement extends HTMLElement {
+    get name() {
+      return this.getAttribute("name") || "";
+    }
+    set name(value) {
+      this.setAttribute("name", value);
+    }
+    assignedNodes(options) {
+      return component("assignedNodes", this._id, !!options?.flatten).map(id => wrap(id));
+    }
+    assignedElements(options) {
+      return this.assignedNodes(options).filter((node) => node.nodeType === 1);
     }
   }
   class CanvasRenderingContext2D {
@@ -1841,6 +2132,7 @@
     canvas: HTMLCanvasElement,
     script: HTMLScriptElement,
     template: HTMLTemplateElement,
+    slot: HTMLSlotElement,
   };
 
   // Ranges hold real DOM boundary points. Fragment parsing uses the start
@@ -2166,16 +2458,18 @@
       return range;
     }
     get defaultView() {
-      return this === document ? globalThis : null;
+      return this === document ? globalThis : (this._defaultView || null);
     }
     get location() {
-      return this === document ? globalThis.location : null;
+      return this === document ? globalThis.location : (this._location || null);
     }
     set location(value) {
       if (this === document) globalThis.location.href = String(value);
+      else if (this._location) this._location.href = String(value);
     }
     get URL() {
-      return host("url");
+      if (this === document) return host("url");
+      return this._location ? this._location.href : "about:blank";
     }
     get documentURI() {
       return this.URL;
@@ -2301,8 +2595,11 @@
       return clone;
     }
     adoptNode(node) {
+      const oldOwner = node.ownerDocument;
       node.remove();
+      component("customAdopt", node._id, oldOwner?._id || "", this._id);
       node._owner = this;
+      flushComponents();
       return node;
     }
     get activeElement() {
@@ -2563,6 +2860,7 @@
     "hashchange",
     "DOMContentLoaded",
     "error",
+    "message",
   ])
     defineHandler(globalThis, name);
   Object.assign(globalThis, {
@@ -2571,6 +2869,7 @@
     HTMLElement,
     SVGElement,
     HTMLIFrameElement,
+    DOMTokenList,
     HTMLInputElement,
     HTMLTextAreaElement,
     HTMLSelectElement,
@@ -2582,6 +2881,10 @@
     HTMLCanvasElement,
     HTMLScriptElement,
     HTMLTemplateElement,
+    HTMLSlotElement,
+    ShadowRoot,
+    CustomElementRegistry,
+    customElements,
     CanvasRenderingContext2D,
     Document,
     HTMLDocument: Document,
@@ -2603,6 +2906,23 @@
     self: globalThis,
     top: globalThis,
     parent: globalThis,
+    frames: globalThis,
+    frameElement: null,
+    postMessage(message, targetOrigin = "/", transfer = []) {
+      if (targetOrigin !== null && typeof targetOrigin === "object") {
+        transfer = targetOrigin.transfer || [];
+        targetOrigin = targetOrigin.targetOrigin === undefined ? "/" : targetOrigin.targetOrigin;
+      }
+      const accepts = component("messageTarget", String(targetOrigin));
+      // V8/Deno owns serialization and transfer validation. Serialization errors
+      // propagate synchronously; original objects are never delivered as fallback.
+      const data = web.structuredClone(message, { transfer });
+      const origin = new URL(host("url")).origin;
+      if (accepts) setTimeout(() => {
+        const event = new web.MessageEvent("message", { data, origin, source: globalThis });
+        globalThis.dispatchEvent(event);
+      }, 0);
+    },
     navigator: {
       userAgent:
         "Mozilla/5.0 (compatible; Wega/0.2; Blitz) AppleWebKit/537.36 (KHTML, like Gecko)",
@@ -2818,4 +3138,15 @@
         ),
     },
   });
+  web.event.setWegaDomHooks({
+    parent: (node, event, originalRoot) => {
+      if (!node?._id) return null;
+      if (node.nodeType === 9) return node.defaultView;
+      return wrap(component("eventParent", node._id, event ? !!event.composed : true, originalRoot?._id || ""));
+    },
+    host: node => node?._id ? wrap(component("shadowHost", node._id)) : null,
+    mode: node => shadowDescriptors.get(node)?.mode || null,
+    slot: node => node?._id ? wrap(component("assignedSlotInternal", node._id)) : null,
+  });
+  Object.defineProperty(globalThis, "length", { get: () => 0, configurable: true });
 })();

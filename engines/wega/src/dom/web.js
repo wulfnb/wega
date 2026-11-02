@@ -181,9 +181,11 @@
     core.ops.op_dom_read("log", message, String(level), ""),
   );
   Object.defineProperty(globalThis, "__wega_web", {
+    configurable: true,
     value: { ...globals, event },
   });
   Object.defineProperty(globalThis, "__wega_install_web", {
+    configurable: true,
     value: () => {
       Object.assign(globalThis, globals);
       Object.defineProperties(globalThis, {
