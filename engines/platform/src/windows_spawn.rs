@@ -303,26 +303,80 @@ impl Drop for Attributes {
         }
     }
 }
-fn pipe() -> io::Result<(OwnedHandle, OwnedHandle)> {
-    let mut read = std::ptr::null_mut();
-    let mut write = std::ptr::null_mut();
-    if unsafe {
-        windows_sys::Win32::System::Pipes::CreatePipe(
-            &mut read,
-            &mut write,
-            std::ptr::null(),
+/// Parent first, child second. Rust ChildStdin/Stdout/Stderr require overlapped
+/// parent handles (they use ReadFileEx/WriteFileEx); std::io inside the child
+/// needs synchronous standard handles. CreatePipe cannot provide that pairing.
+fn pipe(parent_reads: bool) -> io::Result<(OwnedHandle, OwnedHandle)> {
+    use windows_sys::Win32::{
+        Storage::FileSystem::*,
+        System::{IO::*, Pipes::*},
+    };
+    let mut nonce = [0; 32];
+    getrandom::fill(&mut nonce).map_err(|error| io::Error::other(error.to_string()))?;
+    let name = string(&format!(
+        r"\\.\pipe\wega-stdio-{}",
+        nonce
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ));
+    // The unguessable, single-instance pipe is connected in the host before any
+    // child exists. No pipe name or namespace access is granted to the worker.
+    let parent = unsafe {
+        CreateNamedPipeW(
+            name.as_ptr(),
+            (if parent_reads {
+                PIPE_ACCESS_INBOUND
+            } else {
+                PIPE_ACCESS_OUTBOUND
+            }) | FILE_FLAG_FIRST_PIPE_INSTANCE
+                | FILE_FLAG_OVERLAPPED,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+            1,
             65536,
+            65536,
+            5000,
+            std::ptr::null(),
         )
-    } == 0
-    {
+    };
+    if parent == INVALID_HANDLE_VALUE {
         return Err(io::Error::last_os_error());
     }
-    Ok(unsafe {
-        (
-            OwnedHandle::from_raw_handle(read.cast()),
-            OwnedHandle::from_raw_handle(write.cast()),
+    let parent = unsafe { OwnedHandle::from_raw_handle(parent.cast()) };
+    let child = unsafe {
+        CreateFileW(
+            name.as_ptr(),
+            if parent_reads {
+                GENERIC_WRITE
+            } else {
+                GENERIC_READ
+            },
+            0,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
         )
-    })
+    };
+    if child == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    let child = unsafe { OwnedHandle::from_raw_handle(child.cast()) };
+    let mut operation: OVERLAPPED = unsafe { std::mem::zeroed() };
+    let connected = unsafe { ConnectNamedPipe(parent.as_raw_handle().cast(), &mut operation) };
+    if connected == 0 && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(ERROR_IO_PENDING as i32) {
+            let mut count = 0;
+            // Drain cancellation before the stack OVERLAPPED or handles go away.
+            unsafe {
+                CancelIoEx(parent.as_raw_handle().cast(), &operation);
+                GetOverlappedResult(parent.as_raw_handle().cast(), &operation, &mut count, 1);
+            }
+        }
+        return Err(error);
+    }
+    Ok((parent, child))
 }
 fn quote(argument: &OsStr) -> io::Result<Vec<u16>> {
     let argument = wide(argument)?;
@@ -423,9 +477,9 @@ pub fn spawn(command: &Command, required: bool, grants: &[OwnedHandle]) -> io::R
         .or_else(|| command.get_current_dir())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Missing worker directory"))?;
     let directory = wide(directory.as_os_str())?;
-    let (input, stdin) = pipe()?;
-    let (stdout, output) = pipe()?;
-    let (stderr, error) = pipe()?;
+    let (stdin, input) = pipe(false)?;
+    let (stdout, output) = pipe(true)?;
+    let (stderr, error) = pipe(true)?;
     let input = duplicate(input.as_raw_handle().cast(), true)?;
     let output = duplicate(output.as_raw_handle().cast(), true)?;
     let error = duplicate(error.as_raw_handle().cast(), true)?;

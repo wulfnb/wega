@@ -32,7 +32,7 @@ impl FixtureDeadline {
                 // A deadlock during launch/teardown must fail the test process,
                 // rather than hiding its diagnostics until the CI job expires.
                 eprintln!("Inherited worker fixture exceeded its complete 60-second deadline");
-                std::process::exit(124);
+                std::process::abort();
             }
         });
         Self(finished)

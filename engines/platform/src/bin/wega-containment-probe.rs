@@ -28,6 +28,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     wega_platform::launch::validate_worker_start(args.clone())?;
+    let mut input = [0; 5];
+    std::io::stdin().read_exact(&mut input)?;
+    let stdio_granted = &input == b"hello";
     let argument = |name: &str| {
         args.windows(2)
             .find(|pair| pair[0] == name)
@@ -81,9 +84,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     let granted = allowed == "explicit-grant";
     println!(
-        "{{\"granted_file\":{granted},\"granted_channels\":{channels_granted},\"private_read_denied\":{read_denied},\"private_write_denied\":{write_denied},\"tcp_denied\":{tcp_denied},\"udp_send_rejected\":{udp_send_rejected},\"child_denied\":{child_denied}}}"
+        "{{\"granted_stdio\":{stdio_granted},\"granted_file\":{granted},\"granted_channels\":{channels_granted},\"private_read_denied\":{read_denied},\"private_write_denied\":{write_denied},\"tcp_denied\":{tcp_denied},\"udp_send_rejected\":{udp_send_rejected},\"child_denied\":{child_denied}}}"
     );
-    if !(granted && channels_granted && read_denied && write_denied && tcp_denied && child_denied) {
+    if !(stdio_granted
+        && granted
+        && channels_granted
+        && read_denied
+        && write_denied
+        && tcp_denied
+        && child_denied)
+    {
         std::process::exit(1);
     }
     Ok(())

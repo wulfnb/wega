@@ -95,7 +95,7 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         .arg(udp.local_addr().unwrap().to_string())
         .arg("--grant")
         .arg(grant.to_string())
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let (exit, exited) = std::sync::mpsc::channel();
@@ -110,6 +110,11 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     eprintln!("Native grant fixture: containment attached");
     drop(command);
     drop(channels);
+    eprintln!("Native grant fixture: writing standard-input challenge");
+    let mut input = process.take_stdin().unwrap();
+    input.write_all(b"hello").unwrap();
+    input.flush().unwrap();
+    drop(input);
     let mut stdout = process.take_stdout().unwrap();
     let mut stderr = process.take_stderr().unwrap();
     let (errors, error_output) = std::sync::mpsc::channel();
@@ -121,9 +126,8 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
     let (sent, received) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut bytes = String::new();
-        // Lowbox token/object lifetime can outlive process exit. A complete
-        // result line and the owned process's exit status are the completion
-        // contract; waiting for pipe EOF can hang even after the probe exits.
+        // Use a complete bounded result line plus the owned process's actual
+        // exit status as the completion contract, independently of stderr EOF.
         let result = std::io::BufReader::new(stdout.by_ref().take(65536)).read_line(&mut bytes);
         let _ = sent.send((result, bytes));
     });
@@ -148,6 +152,7 @@ fn native_policy_denies_ambient_authority_and_preserves_an_explicit_file_grant()
         .expect("Probe was not reaped");
     eprintln!("Native probe exit: {report:?}; stderr: {diagnostics}");
     for item in [
+        "granted_stdio",
         "granted_file",
         "granted_channels",
         "private_read_denied",
