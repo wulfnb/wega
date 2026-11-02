@@ -4,7 +4,7 @@
 //! semantic-hook manifest. Both are byte-stable for a given input set; the
 //! checked-in artifacts are regenerated in CI and compared.
 
-use crate::ast::{AttributeMember, ConstructorMember, Interface, Member, Parameter, Type};
+use crate::ast::{AttributeMember, ConstValue, ConstructorMember, Interface, Member, Parameter, Type};
 use crate::manifest::{Family, HookAnnotation, IdlPin};
 use crate::parser::parse_file;
 use std::collections::{BTreeMap, BTreeSet};
@@ -370,6 +370,10 @@ pub fn build_family(
                         line: ctor.line,
                     });
                 }
+                Member::Const(_) => {
+                    // Const members are emitted as static class properties.
+                    // No hook needed — JS reads the constant directly.
+                }
             }
         }
     }
@@ -656,10 +660,26 @@ fn emit_members(out: &mut String, model: &FamilyModel, interface: &Interface) {
     for member in &interface.members {
         match member {
             Member::Constructor(_) => {}
+            Member::Const(cst) => {
+                // Emit const as static class property: writable=false.
+                let literal = match &cst.value {
+                    ConstValue::Number(n) => n.to_string(),
+                    ConstValue::Boolean(b) => b.to_string(),
+                    ConstValue::String(s) => format!("{:?}", s),
+                };
+                out.push_str(&format!(
+                    "    static {{\n      Object.defineProperty(this, \"{name}\", {{ value: {literal}, writable: false, enumerable: true, configurable: true }});\n    }}\n",
+                    name = cst.name,
+                    literal = literal
+                ));
+            }
             Member::Attribute(AttributeMember {
                 name,
                 ty,
                 readonly,
+                constant: _,
+                same_object,
+                setter_throws: _,
                 legacy_null_to_empty,
                 ..
             }) => {
@@ -668,7 +688,19 @@ fn emit_members(out: &mut String, model: &FamilyModel, interface: &Interface) {
                     .expect("attribute getter hook derived in build_family");
                 out.push_str(&format!("    get {name}() {{\n"));
                 out.push_str(&format!("      dom.checkBrand({}, this);\n", interface.name));
-                out.push_str(&format!("      return op(\"{}\", this._id);\n", getter.name));
+                if *same_object {
+                    // [SameObject] memoisation on a private Symbol field.
+                    out.push_str(&format!(
+                        "      if (this[dom._so]) return this[dom._so].get(\"{name}\");\n"
+                    ));
+                    out.push_str(&format!("      let _m = this[dom._so];\n"));
+                    out.push_str(&format!("      if (!_m) {{ _m = new Map(); this[dom._so] = _m; }}\n"));
+                    out.push_str(&format!("      let _v = _m.get(\"{name}\");\n"));
+                    out.push_str(&format!("      if (!_v) {{ _v = op(\"{}\", this._id); _m.set(\"{name}\", _v); }}\n", getter.name));
+                    out.push_str(&format!("      return _v;\n"));
+                } else {
+                    out.push_str(&format!("      return op(\"{}\", this._id);\n", getter.name));
+                }
                 out.push_str("    }\n");
                 if !readonly {
                     let setter = model
@@ -681,6 +713,10 @@ fn emit_members(out: &mut String, model: &FamilyModel, interface: &Interface) {
                         "      const result = op(\"{}\", this._id, {conversion}(value));\n",
                         setter.name
                     ));
+                    if *same_object {
+                        // Invalidate [SameObject] cache on set.
+                        out.push_str(&format!("      if (this[dom._so]) this[dom._so].delete(\"{name}\");\n"));
+                    }
                     if let Some(reaction) = &setter.reaction {
                         out.push_str(&format!(
                             "      dom.reactions.{reaction}(this, result);\n"

@@ -62,13 +62,32 @@ pub struct Parameter {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstMember {
+    pub name: String,
+    pub ty: Type,
+    pub value: ConstValue,
+    pub line: usize,
+}
+
+/// A resolved constant value from IDL (must be one of these types).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConstValue {
+    Number(i64),
+    Boolean(bool),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeMember {
     pub name: String,
     pub ty: Type,
     pub readonly: bool,
     pub pure: bool,
+    pub constant: bool,
     pub throws: bool,
+    pub setter_throws: bool,
     pub legacy_null_to_empty: bool,
+    pub same_object: bool,
     pub line: usize,
 }
 
@@ -94,6 +113,7 @@ pub enum Member {
     Attribute(AttributeMember),
     Operation(OperationMember),
     Constructor(ConstructorMember),
+    Const(ConstMember),
 }
 
 impl Member {
@@ -102,6 +122,7 @@ impl Member {
             Member::Attribute(member) => &member.name,
             Member::Operation(member) => &member.name,
             Member::Constructor(_) => "constructor",
+            Member::Const(member) => &member.name,
         }
     }
     pub fn line(&self) -> usize {
@@ -109,6 +130,7 @@ impl Member {
             Member::Attribute(member) => member.line,
             Member::Operation(member) => member.line,
             Member::Constructor(member) => member.line,
+            Member::Const(member) => member.line,
         }
     }
 }

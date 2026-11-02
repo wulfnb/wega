@@ -3,8 +3,8 @@
 //! not understand.
 
 use crate::ast::{
-    ArgumentDefault, AttributeMember, ConstructorMember, Interface, Member, OperationMember,
-    Parameter, Type,
+    ArgumentDefault, AttributeMember, ConstMember, ConstValue, ConstructorMember, Interface,
+    Member, OperationMember, Parameter, Type,
 };
 
 #[derive(Debug)]
@@ -431,7 +431,7 @@ impl<'a> Parser<'a> {
                 self.member_from_attrs(attrs, members, line)
             }
             Some(Token::Ident(ref word)) => match word.as_str() {
-                "const" => Err(self.err(line, "'const' members are unsupported in generated IDL inputs")),
+                "const" => self.parse_const_member(members, line),
                 "stringifier" => Err(self.err(line, "'stringifier' is unsupported in generated IDL inputs")),
                 "iterable" => Err(self.err(line, "'iterable<...>' members are unsupported in generated IDL inputs")),
                 "getter" | "setter" | "deleter" => Err(self.err(
@@ -446,6 +446,51 @@ impl<'a> Parser<'a> {
                 }
             },
             other => Err(self.err(line, format!("unsupported token {other:?} in interface body"))),
+        }
+    }
+
+    fn parse_const_member(
+        &mut self,
+        members: &mut Vec<Member>,
+        line: usize,
+    ) -> Result<(), ParseError> {
+        self.expect_ident("const")?;
+        let (ty, _) = self.r#type()?;
+        let (name, _) = self.ident("const name")?;
+        self.expect(&Token::Eq, "'=' after const name")?;
+        let value = self.const_value(&ty, line)?;
+        self.expect(&Token::Semi, "';' after const")?;
+        members.push(Member::Const(ConstMember { name, ty, value, line }));
+        Ok(())
+    }
+
+    fn const_value(&mut self, ty: &Type, line: usize) -> Result<ConstValue, ParseError> {
+        match self.next() {
+            Some((_, Token::Int(value))) => match ty {
+                Type::UnsignedLong | Type::UnsignedShort => {
+                    if value < 0 {
+                        return Err(self.err(line, "const unsigned must be non-negative"));
+                    }
+                    Ok(ConstValue::Number(value))
+                }
+                other => Err(self.err(line, format!("numeric const for non-numeric type {other:?}"))),
+            },
+            Some((_, Token::Ident(ref word))) => match word.as_str() {
+                "true" | "false" => match ty {
+                    Type::Boolean => Ok(ConstValue::Boolean(word == "true")),
+                    other => Err(self.err(line, format!("boolean const for non-boolean type {other:?}"))),
+                },
+                _ => Err(self.err(
+                    line,
+                    format!("unsupported const literal '{word}'"),
+                )),
+            },
+            Some((_, Token::Str(text))) => match ty {
+                Type::DomString { .. } => Ok(ConstValue::String(text.clone())),
+                other => Err(self.err(line, format!("string const for non-DOMString type {other:?}"))),
+            },
+            Some((at, other)) => Err(self.err(at, format!("unsupported const literal {other:?}"))),
+            None => Err(self.err(line, "unexpected end of file in const value")),
         }
     }
 
@@ -510,8 +555,11 @@ impl<'a> Parser<'a> {
                     ty,
                     readonly,
                     pure: merged.contains("Pure"),
+                    constant: merged.contains("Constant"),
                     throws: merged.contains("Throws"),
+                    setter_throws: merged.contains("SetterThrows"),
                     legacy_null_to_empty: merged.contains("LegacyNullToEmptyString"),
+                    same_object: merged.contains("SameObject"),
                     line,
                 }));
                 Ok(())
@@ -723,10 +771,13 @@ impl<'a> Parser<'a> {
                         "Exposed"
                             | "Pure"
                             | "Throws"
+                            | "SetterThrows"
                             | "NewObject"
                             | "CEReactions"
                             | "LegacyNullToEmptyString"
                             | "Abstract"
+                            | "Constant"
+                            | "SameObject"
                     );
                     if !allowed {
                         return Err(self.err(

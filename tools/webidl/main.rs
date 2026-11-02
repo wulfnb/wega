@@ -8,7 +8,7 @@ mod manifest;
 mod parser;
 
 use generate::{build_family, emit_js, emit_manifest};
-use manifest::{load_families, load_pins, verify_family_files, IdlManifest, IdlPin};
+use manifest::{load_families, load_pins, verify_family_files, Family, HookAnnotation, IdlManifest, IdlPin};
 use std::path::PathBuf;
 
 const IDLS_JSON: &str = "tools/webidl/idls.json";
@@ -152,6 +152,7 @@ fn cmd_pin(paths: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::Member;
     use std::collections::BTreeMap;
 
     fn root() -> PathBuf {
@@ -265,6 +266,7 @@ mod tests {
 
     #[test]
     fn unsupported_constructs_fail_with_positioned_errors() {
+        // Failure cases: each (source, needle) must produce a positioned error.
         let cases = [
             ("dictionary GetRootNodeOptions { boolean composed = false; };", "unsupported declaration 'dictionary'"),
             ("[Exposed=Window] interface A { any x; };", "'any' is unsupported"),
@@ -272,9 +274,7 @@ mod tests {
             ("[Exposed=Window] interface A { undefined f(DOMString... tokens); };", "variadic arguments are unsupported"),
             ("[Exposed=Window] interface A { stringifier; };", "'stringifier' is unsupported"),
             ("[Exposed=Window] interface A { iterable<DOMString>; };", "'iterable<...>' members are unsupported"),
-            ("[Exposed=Window] interface A { const unsigned short X = 1; };", "'const' members are unsupported"),
             ("[Exposed=Window, Worker] interface A { };", "unsupported extended attribute '[Worker]'"),
-            ("[Exposed=Window] interface A { [SameObject] readonly attribute unsigned long x; };", "unsupported extended attribute '[SameObject]'"),
             ("[Exposed=Window] interface A { getter DOMString? item(unsigned long i); };", "'getter' members are unsupported"),
             ("interface mixin M { };", "interface mixin 'M' is not permitted"),
             ("[Exposed=Window] interface A { undefined f(optional DOMString d); };", "optional parameters require a default value"),
@@ -292,6 +292,33 @@ mod tests {
             assert!(
                 text.starts_with("<fixture>:") && text.contains(':'),
                 "error must be positioned: {text}"
+            );
+        }
+
+        // Supported constructs must parse without error.
+        let success = [
+            ("[Exposed=Window] interface A { const unsigned short X = 1; };", 1),
+            ("[Exposed=Window] interface A { const boolean FLAG = true; };", 1),
+            ("[Exposed=Window] interface A { const unsigned long MASK = 0; };", 1),
+        ];
+        for (source, expected) in success {
+            let interfaces = parser::parse_file("<fixture>", source).expect("should parse");
+            assert_eq!(
+                interfaces.len(),
+                1,
+                "case {source:?}: expected 1 interface, got {}",
+                interfaces.len()
+            );
+            let consts: Vec<_> = interfaces[0]
+                .members
+                .iter()
+                .filter(|m| matches!(m, Member::Const(_)))
+                .collect();
+            assert_eq!(
+                consts.len(),
+                expected,
+                "case {source:?}: expected {expected} const members, got {}",
+                consts.len()
             );
         }
     }
@@ -356,12 +383,73 @@ interface Comment : CharacterData {
 };
 "#;
         let result = parser::parse_file("<test>", src);
-        // If this fails with "union types", it's a parser bug - the [Throws] 
+        // If this fails with "union types", it's a parser bug - the [Throws]
         // inside {} should not trigger union type detection.
         assert!(result.is_ok(), "Comment should parse: {result:?}");
         let interfaces = result.unwrap();
         assert_eq!(interfaces.len(), 1);
         assert_eq!(interfaces[0].name, "Comment");
         assert!(interfaces[0].has_constructor());
+    }
+
+    #[test]
+    fn const_and_same_object_generate_correct_js() {
+        // Build a minimal pin map for the test fixture.
+        let mut pins: std::collections::BTreeMap<String, IdlPin> = BTreeMap::new();
+        pins.insert(
+            "test.webidl".into(),
+            IdlPin {
+                path: "test.webidl".into(),
+                sha256: "aabbccdd".into(),
+                origin: "test".into(),
+                license: "test".into(),
+            },
+        );
+        let mut hooks = std::collections::HashMap::new();
+        hooks.insert(
+            "fx.cached".into(),
+            HookAnnotation { result: "{ unsigned long }".into(), reaction: None },
+        );
+        hooks.insert(
+            "fx.immutable".into(),
+            HookAnnotation { result: "{ string }".into(), reaction: None },
+        );
+        hooks.insert(
+            "fx.construct.fixture".into(),
+            HookAnnotation { result: "{ id: string, info: object }".into(), reaction: None },
+        );
+        let family = Family {
+            name: "fixture-consts".into(),
+            hook_prefix: "fx".into(),
+            output: "tmp/fixture.js".into(),
+            manifest: "tmp/fixture.hooks.json".into(),
+            files: vec!["test.webidl".into()],
+            native_base: std::collections::HashMap::new(),
+            base_mixins: vec![],
+            globals: vec!["Fixture".into()],
+            hooks,
+        };
+        let idl = r#"[Exposed=Window]
+interface Fixture {
+  const unsigned short VERSION = 1;
+  const boolean FLAG = true;
+  [Throws] constructor(optional DOMString dummy = "");
+  [SameObject] readonly attribute unsigned long cached;
+  [Constant] readonly attribute DOMString immutable;
+};
+"#;
+        let sources = vec![("test.webidl".into(), idl.to_owned())];
+        let model = build_family(&family, &pins, &sources).unwrap();
+        let js = emit_js(&model);
+        // Const members: static block with Object.defineProperty
+        assert!(js.contains("static {"), "const should emit static block");
+        assert!(js.contains("VERSION"), "const VERSION should appear");
+        assert!(js.contains("FLAG"), "const FLAG should appear");
+        assert!(js.contains("writable: false"), "const should be non-writable");
+        // [SameObject]: memoised getter with Map
+        assert!(js.contains("get cached()"), "SameObject attribute should have getter");
+        assert!(js.contains("new Map()"), "[SameObject] should use Map memoisation");
+        // [Constant]: getter should still emit
+        assert!(js.contains("get immutable()"), "Constant attribute should have getter");
     }
 }
