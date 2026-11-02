@@ -3,8 +3,8 @@
 //! not understand.
 
 use crate::ast::{
-    ArgumentDefault, AttributeMember, ConstMember, ConstValue, ConstructorMember, Interface,
-    Member, OperationMember, Parameter, Type,
+    ArgumentDefault, AttributeMember, ConstMember, ConstValue, ConstructorMember, EnumMember,
+    Interface, Member, OperationMember, Parameter, Type,
 };
 
 #[derive(Debug)]
@@ -345,6 +345,48 @@ impl<'a> Parser<'a> {
                 Some(Token::Ident(ref word)) if word == "interface" => {
                     self.declare_interface(Attrs::default())?;
                 }
+                Some(Token::Ident(name)) if name == "partial" => {
+                    // `partial interface X { ... }` — merge members into existing interface.
+                    self.next(); // consume "partial"
+                    self.expect_ident("interface")?;
+                    let (iface_name, _) = self.ident("interface name")?;
+                    self.expect(&Token::LBrace, "'{' after partial interface header")?;
+                    let mut members = Vec::new();
+                    loop {
+                        match self.peek().cloned() {
+                            None => return Err(self.err(self.cur_line(), "unexpected end of file inside partial interface")),
+                            Some(Token::RBrace) => break,
+                            _ => self.declare_member(&mut members)?,
+                        }
+                    }
+                    self.expect(&Token::RBrace, "'}' closing partial interface body")?;
+                    self.expect(&Token::Semi, "';' after partial interface body")?;
+                    // Merge members into existing interface with the same name.
+                    if let Some(existing) = self.interfaces.iter_mut().find(|i| i.name == iface_name) {
+                        for member in members {
+                            // Check for duplicate member names within the same interface.
+                            if existing.members.iter().any(|m| m.name() == member.name()) {
+                                return Err(self.err(
+                                    member.line(),
+                                    format!("duplicate member '{}' in partial interface '{}'", member.name(), iface_name),
+                                ));
+                            }
+                            existing.members.push(member);
+                        }
+                    } else {
+                        // No preceding interface found — create a minimal one.
+                        self.interfaces.push(Interface {
+                            name: iface_name,
+                            base: None,
+                            exposed: Vec::new(),
+                            abstract_: false,
+                            members,
+                            includes: Vec::new(),
+                            file: self.file.to_owned(),
+                            line: 0,
+                        });
+                    }
+                }
                 Some(Token::Ident(ref name)) => {
                     if self.peek_at(1) == Some(&Token::Ident("includes".to_owned())) {
                         let (owner, _) = self.ident("interface name")?;
@@ -364,13 +406,16 @@ impl<'a> Parser<'a> {
                         return Err(self.err(line, "includes clause before any interface"));
                     }
                     match name.as_str() {
-                        "dictionary" | "enum" | "callback" | "typedef" => {
+                        "dictionary" | "callback" | "typedef" => {
                             return Err(self.err(
                                 self.cur_line(),
                                 format!(
                                     "unsupported declaration '{name}' is not permitted in generated IDL inputs"
                                 ),
                             ));
+                        }
+                        "enum" => {
+                            self.parse_enum_declaration()?;
                         }
                         _ => {
                             return Err(self.err(
@@ -386,6 +431,90 @@ impl<'a> Parser<'a> {
             }
         }
         Ok(std::mem::take(&mut self.interfaces))
+    }
+
+    fn parse_enum_declaration(&mut self) -> Result<(), ParseError> {
+        let line = self.cur_line();
+        self.expect_ident("enum")?;
+        let (name, _) = self.ident("enum name")?;
+        self.expect(&Token::LBrace, "'{' after enum name")?;
+        let mut values = Vec::new();
+        loop {
+            match self.peek() {
+                Some(Token::RBrace) => break,
+                Some(Token::Str(v)) => {
+                    let v = v.clone();
+                    self.next();
+                    values.push(v);
+                }
+                Some(other) => {
+                    return Err(self.err(self.cur_line(), format!("expected string value in enum, found {other:?}")));
+                }
+                None => return Err(self.err(self.cur_line(), "unexpected end of file inside enum")),
+            }
+            if self.peek() == Some(&Token::Comma) {
+                self.next();
+            } else {
+                break;
+            }
+        }
+        self.expect(&Token::RBrace, "'}' closing enum body")?;
+        self.expect(&Token::Semi, "';' after enum")?;
+        // Add enum as a member to the last interface (or create a dummy if none exists).
+        // In WebIDL, enums are module-level but we attach them to a nearby interface.
+        // The generator will emit them as static properties on the class.
+        let enum_member = Member::Enum(EnumMember {
+            name,
+            values,
+            line,
+        });
+        if let Some(last) = self.interfaces.last_mut() {
+            last.members.push(enum_member);
+        } else {
+            // Standalone enum with no interface — create a dummy interface.
+            self.interfaces.push(Interface {
+                name: "__enum__".to_owned(),
+                base: None,
+                exposed: Vec::new(),
+                abstract_: false,
+                members: vec![enum_member],
+                includes: Vec::new(),
+                file: self.file.to_owned(),
+                line,
+            });
+        }
+        Ok(())
+    }
+
+    /// Parse an enum declaration inside an interface body (as a member).
+    fn parse_enum_member(&mut self, members: &mut Vec<Member>, line: usize) -> Result<(), ParseError> {
+        self.expect_ident("enum")?;
+        let (name, _) = self.ident("enum name")?;
+        self.expect(&Token::LBrace, "'{' after enum name")?;
+        let mut values = Vec::new();
+        loop {
+            match self.peek() {
+                Some(Token::RBrace) => break,
+                Some(Token::Str(v)) => {
+                    let v = v.clone();
+                    self.next();
+                    values.push(v);
+                }
+                Some(other) => {
+                    return Err(self.err(self.cur_line(), format!("expected string value in enum, found {other:?}")));
+                }
+                None => return Err(self.err(self.cur_line(), "unexpected end of file inside enum")),
+            }
+            if self.peek() == Some(&Token::Comma) {
+                self.next();
+            } else {
+                break;
+            }
+        }
+        self.expect(&Token::RBrace, "'}' closing enum body")?;
+        self.expect(&Token::Semi, "';' after enum member")?;
+        members.push(Member::Enum(EnumMember { name, values, line }));
+        Ok(())
     }
 
     fn declare_interface(&mut self, attrs: Attrs) -> Result<(), ParseError> {
@@ -453,6 +582,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Ident(ref word)) => match word.as_str() {
                 "const" => self.parse_const_member(members, line),
+                "enum" => self.parse_enum_member(members, line),
                 "stringifier" => Err(self.err(line, "'stringifier' is unsupported in generated IDL inputs")),
                 "iterable" => Err(self.err(line, "'iterable<...>' members are unsupported in generated IDL inputs")),
                 "getter" | "setter" | "deleter" => Err(self.err(
@@ -623,9 +753,28 @@ impl<'a> Parser<'a> {
                     "parameter extended attributes are unsupported in generated IDL inputs",
                 ));
             }
-            // Variadic dot-dots before the type keyword.
-            if self.peek() == Some(&Token::Dots) {
-                return Err(self.err(self.cur_line(), "variadic arguments are unsupported in generated IDL inputs"));
+            // Variadic dots before the type keyword.
+            let variadic = if self.peek() == Some(&Token::Dots) {
+                self.next();
+                true
+            } else {
+                false
+            };
+            if variadic {
+                // Variadic parameters cannot be optional or have defaults.
+                let line = self.cur_line();
+                let (ty, _) = self.r#type()?;
+                let (name, _) = self.ident("variadic parameter name")?;
+                params.push(Parameter {
+                    name,
+                    ty,
+                    optional: false,
+                    default: None,
+                    variadic: true,
+                    line,
+                });
+                self.expect(&Token::RParen, "')' closing variadic parameters")?;
+                return Ok(params);
             }
             let line = self.cur_line();
             let optional = self.peek() == Some(&Token::Ident("optional".to_owned()));
@@ -633,14 +782,15 @@ impl<'a> Parser<'a> {
                 self.next();
             }
             let (ty, _) = self.r#type()?;
-            // Detect variadic pattern: `Type... name` — reject before trying
-            // to parse the dots as a parameter name.
-            if self.peek() == Some(&Token::Dots) {
-                return Err(self.err(self.cur_line(), "variadic arguments are unsupported in generated IDL inputs"));
-            }
+            let variadic = if self.peek() == Some(&Token::Dots) {
+                self.next();
+                true
+            } else {
+                false
+            };
             let (name, _) = self.ident("parameter name")?;
-            if self.peek() == Some(&Token::Dots) {
-                return Err(self.err(line, "variadic arguments are unsupported in generated IDL inputs"));
+            if variadic && !params.is_empty() {
+                return Err(self.err(self.cur_line(), "variadic arguments must be the last parameter"));
             }
             let default = if self.peek() == Some(&Token::Eq) {
                 self.next();
@@ -663,6 +813,7 @@ impl<'a> Parser<'a> {
                 ty,
                 optional,
                 default,
+                variadic,
                 line,
             });
             if self.peek() == Some(&Token::Comma) {
@@ -709,15 +860,15 @@ impl<'a> Parser<'a> {
         let (line, first) = self.next().ok_or_else(|| {
             self.err(self.cur_line(), "unexpected end of file in type position")
         })?;
-        let base = match first {
+        let (base, _nullable_allowed) = match first {
             Token::Ident(ref word) => match word.as_str() {
-                "DOMString" => Type::DomString { nullable: false },
-                "boolean" => Type::Boolean,
+                "DOMString" => (Type::DomString { nullable: false }, true),
+                "boolean" => (Type::Boolean, true),
                 "unsigned" => {
                     let (line2, second) = self
                         .next()
                         .ok_or_else(|| self.err(line, "unexpected end of file after 'unsigned'"))?;
-                    match second {
+                    let ty = match second {
                         Token::Ident(ref w) if w == "long" => Type::UnsignedLong,
                         Token::Ident(ref w) if w == "short" => Type::UnsignedShort,
                         other => {
@@ -726,11 +877,12 @@ impl<'a> Parser<'a> {
                                 format!("unsupported numeric type 'unsigned ...' (found {other:?})"),
                             ))
                         }
-                    }
+                    };
+                    (ty, true)
                 }
-                "float" => Type::Float,
-                "double" => Type::Double,
-                "undefined" => Type::Undefined,
+                "float" => (Type::Float, true),
+                "double" => (Type::Double, true),
+                "undefined" => (Type::Undefined, false),
                 "any" => return Err(self.err(line, "'any' is unsupported in generated IDL inputs")),
                 "ArrayBuffer" | "BufferSource" | "ArrayBufferView" => {
                     return Err(self.err(line, format!("'{word}' is unsupported in generated IDL inputs")))
@@ -741,13 +893,51 @@ impl<'a> Parser<'a> {
                 "optional" => {
                     return Err(self.err(line, "malformed parameter: missing type before 'optional' handling"))
                 }
-                other => Type::Interface {
-                    name: other.to_owned(),
-                    nullable: false,
-                },
+                other => (Type::Interface { name: other.to_owned(), nullable: false }, true),
             },
             Token::LParen => {
-                return Err(self.err(line, format!("union types are unsupported in generated IDL inputs")));
+                // Union type: `(A or B or C)` — extract the last primitive type.
+                // Strategy: walk the union, remember the last "primitive"-typed type.
+                let mut fallback: Option<Type> = None;
+                loop {
+                    let (utype, union_line) = self.parse_union_alternative()?;
+                    let nullable_alt = if self.peek() == Some(&Token::Question) {
+                        self.next();
+                        true
+                    } else {
+                        false
+                    };
+                    // Track last primitive fallback (DOMString, boolean, numeric, etc.)
+                    if is_primitive_type(&utype) {
+                        fallback = Some(make_nullable(utype, nullable_alt));
+                    } else if matches!(utype, Type::Interface { .. }) {
+                        // Interface-typed union alternative — record for nullable check
+                        // but don't use as fallback (interfaces go through toInterfaceId).
+                        if !nullable_alt {
+                            // Can't have non-nullable interface in union without ?
+                            // but the IDL spec allows it, so just record the spelling.
+                        }
+                    }
+                    match self.peek() {
+                        Some(Token::Ident(w)) if w.as_str() == "or" => {
+                            self.next(); // consume "or"
+                        }
+                        Some(Token::RParen) => {
+                            self.next(); // consume ')'
+                            break;
+                        }
+                        Some(other) => {
+                            return Err(self.err(union_line, format!("expected 'or' or ')' in union type, found {other:?}")));
+                        }
+                        None => return Err(self.err(union_line, "unexpected end of file in union type")),
+                    }
+                }
+                let fallback_ty = fallback.unwrap_or_else(|| {
+                    // No primitive found — use DOMString as fallback.
+                    // This shouldn't happen in valid WebIDL, but be safe.
+                    Type::DomString { nullable: false }
+                });
+                return Ok((fallback_ty, line));
             }
             other => {
                 return Err(self.err(line, format!("unexpected token in type position: {other:?}")));
@@ -768,6 +958,39 @@ impl<'a> Parser<'a> {
             }
         };
         Ok((ty, line))
+    }
+
+    /// Parse a single alternative inside a union type: `(DOMString or Options or Node)`.
+    fn parse_union_alternative(&mut self) -> Result<(Type, usize), ParseError> {
+        let line = self.cur_line();
+        match self.peek() {
+            Some(Token::Ident(word)) => {
+                let word = word.clone();
+                self.next();
+                match word.as_str() {
+                    "DOMString" => Ok((Type::DomString { nullable: false }, line)),
+                    "boolean" => Ok((Type::Boolean, line)),
+                    "unsigned" => {
+                        let (line2, tok) = self.next().ok_or_else(|| self.err(line, "unexpected end of file after 'unsigned' in union"))?;
+                        let ident = match tok {
+                            Token::Ident(ref w) => w.clone(),
+                            other => return Err(self.err(line2, format!("unsupported numeric type in union: {other:?}"))),
+                        };
+                        match ident.as_str() {
+                            "long" => Ok((Type::UnsignedLong, line)),
+                            "short" => Ok((Type::UnsignedShort, line)),
+                            other => Err(self.err(line2, format!("unsupported numeric type in union: '{other}'"))),
+                        }
+                    }
+                    "float" => Ok((Type::Float, line)),
+                    "double" => Ok((Type::Double, line)),
+                    "undefined" => Ok((Type::Undefined, line)),
+                    // Any other identifier is treated as an interface/enum name.
+                    other => Ok((Type::Interface { name: other.to_owned(), nullable: false }, line)),
+                }
+            }
+            other => Err(self.err(line, format!("unexpected token in union type: {other:?}"))),
+        }
     }
 
     /// Extended attribute list. Only the policy-approved attributes are
@@ -886,6 +1109,20 @@ impl<'a> Parser<'a> {
             _ => return Err(self.err(line, "expected exposure value after '='")),
         };
         Ok(Some(first))
+    }
+}
+
+/// Check if a type is a "primitive" that can serve as a union fallback
+/// (anything except Interface types).
+fn is_primitive_type(ty: &Type) -> bool {
+    !matches!(ty, Type::Interface { .. })
+}
+
+fn make_nullable(ty: Type, nullable: bool) -> Type {
+    match ty {
+        Type::DomString { .. } => Type::DomString { nullable },
+        Type::Interface { name, .. } => Type::Interface { name, nullable },
+        other => other, // primitives don't get nullable flag in our model
     }
 }
 

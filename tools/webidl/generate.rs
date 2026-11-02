@@ -374,6 +374,10 @@ pub fn build_family(
                     // Const members are emitted as static class properties.
                     // No hook needed — JS reads the constant directly.
                 }
+                Member::Enum(_) => {
+                    // Enum declarations are emitted as static properties on the class.
+                    // No hook needed — enum values are plain string literals.
+                }
             }
         }
     }
@@ -461,11 +465,20 @@ fn conversion_for(ty: &Type, legacy_null: bool) -> &'static str {
         Type::Double => "toDouble",
         Type::Undefined => "toUndefined",
         Type::Interface { .. } => "toInterfaceId",
+        Type::UnionFallback { .. } => "toDomString",
+        Type::Enum { .. } => "toDomString",
     }
 }
 
 fn arg_expression(param: &Parameter) -> String {
     let conversion = conversion_for(&param.ty, false);
+    if param.variadic {
+        // Variadic: convert each element of the array.
+        return format!(
+            "Array.isArray({0}) ? {0}.map(v => {1}(v)) : ( {0} !== undefined ? [{1}({0})] : [])",
+            param.name, conversion
+        );
+    }
     match &param.default {
         Some(default) => format!(
             "{} === undefined ? {} : {}({})",
@@ -671,6 +684,20 @@ fn emit_members(out: &mut String, model: &FamilyModel, interface: &Interface) {
                     "    static {{\n      Object.defineProperty(this, \"{name}\", {{ value: {literal}, writable: false, enumerable: true, configurable: true }});\n    }}\n",
                     name = cst.name,
                     literal = literal
+                ));
+            }
+            Member::Enum(enumm) => {
+                // Emit enum as static Object.freeze map on the class:
+                //   class X { static { Object.defineProperty(this, "EnumName", { value: Object.freeze({ value1: "value1", ... }) }) } }
+                let entries: Vec<String> = enumm
+                    .values
+                    .iter()
+                    .map(|v| format!("{key}: {val}", key = v, val = format!("{:?}", v)))
+                    .collect();
+                let frozen = format!("Object.freeze({{{entries}}})", entries = entries.join(", "));
+                out.push_str(&format!(
+                    "    static {{\n      Object.defineProperty(this, \"{name}\", {{ value: {frozen}, writable: false, enumerable: false, configurable: true }});\n    }}\n",
+                    name = enumm.name,
                 ));
             }
             Member::Attribute(AttributeMember {

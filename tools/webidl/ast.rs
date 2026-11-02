@@ -12,6 +12,10 @@ pub enum Type {
     Double,
     Undefined,
     Interface { name: String, nullable: bool },
+    /// A union type flattened to its last-primitive fallback (e.g. `(DOMString or Options)` → DomString).
+    UnionFallback { spelling: String },
+    /// An enum type used as a value in a type position (e.g. `enum DocumentReadyState`).
+    Enum { name: String, nullable: bool },
 }
 
 impl Type {
@@ -28,6 +32,10 @@ impl Type {
             Type::Double => "double".into(),
             Type::Undefined => "undefined".into(),
             Type::Interface { name, nullable } => {
+                if *nullable { format!("{name}?") } else { name.clone() }
+            }
+            Type::UnionFallback { spelling } => spelling.clone(),
+            Type::Enum { name, nullable } => {
                 if *nullable { format!("{name}?") } else { name.clone() }
             }
         }
@@ -58,6 +66,7 @@ pub struct Parameter {
     pub ty: Type,
     pub optional: bool,
     pub default: Option<ArgumentDefault>,
+    pub variadic: bool,
     pub line: usize,
 }
 
@@ -109,11 +118,19 @@ pub struct ConstructorMember {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumMember {
+    pub name: String,
+    pub values: Vec<String>,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Member {
     Attribute(AttributeMember),
     Operation(OperationMember),
     Constructor(ConstructorMember),
     Const(ConstMember),
+    Enum(EnumMember),
 }
 
 impl Member {
@@ -123,6 +140,7 @@ impl Member {
             Member::Operation(member) => &member.name,
             Member::Constructor(_) => "constructor",
             Member::Const(member) => &member.name,
+            Member::Enum(member) => &member.name,
         }
     }
     pub fn line(&self) -> usize {
@@ -131,6 +149,7 @@ impl Member {
             Member::Operation(member) => member.line,
             Member::Constructor(member) => member.line,
             Member::Const(member) => member.line,
+            Member::Enum(member) => member.line,
         }
     }
 }

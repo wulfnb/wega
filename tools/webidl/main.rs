@@ -271,7 +271,6 @@ mod tests {
             ("dictionary GetRootNodeOptions { boolean composed = false; };", "unsupported declaration 'dictionary'"),
             ("[Exposed=Window] interface A { any x; };", "'any' is unsupported"),
             ("[Exposed=Window] interface A : (DOMString or unsigned long) { };", "expected base interface name"),
-            ("[Exposed=Window] interface A { undefined f(DOMString... tokens); };", "variadic arguments are unsupported"),
             ("[Exposed=Window] interface A { stringifier; };", "'stringifier' is unsupported"),
             ("[Exposed=Window] interface A { iterable<DOMString>; };", "'iterable<...>' members are unsupported"),
             ("[Exposed=Window, Worker] interface A { };", "unsupported extended attribute '[Worker]'"),
@@ -279,7 +278,6 @@ mod tests {
             ("interface mixin M { };", "interface mixin 'M' is not permitted"),
             ("[Exposed=Window] interface A { undefined f(optional DOMString d); };", "optional parameters require a default value"),
             ("callback OnThing = void (DOMString x);", "unsupported declaration 'callback'"),
-            ("enum Kind { \"a\" };", "unsupported declaration 'enum'"),
             ("typedef DOMString Alias;", "unsupported declaration 'typedef'"),
         ];
         for (source, needle) in cases {
@@ -300,26 +298,41 @@ mod tests {
             ("[Exposed=Window] interface A { const unsigned short X = 1; };", 1),
             ("[Exposed=Window] interface A { const boolean FLAG = true; };", 1),
             ("[Exposed=Window] interface A { const unsigned long MASK = 0; };", 1),
+            // Variadic arguments
+            ("[Exposed=Window] interface A { undefined f(DOMString... tokens); };", 0),
+            // Union types (flattened to DOMString fallback)
+            ("[Exposed=Window] interface A { undefined f((DOMString or Options) x); };", 0),
+            // Enum declarations
+            ("[Exposed=Window] interface A { enum ReadyState { \"loading\", \"complete\" }; };", 0),
+            // Partial interfaces
+            ("[Exposed=Window] interface A { undefined base(); }; partial interface A { undefined derived(); };", 0),
+            // Includes/mixins
+            ("[Exposed=Window] interface A { undefined m(); }; A includes Mixin;", 0),
         ];
         for (source, expected) in success {
-            let interfaces = parser::parse_file("<fixture>", source).expect("should parse");
-            assert_eq!(
-                interfaces.len(),
-                1,
-                "case {source:?}: expected 1 interface, got {}",
-                interfaces.len()
-            );
-            let consts: Vec<_> = interfaces[0]
-                .members
-                .iter()
-                .filter(|m| matches!(m, Member::Const(_)))
-                .collect();
-            assert_eq!(
-                consts.len(),
-                expected,
-                "case {source:?}: expected {expected} const members, got {}",
-                consts.len()
-            );
+            let result = parser::parse_file("<fixture>", source);
+            match result {
+                Ok(interfaces) => {
+                    assert_eq!(
+                        interfaces.len(),
+                        1,
+                        "case {source:?}: expected 1 interface, got {}",
+                        interfaces.len()
+                    );
+                    let consts: Vec<_> = interfaces[0]
+                        .members
+                        .iter()
+                        .filter(|m| matches!(m, Member::Const(_)))
+                        .collect();
+                    assert_eq!(
+                        consts.len(),
+                        expected,
+                        "case {source:?}: expected {expected} const members, got {}",
+                        consts.len()
+                    );
+                }
+                Err(e) => panic!("case {source:?}: parse error: {}", e),
+            }
         }
     }
 
