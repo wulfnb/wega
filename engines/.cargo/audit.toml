@@ -1,0 +1,24 @@
+# Configuration for cargo-audit (RustSec) in the engine workspace.
+#
+# Every entry below arrives through the pinned Deno crates (deno_tls pins
+# rustls "=0.23.40"), so a lockfile-only update is rejected. They are cleared by
+# the coherent Deno TLS/net/crypto update, not one crate at a time.
+# Review on or before 2027-02-01: remove each ID as soon as the Deno pin moves.
+# Any advisory NOT listed here fails CI and the scheduled security scan.
+
+[advisories]
+ignore = [
+    # crypto-bigint 0.5.5 timing variability (fixed in 0.7.6); via deno_crypto.
+    "RUSTSEC-2026-0387",
+    # hickory-proto 0.25.2: O(n^2) name compression (fixed in 0.26.1) and NSEC3
+    # validation loop (no fix yet); via deno_net / hickory-resolver.
+    "RUSTSEC-2026-0119",
+    "RUSTSEC-2026-0118",
+    # rsa Marvin timing side channel; no fixed release exists (also ignored at the root).
+    "RUSTSEC-2023-0071",
+    # rustls 0.23.40 (fixed in 0.23.46), pinned exactly by deno_tls 0.247.0.
+    "RUSTSEC-2026-0285",
+    "RUSTSEC-2026-0346",
+    "RUSTSEC-2026-0348",
+    "RUSTSEC-2026-0349",
+]

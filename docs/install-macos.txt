@@ -1,4 +1,4 @@
-Install Wega on macOS (Apple Silicon)
+Install Wega on macOS (Apple Silicon or Intel)
 
 1. Drag Wega.app to the Applications folder shortcut in this disk image.
 2. Eject the Wega Browser disk image.

@@ -20,11 +20,15 @@ Changing layouts keeps the existing webviews and their page state alive.
 | Platform | Download Alpha Preview |
 | --- | --- |
 | macOS · Apple Silicon (ARM64) | [Download DMG](https://github.com/wulfnb/wega/releases/download/test-preview/Wega-macOS-arm64.dmg) · [Download ZIP](https://github.com/wulfnb/wega/releases/download/test-preview/Wega-macOS-arm64.zip) |
-| Windows · x64 | [Download ZIP](https://github.com/wulfnb/wega/releases/download/test-preview/Wega-Windows-x64.zip) |
+| macOS · Intel (x86_64) | [Download DMG](https://github.com/wulfnb/wega/releases/download/test-preview/Wega-macOS-x86_64.dmg) · [Download ZIP](https://github.com/wulfnb/wega/releases/download/test-preview/Wega-macOS-x86_64.zip) |
+| Windows · x64 | [Download installer](https://github.com/wulfnb/wega/releases/download/test-preview/Wega-Windows-x64-Setup.exe) · [Download ZIP](https://github.com/wulfnb/wega/releases/download/test-preview/Wega-Windows-x64.zip) |
 | Linux · x86_64 | [Download tar.gz](https://github.com/wulfnb/wega/releases/download/test-preview/Wega-Linux-x86_64.tar.gz) |
 
 The currently published Windows preview does not include video or audio playback.
 The next Windows build enables bundled media; packaged playback is checked in Windows CI before release.
+
+The Windows installer installs per user without admin rights; running a newer
+installer updates Wega in place and keeps your settings and profiles.
 
 These links download the current `test-preview` prerelease. Linux setup requirements
 are included in the archive's README.

@@ -19,7 +19,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup show active-toolchain
@@ -27,7 +27,9 @@ jobs:
         with:
           shared-key: standalone-engine-native-worker-v4-${{ matrix.os }}
           workspaces: 'engines -> ../target/wega-engine'
-          cache-on-failure: true
+          # Only main saves: per-PR copies (~0.9 GB each) evicted main's caches.
+          # The desktop jobs restore this cache too instead of keeping their own copy.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Native libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1-dev libfreetype6-dev fonts-dejavu-core fonts-liberation
@@ -36,6 +38,17 @@ jobs:
         run: python3 scripts/verify-engine-vendor.py
       - name: Select verified V8 prebuilt source
         run: python scripts/v8_prebuilt.py --github-env "$GITHUB_ENV"
+      # MSVC builds Skia from source (~10 min); reuse our own exported build.
+      - name: Restore the MSVC Skia build
+        id: skia
+        if: runner.os == 'Windows'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/skia-msvc
+          key: skia-msvc-dev-${{ hashFiles('engines/vendor/blitz/skia-bindings/**', 'engines/vendor/blitz/patches/skia-bindings.patch') }}
+      - name: Use the cached MSVC Skia build
+        if: runner.os == 'Windows'
+        run: python scripts/skia-msvc-cache.py prepare "$RUNNER_TEMP/skia-msvc" --github-env "$GITHUB_ENV"
       - name: Platform regression tests and probe build
         run: |
           cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-platform -p wega-protocol --all-targets
@@ -78,7 +91,14 @@ jobs:
             else { Remove-Item -Path $key -Force -ErrorAction SilentlyContinue }
           }
       - name: Build content worker
-        run: cargo build --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --bin wega-engine
+        id: content-worker
+        run: python scripts/skia-msvc-cache.py build "$RUNNER_TEMP/skia-msvc" -- cargo build --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --bin wega-engine
+      - name: Save the MSVC Skia build
+        if: steps.content-worker.outputs.skia-exported == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/skia-msvc
+          key: ${{ steps.skia.outputs.cache-primary-key }}
       - name: Prepare content helper
         run: |
           suffix=''; if [ "$RUNNER_OS" = Windows ]; then suffix='.exe'; fi

@@ -76,10 +76,71 @@ This patch does not change repository branch-protection settings.
 Main should require the always-running `CI Completion Gate` before merging;
 individual conditionally skipped jobs should not be made unconditional requirements.
 
-The engine's pinned Deno dependency graph currently reports seven advisory findings:
+The engine's pinned Deno dependency graph reports seven advisory findings:
 `crypto-bigint 0.5.5`, two Hickory findings on `0.25.2`, and four rustls findings on
-`0.23.40`. Deno TLS pins that rustls version exactly, so a lockfile-only rustls
-update is rejected. Updating Deno TLS/net/crypto coherently is separate dependency
-work. CI publishes that audit as a visibly non-blocking step and artifact; no
-advisories were added to the ignore list. Browser, collector and spike audits retain
-blocking behavior. Existing third-party warnings are not a claim of zero security risk.
+`0.23.40`, plus the `rsa` Marvin finding that has no fixed release. Deno TLS pins
+that rustls version exactly, so a lockfile-only rustls update is rejected. Updating
+Deno TLS/net/crypto coherently is separate dependency work.
+
+A non-blocking audit hid every *new* engine advisory along with the known ones, so
+those eight IDs are now listed explicitly in `engines/.cargo/audit.toml`, each with
+its fix version and a review date (2027-02-01). The engine audit is blocking again:
+anything not on that list fails CI. Remove each ID when the Deno pin moves.
+Existing third-party warnings are not a claim of zero security risk.
+
+## Keeping up with advisories
+
+- `security.yml` runs daily, not only on commits: CodeQL (JavaScript, Python and
+  Rust, vendored sources excluded), `cargo audit` over all four lockfiles, and a
+  Trivy rescan of the published `:latest` image with results in code scanning.
+- Dependabot groups minor/patch updates per workspace into one weekly PR;
+  `dependabot-automerge.yml` squash-merges those groups once CI has passed for the
+  exact head commit. Majors and the GitHub Actions group stay manual.
+- Dependabot *alerts* and *security updates* are repository settings, not files.
+  They must stay enabled (Settings → Code security), otherwise advisories against
+  already-locked crates open no PR at all.
+
+## Release platforms and pull-request scope
+
+- CD packages macOS for Apple Silicon (`macos-15`) and Intel (`macos-15-intel`).
+  The pinned V8 prebuilts already include `x86_64-apple-darwin`; the Intel build is
+  checked to be a single-architecture `x86_64` binary. `macos-15-intel` is GitHub's
+  last Intel image; when it is retired, drop that matrix row or cross-compile.
+- The Windows installer is versioned from `Cargo.toml` (previews append the commit),
+  closes a running Wega, deletes the previous binaries before copying, and
+  `windows-installer-check.ps1` verifies an upgrade on top of an existing install.
+- Pull requests run only the CI jobs their paths can affect (`scripts/ci-scope.py`,
+  tested by `tests/test_ci_scope.py`). Engine-only changes run engine validation and
+  both desktop suites; unknown or shared paths run everything; pushes, merges and CD
+  always run the complete suite. The completion gate accepts a skipped job only when
+  the scope did not select it.
+
+## Build cache budget
+
+GitHub keeps at most 10 GB of Actions cache per repository and evicts the least
+recently used entries. On 2 November 2026 the cache held 11 GB, more than half of it
+per-PR copies of the engine cache, so `main`'s desktop, Linux and CD caches were
+evicted and most heavy jobs started with "No cache found" (1,300+ crates compiled).
+The rules that keep it inside the limit:
+
+- **Only `main` saves.** Every `rust-cache` step has
+  `save-if: github.ref == 'refs/heads/main'`; pull requests restore `main`'s caches.
+- **One engine cache per OS.** Engine validation owns
+  `standalone-engine-native-worker-v4-<os>`; the desktop jobs restore it read-only
+  (`save-if: false`) after their own root-only cache. Their job-level env must not
+  add `CARGO*`/`RUST*`/`CC*` variables, because those are part of the cache key.
+- **Never cache `.` and `engines` in one `rust-cache` step.** `target/wega-engine`
+  is inside `target/`, and cleaning the root workspace prunes every engine-only
+  dependency. Use two steps (the Linux build does).
+- **CI and CD share the Linux release caches** (`wega-linux-release` and
+  `wega-linux-release-engine`): same script, container and profile.
+- **No Rust cache for CD's macOS and Windows release builds**, the core suite on
+  Windows, or the V8 spike outside Linux: together they would exceed the budget.
+- **Skia on MSVC** is cached as rust-skia's own export (a few MiB) under
+  `skia-msvc-{dev,release}-<hash of skia-bindings and its patch>`, saved by engine
+  validation and CD; see `scripts/skia-msvc-cache.py`. `rust-cache` cannot keep it:
+  vendored path crates are rebuilt from a fresh checkout.
+
+Check usage with `gh api repos/wulfnb/wega/actions/cache/usage` after changing any
+cache step. If CD needs warmer builds than this allows, the options are a larger
+paid cache limit or packaging on a schedule instead of every push to `main`.

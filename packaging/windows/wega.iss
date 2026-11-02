@@ -1,8 +1,15 @@
 ; Per-user installer. It registers capabilities without changing UserChoice.
+; Running a newer installer upgrades in place: the fixed AppId reuses the previous
+; directory and uninstall entry, and the profile outside {app} is never touched.
+; CD passes /DAppVersion=<Cargo version>[+<commit>] so each preview is distinguishable.
+#ifndef AppVersion
+  #define AppVersion "0.1.0-alpha.1"
+#endif
 [Setup]
 AppId=Wulfnb.Wega
 AppName=Wega
-AppVersion=0.1.0-alpha.1
+AppVersion={#AppVersion}
+AppVerName=Wega {#AppVersion}
 DefaultDirName={localappdata}\Programs\Wega
 DefaultGroupName=Wega
 PrivilegesRequired=lowest
@@ -15,6 +22,16 @@ ChangesAssociations=yes
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; An open Wega locks wega.exe and its DLLs; close it before replacing files.
+CloseApplications=yes
+RestartApplications=no
+
+; Remove binaries from the previous version first, so a DLL or plugin dropped in
+; this release does not linger and get loaded by the new executable.
+[InstallDelete]
+Type: files; Name: "{app}\*.dll"
+Type: files; Name: "{app}\wega.exe"
+Type: files; Name: "{app}\wega-engine.exe"
 
 [Files]
 Source: "..\..\dist\wega-windows-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
