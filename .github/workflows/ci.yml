@@ -19,36 +19,39 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
+      lint: ${{ steps.scope.outputs.lint }}
+      engine-validation: ${{ steps.scope.outputs.engine-validation }}
+      error-collector: ${{ steps.scope.outputs.error-collector }}
+      core-matrix: ${{ steps.scope.outputs.core-matrix }}
+      desktop-macos: ${{ steps.scope.outputs.desktop-macos }}
+      desktop-windows: ${{ steps.scope.outputs.desktop-windows }}
+      linux-binaries: ${{ steps.scope.outputs.linux-binaries }}
+      docker-integration: ${{ steps.scope.outputs.docker-integration }}
       full: ${{ steps.scope.outputs.full }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 2
       # Compare the tested PR merge against its first parent, without downloading history.
-      # Markdown-only PRs need no product build; V8 spike-only PRs use v8-engine.yml.
-      # Vendored product code and every merge/release still run the complete suite.
+      # Pull requests run only the jobs their paths can affect (scripts/ci-scope.py);
+      # every push, merge and release still runs the complete suite.
       - id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
-            echo "full=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git diff --name-only "$BASE_SHA" HEAD > changed.txt
-          cat changed.txt
-          if grep -vE '^(engines/v8-spike/|docs/.*\.md$|README\.md$|\.github/workflows/v8-engine\.yml$)' changed.txt | grep -q .; then
-            echo "full=true" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            git diff --name-only "$BASE_SHA" HEAD > changed.txt
           else
-            echo "Only Markdown or V8 spike files changed; product builds are unnecessary for this PR."
-            echo "full=false" >> "$GITHUB_OUTPUT"
+            : > changed.txt
           fi
+          cat changed.txt
+          python3 scripts/ci-scope.py select < changed.txt | tee -a "$GITHUB_OUTPUT"
 
   engine-validation:
     name: Required engine validation
     needs: changes
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.engine-validation == 'true'
     uses: ./.github/workflows/standalone-engine-validation.yml
     permissions:
       contents: read
@@ -56,11 +59,11 @@ jobs:
   lint:
     name: Code Quality & Lints
     needs: changes
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.lint == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install workflow, shell, and secret analysis tools
@@ -87,13 +90,13 @@ jobs:
         run: cargo fmt --check
       - name: Core lints
         run: cargo clippy --locked --no-default-features --all-targets -- -D warnings
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26'
       - name: JavaScript line coverage (100% required)
         run: sh scripts/javascript-coverage.sh
       - name: Install security analysis tools
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: cargo-audit@0.22.2
       - name: Audit browser, collector and spike dependencies for security vulnerabilities
@@ -101,28 +104,22 @@ jobs:
           cargo audit
           cargo audit --no-fetch --file error-collector/Cargo.lock
           cargo audit --no-fetch --file engines/v8-spike/Cargo.lock
-      # Pinned Deno currently carries crypto-bigint, Hickory and rustls advisories.
-      # Keep them visible without inventing an ignore list; see docs/ci-release-fixes.md.
-      - name: Report pinned Deno dependency advisories (non-blocking)
-        continue-on-error: true
-        run: cargo audit --no-fetch --file engines/Cargo.lock --json > engine-dependency-audit.json
-      - name: Upload engine dependency audit
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: engine-dependency-audit
-          path: engine-dependency-audit.json
+      # engines/.cargo/audit.toml lists the advisories pinned by Deno, each with its
+      # fix; any other engine advisory fails here (see docs/ci-release-fixes.md).
+      - name: Audit engine dependencies (pinned Deno advisories listed explicitly)
+        working-directory: engines
+        run: cargo audit --no-fetch
       - name: Scan repository for secret and credential leaks
         run: gitleaks detect --verbose --config .gitleaks.toml
 
   error-collector:
     name: Error collector and signed HTTP contract
     needs: [changes, lint]
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.error-collector == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install pinned Rust toolchain
@@ -147,7 +144,7 @@ jobs:
   core-matrix:
     name: Core Suite (${{ matrix.os }})
     needs: [changes, lint]
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.core-matrix == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -155,7 +152,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install pinned Rust toolchain
@@ -169,7 +166,7 @@ jobs:
         run: cargo test --locked --no-default-features --lib
       - name: Core documentation tests
         run: cargo test --locked --no-default-features --doc
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - name: Install Python dev dependencies
@@ -178,7 +175,7 @@ jobs:
       # coverage.sh runs the Python suite on Linux; macOS runs it with desktop coverage.
       - name: Install coverage tool
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: cargo-llvm-cov@0.9.1
       - name: Core coverage and regression gate
@@ -187,7 +184,7 @@ jobs:
       - name: Core platform line measurement
         if: runner.os != 'Linux'
         run: python scripts/desktop-coverage.py --core-only --output target/coverage/builds/${{ runner.os }}-core
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: core-coverage-${{ runner.os }}
@@ -197,7 +194,7 @@ jobs:
   desktop-macos:
     name: Desktop Native & Engine Suite (macOS)
     needs: [changes, lint]
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.desktop-macos == 'true'
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -206,7 +203,7 @@ jobs:
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup show active-toolchain
@@ -223,11 +220,11 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Harness lints
         run: cargo clippy --locked --all-targets --features test-harness -- -D warnings
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26'
       - name: JavaScript line coverage
@@ -250,7 +247,7 @@ jobs:
       # desktop-coverage.py already runs every native suite with the instrumented browser.
       - name: Native container account isolation and window handoff
         run: python tests/containers_smoke.py --binary target/debug/wega --output target/containers-validation/${{ github.run_id }}-${{ github.run_attempt }}
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: containers-macos
@@ -259,14 +256,14 @@ jobs:
       - name: Two-engine compatibility and process-tree baseline
         if: github.event_name != 'pull_request'
         run: python scripts/browser-bench.py --output target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }} --repeats 1 --tabs 1 5 --idle-seconds 5
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && github.event_name != 'pull_request'
         with:
           name: browser-bench-macos
           path: target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }}/
       - name: Whole-project completeness inventory
         run: python scripts/coverage-inventory.py
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: desktop-coverage-macos
@@ -277,13 +274,13 @@ jobs:
   linux-binaries:
     name: Linux Binaries for Docker (test harness)
     needs: [changes, lint]
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.linux-binaries == 'true'
     runs-on: ubuntu-24.04
     # Same RUST_IMAGE as compose.quality.yaml, so the binaries match the trixie runtime.
     container: rust:1.98.0-slim-trixie
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Native build dependencies
@@ -299,7 +296,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build test-harness binaries
         run: bash scripts/build-linux-binaries.sh dist/docker test-harness
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-binaries-test-harness
           path: dist/docker/
@@ -308,22 +305,22 @@ jobs:
   docker-integration:
     name: Docker & Web Gateway Integration (Linux)
     needs: [changes, linux-binaries]
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.docker-integration == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       COMPOSE_FILE: compose.quality.yaml
       COMPOSE_PROJECT_NAME: wega-ci-docker
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Generate disposable test credentials
         run: echo "WEGA_TEST_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: linux-binaries-test-harness
           path: dist/docker
@@ -331,16 +328,16 @@ jobs:
       - name: Restore binary permissions
         run: chmod 755 dist/docker/wega dist/docker/wega-engine
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # Only the runtime layers are built here; CD keeps their cache in GHCR.
       - name: Build test container image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./Dockerfile
@@ -366,7 +363,7 @@ jobs:
         run: python3 scripts/docker-ux-test.py "$(docker compose images -q wega)"
       - name: Test real viewer rendering and touch gestures
         run: node tests/viewer_live.mjs "$(docker compose images -q wega)"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: viewer-live-linux
@@ -396,7 +393,7 @@ jobs:
               done
               python3 /source/scripts/browser-bench.py --binary /usr/local/bin/wega --output /results/run --repeats 1 --tabs 1 5 --idle-seconds 5
             '
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && github.event_name != 'pull_request'
         with:
           name: browser-bench-linux
@@ -416,7 +413,7 @@ jobs:
             sudo chown -R "$(id -u):$(id -g)" target/coverage/shell
             chmod -R u+rwX target/coverage/shell
           fi
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: shell-coverage-linux
@@ -424,7 +421,7 @@ jobs:
       - name: Collect container logs on failure
         if: always()
         run: docker compose logs --no-color > docker-ci.log
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: docker-ci-logs
@@ -436,11 +433,11 @@ jobs:
   desktop-windows:
     name: Desktop Build & Launch (Windows)
     needs: [changes, lint]
-    if: needs.changes.outputs.full == 'true'
+    if: needs.changes.outputs.desktop-windows == 'true'
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup show active-toolchain
@@ -499,12 +496,12 @@ jobs:
         env:
           WEGA_TEST_ALLOW_LOOPBACK: '1'
         run: python scripts/browser-bench.py --binary target/debug/wega.exe --output target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }} --repeats 1 --tabs 1 5 --idle-seconds 10
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && github.event_name != 'pull_request'
         with:
           name: browser-bench-windows
           path: target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }}/
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: windows-runtime-ci
@@ -515,26 +512,16 @@ jobs:
     if: always()
     needs: [changes, lint, error-collector, engine-validation, core-matrix, desktop-macos, desktop-windows, linux-binaries, docker-integration]
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - name: Verify all checks passed
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci-scope.py
+          sparse-checkout-cone-mode: false
+      # A job may be skipped only when the scope did not select it; a skip caused by
+      # a failed dependency of a selected job fails the gate.
+      - name: Verify every selected check passed
         env:
-          FULL: ${{ needs.changes.outputs.full }}
-          SCOPE: ${{ needs.changes.result }}
-          RESULTS: ${{ join(needs.*.result, ' ') }}
-        run: |
-          echo "Scope: full=$FULL; results: $RESULTS"
-          test "$SCOPE" = success
-          # Skips are only acceptable when the scope job chose a Markdown/spike-only PR.
-          for result in $RESULTS; do
-            case "$result" in
-              success) ;;
-              skipped) test "$FULL" = false ;;
-              *) exit 1 ;;
-            esac
-          done
-          if [ "$FULL" = true ]; then
-            echo "All parallel CI checks and integration test suites succeeded."
-          else
-            echo "Markdown/spike-only PR: product checks run on merge before release packaging."
-          fi
-
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci-scope.py gate

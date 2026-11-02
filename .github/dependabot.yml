@@ -1,5 +1,7 @@
-# Keep the commit-SHA-pinned GitHub Actions current. Dependabot rewrites both the
-# SHA and the trailing `# vX.Y.Z` comment; review each bump before merging.
+# Keep the commit-SHA-pinned GitHub Actions and every Cargo workspace current.
+# Dependabot rewrites both the SHA and the trailing `# vX.Y.Z` comment; review
+# each bump before merging. Security updates are separate from this schedule:
+# they need Dependabot alerts and security updates enabled in the repository.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -14,21 +16,41 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # One PR per workspace for compatible updates; each major stays its own PR.
+    groups:
+      compatible:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: cargo
     directory: /engines
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # One PR per workspace for compatible updates; each major stays its own PR.
+    groups:
+      compatible:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: cargo
     directory: /engines/v8-spike
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # One PR per workspace for compatible updates; each major stays its own PR.
+    groups:
+      compatible:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: cargo
     directory: /error-collector
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # One PR per workspace for compatible updates; each major stays its own PR.
+    groups:
+      compatible:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: docker
     directory: /
     schedule:
