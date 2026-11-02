@@ -368,6 +368,12 @@ less common interfaces, to a semantic implementation or an explicit blocker.
 and real framework interactions; wrapper GC, detached nodes, DOM budgets and
 reentrant mutation remain correct. No missing-feature success shims are counted.
 
+**Implementation status (3 November 2026): subtask 08.a in progress.** The Step 07
+generator (07.a) is in place with the `character-data` family. Step 08 will extend the
+generator incrementally and migrate families in the order: Event → Attr → Node → Element
+→ Document → collections/mutation/observers. The full subtask split and construct policy
+is recorded in the [Step 08 contract](step-08-dom-events-web-apis.md).
+
 ### 09 — Preserve navigation and browser integrations
 
 **Depends on:** 08.

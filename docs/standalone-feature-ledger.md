@@ -205,5 +205,10 @@ must be reported explicitly; do not silently discard the old data.
   hook manifest. Unsupported IDL constructs fail generation explicitly. The
   generated output is not yet wired into the worker bootstrap (07.b). See the
   [Step 07 contract](step-07-webidl-generation.md).
+- Step 08 subtask 08.a is **planned** (3 November 2026): generator extensions for
+  `const` members, `[Constant]`, `[SameObject]`, `[SetterThrows]` followed by
+  incremental family migration (Event → Attr → Node → Element → Document →
+  collections/mutation/observers). The full subtask split and construct policy is
+  recorded in the [Step 08 contract](step-08-dom-events-web-apis.md).
 - Later implementation may proceed from source contracts while tests are deferred;
   final parity/retirement gates remain blocked until those tests actually pass.
