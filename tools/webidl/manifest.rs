@@ -67,10 +67,8 @@ pub struct LoadedFamily {
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
-    let text =
-        std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
-    serde_json::from_str(&text)
-        .map_err(|e| format!("{path}: {e}"))
+    let text = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))
 }
 
 pub fn load_pins(root: &Path) -> Result<BTreeMap<String, IdlPin>, String> {
@@ -86,7 +84,10 @@ pub fn load_pins(root: &Path) -> Result<BTreeMap<String, IdlPin>, String> {
 }
 
 pub fn load_families(root: &Path) -> Result<Vec<Family>, String> {
-    Ok(read_json::<FamiliesFile>(root.join("tools/webidl/families.json").to_str().unwrap())?.families)
+    Ok(
+        read_json::<FamiliesFile>(root.join("tools/webidl/families.json").to_str().unwrap())?
+            .families,
+    )
 }
 
 /// Verify every pin referenced by `family` and read its IDL sources.

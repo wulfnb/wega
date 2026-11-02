@@ -101,7 +101,11 @@ fn tokenize(file: &str, src: &str) -> Result<Vec<(usize, Token)>, ParseError> {
                     t.pos += 1;
                 }
                 if !closed {
-                    return Err(ParseError::new(file, start_line, "unterminated block comment"));
+                    return Err(ParseError::new(
+                        file,
+                        start_line,
+                        "unterminated block comment",
+                    ));
                 }
             } else {
                 break;
@@ -224,11 +228,7 @@ fn tokenize(file: &str, src: &str) -> Result<Vec<(usize, Token)>, ParseError> {
                         t.pos += 1;
                     }
                     if t.pos == hex_start {
-                        return Err(ParseError::new(
-                            file,
-                            line,
-                            "expected hex digit after '0x'",
-                        ));
+                        return Err(ParseError::new(file, line, "expected hex digit after '0x'"));
                     }
                     let text = std::str::from_utf8(&t.src[hex_start..t.pos]).unwrap();
                     let value = i64::from_str_radix(text, 16)
@@ -251,11 +251,19 @@ fn tokenize(file: &str, src: &str) -> Result<Vec<(usize, Token)>, ParseError> {
                 while t.pos < t.src.len() && is_ident_cont(t.src[t.pos]) {
                     t.pos += 1;
                 }
-                Token::Ident(std::str::from_utf8(&t.src[start..t.pos]).unwrap().to_owned())
+                Token::Ident(
+                    std::str::from_utf8(&t.src[start..t.pos])
+                        .unwrap()
+                        .to_owned(),
+                )
             }
             other => {
                 let ch = other as char;
-                return Err(ParseError::new(file, line, format!("unsupported character '{ch}'")));
+                return Err(ParseError::new(
+                    file,
+                    line,
+                    format!("unsupported character '{ch}'"),
+                ));
             }
         };
         out.push((line, token));
@@ -307,7 +315,10 @@ impl<'a> Parser<'a> {
     }
     fn expect(&mut self, token: &Token, what: &str) -> Result<usize, ParseError> {
         let (line, got) = self.next().ok_or_else(|| {
-            self.err(self.cur_line(), format!("unexpected end of file, expected {what}"))
+            self.err(
+                self.cur_line(),
+                format!("unexpected end of file, expected {what}"),
+            )
         })?;
         if &got != token {
             return Err(self.err(line, format!("expected {what}, found {got:?}")));
@@ -316,7 +327,10 @@ impl<'a> Parser<'a> {
     }
     fn expect_ident(&mut self, name: &str) -> Result<usize, ParseError> {
         let (line, got) = self.next().ok_or_else(|| {
-            self.err(self.cur_line(), format!("unexpected end of file, expected '{name}'"))
+            self.err(
+                self.cur_line(),
+                format!("unexpected end of file, expected '{name}'"),
+            )
         })?;
         match &got {
             Token::Ident(text) if text == name => Ok(line),
@@ -325,7 +339,10 @@ impl<'a> Parser<'a> {
     }
     fn ident(&mut self, what: &str) -> Result<(String, usize), ParseError> {
         let (line, got) = self.next().ok_or_else(|| {
-            self.err(self.cur_line(), format!("unexpected end of file, expected {what}"))
+            self.err(
+                self.cur_line(),
+                format!("unexpected end of file, expected {what}"),
+            )
         })?;
         match got {
             Token::Ident(name) => Ok((name, line)),
@@ -354,7 +371,12 @@ impl<'a> Parser<'a> {
                     let mut members = Vec::new();
                     loop {
                         match self.peek().cloned() {
-                            None => return Err(self.err(self.cur_line(), "unexpected end of file inside partial interface")),
+                            None => {
+                                return Err(self.err(
+                                    self.cur_line(),
+                                    "unexpected end of file inside partial interface",
+                                ));
+                            }
                             Some(Token::RBrace) => break,
                             _ => self.declare_member(&mut members)?,
                         }
@@ -362,13 +384,19 @@ impl<'a> Parser<'a> {
                     self.expect(&Token::RBrace, "'}' closing partial interface body")?;
                     self.expect(&Token::Semi, "';' after partial interface body")?;
                     // Merge members into existing interface with the same name.
-                    if let Some(existing) = self.interfaces.iter_mut().find(|i| i.name == iface_name) {
+                    if let Some(existing) =
+                        self.interfaces.iter_mut().find(|i| i.name == iface_name)
+                    {
                         for member in members {
                             // Check for duplicate member names within the same interface.
                             if existing.members.iter().any(|m| m.name() == member.name()) {
                                 return Err(self.err(
                                     member.line(),
-                                    format!("duplicate member '{}' in partial interface '{}'", member.name(), iface_name),
+                                    format!(
+                                        "duplicate member '{}' in partial interface '{}'",
+                                        member.name(),
+                                        iface_name
+                                    ),
                                 ));
                             }
                             existing.members.push(member);
@@ -426,7 +454,10 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Some(other) => {
-                    return Err(self.err(self.cur_line(), format!("unsupported token {other:?} at top level")));
+                    return Err(self.err(
+                        self.cur_line(),
+                        format!("unsupported token {other:?} at top level"),
+                    ));
                 }
             }
         }
@@ -448,7 +479,10 @@ impl<'a> Parser<'a> {
                     values.push(v);
                 }
                 Some(other) => {
-                    return Err(self.err(self.cur_line(), format!("expected string value in enum, found {other:?}")));
+                    return Err(self.err(
+                        self.cur_line(),
+                        format!("expected string value in enum, found {other:?}"),
+                    ));
                 }
                 None => return Err(self.err(self.cur_line(), "unexpected end of file inside enum")),
             }
@@ -463,11 +497,7 @@ impl<'a> Parser<'a> {
         // Add enum as a member to the last interface (or create a dummy if none exists).
         // In WebIDL, enums are module-level but we attach them to a nearby interface.
         // The generator will emit them as static properties on the class.
-        let enum_member = Member::Enum(EnumMember {
-            name,
-            values,
-            line,
-        });
+        let enum_member = Member::Enum(EnumMember { name, values, line });
         if let Some(last) = self.interfaces.last_mut() {
             last.members.push(enum_member);
         } else {
@@ -487,7 +517,11 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an enum declaration inside an interface body (as a member).
-    fn parse_enum_member(&mut self, members: &mut Vec<Member>, line: usize) -> Result<(), ParseError> {
+    fn parse_enum_member(
+        &mut self,
+        members: &mut Vec<Member>,
+        line: usize,
+    ) -> Result<(), ParseError> {
         self.expect_ident("enum")?;
         let (name, _) = self.ident("enum name")?;
         self.expect(&Token::LBrace, "'{' after enum name")?;
@@ -501,7 +535,10 @@ impl<'a> Parser<'a> {
                     values.push(v);
                 }
                 Some(other) => {
-                    return Err(self.err(self.cur_line(), format!("expected string value in enum, found {other:?}")));
+                    return Err(self.err(
+                        self.cur_line(),
+                        format!("expected string value in enum, found {other:?}"),
+                    ));
                 }
                 None => return Err(self.err(self.cur_line(), "unexpected end of file inside enum")),
             }
@@ -551,7 +588,11 @@ impl<'a> Parser<'a> {
         let mut members = Vec::new();
         loop {
             match self.peek().cloned() {
-                None => return Err(self.err(self.cur_line(), "unexpected end of file inside interface")),
+                None => {
+                    return Err(
+                        self.err(self.cur_line(), "unexpected end of file inside interface")
+                    );
+                }
                 Some(Token::RBrace) => break,
                 _ => self.declare_member(&mut members)?,
             }
@@ -583,8 +624,13 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(ref word)) => match word.as_str() {
                 "const" => self.parse_const_member(members, line),
                 "enum" => self.parse_enum_member(members, line),
-                "stringifier" => Err(self.err(line, "'stringifier' is unsupported in generated IDL inputs")),
-                "iterable" => Err(self.err(line, "'iterable<...>' members are unsupported in generated IDL inputs")),
+                "stringifier" => {
+                    Err(self.err(line, "'stringifier' is unsupported in generated IDL inputs"))
+                }
+                "iterable" => Err(self.err(
+                    line,
+                    "'iterable<...>' members are unsupported in generated IDL inputs",
+                )),
                 "getter" | "setter" | "deleter" => Err(self.err(
                     line,
                     format!("'{word}' members are unsupported in generated IDL inputs"),
@@ -596,7 +642,10 @@ impl<'a> Parser<'a> {
                     self.member_from_attrs(Attrs::default(), members, line)
                 }
             },
-            other => Err(self.err(line, format!("unsupported token {other:?} in interface body"))),
+            other => Err(self.err(
+                line,
+                format!("unsupported token {other:?} in interface body"),
+            )),
         }
     }
 
@@ -611,7 +660,12 @@ impl<'a> Parser<'a> {
         self.expect(&Token::Eq, "'=' after const name")?;
         let value = self.const_value(&ty, line)?;
         self.expect(&Token::Semi, "';' after const")?;
-        members.push(Member::Const(ConstMember { name, ty, value, line }));
+        members.push(Member::Const(ConstMember {
+            name,
+            ty,
+            value,
+            line,
+        }));
         Ok(())
     }
 
@@ -624,21 +678,27 @@ impl<'a> Parser<'a> {
                     }
                     Ok(ConstValue::Number(value))
                 }
-                other => Err(self.err(line, format!("numeric const for non-numeric type {other:?}"))),
+                other => Err(self.err(
+                    line,
+                    format!("numeric const for non-numeric type {other:?}"),
+                )),
             },
             Some((_, Token::Ident(ref word))) => match word.as_str() {
                 "true" | "false" => match ty {
                     Type::Boolean => Ok(ConstValue::Boolean(word == "true")),
-                    other => Err(self.err(line, format!("boolean const for non-boolean type {other:?}"))),
+                    other => Err(self.err(
+                        line,
+                        format!("boolean const for non-boolean type {other:?}"),
+                    )),
                 },
-                _ => Err(self.err(
-                    line,
-                    format!("unsupported const literal '{word}'"),
-                )),
+                _ => Err(self.err(line, format!("unsupported const literal '{word}'"))),
             },
             Some((_, Token::Str(text))) => match ty {
                 Type::DomString { .. } => Ok(ConstValue::String(text.clone())),
-                other => Err(self.err(line, format!("string const for non-DOMString type {other:?}"))),
+                other => Err(self.err(
+                    line,
+                    format!("string const for non-DOMString type {other:?}"),
+                )),
             },
             Some((at, other)) => Err(self.err(at, format!("unsupported const literal {other:?}"))),
             None => Err(self.err(line, "unexpected end of file in const value")),
@@ -686,7 +746,9 @@ impl<'a> Parser<'a> {
                     self.next();
                     let second = self.attr_list()?;
                     if !second.exposed.is_empty() {
-                        return Err(self.err(line, "'[Exposed]' is only valid on interface declarations"));
+                        return Err(
+                            self.err(line, "'[Exposed]' is only valid on interface declarations")
+                        );
                     }
                     merged.names.extend(second.names);
                 }
@@ -715,10 +777,9 @@ impl<'a> Parser<'a> {
                 }));
                 Ok(())
             }
-            Some(Token::Ident(ref word)) if word == "stringifier" => Err(self.err(
-                line,
-                "'stringifier' is unsupported in generated IDL inputs",
-            )),
+            Some(Token::Ident(ref word)) if word == "stringifier" => {
+                Err(self.err(line, "'stringifier' is unsupported in generated IDL inputs"))
+            }
             _ => {
                 // Operation: explicit return type, name, parameters.
                 let (ty, _) = self.r#type()?;
@@ -790,7 +851,10 @@ impl<'a> Parser<'a> {
             };
             let (name, _) = self.ident("parameter name")?;
             if variadic && !params.is_empty() {
-                return Err(self.err(self.cur_line(), "variadic arguments must be the last parameter"));
+                return Err(self.err(
+                    self.cur_line(),
+                    "variadic arguments must be the last parameter",
+                ));
             }
             let default = if self.peek() == Some(&Token::Eq) {
                 self.next();
@@ -857,9 +921,9 @@ impl<'a> Parser<'a> {
     }
 
     fn r#type(&mut self) -> Result<(Type, usize), ParseError> {
-        let (line, first) = self.next().ok_or_else(|| {
-            self.err(self.cur_line(), "unexpected end of file in type position")
-        })?;
+        let (line, first) = self
+            .next()
+            .ok_or_else(|| self.err(self.cur_line(), "unexpected end of file in type position"))?;
         let (base, _nullable_allowed) = match first {
             Token::Ident(ref word) => match word.as_str() {
                 "DOMString" => (Type::DomString { nullable: false }, true),
@@ -874,8 +938,10 @@ impl<'a> Parser<'a> {
                         other => {
                             return Err(self.err(
                                 line2,
-                                format!("unsupported numeric type 'unsigned ...' (found {other:?})"),
-                            ))
+                                format!(
+                                    "unsupported numeric type 'unsigned ...' (found {other:?})"
+                                ),
+                            ));
                         }
                     };
                     (ty, true)
@@ -885,15 +951,30 @@ impl<'a> Parser<'a> {
                 "undefined" => (Type::Undefined, false),
                 "any" => return Err(self.err(line, "'any' is unsupported in generated IDL inputs")),
                 "ArrayBuffer" | "BufferSource" | "ArrayBufferView" => {
-                    return Err(self.err(line, format!("'{word}' is unsupported in generated IDL inputs")))
+                    return Err(self.err(
+                        line,
+                        format!("'{word}' is unsupported in generated IDL inputs"),
+                    ));
                 }
                 "Promise" => {
-                    return Err(self.err(line, "'Promise' return types are unsupported in generated IDL inputs"))
+                    return Err(self.err(
+                        line,
+                        "'Promise' return types are unsupported in generated IDL inputs",
+                    ));
                 }
                 "optional" => {
-                    return Err(self.err(line, "malformed parameter: missing type before 'optional' handling"))
+                    return Err(self.err(
+                        line,
+                        "malformed parameter: missing type before 'optional' handling",
+                    ));
                 }
-                other => (Type::Interface { name: other.to_owned(), nullable: false }, true),
+                other => (
+                    Type::Interface {
+                        name: other.to_owned(),
+                        nullable: false,
+                    },
+                    true,
+                ),
             },
             Token::LParen => {
                 // Union type: `(A or B or C)` — extract the last primitive type.
@@ -927,9 +1008,16 @@ impl<'a> Parser<'a> {
                             break;
                         }
                         Some(other) => {
-                            return Err(self.err(union_line, format!("expected 'or' or ')' in union type, found {other:?}")));
+                            return Err(self.err(
+                                union_line,
+                                format!("expected 'or' or ')' in union type, found {other:?}"),
+                            ));
                         }
-                        None => return Err(self.err(union_line, "unexpected end of file in union type")),
+                        None => {
+                            return Err(
+                                self.err(union_line, "unexpected end of file in union type")
+                            );
+                        }
                     }
                 }
                 let fallback_ty = fallback.unwrap_or_else(|| {
@@ -940,7 +1028,10 @@ impl<'a> Parser<'a> {
                 return Ok((fallback_ty, line));
             }
             other => {
-                return Err(self.err(line, format!("unexpected token in type position: {other:?}")));
+                return Err(self.err(
+                    line,
+                    format!("unexpected token in type position: {other:?}"),
+                ));
             }
         };
         let nullable = if self.peek() == Some(&Token::Question) {
@@ -954,7 +1045,10 @@ impl<'a> Parser<'a> {
             (Type::Interface { name, .. }, nullable) => Type::Interface { name, nullable },
             (other, false) => other,
             (other, true) => {
-                return Err(self.err(line, format!("nullable primitive type {other:?} is unsupported")));
+                return Err(self.err(
+                    line,
+                    format!("nullable primitive type {other:?} is unsupported"),
+                ));
             }
         };
         Ok((ty, line))
@@ -971,22 +1065,38 @@ impl<'a> Parser<'a> {
                     "DOMString" => Ok((Type::DomString { nullable: false }, line)),
                     "boolean" => Ok((Type::Boolean, line)),
                     "unsigned" => {
-                        let (line2, tok) = self.next().ok_or_else(|| self.err(line, "unexpected end of file after 'unsigned' in union"))?;
+                        let (line2, tok) = self.next().ok_or_else(|| {
+                            self.err(line, "unexpected end of file after 'unsigned' in union")
+                        })?;
                         let ident = match tok {
                             Token::Ident(ref w) => w.clone(),
-                            other => return Err(self.err(line2, format!("unsupported numeric type in union: {other:?}"))),
+                            other => {
+                                return Err(self.err(
+                                    line2,
+                                    format!("unsupported numeric type in union: {other:?}"),
+                                ));
+                            }
                         };
                         match ident.as_str() {
                             "long" => Ok((Type::UnsignedLong, line)),
                             "short" => Ok((Type::UnsignedShort, line)),
-                            other => Err(self.err(line2, format!("unsupported numeric type in union: '{other}'"))),
+                            other => Err(self.err(
+                                line2,
+                                format!("unsupported numeric type in union: '{other}'"),
+                            )),
                         }
                     }
                     "float" => Ok((Type::Float, line)),
                     "double" => Ok((Type::Double, line)),
                     "undefined" => Ok((Type::Undefined, line)),
                     // Any other identifier is treated as an interface/enum name.
-                    other => Ok((Type::Interface { name: other.to_owned(), nullable: false }, line)),
+                    other => Ok((
+                        Type::Interface {
+                            name: other.to_owned(),
+                            nullable: false,
+                        },
+                        line,
+                    )),
                 }
             }
             other => Err(self.err(line, format!("unexpected token in union type: {other:?}"))),
@@ -999,7 +1109,10 @@ impl<'a> Parser<'a> {
         let mut attrs = Attrs::default();
         loop {
             let (line, name_token) = self.next().ok_or_else(|| {
-                self.err(self.cur_line(), "unexpected end of file in extended attribute list")
+                self.err(
+                    self.cur_line(),
+                    "unexpected end of file in extended attribute list",
+                )
             })?;
             match name_token {
                 Token::RBrack => break,
@@ -1026,7 +1139,9 @@ impl<'a> Parser<'a> {
                     if !allowed {
                         return Err(self.err(
                             line,
-                            format!("unsupported extended attribute '[{name}]' in generated IDL inputs"),
+                            format!(
+                                "unsupported extended attribute '[{name}]' in generated IDL inputs"
+                            ),
                         ));
                     }
                     if name == "Exposed" {
@@ -1063,7 +1178,10 @@ impl<'a> Parser<'a> {
 
     fn attr_value(&mut self, name: &str, line: usize) -> Result<Option<String>, ParseError> {
         if name != "Exposed" {
-            return Err(self.err(line, format!("extended attribute '[{name}]' does not take a value")));
+            return Err(self.err(
+                line,
+                format!("extended attribute '[{name}]' does not take a value"),
+            ));
         }
         let first = match self.peek().cloned() {
             Some(Token::Ident(ref word)) => {
@@ -1087,7 +1205,9 @@ impl<'a> Parser<'a> {
                         }
                         Token::RParen => break,
                         other => {
-                            return Err(self.err(line2, format!("unsupported exposure entry {other:?}")))
+                            return Err(
+                                self.err(line2, format!("unsupported exposure entry {other:?}"))
+                            );
                         }
                     }
                     if self.peek() == Some(&Token::Comma) {

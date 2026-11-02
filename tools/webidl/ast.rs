@@ -4,18 +4,28 @@
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    DomString { nullable: bool },
+    DomString {
+        nullable: bool,
+    },
     Boolean,
     UnsignedLong,
     UnsignedShort,
     Float,
     Double,
     Undefined,
-    Interface { name: String, nullable: bool },
+    Interface {
+        name: String,
+        nullable: bool,
+    },
     /// A union type flattened to its last-primitive fallback (e.g. `(DOMString or Options)` → DomString).
-    UnionFallback { spelling: String },
+    UnionFallback {
+        spelling: String,
+    },
     /// An enum type used as a value in a type position (e.g. `enum DocumentReadyState`).
-    Enum { name: String, nullable: bool },
+    Enum {
+        name: String,
+        nullable: bool,
+    },
 }
 
 impl Type {
@@ -23,7 +33,11 @@ impl Type {
     pub fn spelling(&self) -> String {
         match self {
             Type::DomString { nullable } => {
-                if *nullable { "DOMString?".into() } else { "DOMString".into() }
+                if *nullable {
+                    "DOMString?".into()
+                } else {
+                    "DOMString".into()
+                }
             }
             Type::Boolean => "boolean".into(),
             Type::UnsignedLong => "unsigned long".into(),
@@ -32,11 +46,19 @@ impl Type {
             Type::Double => "double".into(),
             Type::Undefined => "undefined".into(),
             Type::Interface { name, nullable } => {
-                if *nullable { format!("{name}?") } else { name.clone() }
+                if *nullable {
+                    format!("{name}?")
+                } else {
+                    name.clone()
+                }
             }
             Type::UnionFallback { spelling } => spelling.clone(),
             Type::Enum { name, nullable } => {
-                if *nullable { format!("{name}?") } else { name.clone() }
+                if *nullable {
+                    format!("{name}?")
+                } else {
+                    name.clone()
+                }
             }
         }
     }

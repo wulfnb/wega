@@ -4,7 +4,9 @@
 //! semantic-hook manifest. Both are byte-stable for a given input set; the
 //! checked-in artifacts are regenerated in CI and compared.
 
-use crate::ast::{AttributeMember, ConstValue, ConstructorMember, Interface, Member, Parameter, Type};
+use crate::ast::{
+    AttributeMember, ConstValue, ConstructorMember, Interface, Member, Parameter, Type,
+};
 use crate::manifest::{Family, HookAnnotation, IdlPin};
 use crate::parser::parse_file;
 use std::collections::{BTreeMap, BTreeSet};
@@ -61,7 +63,10 @@ impl FamilyModel {
         self.find_hook(&name, interface)
     }
     fn constructor_hook(&self, interface: &str) -> Option<&HookSpec> {
-        self.find_hook(&constructor_hook_name(&self.family.hook_prefix, interface), interface)
+        self.find_hook(
+            &constructor_hook_name(&self.family.hook_prefix, interface),
+            interface,
+        )
     }
     fn find_hook(&self, name: &str, interface: &str) -> Option<&HookSpec> {
         self.hooks
@@ -84,14 +89,9 @@ fn fail(message: impl Into<String>) -> String {
 }
 
 fn annotation<'a>(family: &'a Family, name: &str) -> Result<&'a HookAnnotation, String> {
-    family
-        .hooks
-        .get(name)
-        .ok_or_else(|| {
-            format!(
-                "hook '{name}' is missing its semantic annotation in tools/webidl/families.json"
-            )
-        })
+    family.hooks.get(name).ok_or_else(|| {
+        format!("hook '{name}' is missing its semantic annotation in tools/webidl/families.json")
+    })
 }
 
 fn hook_name(prefix: &str, member: &str) -> String {
@@ -111,7 +111,10 @@ pub fn build_family(
     let mut interfaces: Vec<Interface> = Vec::new();
     for (path, source) in sources {
         for interface in parse_file(path, source).map_err(|e| e.to_string())? {
-            if interfaces.iter().any(|existing| existing.name == interface.name) {
+            if interfaces
+                .iter()
+                .any(|existing| existing.name == interface.name)
+            {
                 return Err(fail(format!(
                     "{path}: interface '{}' is declared more than once in family '{}'",
                     interface.name, family.name
@@ -121,7 +124,10 @@ pub fn build_family(
         }
     }
     if interfaces.is_empty() {
-        return Err(fail(format!("family '{}' declares no interfaces", family.name)));
+        return Err(fail(format!(
+            "family '{}' declares no interfaces",
+            family.name
+        )));
     }
     let mut names: BTreeSet<&str> = BTreeSet::new();
     for interface in &interfaces {
@@ -156,7 +162,10 @@ pub fn build_family(
             if !member_names.insert(member.name()) {
                 return Err(fail(format!(
                     "{}:{}: interface '{}' declares member '{}' twice",
-                    interface.file, interface.line, interface.name, member.name()
+                    interface.file,
+                    interface.line,
+                    interface.name,
+                    member.name()
                 )));
             }
         }
@@ -199,8 +208,10 @@ pub fn build_family(
         remaining.retain(|interface| {
             let ready = match &interface.base {
                 None => true,
-                Some(base) => family.native_base.contains_key(base)
-                    || ordered.iter().any(|done| done.name == *base),
+                Some(base) => {
+                    family.native_base.contains_key(base)
+                        || ordered.iter().any(|done| done.name == *base)
+                }
             };
             if ready {
                 ordered.push(interface.clone());
@@ -211,7 +222,10 @@ pub fn build_family(
             }
         });
         if !progress {
-            return Err(fail(format!("family '{}': interface inheritance cycle", family.name)));
+            return Err(fail(format!(
+                "family '{}': interface inheritance cycle",
+                family.name
+            )));
         }
     }
 
@@ -290,9 +304,7 @@ pub fn build_family(
                         check_argument_type(&interface.name, &op.name, param)?;
                         type_usage.insert(type_key(&param.ty));
                     }
-                    if matches!(op.ty, Type::Interface { .. })
-                        && !op.new_object
-                    {
+                    if matches!(op.ty, Type::Interface { .. }) && !op.new_object {
                         return Err(fail(format!(
                             "{}: operation '{}' returns an interface without [NewObject]; unsupported in step 07.a",
                             interface.name, op.name
@@ -315,11 +327,7 @@ pub fn build_family(
                         pure: false,
                         throws: op.throws,
                         new_object: op.new_object,
-                        args: op
-                            .params
-                            .iter()
-                            .map(|p| p.ty.spelling())
-                            .collect(),
+                        args: op.params.iter().map(|p| p.ty.spelling()).collect(),
                         result: ann.result.clone(),
                         reaction,
                         line: op.line,
@@ -360,11 +368,7 @@ pub fn build_family(
                         pure: false,
                         throws: ctor.throws,
                         new_object: false,
-                        args: ctor
-                            .params
-                            .iter()
-                            .map(|p| p.ty.spelling())
-                            .collect(),
+                        args: ctor.params.iter().map(|p| p.ty.spelling()).collect(),
                         result: ann.result.clone(),
                         reaction: None,
                         line: ctor.line,
@@ -530,7 +534,9 @@ const CONVERSION_SOURCES: [(&str, &str); 8] = [
 pub fn emit_js(model: &FamilyModel) -> String {
     let family = &model.family;
     let mut out = String::new();
-    out.push_str("// ---------------------------------------------------------------------------\n");
+    out.push_str(
+        "// ---------------------------------------------------------------------------\n",
+    );
     out.push_str(&format!(
         "// wega-webidl generated bindings - family \"{}\"\n",
         family.name
@@ -544,7 +550,9 @@ pub fn emit_js(model: &FamilyModel) -> String {
         out.push_str(&format!("//   {path} sha256={digest}\n"));
     }
     out.push_str(&format!("// Hook manifest: {}\n", family.manifest));
-    out.push_str("// ---------------------------------------------------------------------------\n");
+    out.push_str(
+        "// ---------------------------------------------------------------------------\n",
+    );
     out.push_str("((dom) => {\n");
     out.push_str("  const INTERNAL = dom.internal;\n");
     out.push_str(
@@ -572,7 +580,10 @@ pub fn emit_js(model: &FamilyModel) -> String {
                 }
             }
         };
-        out.push_str(&format!("  class {} extends {} {{\n", interface.name, base_expr));
+        out.push_str(&format!(
+            "  class {} extends {} {{\n",
+            interface.name, base_expr
+        ));
         emit_constructor(&mut out, model, interface);
         emit_members(&mut out, model, interface);
         out.push_str("  }\n");
@@ -620,13 +631,10 @@ fn emit_constructor(out: &mut String, model: &FamilyModel, interface: &Interface
         "id, nodeInfo"
     };
     let brands = brand_list(model, interface);
-    let ctor = interface
-        .members
-        .iter()
-        .find_map(|member| match member {
-            Member::Constructor(ctor) => Some(ctor),
-            _ => None,
-        });
+    let ctor = interface.members.iter().find_map(|member| match member {
+        Member::Constructor(ctor) => Some(ctor),
+        _ => None,
+    });
     match ctor {
         Some(ConstructorMember { params, .. }) => {
             let idl_params: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
@@ -648,7 +656,11 @@ fn emit_constructor(out: &mut String, model: &FamilyModel, interface: &Interface
             out.push_str(&format!(
                 "        const created = op(\"{}\", {});\n",
                 hook.name,
-                params.iter().map(arg_expression).collect::<Vec<_>>().join(", ")
+                params
+                    .iter()
+                    .map(arg_expression)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
             out.push_str("        id = created.id;\n");
             out.push_str("        nodeInfo = created.info;\n");
@@ -714,19 +726,30 @@ fn emit_members(out: &mut String, model: &FamilyModel, interface: &Interface) {
                     .hook(&interface.name, name, false)
                     .expect("attribute getter hook derived in build_family");
                 out.push_str(&format!("    get {name}() {{\n"));
-                out.push_str(&format!("      dom.checkBrand({}, this);\n", interface.name));
+                out.push_str(&format!(
+                    "      dom.checkBrand({}, this);\n",
+                    interface.name
+                ));
                 if *same_object {
                     // [SameObject] memoisation on a private Symbol field.
                     out.push_str(&format!(
                         "      if (this[dom._so]) return this[dom._so].get(\"{name}\");\n"
                     ));
                     out.push_str(&format!("      let _m = this[dom._so];\n"));
-                    out.push_str(&format!("      if (!_m) {{ _m = new Map(); this[dom._so] = _m; }}\n"));
+                    out.push_str(&format!(
+                        "      if (!_m) {{ _m = new Map(); this[dom._so] = _m; }}\n"
+                    ));
                     out.push_str(&format!("      let _v = _m.get(\"{name}\");\n"));
-                    out.push_str(&format!("      if (!_v) {{ _v = op(\"{}\", this._id); _m.set(\"{name}\", _v); }}\n", getter.name));
+                    out.push_str(&format!(
+                        "      if (!_v) {{ _v = op(\"{}\", this._id); _m.set(\"{name}\", _v); }}\n",
+                        getter.name
+                    ));
                     out.push_str(&format!("      return _v;\n"));
                 } else {
-                    out.push_str(&format!("      return op(\"{}\", this._id);\n", getter.name));
+                    out.push_str(&format!(
+                        "      return op(\"{}\", this._id);\n",
+                        getter.name
+                    ));
                 }
                 out.push_str("    }\n");
                 if !readonly {
@@ -735,19 +758,22 @@ fn emit_members(out: &mut String, model: &FamilyModel, interface: &Interface) {
                         .expect("attribute setter hook derived in build_family");
                     let conversion = conversion_for(ty, *legacy_null_to_empty);
                     out.push_str(&format!("    set {name}(value) {{\n"));
-                    out.push_str(&format!("      dom.checkBrand({}, this);\n", interface.name));
+                    out.push_str(&format!(
+                        "      dom.checkBrand({}, this);\n",
+                        interface.name
+                    ));
                     out.push_str(&format!(
                         "      const result = op(\"{}\", this._id, {conversion}(value));\n",
                         setter.name
                     ));
                     if *same_object {
                         // Invalidate [SameObject] cache on set.
-                        out.push_str(&format!("      if (this[dom._so]) this[dom._so].delete(\"{name}\");\n"));
+                        out.push_str(&format!(
+                            "      if (this[dom._so]) this[dom._so].delete(\"{name}\");\n"
+                        ));
                     }
                     if let Some(reaction) = &setter.reaction {
-                        out.push_str(&format!(
-                            "      dom.reactions.{reaction}(this, result);\n"
-                        ));
+                        out.push_str(&format!("      dom.reactions.{reaction}(this, result);\n"));
                     }
                     out.push_str("    }\n");
                 }
@@ -759,9 +785,16 @@ fn emit_members(out: &mut String, model: &FamilyModel, interface: &Interface) {
                 out.push_str(&format!(
                     "    {}({}) {{\n",
                     op.name,
-                    op.params.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ")
+                    op.params
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ));
-                out.push_str(&format!("      dom.checkBrand({}, this);\n", interface.name));
+                out.push_str(&format!(
+                    "      dom.checkBrand({}, this);\n",
+                    interface.name
+                ));
                 let args: Vec<String> = std::iter::once("this._id".to_owned())
                     .chain(op.params.iter().map(arg_expression))
                     .collect();
@@ -793,7 +826,11 @@ fn emit_members(out: &mut String, model: &FamilyModel, interface: &Interface) {
                                 "      dom.reactions.{reaction}(this, result);\n"
                             ));
                         } else {
-                            out.push_str(&format!("      op(\"{}\", {});\n", hook.name, args.join(", ")));
+                            out.push_str(&format!(
+                                "      op(\"{}\", {});\n",
+                                hook.name,
+                                args.join(", ")
+                            ));
                         }
                     }
                     (false, false) => {

@@ -8,7 +8,9 @@ mod manifest;
 mod parser;
 
 use generate::{build_family, emit_js, emit_manifest};
-use manifest::{load_families, load_pins, verify_family_files, Family, HookAnnotation, IdlManifest, IdlPin};
+use manifest::{
+    Family, HookAnnotation, IdlManifest, IdlPin, load_families, load_pins, verify_family_files,
+};
 use std::path::PathBuf;
 
 const IDLS_JSON: &str = "tools/webidl/idls.json";
@@ -37,9 +39,7 @@ fn run(args: &[String]) -> Result<(), String> {
         Some("generate") => cmd_generate(true),
         Some("check") => cmd_generate(false),
         Some("pin") => cmd_pin(&args[1..]),
-        _ => Err(
-            "usage: wega-webidl {verify | generate | check | pin <idl-file>...}".into(),
-        ),
+        _ => Err("usage: wega-webidl {verify | generate | check | pin <idl-file>...}".into()),
     }
 }
 
@@ -93,8 +93,9 @@ fn cmd_generate(write: bool) -> Result<(), String> {
                 (&js_path, js.as_str(), "bindings"),
                 (&hooks_path, hooks.as_str(), "hook manifest"),
             ] {
-                let current = std::fs::read_to_string(path)
-                    .map_err(|e| format!("{}: cannot read checked-in {}: {e}", path.display(), label))?;
+                let current = std::fs::read_to_string(path).map_err(|e| {
+                    format!("{}: cannot read checked-in {}: {e}", path.display(), label)
+                })?;
                 if current != expected {
                     return Err(format!(
                         "family '{}': checked-in {} at {} is stale; run `wega-webidl generate`",
@@ -123,8 +124,9 @@ fn cmd_pin(paths: &[String]) -> Result<(), String> {
     }
     let root = repo_root()?;
     let manifest = match std::fs::read_to_string(root.join(IDLS_JSON)) {
-        Ok(text) => serde_json::from_str::<IdlManifest>(&text)
-            .map_err(|e| format!("{IDLS_JSON}: {e}"))?,
+        Ok(text) => {
+            serde_json::from_str::<IdlManifest>(&text).map_err(|e| format!("{IDLS_JSON}: {e}"))?
+        }
         Err(_) => IdlManifest { pins: Vec::new() },
     };
     let mut pins = manifest.pins;
@@ -187,7 +189,11 @@ mod tests {
             let sources = verify_family_files(&root, &family, &pins).unwrap();
             let first = build_family(&family, &pins, &sources).unwrap();
             let second = build_family(&family, &pins, &sources).unwrap();
-            assert_eq!(emit_js(&first), emit_js(&second), "JS output must be deterministic");
+            assert_eq!(
+                emit_js(&first),
+                emit_js(&second),
+                "JS output must be deterministic"
+            );
             assert_eq!(
                 emit_manifest(&first),
                 emit_manifest(&second),
@@ -206,10 +212,16 @@ mod tests {
                 std::fs::write(&hooks_path, &hooks).unwrap();
             }
             let checked_in_js = std::fs::read_to_string(&js_path).expect("checked-in bindings");
-            let checked_in_hooks = std::fs::read_to_string(&hooks_path).expect("checked-in hook manifest");
-            assert_eq!(emit_js(&first), checked_in_js, "checked-in bindings are stale");
+            let checked_in_hooks =
+                std::fs::read_to_string(&hooks_path).expect("checked-in hook manifest");
             assert_eq!(
-                emit_manifest(&first), checked_in_hooks,
+                emit_js(&first),
+                checked_in_js,
+                "checked-in bindings are stale"
+            );
+            assert_eq!(
+                emit_manifest(&first),
+                checked_in_hooks,
                 "checked-in hook manifest is stale"
             );
         }
@@ -226,11 +238,7 @@ mod tests {
             .expect("character-data family declared");
         let sources = verify_family_files(&root, &family, &pins).unwrap();
         let model = build_family(&family, &pins, &sources).unwrap();
-        let names: Vec<&str> = model
-            .hooks
-            .iter()
-            .map(|h| h.name.as_str())
-            .collect();
+        let names: Vec<&str> = model.hooks.iter().map(|h| h.name.as_str()).collect();
         assert_eq!(
             names,
             vec![
@@ -249,11 +257,7 @@ mod tests {
             ]
         );
         // Topological order: the abstract base precedes its subclasses.
-        let order: Vec<&str> = model
-            .interfaces
-            .iter()
-            .map(|i| i.name.as_str())
-            .collect();
+        let order: Vec<&str> = model.interfaces.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(order, vec!["CharacterData", "Text", "Comment"]);
         let split = model
             .hooks
@@ -268,17 +272,50 @@ mod tests {
     fn unsupported_constructs_fail_with_positioned_errors() {
         // Failure cases: each (source, needle) must produce a positioned error.
         let cases = [
-            ("dictionary GetRootNodeOptions { boolean composed = false; };", "unsupported declaration 'dictionary'"),
-            ("[Exposed=Window] interface A { any x; };", "'any' is unsupported"),
-            ("[Exposed=Window] interface A : (DOMString or unsigned long) { };", "expected base interface name"),
-            ("[Exposed=Window] interface A { stringifier; };", "'stringifier' is unsupported"),
-            ("[Exposed=Window] interface A { iterable<DOMString>; };", "'iterable<...>' members are unsupported"),
-            ("[Exposed=Window, Worker] interface A { };", "unsupported extended attribute '[Worker]'"),
-            ("[Exposed=Window] interface A { getter DOMString? item(unsigned long i); };", "'getter' members are unsupported"),
-            ("interface mixin M { };", "interface mixin 'M' is not permitted"),
-            ("[Exposed=Window] interface A { undefined f(optional DOMString d); };", "optional parameters require a default value"),
-            ("callback OnThing = void (DOMString x);", "unsupported declaration 'callback'"),
-            ("typedef DOMString Alias;", "unsupported declaration 'typedef'"),
+            (
+                "dictionary GetRootNodeOptions { boolean composed = false; };",
+                "unsupported declaration 'dictionary'",
+            ),
+            (
+                "[Exposed=Window] interface A { any x; };",
+                "'any' is unsupported",
+            ),
+            (
+                "[Exposed=Window] interface A : (DOMString or unsigned long) { };",
+                "expected base interface name",
+            ),
+            (
+                "[Exposed=Window] interface A { stringifier; };",
+                "'stringifier' is unsupported",
+            ),
+            (
+                "[Exposed=Window] interface A { iterable<DOMString>; };",
+                "'iterable<...>' members are unsupported",
+            ),
+            (
+                "[Exposed=Window, Worker] interface A { };",
+                "unsupported extended attribute '[Worker]'",
+            ),
+            (
+                "[Exposed=Window] interface A { getter DOMString? item(unsigned long i); };",
+                "'getter' members are unsupported",
+            ),
+            (
+                "interface mixin M { };",
+                "interface mixin 'M' is not permitted",
+            ),
+            (
+                "[Exposed=Window] interface A { undefined f(optional DOMString d); };",
+                "optional parameters require a default value",
+            ),
+            (
+                "callback OnThing = void (DOMString x);",
+                "unsupported declaration 'callback'",
+            ),
+            (
+                "typedef DOMString Alias;",
+                "unsupported declaration 'typedef'",
+            ),
         ];
         for (source, needle) in cases {
             let error = parser::parse_file("<fixture>", source).unwrap_err();
@@ -295,19 +332,43 @@ mod tests {
 
         // Supported constructs must parse without error.
         let success = [
-            ("[Exposed=Window] interface A { const unsigned short X = 1; };", 1),
-            ("[Exposed=Window] interface A { const boolean FLAG = true; };", 1),
-            ("[Exposed=Window] interface A { const unsigned long MASK = 0; };", 1),
+            (
+                "[Exposed=Window] interface A { const unsigned short X = 1; };",
+                1,
+            ),
+            (
+                "[Exposed=Window] interface A { const boolean FLAG = true; };",
+                1,
+            ),
+            (
+                "[Exposed=Window] interface A { const unsigned long MASK = 0; };",
+                1,
+            ),
             // Variadic arguments
-            ("[Exposed=Window] interface A { undefined f(DOMString... tokens); };", 0),
+            (
+                "[Exposed=Window] interface A { undefined f(DOMString... tokens); };",
+                0,
+            ),
             // Union types (flattened to DOMString fallback)
-            ("[Exposed=Window] interface A { undefined f((DOMString or Options) x); };", 0),
+            (
+                "[Exposed=Window] interface A { undefined f((DOMString or Options) x); };",
+                0,
+            ),
             // Enum declarations
-            ("[Exposed=Window] interface A { enum ReadyState { \"loading\", \"complete\" }; };", 0),
+            (
+                "[Exposed=Window] interface A { enum ReadyState { \"loading\", \"complete\" }; };",
+                0,
+            ),
             // Partial interfaces
-            ("[Exposed=Window] interface A { undefined base(); }; partial interface A { undefined derived(); };", 0),
+            (
+                "[Exposed=Window] interface A { undefined base(); }; partial interface A { undefined derived(); };",
+                0,
+            ),
             // Includes/mixins
-            ("[Exposed=Window] interface A { undefined m(); }; A includes Mixin;", 0),
+            (
+                "[Exposed=Window] interface A { undefined m(); }; A includes Mixin;",
+                0,
+            ),
         ];
         for (source, expected) in success {
             let result = parser::parse_file("<fixture>", source);
@@ -355,7 +416,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir.join("idl")).unwrap();
         let idl = dir.join("idl/A.webidl");
-        std::fs::write(&idl, "[Exposed=Window] interface A { readonly attribute DOMString x; };\n").unwrap();
+        std::fs::write(
+            &idl,
+            "[Exposed=Window] interface A { readonly attribute DOMString x; };\n",
+        )
+        .unwrap();
         let digest = manifest::sha256_hex(std::fs::read(&idl).unwrap().as_slice());
         let pin = IdlPin {
             path: "idl/A.webidl".into(),
@@ -421,15 +486,24 @@ interface Comment : CharacterData {
         let mut hooks = std::collections::HashMap::new();
         hooks.insert(
             "fx.cached".into(),
-            HookAnnotation { result: "{ unsigned long }".into(), reaction: None },
+            HookAnnotation {
+                result: "{ unsigned long }".into(),
+                reaction: None,
+            },
         );
         hooks.insert(
             "fx.immutable".into(),
-            HookAnnotation { result: "{ string }".into(), reaction: None },
+            HookAnnotation {
+                result: "{ string }".into(),
+                reaction: None,
+            },
         );
         hooks.insert(
             "fx.construct.fixture".into(),
-            HookAnnotation { result: "{ id: string, info: object }".into(), reaction: None },
+            HookAnnotation {
+                result: "{ id: string, info: object }".into(),
+                reaction: None,
+            },
         );
         let family = Family {
             name: "fixture-consts".into(),
@@ -458,12 +532,24 @@ interface Fixture {
         assert!(js.contains("static {"), "const should emit static block");
         assert!(js.contains("VERSION"), "const VERSION should appear");
         assert!(js.contains("FLAG"), "const FLAG should appear");
-        assert!(js.contains("writable: false"), "const should be non-writable");
+        assert!(
+            js.contains("writable: false"),
+            "const should be non-writable"
+        );
         // [SameObject]: memoised getter with Map
-        assert!(js.contains("get cached()"), "SameObject attribute should have getter");
-        assert!(js.contains("new Map()"), "[SameObject] should use Map memoisation");
+        assert!(
+            js.contains("get cached()"),
+            "SameObject attribute should have getter"
+        );
+        assert!(
+            js.contains("new Map()"),
+            "[SameObject] should use Map memoisation"
+        );
         // [Constant]: getter should still emit
-        assert!(js.contains("get immutable()"), "Constant attribute should have getter");
+        assert!(
+            js.contains("get immutable()"),
+            "Constant attribute should have getter"
+        );
     }
 
     #[test]
@@ -476,11 +562,7 @@ interface Fixture {
             }
             let sources = verify_family_files(&root, &family, &pins).unwrap();
             let model = build_family(&family, &pins, &sources).unwrap();
-            let hook_names: Vec<&str> = model
-                .hooks
-                .iter()
-                .map(|h| h.name.as_str())
-                .collect();
+            let hook_names: Vec<&str> = model.hooks.iter().map(|h| h.name.as_str()).collect();
             let js = emit_js(&model);
             assert!(
                 !js.is_empty(),
