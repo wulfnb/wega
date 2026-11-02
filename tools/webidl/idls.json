@@ -29,6 +29,12 @@
       "sha256": "4008b8e640f1461e692cd8097e3ee4d864e919ed575fa4599d353c6a4fff3211",
       "origin": "https://dom.spec.whatwg.org/#event (simplified for generator pipeline)",
       "license": "MPL-2.0"
+    },
+    {
+      "path": "vendor/servo-script-bindings/simplified-idls/Node.simplified.webidl",
+      "sha256": "66a0009432e4c0022e680ab4352c9d99ae21cd204ab67cd5cbc2c2e9cead57b7",
+      "origin": "https://dom.spec.whatwg.org/#node (simplified for generator pipeline)",
+      "license": "MPL-2.0"
     }
   ]
 }

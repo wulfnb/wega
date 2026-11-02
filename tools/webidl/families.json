@@ -192,6 +192,143 @@
           "reaction": "initEvent"
         }
       }
+    },
+    {
+      "name": "node",
+      "hook_prefix": "node",
+      "output": "engines/wega/src/dom/generated/node.js",
+      "manifest": "engines/wega/src/dom/generated/node.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/Node.simplified.webidl"
+      ],
+      "native_base": {
+        "EventTarget": "dom.event.EventTarget",
+        "Node": "dom.base.EventTarget"
+      },
+      "base_mixins": [],
+      "globals": [],
+      "hooks": {
+        "node.nodeType": {
+          "result": "{ unsigned long }",
+          "reaction": null
+        },
+        "node.nodeName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.baseURI": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.isConnected": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.ownerDocument": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.parentNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.parentElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.hasChildNodes": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.childNodes": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.firstChild": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.lastChild": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.previousSibling": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.nextSibling": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.nodeValue": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.nodeValue.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "node.textContent": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.textContent.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "node.normalize": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "node.cloneNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.isEqualNode": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.isSameNode": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.compareDocumentPosition": {
+          "result": "{ unsigned long }",
+          "reaction": null
+        },
+        "node.contains": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.lookupPrefix": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.lookupNamespaceURI": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.isDefaultNamespace": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "node.insertBefore": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.appendChild": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.replaceChild": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "node.removeChild": {
+          "result": "{ string }",
+          "reaction": null
+        }
+      }
     }
   ]
 }

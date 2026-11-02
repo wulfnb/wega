@@ -216,14 +216,35 @@ fn tokenize(file: &str, src: &str) -> Result<Vec<(usize, Token)>, ParseError> {
             }
             b'0'..=b'9' => {
                 let start = t.pos;
-                while t.pos < t.src.len() && t.src[t.pos].is_ascii_digit() {
-                    t.pos += 1;
+                // Check for hex literal: 0x or 0X followed by hex digits
+                if t.src.get(t.pos + 1) == Some(&b'x') || t.src.get(t.pos + 1) == Some(&b'X') {
+                    t.pos += 2;
+                    let hex_start = t.pos;
+                    while t.pos < t.src.len() && t.src[t.pos].is_ascii_hexdigit() {
+                        t.pos += 1;
+                    }
+                    if t.pos == hex_start {
+                        return Err(ParseError::new(
+                            file,
+                            line,
+                            "expected hex digit after '0x'",
+                        ));
+                    }
+                    let text = std::str::from_utf8(&t.src[hex_start..t.pos]).unwrap();
+                    let value = i64::from_str_radix(text, 16)
+                        .map_err(|_| ParseError::new(file, line, "hex literal out of range"))?;
+                    Token::Int(value)
+                } else {
+                    // Decimal integer
+                    while t.pos < t.src.len() && t.src[t.pos].is_ascii_digit() {
+                        t.pos += 1;
+                    }
+                    let text = std::str::from_utf8(&t.src[start..t.pos]).unwrap();
+                    let value: i64 = text
+                        .parse()
+                        .map_err(|_| ParseError::new(file, line, "numeric literal out of range"))?;
+                    Token::Int(value)
                 }
-                let text = std::str::from_utf8(&t.src[start..t.pos]).unwrap();
-                let value: i64 = text
-                    .parse()
-                    .map_err(|_| ParseError::new(file, line, "numeric literal out of range"))?;
-                Token::Int(value)
             }
             _ if is_ident_start(b) => {
                 let start = t.pos;
