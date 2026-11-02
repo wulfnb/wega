@@ -660,7 +660,7 @@ dependencies = [
  "stringcase",
  "strum 0.27.2",
  "strum_macros 0.27.2",
- "syn 2.0.119",
+ "syn 3.0.9",
  "syn-match",
  "thiserror",
 ]
