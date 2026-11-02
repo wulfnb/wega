@@ -590,6 +590,385 @@
           "reaction": "characterData"
         }
       }
+    },
+    {
+      "name": "document",
+      "hook_prefix": "document",
+      "output": "engines/wega/src/dom/generated/document.js",
+      "manifest": "engines/wega/src/dom/generated/document.hooks.json",
+      "files": [
+        "vendor/servo-script-bindings/simplified-idls/Document.simplified.webidl"
+      ],
+      "native_base": {
+        "Node": "dom.base.EventTarget"
+      },
+      "base_mixins": [
+        "NonElementParentNode",
+        "ParentNode",
+        "DocumentOrShadowRoot",
+        "GlobalEventHandlers"
+      ],
+      "globals": [
+        "Document"
+      ],
+      "hooks": {
+        "document.construct.document": {
+          "result": "{ id: string, info: object }",
+          "reaction": null
+        },
+        "document.implementation": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.URL": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.documentURI": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.compatMode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.characterSet": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.charset": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.inputEncoding": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.contentType": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.doctype": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.documentElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getElementsByTagName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getElementsByTagNameNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getElementsByClassName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createElementNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createDocumentFragment": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.createTextNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createCDATASection": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createComment": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createProcessingInstruction": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.importNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.adoptNode": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createAttribute": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createAttributeNS": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createEvent": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.createRange": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createNodeIterator": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.createTreeWalker": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.domain": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.domain.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.referrer": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.cookie": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.cookie.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.lastModified": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.readyState": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.location": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.namedItem": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.title": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.title.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.dir": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.dir.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.body": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.body.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.head": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.images": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.embeds": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.plugins": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.links": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.forms": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.scripts": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getElementsByName": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.currentScript": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.open": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.close": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.write": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.writeln": {
+          "result": "{ undefined }",
+          "reaction": "characterData"
+        },
+        "document.defaultView": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.hasFocus": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.execCommand": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandEnabled": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandIndeterm": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandState": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandSupported": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.queryCommandValue": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.hidden": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.visibilityState": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onreadystatechange": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onreadystatechange.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.fgColor": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.fgColor.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.bgColor": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.bgColor.set": {
+          "result": "{ string }",
+          "reaction": "characterData"
+        },
+        "document.anchors": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.applets": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.clear": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.captureEvents": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.releaseEvents": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.fullscreenEnabled": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.fullscreen": {
+          "result": "{ boolean }",
+          "reaction": null
+        },
+        "document.exitFullscreen": {
+          "result": "{ undefined }",
+          "reaction": null
+        },
+        "document.onfullscreenchange": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onfullscreenchange.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onfullscreenerror": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.onfullscreenerror.set": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.scrollingElement": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.getSelection": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.timeline": {
+          "result": "{ string }",
+          "reaction": null
+        },
+        "document.parseHTML": {
+          "result": "{ string }",
+          "reaction": null
+        }
+      }
     }
   ]
 }
