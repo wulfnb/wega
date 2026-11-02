@@ -87,6 +87,7 @@ jobs:
           fi
           echo "WEGA_CONTENT_HELPER=$helper" >> "$GITHUB_ENV"
       - name: Required worker JIT, storage, cookies and pixels
+        timeout-minutes: 20
         run: cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test inherited_broker a_required_worker_runs_jit_storage_cookies_and_frames_through_grants -- --ignored --nocapture
       - name: Engine regression suite
         run: |

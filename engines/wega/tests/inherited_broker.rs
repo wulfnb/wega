@@ -20,7 +20,31 @@ fn a_real_worker_uses_inherited_broker_grants_without_a_tcp_broker_address() {
 fn a_required_worker_runs_jit_storage_cookies_and_frames_through_grants() {
     run_worker(true);
 }
+struct FixtureDeadline(mpsc::Sender<()>);
+impl FixtureDeadline {
+    fn start() -> Self {
+        let (finished, done) = mpsc::channel();
+        std::thread::spawn(move || {
+            if matches!(
+                done.recv_timeout(Duration::from_secs(60)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ) {
+                // A deadlock during launch/teardown must fail the test process,
+                // rather than hiding its diagnostics until the CI job expires.
+                eprintln!("Inherited worker fixture exceeded its complete 60-second deadline");
+                std::process::exit(124);
+            }
+        });
+        Self(finished)
+    }
+}
+impl Drop for FixtureDeadline {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
+}
 fn run_worker(required: bool) {
+    let _deadline = FixtureDeadline::start();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
@@ -98,11 +122,13 @@ fn run_worker(required: bool) {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+    eprintln!("Inherited worker fixture: spawning required={required}");
     let child = launch.spawn(&mut command).unwrap();
     drop(command);
     drop(channels);
     let mut child = wega_platform::process::OwnedProcess::new(child, |_| {});
     launch.attach(&mut child, 512 * 1024 * 1024).unwrap();
+    eprintln!("Inherited worker fixture: containment attached");
     child.retain_until_exit(frames.clone());
     if let Some(stderr) = child.take_stderr() {
         std::thread::spawn(move || {
@@ -144,6 +170,7 @@ fn run_worker(required: bool) {
         },
     )
     .unwrap();
+    eprintln!("Inherited worker fixture: initialization sent");
     let wait = |predicate: &dyn Fn(&Event) -> bool| {
         let until = Instant::now() + Duration::from_secs(10);
         loop {

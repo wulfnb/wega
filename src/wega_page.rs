@@ -478,7 +478,12 @@ impl Page {
         profile_dir: &std::path::Path,
         tab: u64,
     ) -> Result<Self, String> {
-        let executable=executable().ok_or("Wega engine worker is not installed. Build it with python3 scripts/build-wega-engine.py --debug first.")?.canonicalize().map_err(|error| error.to_string())?;
+        let executable = executable()
+            .ok_or(
+                "Wega's content helper is missing. Reinstall Wega or rebuild its content helper.",
+            )?
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
         let mut command = Command::new(&executable);
         let launch = wega_platform::launch::PreparedLaunch::browser(
             &mut command,
