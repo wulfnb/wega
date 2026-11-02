@@ -1,4 +1,5 @@
 // Copyright 2018-2026 the Deno authors. MIT license.
+// Modified by Wega contributors, 2026: support Syn 3 pointer mutability.
 
 use std::collections::BTreeMap;
 
@@ -1911,7 +1912,7 @@ pub(crate) fn parse_type(
       }
     }
     Type::Ptr(of) => {
-      let mut_type = if of.mutability.is_some() {
+      let mut_type = if matches!(of.mutability, syn::PointerMutability::Mut(_)) {
         RefType::Mut
       } else {
         RefType::Ref

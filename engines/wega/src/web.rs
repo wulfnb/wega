@@ -127,10 +127,12 @@ pub(crate) fn extensions(dom: &crate::dom::Dom) -> Vec<deno_core::Extension> {
     let directory =
         if dom.network.remote.is_none() && matches!(url.origin(), url::Origin::Tuple(..)) {
             dom.network.storage_dir.as_ref().map(|root| {
-                root.join(format!(
-                    "{:x}",
+                root.join(
                     Sha256::digest(url.origin().ascii_serialization().as_bytes())
-                ))
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect::<String>(),
+                )
             })
         } else {
             None

@@ -3,7 +3,7 @@
 ## Deno core (`deno/`)
 
 `deno_core` 0.413.0, `deno_ops` 0.289.0, `serde_v8` 0.322.0 and `deno_v8` 0.5.0 are
-the published crates.io sources, with documented patches to `deno_core`. Deno's MIT license is added as
+the published crates.io sources, with documented patches listed in `sources.json`. Deno's MIT license is added as
 `LICENSE.md` because the published crates do not include it. Cloudflare's acquisition
 of Deno (October 2026) ends upstream runtime development in about a year, so Wega keeps
 its own copy. The reasons and the update procedure are in
@@ -36,6 +36,16 @@ P4 snapshots the trusted Wega factories. Residual lazy Deno sources still need e
 `deno/patches/two-platform-workers.patch` caps Deno's existing custom platform at
 2 workers (including the unavailable-parallelism fallback). It preserves Deno's
 foreground queue, Tokio integration and CppGC support.
+
+### Coordinated dependency upgrades (2 November 2026)
+
+The three `deno/patches/*-dependency-upgrades.patch` files update the vendored
+manifests without changing their pinned upstream archives. Core and serde_v8 use
+num-bigint 0.5; core pairs bit-vec 0.10 with bit-set 0.11 and uses windows-sys
+0.61. Deno's op macros use Syn 3, strum/strum_macros 0.28 and prettyplease 0.3.
+The macro adapters preserve function modifiers, explicitly construct lifetime
+generic parameters and match Syn 3's pointer mutability enum. Both the engine
+and the standalone spike use these same patches and updated lockfiles.
 
 ## Blitz, Stylo and Skia adapter (`blitz/`, P4–P5)
 
