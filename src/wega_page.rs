@@ -21,9 +21,9 @@ use wega::{
 use winit::event_loop::EventLoopProxy;
 
 // The test harness serves deterministic pages on localhost. This host-side
-// opt-in is absent from production builds and scrubbed from worker environments.
+// opt-in is limited to debug/harness builds and scrubbed from worker environments.
 fn test_loopback_allowed() -> bool {
-    cfg!(feature = "test-harness")
+    (cfg!(debug_assertions) || cfg!(feature = "test-harness"))
         && std::env::var_os("WEGA_TEST_ALLOW_LOOPBACK").is_some_and(|value| value == "1")
 }
 

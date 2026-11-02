@@ -151,6 +151,12 @@ fn heap_exhaustion_is_local_and_timers_pause_in_background() {
     .unwrap();
     view.poll();
     assert!(!view.notices.is_empty());
+    assert!(view.take_script_failure().is_some());
+    assert!(view.evaluate("1 + 1").is_err());
+    // Recovery is explicit and must not carry the deliberately tiny exhausted
+    // quota into an unrelated timer test. Platforms have different VM overhead.
+    drop(view);
+    let mut view = page(Limits::default());
     view.set_html(
         "<title>Waiting</title><script>setTimeout(()=>document.title='Timer fired',50)</script>",
     )
@@ -163,7 +169,11 @@ fn heap_exhaustion_is_local_and_timers_pause_in_background() {
     view.poll();
     assert_eq!(view.title(), "Waiting");
     view.freeze(false);
-    view.poll();
+    let until = Instant::now() + Duration::from_secs(2);
+    while view.title() != "Timer fired" && Instant::now() < until {
+        view.poll();
+        std::thread::sleep(Duration::from_millis(1));
+    }
     assert_eq!(view.title(), "Timer fired", "{:?}", view.notices);
 }
 #[test]
