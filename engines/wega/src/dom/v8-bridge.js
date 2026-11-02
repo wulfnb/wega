@@ -13,6 +13,7 @@
     },
   });
   Object.defineProperty(globalThis, "__wega_call", {
+    configurable: true,
     value: (op, a = "", b = "", c = "", d = "") => {
       if (op === "setAttrNS")
         return ops.op_dom_set_attr_ns(

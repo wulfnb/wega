@@ -500,6 +500,9 @@ impl View {
             return;
         };
         let requests = script.take_requests();
+        if let Some(reason) = requests.compatibility {
+            self.compatibility.get_or_insert(reason);
+        }
         if !requests.writes.is_empty() {
             match &mut self.host.parser {
                 Some(parser) if !parser.is_finished() => parser.write(&requests.writes),

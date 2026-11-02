@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 pub mod authority;
+pub mod browsing;
 pub mod identity;
 pub mod lifecycle;
 pub mod queue;
@@ -147,7 +148,6 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::ResourceBroker,
     Capability::DocumentTaskScheduling,
     Capability::ScriptRecovery,
-    Capability::SiteIsolationFrames,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -699,7 +699,7 @@ mod tests {
     }
     #[test]
     fn site_isolation_frames_capability_and_origin_policy() {
-        assert!(capabilities(15).contains(&Capability::SiteIsolationFrames));
+        assert!(!capabilities(15).contains(&Capability::SiteIsolationFrames));
         assert!(!capabilities(14).contains(&Capability::SiteIsolationFrames));
 
         use crate::authority::{Origin, is_permitted_cross_origin_property};

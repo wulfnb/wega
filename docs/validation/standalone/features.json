@@ -113,7 +113,7 @@
     {
       "id": "F07",
       "servo_source_observation": "Origin/policy behavior in pinned Servo scripts/network, and `src/engine.rs` policy intercept",
-      "wega_source_observation": "Wega CORS/CSP/mixed-content/referrer subsets exist; module dependencies and extension-based resource classification have known limitations.",
+      "wega_source_observation": "Wega CORS/CSP/mixed-content/referrer subsets exist; module dependencies and extension-based resource classification have known limitations. Rust FrameTree authority coordinator added; real frame worker integration remains pending and SiteIsolationFrames is not advertised.",
       "replacement_steps": [
         "04",
         "05",
@@ -199,7 +199,7 @@
     {
       "id": "F12",
       "servo_source_observation": "ShadowRoot/CustomElementRegistry/HTMLSlotElement IDL",
-      "wega_source_observation": "Wega missing component trees/style scoping/lifecycle. Preserve exact enabled Servo behavior after exposure capture.",
+      "wega_source_observation": "Rust registry, upgrade/reaction and shadow/slot metadata plus active Deno event hooks implemented. Scoped Stylo style, flattened Blitz layout, complete lifecycle/focus/accessibility and component-library acceptance remain; shadow use reports compatibility degradation.",
       "replacement_steps": [
         "15"
       ],

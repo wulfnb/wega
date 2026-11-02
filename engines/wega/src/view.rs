@@ -1690,6 +1690,9 @@ impl View {
             })
         {
             self.reported_frames = true;
+            self.compatibility.get_or_insert_with(|| {
+                "Visible iframe rendering is not implemented by Wega".into()
+            });
         }
         let mut scene = anyrender::Scene::new();
         blitz_paint::paint_scene(

@@ -5,6 +5,7 @@ pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
 
 mod broker_socket;
+mod components;
 mod cookies;
 mod csp;
 #[path = "../../../src/diagnostic_event.rs"]

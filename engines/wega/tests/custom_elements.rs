@@ -1,6 +1,15 @@
 use std::sync::Arc;
 use wega_engine::{Engine, Limits, NetworkPolicy, Url};
 
+macro_rules! assert_json_eq {
+    ($actual:expr, $expected:expr $(,)?) => {
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&$actual).unwrap(),
+            serde_json::from_str::<serde_json::Value>($expected).unwrap()
+        );
+    };
+}
+
 fn page(limits: Limits) -> wega_engine::View {
     Engine::new(limits, NetworkPolicy::default(), Arc::new(|| {}))
         .unwrap()
@@ -60,7 +69,7 @@ fn custom_element_definition_and_instantiation() {
         )
         .unwrap();
 
-    assert_eq!(
+    assert_json_eq!(
         result,
         r#"{"createCheck":true,"getCheck":true,"nameCheck":true,"newCheck":true,"parsedCheck":true}"#
     );
@@ -111,7 +120,7 @@ fn custom_element_lifecycle_connected_disconnected_and_attribute_changed() {
         )
         .unwrap();
 
-    assert_eq!(
+    assert_json_eq!(
         result,
         r#"["attr:active:null->true","connected","attr:theme:null->dark","attr:active:true->null","disconnected"]"#
     );
@@ -162,7 +171,7 @@ fn custom_element_when_defined_and_late_upgrade() {
         )
         .unwrap();
 
-    assert_eq!(
+    assert_json_eq!(
         result,
         r#"{"afterCheck":true,"beforeCheck":true,"receivedProp":true,"upgraded":true}"#
     );
@@ -208,7 +217,7 @@ fn shadow_root_open_and_closed_encapsulation() {
         )
         .unwrap();
 
-    assert_eq!(result, r#"{"closedCheck":true,"openCheck":true}"#);
+    assert_json_eq!(result, r#"{"closedCheck":true,"openCheck":true}"#);
 }
 
 #[test]
@@ -260,7 +269,7 @@ fn shadow_root_slot_assignment_named_default_and_flatten() {
         )
         .unwrap();
 
-    assert_eq!(
+    assert_json_eq!(
         result,
         r#"{"bodyMatches":true,"bodySlotBackRef":true,"fallbackEmptyWithoutFlatten":true,"fallbackHasContentWithFlatten":true,"titleMatches":true,"titleSlotBackRef":true}"#
     );
@@ -333,7 +342,7 @@ fn event_retargeting_and_composed_path_across_shadow_boundary() {
         )
         .unwrap();
 
-    assert_eq!(
+    assert_json_eq!(
         result,
         r#"{"containerTarget":"host","hostSawNonComposed":false,"innerSawNonComposed":true,"innerTarget":"btn","outerTarget":"host"}"#
     );
@@ -364,7 +373,7 @@ fn security_and_spec_conformance_fail_closed() {
           }
 
           // 2. Invalid custom element names
-          for (const invalidName of ["myElement", "1-bad", "font-face", "missing-glyph", "no-hyphen"]) {
+          for (const invalidName of ["X-widget", "1-bad", "font-face", "missing-glyph", "nohyphen"]) {
             try {
               customElements.define(invalidName, class extends HTMLElement {});
             } catch (e) {
@@ -417,9 +426,64 @@ fn security_and_spec_conformance_fail_closed() {
         )
         .unwrap();
 
-    assert_eq!(
+    assert_json_eq!(
         result,
-        r#"["new-html-element:TypeError","invalid-name-myElement:SyntaxError","invalid-name-1-bad:SyntaxError","invalid-name-font-face:SyntaxError","invalid-name-missing-glyph:SyntaxError","invalid-name-no-hyphen:SyntaxError","dup-name:NotSupportedError","dup-ctor:NotSupportedError","disallowed-host:NotSupportedError","dup-shadow:NotSupportedError","invalid-mode:TypeError"]"#
+        r#"["new-html-element:TypeError","invalid-name-X-widget:SyntaxError","invalid-name-1-bad:SyntaxError","invalid-name-font-face:SyntaxError","invalid-name-missing-glyph:SyntaxError","invalid-name-nohyphen:SyntaxError","dup-name:NotSupportedError","dup-ctor:NotSupportedError","disallowed-host:NotSupportedError","dup-shadow:NotSupportedError","invalid-mode:TypeError"]"#
     );
 }
 
+#[test]
+fn disconnected_upgrade_failure_and_definition_callbacks_are_stable() {
+    let mut view = page(Limits::default());
+    view.set_html("<div id=container></div>").unwrap();
+    assert_json_eq!(view.evaluate_json(r#"(() => {
+        const log = []; let reads = 0; let failures = 0;
+        const detached = document.createElement('stable-element');
+        class Stable extends HTMLElement {
+            static get observedAttributes() { reads++; return ['data-value', 'style']; }
+            constructor() { super(); this.constructed = true; }
+            attributeChangedCallback(name, old, value, ns) { log.push([name, old, value, ns]); }
+            connectedCallback() { log.push('connected'); }
+            disconnectedCallback() { log.push('disconnected'); }
+        }
+        detached.setAttribute('data-value', 'initial');
+        customElements.define('stable-element', Stable);
+        const notUpgradedYet = !detached.constructed;
+        customElements.upgrade(detached);
+        Stable.prototype.attributeChangedCallback = () => log.push('wrong');
+        detached.setAttribute('data-value', 'changed');
+        document.body.append(detached);
+        document.getElementById('container').append(detached);
+        detached.remove();
+        class Failed extends HTMLElement { constructor() { super(); failures++; throw Error('expected failure'); } }
+        customElements.define('failed-element', Failed);
+        const failed = document.createElement('failed-element');
+        customElements.upgrade(failed); customElements.upgrade(failed);
+        return {notUpgradedYet, upgraded: detached.constructed, reads, failures, log};
+    })()"#).unwrap(), r#"{"failures":1,"log":[["data-value",null,"initial",null],["data-value","initial","changed",null],"connected","disconnected","connected","disconnected"],"notUpgradedYet":true,"reads":1,"upgraded":true}"#);
+}
+
+#[test]
+fn invalid_registration_does_not_read_user_callbacks_and_closed_paths_hide_internals() {
+    let mut view = page(Limits::default());
+    view.set_html("<div id=host></div>").unwrap();
+    assert_json_eq!(view.evaluate_json(r#"(() => {
+        let reads = 0;
+        class Bad extends HTMLElement { static get observedAttributes() { reads++; throw Error('must not run'); } }
+        let invalid = false;
+        try { customElements.define('X-widget', Bad); } catch(error) { invalid = error.name === 'SyntaxError'; }
+        customElements.define('no-hyphen', class extends HTMLElement {});
+        const host = document.getElementById('host');
+        const root = host.attachShadow({mode: 'closed'});
+        root.innerHTML = '<button id=inside>Inside</button>';
+        const button = root.getElementById('inside');
+        let inner = false, outer = false, escaped = false, cycles = false;
+        button.addEventListener('test', event => { inner = event.composedPath().includes(root) && event.target === button; });
+        host.addEventListener('test', event => { outer = event.target === host && !event.composedPath().includes(root) && !event.composedPath().includes(button); });
+        host.addEventListener('private', () => { escaped = true; });
+        button.dispatchEvent(new Event('test', {bubbles: true, composed: true}));
+        button.dispatchEvent(new Event('private', {bubbles: true}));
+        try { root.append(host); } catch(error) { cycles = /HierarchyRequestError/.test(error.name + error.message); }
+        return {invalid, reads, inner, outer, escaped, cycles, hidden: host.shadowRoot === null && host._shadowRoot === undefined};
+    })()"#).unwrap(), r#"{"cycles":true,"escaped":false,"hidden":true,"inner":true,"invalid":true,"outer":true,"reads":0}"#);
+}

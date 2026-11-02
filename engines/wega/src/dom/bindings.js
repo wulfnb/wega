@@ -8,6 +8,48 @@
   const weak =
     typeof WeakRef === "function" && typeof FinalizationRegistry === "function";
   let document;
+  const componentConstructors = new Map();
+  const componentCallbacks = new Map();
+  const constructorDefinitions = new WeakMap();
+  const componentWaiters = new Map();
+  const constructionStack = [];
+  const shadowDescriptors = new WeakMap();
+  const shadowToken = {};
+  let constructorIdentity = 0;
+  let flushingComponents = false;
+  function component(op, a = "", b = "", c = "") {
+    try { return host(op, String(a), String(b), String(c)); }
+    catch (error) {
+      const match = /^([A-Za-z]+Error):\s*(.*)/.exec(error.message || "");
+      if (match) fail(match[1], match[2]);
+      throw error;
+    }
+  }
+  function flushComponents() {
+    if (flushingComponents || constructionStack.length) return;
+    flushingComponents = true;
+    try {
+      for (;;) {
+        const reactions = component("customReactions");
+        if (!reactions.length) break;
+        for (const reaction of reactions) {
+          const element = wrap(reaction.node);
+          const args = reaction.callback === "adoptedCallback" ? reaction.args.map(id => wrap(id)) : reaction.args;
+          try { componentCallbacks.get(reaction.definition)?.[reaction.callback]?.apply(element, args); } catch (error) { report(error); }
+        }
+      }
+    } finally { flushingComponents = false; }
+  }
+  function shadowWrapper(descriptor) {
+    if (!descriptor) return null;
+    const cached = weak ? cache.get(descriptor.root)?.deref() : cache.get(descriptor.root);
+    if (cached instanceof ShadowRoot) return cached;
+    const root = new ShadowRoot(shadowToken, descriptor);
+    cache.set(descriptor.root, weak ? new WeakRef(root) : root);
+    host("retain", descriptor.root);
+    finalizer?.register(root, descriptor.root);
+    return root;
+  }
   const fail = (name, message) => {
     const error = new Error(message);
     error.name = name;
@@ -221,6 +263,10 @@
     let result = weak ? cache.get(id)?.deref() : cache.get(id);
     if (result) return result;
     const info = host("info", id);
+    if (info.nodeType === 11) {
+      const owner = component("shadowHost", id);
+      if (owner !== null) return shadowWrapper(component("shadowInternal", owner));
+    }
     const Ctor =
       info.nodeType === 9
         ? Document
@@ -255,10 +301,8 @@
     if (host("connected", id)) connected.set(id, result);
     if (info.nodeType === 1) {
       if (typeof customElements === "object") {
-        const def = customElements._definitions?.get(info.localName);
-        if (def && !result._upgraded) {
-          upgradeElement(result, def);
-        }
+        const definition = component("customUpgrade", id);
+        if (definition !== null) upgradeElement(result, definition);
       }
       for (const attr of host("attributes", id)) {
         if (attr.name.startsWith("on")) {
@@ -521,12 +565,7 @@
       return this.childNodes.length > 0;
     }
     getRootNode(options) {
-      const composed = !!options?.composed;
-      let root = this;
-      while (root.parentNode || (composed && root._host)) {
-        root = root.parentNode || root._host;
-      }
-      return root;
+      return wrap(component("componentRoot", this._id, !!options?.composed));
     }
     contains(other) {
       for (let node = other; node; node = node.parentNode)
@@ -590,6 +629,7 @@
         return child;
       }
       const oldParent = child.parentNode;
+      const wasConnected = child.isConnected;
       if (child === reference) return child;
       if (oldParent) removedRangeNode(child);
       const index = reference
@@ -599,7 +639,8 @@
       insertedRangeNode(this, index);
       host("insert", this._id, child._id, reference ? reference._id : "");
       child._owner = this.ownerDocument || this;
-      retainTree(child, this.getRootNode() === document);
+      retainTree(child, this.isConnected);
+      if (wasConnected) triggerDisconnected(child);
       if (oldParent) {
         notify(oldParent, "childList", {
           removedNodes: [child],
@@ -619,14 +660,6 @@
         fail("NotFoundError", "Node is not a child");
       }
       const wasConnected = child.isConnected;
-      if (child?.localName === "iframe") {
-        const idx = childFrames.indexOf(child);
-        if (idx !== -1) childFrames.splice(idx, 1);
-        if (child._frameContext) {
-          child._frameContext.frameWindow.close();
-          child._frameContext = null;
-        }
-      }
       removedRangeNode(child);
       retainTree(child, false);
       host("remove", child._id);
@@ -859,31 +892,22 @@
     }
   }
   class ShadowRoot extends DocumentFragment {
-    constructor(id, info, hostNode, mode, delegatesFocus) {
-      super(id, info);
-      this._host = hostNode;
-      this._mode = mode;
-      this._delegatesFocus = !!delegatesFocus;
+    constructor(token, descriptor) {
+      if (token !== shadowToken) fail("TypeError", "Illegal constructor");
+      super(descriptor.root, host("info", descriptor.root));
+      shadowDescriptors.set(this, descriptor);
+      this._owner = wrap(descriptor.host)?.ownerDocument || document;
     }
-    get host() {
-      return this._host;
-    }
-    get mode() {
-      return this._mode;
-    }
-    get delegatesFocus() {
-      return this._delegatesFocus;
-    }
+    get host() { return wrap(shadowDescriptors.get(this).host); }
+    get mode() { return shadowDescriptors.get(this).mode; }
+    get delegatesFocus() { return shadowDescriptors.get(this).delegates_focus; }
     get innerHTML() {
       return [...this.childNodes]
         .map((child) => host("serialize", child._id))
         .join("");
     }
     set innerHTML(value) {
-      this.replaceChildren();
-      const template = (this.ownerDocument || document).createElement("template");
-      template.innerHTML = String(value);
-      this.appendChild(template.content);
+      Reflect.getOwnPropertyDescriptor(Element.prototype, "innerHTML").set.call(this, value);
     }
     getElementById(id) {
       return (
@@ -957,6 +981,7 @@
         attributeName: "style",
         oldValue: old,
       });
+      flushComponents();
     }
     removeProperty(name) {
       const old = this.getPropertyValue(name);
@@ -974,29 +999,6 @@
         : "";
     }
   }
-  const allShadowRoots = new Set();
-  const ALLOWED_SHADOW_HOSTS = new Set([
-    "article", "aside", "blockquote", "body", "div", "footer",
-    "h1", "h2", "h3", "h4", "h5", "h6", "header", "main",
-    "nav", "p", "section", "span",
-  ]);
-
-  function isValidCustomElementName(name) {
-    if (typeof name !== "string") return false;
-    if (!/^[a-z][a-z0-9._\-]*-[a-z0-9._\-]*$/.test(name)) return false;
-    const reserved = new Set([
-      "annotation-xml",
-      "color-profile",
-      "font-face",
-      "font-face-src",
-      "font-face-uri",
-      "font-face-format",
-      "font-face-name",
-      "missing-glyph",
-    ]);
-    return !reserved.has(name);
-  }
-
   class Element extends Node {
     get tagName() {
       return this.nodeName;
@@ -1076,16 +1078,7 @@
         this[name] = new Function("event", String(value));
       }
       notify(this, "attributes", { attributeName: name, oldValue: old });
-      if (this._upgraded && typeof this.attributeChangedCallback === "function") {
-        const obs = this.constructor.observedAttributes;
-        if (Array.isArray(obs) && obs.includes(name) && old !== String(value)) {
-          try {
-            this.attributeChangedCallback(name, old, String(value), null);
-          } catch (e) {
-            report(e);
-          }
-        }
-      }
+      flushComponents();
     }
     removeAttribute(name) {
       const old = this.getAttribute(name);
@@ -1096,16 +1089,7 @@
           attributeName: String(name),
           oldValue: old,
         });
-        if (this._upgraded && typeof this.attributeChangedCallback === "function") {
-          const obs = this.constructor.observedAttributes;
-          if (Array.isArray(obs) && obs.includes(name)) {
-            try {
-              this.attributeChangedCallback(name, old, null, null);
-            } catch (e) {
-              report(e);
-            }
-          }
-        }
+        flushComponents();
       }
     }
     toggleAttribute(name, force) {
@@ -1132,6 +1116,7 @@
         attributeName: String(name),
         oldValue: null,
       });
+      flushComponents();
     }
     removeAttributeNS(namespace, name) {
       const attr = [...this.attributes].find(
@@ -1502,225 +1487,100 @@
       }
     }
     attachShadow(options) {
-      if (!options || (options.mode !== "open" && options.mode !== "closed")) {
-        fail("TypeError", "Invalid attachShadow options: mode must be 'open' or 'closed'");
-      }
-      const tag = this.localName.toLowerCase();
-      if (!ALLOWED_SHADOW_HOSTS.has(tag) && !isValidCustomElementName(tag)) {
-        fail("NotSupportedError", `Element <${tag}> cannot host a shadow root`);
-      }
-      if (this._shadowRoot) {
-        fail("NotSupportedError", "Shadow root already exists on this element");
-      }
-      const fragId = host("createFragment");
-      const fragInfo = host("info", fragId);
-      const root = new ShadowRoot(fragId, fragInfo, this, options.mode, !!options.delegatesFocus);
-      this._shadowRoot = root;
-      allShadowRoots.add(root);
-      cache.set(fragId, weak ? new WeakRef(root) : root);
-      host("retain", fragId);
-      finalizer?.register(root, fragId);
-      return root;
+      const descriptor = component("shadowAttach", this._id, String(options?.mode), !!options?.delegatesFocus);
+      return shadowWrapper(descriptor);
     }
-    get shadowRoot() {
-      return this._shadowRoot?.mode === "open" ? this._shadowRoot : null;
-    }
-    get assignedSlot() {
-      const parent = this.parentNode;
-      if (!parent || !parent._shadowRoot) return null;
-      const slotName = this.getAttribute("slot") || "";
-      const slots = parent._shadowRoot.querySelectorAll("slot");
-      for (const s of slots) {
-        if ((s.name || "") === slotName) return s;
-      }
-      return null;
-    }
+    get shadowRoot() { return shadowWrapper(component("shadowRoot", this._id)); }
+    get assignedSlot() { return wrap(component("assignedSlot", this._id)); }
   }
-
-  let __currentlyUpgrading = null;
-
-  function upgradeElement(element, def) {
-    if (!element || element._upgraded) return;
-    element._upgraded = true;
-    Object.setPrototypeOf(element, def.constructor.prototype);
-    __currentlyUpgrading = element;
+  function upgradeElement(element, definition) {
+    const constructor = componentConstructors.get(definition);
+    if (!constructor || !component("customBegin", element._id, definition)) return;
+    Object.setPrototypeOf(element, constructor.prototype);
+    constructionStack.push({ element, constructor, used: false });
+    let success = false;
     try {
-      Reflect.construct(def.constructor, [], def.constructor);
-    } finally {
-      __currentlyUpgrading = null;
+      const result = Reflect.construct(constructor, [], constructor);
+      if (result !== element) fail("TypeError", "Custom element constructor returned a different object");
+      success = true;
+    } catch (error) { report(error); }
+    finally {
+      constructionStack.pop();
+      component("customComplete", element._id, success);
     }
-    if (element.attributeChangedCallback && def.observedAttributes.length) {
-      for (const attr of element.attributes) {
-        if (def.observedAttributes.includes(attr.name)) {
-          try {
-            element.attributeChangedCallback(attr.name, null, attr.value, null);
-          } catch (e) {
-            report(e);
-          }
-        }
-      }
-    }
-    if (element.isConnected && typeof element.connectedCallback === "function") {
-      try {
-        element.connectedCallback();
-      } catch (e) {
-        report(e);
-      }
-    }
+    flushComponents();
   }
-
   function triggerConnected(node) {
-    if (!node || node.nodeType !== 1) return;
-    if (node._upgraded && typeof node.connectedCallback === "function") {
-      try {
-        node.connectedCallback();
-      } catch (e) {
-        report(e);
-      }
-    }
-    for (const child of node.children) {
-      triggerConnected(child);
-    }
-    if (node._shadowRoot) {
-      for (const child of node._shadowRoot.children) {
-        triggerConnected(child);
-      }
-    }
+    component("customConnected", node._id); flushComponents();
   }
-
   function triggerDisconnected(node) {
-    if (!node || node.nodeType !== 1) return;
-    if (node._upgraded && typeof node.disconnectedCallback === "function") {
-      try {
-        node.disconnectedCallback();
-      } catch (e) {
-        report(e);
-      }
-    }
-    for (const child of node.children) {
-      triggerDisconnected(child);
-    }
-    if (node._shadowRoot) {
-      for (const child of node._shadowRoot.children) {
-        triggerDisconnected(child);
-      }
-    }
+    component("customDisconnected", node._id); flushComponents();
   }
-
   class CustomElementRegistry {
-    constructor() {
-      this._definitions = new Map();
-      this._constructors = new Map();
-      this._whenDefined = new Map();
-    }
     define(name, constructor, options) {
-      name = String(name).toLowerCase();
-      if (!isValidCustomElementName(name)) {
-        fail("SyntaxError", `"${name}" is not a valid custom element name`);
+      if (typeof constructor !== "function" || !constructor.prototype) fail("TypeError", "Custom element constructor must be constructible");
+      const identity = constructorDefinitions.get(constructor)?.constructorIdentity || ++constructorIdentity;
+      const nameString = String(name);
+      const extendsName = options?.extends === undefined ? "" : String(options.extends);
+      component("customPreflight", nameString, identity, extendsName);
+      const callbacks = Object.create(null);
+      for (const name of ["connectedCallback", "disconnectedCallback", "adoptedCallback", "attributeChangedCallback"]) {
+        const callback = constructor.prototype[name];
+        if (callback !== undefined && typeof callback !== "function") fail("TypeError", name + " must be callable");
+        callbacks[name] = callback;
       }
-      if (typeof constructor !== "function") {
-        fail("TypeError", "Custom element constructor must be a function");
-      }
-      if (this._definitions.has(name)) {
-        fail("NotSupportedError", `Custom element "${name}" has already been defined`);
-      }
-      if (this._constructors.has(constructor)) {
-        fail("NotSupportedError", "This constructor has already been defined for a custom element");
-      }
-      const observedAttributes = Array.isArray(constructor.observedAttributes)
-        ? [...constructor.observedAttributes]
-        : [];
-      const def = { name, constructor, observedAttributes };
-      this._definitions.set(name, def);
-      this._constructors.set(constructor, name);
-
-      if (this._whenDefined.has(name)) {
-        this._whenDefined.get(name)._resolve(constructor);
-        this._whenDefined.delete(name);
-      }
-
-      this._upgradeMatching(name, def);
-    }
-    _upgradeMatching(name, def) {
-      if (document) {
-        for (const el of document.querySelectorAll(name)) {
-          upgradeElement(el, def);
-        }
-      }
-      for (const root of allShadowRoots) {
-        for (const el of root.querySelectorAll(name)) {
-          upgradeElement(el, def);
-        }
-      }
+      const observed = callbacks.attributeChangedCallback ? Array.from(constructor.observedAttributes || [], String) : [];
+      const definition = component("customDefine", nameString, identity, JSON.stringify({ observed, extends: extendsName || undefined }));
+      constructorDefinitions.set(constructor, { ...definition, constructorIdentity: identity });
+      componentConstructors.set(definition.id, constructor);
+      componentCallbacks.set(definition.id, callbacks);
+      componentWaiters.get(definition.name)?.resolve(constructor);
+      componentWaiters.delete(definition.name);
+      for (const id of component("customCandidates", document._id, definition.id)) upgradeElement(wrap(id), definition.id);
     }
     get(name) {
-      return this._definitions.get(String(name).toLowerCase())?.constructor;
+      const definition = component("customDefinition", String(name));
+      return definition ? componentConstructors.get(definition.id) : undefined;
     }
-    getName(constructor) {
-      return this._constructors.get(constructor) || null;
-    }
+    getName(constructor) { return constructorDefinitions.get(constructor)?.name || null; }
     whenDefined(name) {
-      name = String(name).toLowerCase();
-      if (!isValidCustomElementName(name)) {
-        return Promise.reject(new SyntaxError(`"${name}" is not a valid custom element name`));
-      }
-      if (this._definitions.has(name)) {
-        return Promise.resolve(this._definitions.get(name).constructor);
-      }
-      let promise = this._whenDefined.get(name);
-      if (!promise) {
+      name = String(name);
+      if (!component("customNameValid", name)) return Promise.reject(new SyntaxError("Invalid custom element name"));
+      const existing = this.get(name);
+      if (existing) return Promise.resolve(existing);
+      if (!componentWaiters.has(name)) {
         let resolve;
-        promise = new Promise((res) => { resolve = res; });
-        promise._resolve = resolve;
-        this._whenDefined.set(name, promise);
+        const promise = new Promise(done => { resolve = done; });
+        componentWaiters.set(name, { promise, resolve });
       }
-      return promise;
+      return componentWaiters.get(name).promise;
     }
     upgrade(root) {
-      if (!root) return;
-      const walk = (node) => {
-        if (node.nodeType === 1) {
-          const tag = node.localName.toLowerCase();
-          const def = this._definitions.get(tag);
-          if (def && !node._upgraded) {
-            upgradeElement(node, def);
-          }
-          if (node._shadowRoot) {
-            walk(node._shadowRoot);
-          }
-        }
-        for (const child of node.childNodes) {
-          walk(child);
-        }
-      };
-      walk(root);
+      if (!(root instanceof Node)) fail("TypeError", "upgrade requires a Node");
+      for (const [definition] of componentConstructors) {
+        for (const id of component("customCandidates", root._id, definition)) upgradeElement(wrap(id), definition);
+      }
     }
   }
   const customElements = new CustomElementRegistry();
-
   class HTMLElement extends Element {
     constructor(id, info) {
-      if (__currentlyUpgrading) {
-        return __currentlyUpgrading;
+      const construction = constructionStack[constructionStack.length - 1];
+      if (id === undefined && info === undefined && construction?.constructor === new.target) {
+        if (construction.used) fail("TypeError", "Custom element already constructed");
+        construction.used = true;
+        return construction.element;
       }
-      if (new.target === HTMLElement && (id === undefined || info === undefined)) {
-        fail("TypeError", "Illegal constructor");
-      }
-      if (new.target !== HTMLElement && (id === undefined || info === undefined)) {
-        const name = customElements._constructors.get(new.target);
-        if (!name) {
-          fail("TypeError", "Illegal constructor");
-        }
-        id = host("create", name);
+      if (id === undefined || info === undefined) {
+        const definition = constructorDefinitions.get(new.target);
+        if (!definition) fail("TypeError", "Illegal constructor");
+        id = component("customConstruct", definition.id);
         info = host("info", id);
       }
       super(id, info);
-      if (id !== undefined) {
-        cache.set(id, weak ? new WeakRef(this) : this);
-        host("retain", id);
-        finalizer?.register(this, id);
-      }
-      this._upgraded = true;
+      cache.set(id, weak ? new WeakRef(this) : this);
+      host("retain", id);
+      finalizer?.register(this, id);
     }
   }
   class SVGElement extends Element {}
@@ -1794,358 +1654,22 @@
     }
   }
 
-  const PERMITTED_CROSS_ORIGIN_PROPERTIES = new Set([
-    "postMessage",
-    "location",
-    "close",
-    "closed",
-    "focus",
-    "blur",
-    "parent",
-    "top",
-    "self",
-    "window",
-    "frames",
-    "length",
-    Symbol.toStringTag,
-  ]);
-
-  function isSameOrigin(originA, originB) {
-    if (!originA || !originB || originA === "null" || originB === "null") {
-      return false;
-    }
-    return originA === originB;
-  }
-
-  const childFrames = [];
-
-  function createFrameContext(iframeElement) {
-    const parentOrigin = document.location ? document.location.origin : "null";
-    const parentHref = document.location ? document.location.href : "about:blank";
-    const src = iframeElement.getAttribute("src") || "about:blank";
-    const isSrcdoc = iframeElement.hasAttribute("srcdoc");
-    const isSandboxed = iframeElement.hasAttribute("sandbox");
-    const allowSameOrigin = isSandboxed && iframeElement.sandbox.contains("allow-same-origin");
-    const allowScripts = !isSandboxed || iframeElement.sandbox.contains("allow-scripts");
-
-    let origin = "null";
-    let frameUrl = src;
-    if (isSrcdoc) {
-      frameUrl = "about:srcdoc";
-      if (!isSandboxed || allowSameOrigin) {
-        origin = parentOrigin;
-      }
-    } else if (src === "about:blank") {
-      if (!isSandboxed || allowSameOrigin) {
-        origin = parentOrigin;
-      }
-    } else {
-      try {
-        const resolved = new URL(src, document.baseURI || parentHref);
-        frameUrl = resolved.href;
-        if (!isSandboxed || allowSameOrigin) {
-          origin = resolved.origin;
-        }
-      } catch {
-        origin = "null";
-      }
-    }
-
-    const frameDoc = new Document();
-    frameDoc._isFrameDocument = true;
-    frameDoc._ownerFrame = iframeElement;
-
-    const html = frameDoc.createElement("html");
-    const head = frameDoc.createElement("head");
-    const body = frameDoc.createElement("body");
-    html.appendChild(head);
-    html.appendChild(body);
-    frameDoc.appendChild(html);
-
-    if (isSrcdoc) {
-      body.innerHTML = iframeElement.getAttribute("srcdoc") || "";
-    }
-
-    const frameLocation = {
-      _href: frameUrl,
-      _origin: origin,
-      get href() {
-        return this._href;
-      },
-      set href(v) {
-        this._href = String(v);
-        iframeElement.setAttribute("src", String(v));
-      },
-      get origin() {
-        return this._origin;
-      },
-      get protocol() {
-        try { return new URL(this._href).protocol; } catch { return ":"; }
-      },
-      get host() {
-        try { return new URL(this._href).host; } catch { return ""; }
-      },
-      get hostname() {
-        try { return new URL(this._href).hostname; } catch { return ""; }
-      },
-      get port() {
-        try { return new URL(this._href).port; } catch { return ""; }
-      },
-      get pathname() {
-        try { return new URL(this._href).pathname; } catch { return "/"; }
-      },
-      get search() {
-        try { return new URL(this._href).search; } catch { return ""; }
-      },
-      get hash() {
-        try { return new URL(this._href).hash; } catch { return ""; }
-      },
-      replace(v) { this.href = v; },
-      assign(v) { this.href = v; },
-      reload() { iframeElement._updateFrame(); },
-      toString() { return this._href; },
-    };
-
-    const listeners = new Map();
-    let isClosed = false;
-
-    const frameWindow = {
-      document: frameDoc,
-      location: frameLocation,
-      get closed() { return isClosed; },
-      close() { isClosed = true; },
-      focus() {},
-      blur() {},
-      parent: globalThis,
-      top: globalThis.top || globalThis,
-      frameElement: iframeElement,
-      length: 0,
-      name: iframeElement.getAttribute("name") || "",
-      addEventListener(type, listener, options) {
-        if (!listeners.has(type)) listeners.set(type, new Set());
-        listeners.get(type).add(listener);
-      },
-      removeEventListener(type, listener, options) {
-        listeners.get(type)?.delete(listener);
-      },
-      dispatchEvent(event) {
-        const set = listeners.get(event.type);
-        if (set) {
-          for (const l of [...set]) {
-            try {
-              if (typeof l === "function") l.call(frameWindow, event);
-              else if (typeof l?.handleEvent === "function") l.handleEvent(event);
-            } catch (e) {
-              report(e);
-            }
-          }
-        }
-        return !event.defaultPrevented;
-      },
-      postMessage(message, targetOrigin = "*", transfer = []) {
-        dispatchCrossFrameMessage(globalThis, frameWindow, message, targetOrigin, transfer);
-      },
-    };
-
-    frameWindow.self = frameWindow;
-    frameWindow.window = frameWindow;
-    frameWindow.frames = frameWindow;
-    frameDoc._defaultView = frameWindow;
-    frameDoc._location = frameLocation;
-
-    const windowProxy = new Proxy(frameWindow, {
-      get(target, prop, receiver) {
-        const callerOrigin = document.location ? document.location.origin : "null";
-        const targetOrigin = target.location.origin;
-        const same = isSameOrigin(callerOrigin, targetOrigin);
-
-        if (!same) {
-          if (prop === "location") {
-            return new Proxy({}, {
-              get(locTarget, locProp) {
-                if (locProp === "replace") return (url) => { target.location.replace(url); };
-                if (locProp === "assign") return (url) => { target.location.assign(url); };
-                fail(
-                  "SecurityError",
-                  `Blocked a frame with origin "${callerOrigin}" from accessing "${String(locProp)}" on cross-origin Location.`
-                );
-              },
-              set(locTarget, locProp, val) {
-                if (locProp === "href") {
-                  target.location.href = val;
-                  return true;
-                }
-                fail(
-                  "SecurityError",
-                  `Blocked a frame with origin "${callerOrigin}" from setting "${String(locProp)}" on cross-origin Location.`
-                );
-              },
-            });
-          }
-          if (prop === "postMessage") {
-            return function(msg, tgtOrigin = "*", trans = []) {
-              dispatchCrossFrameMessage(globalThis, target, msg, tgtOrigin, trans);
-            };
-          }
-          if (prop === "window" || prop === "self" || prop === "frames") {
-            return receiver;
-          }
-          if (!PERMITTED_CROSS_ORIGIN_PROPERTIES.has(prop)) {
-            fail(
-              "SecurityError",
-              `Blocked a frame with origin "${callerOrigin}" from accessing a cross-origin frame.`
-            );
-          }
-        }
-        return Reflect.get(target, prop, receiver);
-      },
-      set(target, prop, value, receiver) {
-        const callerOrigin = document.location ? document.location.origin : "null";
-        const targetOrigin = target.location.origin;
-        const same = isSameOrigin(callerOrigin, targetOrigin);
-
-        if (!same) {
-          if (prop === "location") {
-            target.location.href = value;
-            return true;
-          }
-          fail(
-            "SecurityError",
-            `Blocked a frame with origin "${callerOrigin}" from modifying a cross-origin frame.`
-          );
-        }
-        return Reflect.set(target, prop, value, receiver);
-      },
-    });
-
-    return { frameWindow, windowProxy, frameDoc, allowScripts };
-  }
-
-  function dispatchCrossFrameMessage(sourceWindow, targetWindow, message, targetOrigin, transfer) {
-    if (typeof targetOrigin !== "string") {
-      throw new TypeError("Failed to execute 'postMessage': 2nd argument must be a string.");
-    }
-    const targetNorm = targetOrigin.trim();
-    if (targetNorm !== "*" && targetNorm !== "/") {
-      try {
-        new URL(targetNorm);
-      } catch {
-        fail(
-          "SyntaxError",
-          `Failed to execute 'postMessage': The target origin provided ('${targetOrigin}') is not a valid absolute URL.`
-        );
-      }
-    }
-
-    const sourceOrigin = sourceWindow.location ? sourceWindow.location.origin : "null";
-    const receiverOrigin = targetWindow.location ? targetWindow.location.origin : "null";
-
-    if (targetNorm !== "*") {
-      if (targetNorm === "/") {
-        if (!isSameOrigin(sourceOrigin, receiverOrigin)) return;
-      } else {
-        if (receiverOrigin !== targetNorm) return;
-      }
-    }
-
-    let cloned;
-    try {
-      cloned = typeof structuredClone === "function" ? structuredClone(message) : JSON.parse(JSON.stringify(message));
-    } catch {
-      cloned = message;
-    }
-
-    queueMicrotask(() => {
-      if (targetWindow.closed) return;
-      const event = new (web ? web.MessageEvent : Event)("message", {
-        data: cloned,
-        origin: sourceOrigin,
-        source: sourceWindow,
-        ports: transfer || [],
-      });
-      event.data = cloned;
-      event.origin = sourceOrigin;
-      event.source = sourceWindow;
-      targetWindow.dispatchEvent(event);
-      if (typeof targetWindow.onmessage === "function") {
-        try {
-          targetWindow.onmessage(event);
-        } catch (e) {
-          report(e);
-        }
-      }
-    });
-  }
-
+  // Nested documents are not exposed until a browser-issued frame context is
+  // bound to a real worker. A detached synthetic document is not an iframe.
   class HTMLIFrameElement extends HTMLElement {
-    constructor(id, info) {
-      super(id, info);
-      this._frameContext = null;
-    }
-    _ensureFrame() {
-      if (!this._frameContext) {
-        this._frameContext = createFrameContext(this);
-        if (!childFrames.includes(this)) {
-          childFrames.push(this);
-        }
-      }
-      return this._frameContext;
-    }
-    _updateFrame() {
-      if (this._frameContext) {
-        const idx = childFrames.indexOf(this);
-        if (idx !== -1) childFrames.splice(idx, 1);
-        this._frameContext = null;
-      }
-      this._ensureFrame();
-    }
-    get contentWindow() {
-      return this._ensureFrame().windowProxy;
-    }
-    get contentDocument() {
-      const ctx = this._ensureFrame();
-      const callerOrigin = document.location ? document.location.origin : "null";
-      const targetOrigin = ctx.frameWindow.location.origin;
-      if (isSameOrigin(callerOrigin, targetOrigin)) {
-        return ctx.frameDoc;
-      }
-      return null;
-    }
-    get src() {
-      return this.getAttribute("src") || "";
-    }
-    set src(val) {
-      this.setAttribute("src", val);
-      this._updateFrame();
-    }
-    get srcdoc() {
-      return this.getAttribute("srcdoc") || "";
-    }
-    set srcdoc(val) {
-      this.setAttribute("srcdoc", val);
-      this._updateFrame();
-    }
-    get name() {
-      return this.getAttribute("name") || "";
-    }
-    set name(val) {
-      this.setAttribute("name", val);
-    }
-    get width() {
-      return this.getAttribute("width") || "";
-    }
-    set width(val) {
-      this.setAttribute("width", val);
-    }
-    get height() {
-      return this.getAttribute("height") || "";
-    }
-    set height(val) {
-      this.setAttribute("height", val);
-    }
-    get sandbox() {
-      return new DOMTokenList(this, "sandbox");
-    }
+    get contentWindow() { return null; }
+    get contentDocument() { return null; }
+    get src() { return this.getAttribute("src") || ""; }
+    set src(value) { this.setAttribute("src", String(value)); }
+    get srcdoc() { return this.getAttribute("srcdoc") || ""; }
+    set srcdoc(value) { this.setAttribute("srcdoc", String(value)); }
+    get name() { return this.getAttribute("name") || ""; }
+    set name(value) { this.setAttribute("name", String(value)); }
+    get width() { return this.getAttribute("width") || ""; }
+    set width(value) { this.setAttribute("width", String(value)); }
+    get height() { return this.getAttribute("height") || ""; }
+    set height(value) { this.setAttribute("height", String(value)); }
+    get sandbox() { return new DOMTokenList(this, "sandbox"); }
   }
   Object.defineProperty(Element.prototype, "form", {
     get() {
@@ -2361,13 +1885,8 @@
   }
   function prepareInserted(node) {
     if (node?.nodeType !== 1) return;
-    if (node.localName === "iframe") {
-      node._ensureFrame();
-    }
     if (isScript(node)) prepareScript(node);
     else if (node.firstElementChild) {
-      for (const iframe of node.querySelectorAll("iframe"))
-        iframe._ensureFrame();
       for (const script of node.querySelectorAll("script"))
         prepareScript(script);
     }
@@ -2385,38 +1904,7 @@
       this.setAttribute("name", value);
     }
     assignedNodes(options) {
-      const flatten = !!options?.flatten;
-      const root = this.getRootNode();
-      if (!(root instanceof ShadowRoot)) return [];
-      const hostEl = root.host;
-      if (!hostEl) return [];
-      const slotName = this.name;
-      const assigned = [];
-      for (const child of hostEl.childNodes) {
-        if (child.nodeType === 1) {
-          const targetSlot = child.getAttribute("slot") || "";
-          if (targetSlot === slotName) {
-            assigned.push(child);
-          }
-        } else if (!slotName) {
-          assigned.push(child);
-        }
-      }
-      if (assigned.length === 0 && flatten) {
-        return [...this.childNodes];
-      }
-      if (flatten) {
-        const flat = [];
-        for (const node of assigned) {
-          if (node instanceof HTMLSlotElement) {
-            flat.push(...node.assignedNodes({ flatten: true }));
-          } else {
-            flat.push(node);
-          }
-        }
-        return flat;
-      }
-      return assigned;
+      return component("assignedNodes", this._id, !!options?.flatten).map(id => wrap(id));
     }
     assignedElements(options) {
       return this.assignedNodes(options).filter((node) => node.nodeType === 1);
@@ -3107,8 +2595,11 @@
       return clone;
     }
     adoptNode(node) {
+      const oldOwner = node.ownerDocument;
       node.remove();
+      component("customAdopt", node._id, oldOwner?._id || "", this._id);
       node._owner = this;
+      flushComponents();
       return node;
     }
     get activeElement() {
@@ -3417,8 +2908,20 @@
     parent: globalThis,
     frames: globalThis,
     frameElement: null,
-    postMessage(message, targetOrigin = "*", transfer = []) {
-      dispatchCrossFrameMessage(globalThis, globalThis, message, targetOrigin, transfer);
+    postMessage(message, targetOrigin = "/", transfer = []) {
+      if (targetOrigin !== null && typeof targetOrigin === "object") {
+        transfer = targetOrigin.transfer || [];
+        targetOrigin = targetOrigin.targetOrigin === undefined ? "/" : targetOrigin.targetOrigin;
+      }
+      const accepts = component("messageTarget", String(targetOrigin));
+      // V8/Deno owns serialization and transfer validation. Serialization errors
+      // propagate synchronously; original objects are never delivered as fallback.
+      const data = web.structuredClone(message, { transfer });
+      const origin = new URL(host("url")).origin;
+      if (accepts) setTimeout(() => {
+        const event = new web.MessageEvent("message", { data, origin, source: globalThis });
+        globalThis.dispatchEvent(event);
+      }, 0);
     },
     navigator: {
       userAgent:
@@ -3635,27 +3138,15 @@
         ),
     },
   });
-  function getChildFrames() {
-    if (!document) return [];
-    try {
-      return Array.from(document.querySelectorAll("iframe"));
-    } catch {
-      return [];
-    }
-  }
-  Object.defineProperty(globalThis, "length", {
-    get() {
-      return getChildFrames().length;
+  web.event.setWegaDomHooks({
+    parent: (node, event, originalRoot) => {
+      if (!node?._id) return null;
+      if (node.nodeType === 9) return node.defaultView;
+      return wrap(component("eventParent", node._id, event ? !!event.composed : true, originalRoot?._id || ""));
     },
-    configurable: true,
+    host: node => node?._id ? wrap(component("shadowHost", node._id)) : null,
+    mode: node => shadowDescriptors.get(node)?.mode || null,
+    slot: node => node?._id ? wrap(component("assignedSlotInternal", node._id)) : null,
   });
-  for (let i = 0; i < 32; i++) {
-    Object.defineProperty(globalThis, i, {
-      get() {
-        const frames = getChildFrames();
-        return frames[i]?.contentWindow;
-      },
-      configurable: true,
-    });
-  }
+  Object.defineProperty(globalThis, "length", { get: () => 0, configurable: true });
 })();

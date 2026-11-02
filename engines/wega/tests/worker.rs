@@ -17,6 +17,49 @@ struct Worker {
 }
 
 #[test]
+fn reserved_frame_commands_do_not_evaluate_strings_or_report_false_commits() {
+    let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
+    let mut worker = Worker::start(store.path().unwrap());
+    worker.evaluate(
+        "globalThis.frameInjection=0;document.body.innerHTML='<iframe id=1></iframe>';true".into(),
+    );
+    worker.until(|event| matches!(event, Event::DocumentEvaluated { .. }));
+    for command in [
+        Command::FrameNavigate {
+            frame: protocol::identity::FrameId(1),
+            url: "https://foreign.test/\n';frameInjection=1;//".into(),
+        },
+        Command::FramePostMessage {
+            target: protocol::identity::FrameId(1),
+            origin: "https://forged.test".into(),
+            target_origin: Some("');frameInjection=2;//".into()),
+            message: "payload".into(),
+        },
+    ] {
+        worker.send(command);
+        let until = Instant::now() + Duration::from_secs(10);
+        loop {
+            let event = worker
+                .events
+                .recv_timeout(until.saturating_duration_since(Instant::now()))
+                .unwrap();
+            assert!(
+                !matches!(event, Event::FrameNavigated { .. }),
+                "an unavailable frame cannot report a commit"
+            );
+            if matches!(event,Event::Content {event:protocol::ContentEvent::Notice(ref notice),..} if notice.contains("Nested browsing contexts"))
+            {
+                break;
+            }
+        }
+    }
+    worker.evaluate("frameInjection".into());
+    assert!(
+        matches!(worker.until(|event|matches!(event,Event::DocumentEvaluated {..})),Event::DocumentEvaluated {result:Ok(value),..} if value=="0")
+    );
+}
+
+#[test]
 fn a_fatal_script_reports_its_document_and_exits_before_explicit_restart() {
     let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
     let mut worker = Worker::start(store.path().unwrap());

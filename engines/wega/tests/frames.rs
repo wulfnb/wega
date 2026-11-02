@@ -1,301 +1,135 @@
-use std::sync::Arc;
+//! These regressions check the current fail-closed boundary. They deliberately
+//! do not count synthetic documents or an empty iframe box as frame support.
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use wega_engine::{Engine, Limits, NetworkPolicy, Url};
 
-fn page(limits: Limits) -> wega_engine::View {
-    Engine::new(limits, NetworkPolicy::default(), Arc::new(|| {}))
+fn page() -> wega_engine::View {
+    Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {}))
         .unwrap()
         .create_view(Url::parse("https://example.test/index.html").unwrap())
         .unwrap()
 }
 
 #[test]
-fn same_origin_iframe_dom_and_script_access() {
-    let mut view = page(Limits::default());
-    view.set_html(r#"<!doctype html>
-      <title>Parent</title>
-      <iframe id="child" src="about:blank"></iframe>
-    "#)
-    .unwrap();
-
-    // Verify contentDocument is non-null for same-origin
-    let doc_check = view
-        .evaluate_json("document.getElementById('child').contentDocument !== null")
-        .unwrap();
-    assert_eq!(doc_check, "true");
-
-    // Verify contentWindow.document === contentDocument
-    let eq_check = view
-        .evaluate_json(
-            "document.getElementById('child').contentWindow.document === document.getElementById('child').contentDocument",
-        )
-        .unwrap();
-    assert_eq!(eq_check, "true");
-
-    // Parent can synchronously manipulate iframe DOM
-    view.evaluate(
-        "document.getElementById('child').contentDocument.body.innerHTML = '<h1 id=\"heading\">Frame Title</h1>'",
+fn unbound_frames_never_expose_synthetic_documents_or_window_proxies() {
+    let mut view = page();
+    view.set_html(
+        r#"<iframe src="about:blank"></iframe>
+        <iframe src="https://foreign.test/secret"></iframe>
+        <iframe sandbox="allow-scripts" srcdoc="<p>Private</p>"></iframe>"#,
     )
     .unwrap();
-    let text = view
-        .evaluate_json(
-            "document.getElementById('child').contentDocument.getElementById('heading').textContent",
+    assert_eq!(
+        view.evaluate_json(
+            r#"(() => {
+        const frames = [...document.querySelectorAll('iframe')];
+        return frames.length === 3 && window.length === 0 && frames.every(frame =>
+            frame.contentWindow === null && frame.contentDocument === null &&
+            frame._frameContext === undefined);
+    })()"#
         )
-        .unwrap();
-    assert_eq!(text, "\"Frame Title\"");
-
-    // Verify frame indexing on window
-    let len = view.evaluate_json("window.length").unwrap();
-    assert_eq!(len, "1");
-
-    let win0 = view
-        .evaluate_json("window[0] === document.getElementById('child').contentWindow")
-        .unwrap();
-    assert_eq!(win0, "true");
-
-    // Verify parent/top relationships
-    let parent_ref = view
-        .evaluate_json("document.getElementById('child').contentWindow.parent === window")
-        .unwrap();
-    assert_eq!(parent_ref, "true");
-
-    let top_ref = view
-        .evaluate_json("document.getElementById('child').contentWindow.top === window")
-        .unwrap();
-    assert_eq!(top_ref, "true");
+        .unwrap(),
+        "true"
+    );
+    view.paint(640, 480, 1.0, 1.0, false).unwrap();
+    assert!(
+        view.compatibility
+            .as_deref()
+            .is_some_and(|reason| reason.contains("iframe"))
+    );
 }
 
 #[test]
-fn cross_origin_iframe_security_isolation() {
-    let mut view = page(Limits::default());
-    // Parent origin is https://example.test, frame is https://foreign.test
-    view.set_html(r#"<!doctype html>
-      <title>Parent</title>
-      <iframe id="cross" src="https://foreign.test/embed.html"></iframe>
-    "#)
-    .unwrap();
-
-    // Cross-origin contentDocument must be null
-    let doc_null = view
-        .evaluate_json("document.getElementById('cross').contentDocument === null")
-        .unwrap();
-    assert_eq!(doc_null, "true");
-
-    // Reading document property from cross-origin contentWindow must throw SecurityError
-    let threw_doc = view
-        .evaluate_json(r#"(() => {
-            try {
-                const d = document.getElementById('cross').contentWindow.document;
-                return false;
-            } catch (e) {
-                return e.name === "SecurityError";
-            }
-        })()"#)
-        .unwrap();
-    assert_eq!(threw_doc, "true");
-
-    // Reading custom expando or eval on cross-origin contentWindow must throw SecurityError
-    let threw_eval = view
-        .evaluate_json(r#"(() => {
-            try {
-                document.getElementById('cross').contentWindow.eval("alert(1)");
-                return false;
-            } catch (e) {
-                return e.name === "SecurityError";
-            }
-        })()"#)
-        .unwrap();
-    assert_eq!(threw_eval, "true");
-
-    // Allowed cross-origin properties work without throwing
-    let allowed_checks = view
-        .evaluate_json(r#"(() => {
-            const win = document.getElementById('cross').contentWindow;
-            return typeof win.postMessage === "function" &&
-                   win.closed === false &&
-                   win.parent === window &&
-                   win.top === window;
-        })()"#)
-        .unwrap();
-    assert_eq!(allowed_checks, "true");
-
-    // Setting location.href is permitted for cross-origin navigation, but reading throws SecurityError
-    let threw_read_loc = view
-        .evaluate_json(r#"(() => {
-            try {
-                const href = document.getElementById('cross').contentWindow.location.href;
-                return false;
-            } catch (e) {
-                return e.name === "SecurityError";
-            }
-        })()"#)
-        .unwrap();
-    assert_eq!(threw_read_loc, "true");
+fn frame_attributes_remain_native_dom_attributes_without_creating_a_context() {
+    let mut view = page();
+    view.set_html("<iframe id=f></iframe>").unwrap();
+    assert_eq!(
+        view.evaluate_json(
+            r#"(() => {
+        const f = document.getElementById('f');
+        f.src = '/child'; f.srcdoc = '<p>Child</p>'; f.name = 'child';
+        f.sandbox.add('allow-scripts'); f.sandbox.add('allow-forms');
+        f.sandbox.remove('allow-forms');
+        const okay = f.src === '/child' && f.name === 'child' &&
+            f.sandbox.contains('allow-scripts') && !f.sandbox.contains('allow-forms');
+        f.remove();
+        return okay && f.contentWindow === null && window.length === 0;
+    })()"#
+        )
+        .unwrap(),
+        "true"
+    );
 }
 
 #[test]
-fn sandboxed_iframe_opaque_origin_isolation() {
-    let mut view = page(Limits::default());
-    // Sandboxed without allow-same-origin forces unique opaque origin "null"
-    view.set_html(r#"<!doctype html>
-      <iframe id="sandboxed" sandbox="allow-scripts" src="about:blank"></iframe>
-      <iframe id="sandboxed_same" sandbox="allow-scripts allow-same-origin" src="about:blank"></iframe>
-    "#)
-    .unwrap();
-
-    // Sandboxed frame without allow-same-origin has contentDocument === null
-    let sandboxed_doc_null = view
-        .evaluate_json("document.getElementById('sandboxed').contentDocument === null")
-        .unwrap();
-    assert_eq!(sandboxed_doc_null, "true");
-
-    // Accessing sandboxed contentWindow.document throws SecurityError
-    let sandboxed_threw = view
-        .evaluate_json(r#"(() => {
-            try {
-                const d = document.getElementById('sandboxed').contentWindow.document;
-                return false;
-            } catch (e) {
-                return e.name === "SecurityError";
-            }
-        })()"#)
-        .unwrap();
-    assert_eq!(sandboxed_threw, "true");
-
-    // Sandboxed frame WITH allow-same-origin permits contentDocument access
-    let same_origin_allowed = view
-        .evaluate_json("document.getElementById('sandboxed_same').contentDocument !== null")
-        .unwrap();
-    assert_eq!(same_origin_allowed, "true");
-
-    // TokenList manipulation on sandbox
-    let token_test = view
-        .evaluate_json(r#"(() => {
-            const frame = document.getElementById('sandboxed');
-            const hasScripts = frame.sandbox.contains('allow-scripts');
-            const hasForms = frame.sandbox.contains('allow-forms');
-            frame.sandbox.add('allow-forms');
-            return hasScripts && !hasForms && frame.sandbox.contains('allow-forms');
-        })()"#)
-        .unwrap();
-    assert_eq!(token_test, "true");
+fn window_messages_use_tasks_structured_clone_and_native_transfer() {
+    let mut view = page();
+    view.set_html("<p>Message target</p>").unwrap();
+    let initial = view.evaluate_json(r#"(() => {
+        globalThis.received = []; globalThis.order = [];
+        addEventListener('message', event => { order.push('message'); received.push({
+            data: event.data, origin: event.origin, source: event.source === window
+        }); });
+        const cyclic = { value: 1 }; cyclic.self = cyclic;
+        postMessage(cyclic);
+        cyclic.value = 7;
+        Promise.resolve().then(() => order.push('microtask'));
+        const buffer = new ArrayBuffer(8);
+        postMessage({ buffer }, {targetOrigin: 'https://example.test/path', transfer: [buffer]});
+        postMessage('drop', 'https://foreign.test');
+        let cloneError = false, originError = false;
+        try { postMessage(() => {}); } catch(error) { cloneError = error.name === 'DataCloneError'; }
+        try { postMessage('bad', 'relative'); } catch(error) { originError = error.name === 'SyntaxError'; }
+        return { detached: buffer.byteLength === 0, cloneError, originError, synchronous: received.length };
+    })()"#).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&initial).unwrap(),
+        serde_json::json!({"cloneError":true,"detached":true,"originError":true,"synchronous":0})
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        view.poll();
+        if view.evaluate_json("received.length").unwrap() == "2" {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        view.evaluate_json(
+            r#"received.length === 2 && received[0].data.value === 1 &&
+        received[0].data.self === received[0].data && received[0].source &&
+        received[0].origin === 'https://example.test' && received[1].data.buffer.byteLength === 8 &&
+        order[0] === 'microtask'"#
+        )
+        .unwrap(),
+        "true"
+    );
 }
 
 #[test]
-fn post_message_cross_frame_communication_and_target_origin_filtering() {
-    let mut view = page(Limits::default());
-    view.set_html(r#"<!doctype html>
-      <iframe id="child" src="about:blank"></iframe>
-    "#)
-    .unwrap();
-
-    // Register message receiver on child frame
-    view.evaluate(r#"
-        window.receivedMessages = [];
-        document.getElementById('child').contentWindow.addEventListener('message', (event) => {
-            window.receivedMessages.push({
-                data: event.data,
-                origin: event.origin,
-            });
-        });
-    "#)
-    .unwrap();
-
-    // Post message with wildcard target origin "*"
-    view.evaluate("document.getElementById('child').contentWindow.postMessage('hello from parent', '*')")
-        .unwrap();
-
-    // Post message with matching target origin
-    view.evaluate("document.getElementById('child').contentWindow.postMessage('matching message', 'https://example.test')")
-        .unwrap();
-
-    // Post message with mismatched target origin (must be dropped and not delivered)
-    view.evaluate("document.getElementById('child').contentWindow.postMessage('secret dropped', 'https://mismatched.test')")
-        .unwrap();
-
-    // Verify messages received
-    let result = view
-        .evaluate_json(r#"(() => {
-            const msgs = window.receivedMessages;
-            if (msgs.length !== 2) return false;
-            return msgs[0].data === "hello from parent" &&
-                   msgs[0].origin === "https://example.test" &&
-                   msgs[1].data === "matching message";
-        })()"#)
-        .unwrap();
-    assert_eq!(result, "true");
-
-    // Invalid target origin throws SyntaxError per HTML spec
-    let syntax_err = view
-        .evaluate_json(r#"(() => {
-            try {
-                document.getElementById('child').contentWindow.postMessage('test', 'not a valid uri');
-                return false;
-            } catch (e) {
-                return e.name === "SyntaxError";
-            }
-        })()"#)
-        .unwrap();
-    assert_eq!(syntax_err, "true");
+fn failed_or_duplicate_transfers_leave_the_callers_buffers_attached() {
+    let mut view = page();
+    view.set_html("<p>Clone ownership</p>").unwrap();
+    assert_eq!(
+        view.evaluate_json(
+            r#"(() => {
+        const buffer = new ArrayBuffer(16);
+        const data = new Uint8Array(buffer); data[0] = 42;
+        let failed = false, duplicate = false;
+        try { structuredClone({buffer, fn: () => {}}, {transfer: [buffer]}); }
+        catch(error) { failed = error.name === 'DataCloneError' && buffer.byteLength === 16; }
+        try { structuredClone({buffer}, {transfer: [buffer, buffer]}); }
+        catch(error) { duplicate = error.name === 'DataCloneError' && buffer.byteLength === 16; }
+        const cloned = structuredClone({data}, {transfer: [buffer]});
+        return failed && duplicate && buffer.byteLength === 0 && cloned.data[0] === 42 &&
+            typeof __wega_call === 'undefined' && typeof __wega_web === 'undefined' &&
+            typeof __wega_assigned_slot === 'undefined';
+    })()"#
+        )
+        .unwrap(),
+        "true"
+    );
 }
-
-#[test]
-fn srcdoc_iframe_inherits_parent_origin_unless_sandboxed() {
-    let mut view = page(Limits::default());
-    view.set_html(r#"<!doctype html>
-      <iframe id="srcdoc_frame" srcdoc="<h1>Embedded Content</h1>"></iframe>
-      <iframe id="srcdoc_sandboxed" sandbox="allow-scripts" srcdoc="<h1>Sandboxed Content</h1>"></iframe>
-    "#)
-    .unwrap();
-
-    // Non-sandboxed srcdoc inherits parent origin and has accessible contentDocument
-    let doc_accessible = view
-        .evaluate_json(r#"(() => {
-            const frame = document.getElementById('srcdoc_frame');
-            return frame.contentDocument !== null &&
-                   frame.contentDocument.body.querySelector('h1').textContent === "Embedded Content";
-        })()"#)
-        .unwrap();
-    assert_eq!(doc_accessible, "true");
-
-    // Sandboxed srcdoc without allow-same-origin gets opaque "null" origin
-    let sandboxed_inaccessible = view
-        .evaluate_json("document.getElementById('srcdoc_sandboxed').contentDocument === null")
-        .unwrap();
-    assert_eq!(sandboxed_inaccessible, "true");
-}
-
-#[test]
-fn iframe_detachment_cleans_up_frame_and_marks_window_closed() {
-    let mut view = page(Limits::default());
-    view.set_html(r#"<!doctype html>
-      <div id="container">
-        <iframe id="temp_frame" src="about:blank"></iframe>
-      </div>
-    "#)
-    .unwrap();
-
-    let initial_len = view.evaluate_json("window.length").unwrap();
-    assert_eq!(initial_len, "1");
-
-    let is_open = view
-        .evaluate_json("document.getElementById('temp_frame').contentWindow.closed")
-        .unwrap();
-    assert_eq!(is_open, "false");
-
-    // Remove frame from DOM
-    view.evaluate(r#"
-        const frame = document.getElementById('temp_frame');
-        window.detachedWindow = frame.contentWindow;
-        frame.remove();
-    "#)
-    .unwrap();
-
-    let after_len = view.evaluate_json("window.length").unwrap();
-    assert_eq!(after_len, "0");
-
-    let is_closed = view
-        .evaluate_json("window.detachedWindow.closed")
-        .unwrap();
-    assert_eq!(is_closed, "true");
-}
-

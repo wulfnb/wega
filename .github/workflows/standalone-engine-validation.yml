@@ -1,7 +1,7 @@
 name: Standalone engine validation
 on:
   push:
-    branches: [feature/standalone-wega-engine]
+    branches: [feature/standalone-wega-engine, feature/standalone-wega-step14]
     paths: ['engines/**', 'src/wega_page.rs', '.github/workflows/standalone-engine-validation.yml']
   workflow_dispatch:
 permissions:
