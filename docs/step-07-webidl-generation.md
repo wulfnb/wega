@@ -5,6 +5,10 @@ acceptance at `efe5a87`. This document records the subtask split, the supported
 IDL construct policy and the binding/hook conventions. Completion evidence per
 subtask is recorded in `docs/validation/standalone/progress.json`.
 
+**Status (3 November 2026): complete.** 07.a delivered the generator; the
+07.b–07.d scope (further families, DOMTokenList, brands, wrapper identity and
+reentrancy) was delivered through the Step 08 families and their regressions.
+
 The pipeline replaces handwritten interface wrappers with deterministic,
 generated binding code plus Rust-implemented semantic hooks. Generation is a
 tool, not a runtime: outputs are checked in, byte-compared in tests, and only

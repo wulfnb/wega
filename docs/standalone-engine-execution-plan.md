@@ -362,10 +362,11 @@ cross-realm handling and reentrant native calls before scaling the generator.
 family; unsupported IDL constructs fail generation explicitly. No interface is
 declared supported solely because its class/prototype was generated.
 
-**Implementation status (2 November 2026): subtask 07.a in progress.** The
-`tools/webidl/` generator, pinned IDL inputs and the `character-data` family
-are being delivered first; the subtask split, construct policy and binding
-conventions are recorded in the [Step 07 contract](step-07-webidl-generation.md).
+**Implementation status (3 November 2026): complete.** The `tools/webidl/`
+generator pins its IDL inputs by hash, regenerates deterministically, fails
+explicitly on unsupported constructs and emits the native hook registry.
+`build.rs` compiles every generated family into the worker bootstrap and
+rejects stale outputs. Contract: [Step 07](step-07-webidl-generation.md).
 
 ### 08 — Expand DOM, events and browser Web APIs by audited families
 
@@ -382,14 +383,15 @@ less common interfaces, to a semantic implementation or an explicit blocker.
 and real framework interactions; wrapper GC, detached nodes, DOM budgets and
 reentrant mutation remain correct. No missing-feature success shims are counted.
 
-**Implementation status (4 November 2026): subtasks 08.a and 08.b in progress.** The Step 07
-generator (07.a) is in place with the `character-data` family. Step 08 will extend the
-generator incrementally and migrate families in the order: Event → Attr → Node → Element
-→ Document → collections/mutation/observers. The full subtask split and construct policy
-is recorded in the [Step 08 contract](step-08-dom-events-web-apis.md). Generator extensions
-for `const`, `[Constant]`, `[SameObject]`, `[SetterThrows]` are complete (08.a). EventTarget
-and Event families are generated with simplified IDL pins (08.b); full signatures deferred
-to JS layer.
+**Implementation status (3 November 2026): subtasks 08.a–08.l complete; hosted
+acceptance pending.** Event/EventTarget, CharacterData, Node, Element, Document,
+Attr, NodeList, HTMLCollection, NamedNodeMap, DOMTokenList, MutationObserver/Record
+and Location run through the generated layer. The pinned DOM WPT subset grew
+from 4 files / 31 cases to 35 files / 1685 cases, all passing; no probed file
+regressed against the pre-wiring baseline. Remaining gaps (DOMImplementation and
+XML documents, ProcessingInstruction/CDATA, per-tag HTML element interfaces,
+named properties, `:has()`/`:invalid`) are explicit blockers in the
+[Step 08 contract](step-08-dom-events-web-apis.md#closeout-3-november-2026).
 
 ### 09 — Preserve navigation and browser integrations
 
@@ -730,8 +732,8 @@ separate gates in `docs/validation/standalone/progress.json`.
 - [ ] 04 Authoritative network/storage access
 - [x] 05 Sandbox and supervision — implementation and three-platform native acceptance passed
 - [x] 06 Document host and scheduling — implementation delivered; final regressions recorded separately
-- [ ] 07 WebIDL generation and ownership
-- [ ] 08 DOM/events/Web API families
+- [x] 07 WebIDL generation and ownership
+- [x] 08 DOM/events/Web API families — 08.a–08.l delivered; explicit blockers recorded, hosted acceptance pending
 - [ ] 09 Navigation and browser integrations
 - [ ] 10 Native internal pages and chrome/viewer
 - [ ] 11 Input, controls and accessibility

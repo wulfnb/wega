@@ -8,5 +8,4 @@
  Attr? setNamedItemNS(Attr attr);
  Attr removeNamedItem(DOMString name);
  Attr removeNamedItemNS(DOMString? namespace, DOMString localName);
- iterable<Attr>;
 };
