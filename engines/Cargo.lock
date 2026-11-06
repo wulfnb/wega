@@ -487,7 +487,7 @@ dependencies = [
  "parley",
  "percent-encoding",
  "rayon",
- "selectors",
+ "selectors 0.41.0",
  "serde_json",
  "skrifa",
  "slotmap",
@@ -4995,10 +4995,28 @@ dependencies = [
  "new_debug_unreachable",
  "precomputed-hash",
  "rustc-hash 2.1.3",
- "servo_arc",
+ "servo_arc 0.5.0",
  "smallvec",
  "to_shmem",
  "to_shmem_derive",
+]
+
+[[package]]
+name = "selectors"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "284ac2879477575f13b22201f7e98aa33aacc765b790536808cf580fd79339f1"
+dependencies = [
+ "bitflags 2.13.2",
+ "cssparser 0.38.0",
+ "derive_more",
+ "hashbrown 0.17.1",
+ "log",
+ "new_debug_unreachable",
+ "precomputed-hash",
+ "rustc-hash 2.1.3",
+ "servo_arc 0.6.0",
+ "smallvec",
 ]
 
 [[package]]
@@ -5122,6 +5140,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4eceb519ec34d8290aaf6e46f435102f2bfa63f22b05a144fb16ab266d3b198"
 dependencies = [
  "serde",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "servo_arc"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f121f129345b5201873a0e253f630413d750b9d799613e2873fb768e592c2a7"
+dependencies = [
  "stable_deref_trait",
 ]
 
@@ -5535,9 +5562,9 @@ dependencies = [
  "rayon",
  "rayon-core",
  "rustc-hash 2.1.3",
- "selectors",
+ "selectors 0.41.0",
  "serde",
- "servo_arc",
+ "servo_arc 0.5.0",
  "smallbitvec",
  "smallvec",
  "static_assertions",
@@ -5603,8 +5630,8 @@ dependencies = [
  "cssparser 0.38.0",
  "euclid",
  "parking_lot",
- "selectors",
- "servo_arc",
+ "selectors 0.41.0",
+ "servo_arc 0.5.0",
  "smallbitvec",
  "smallvec",
  "string_cache",
@@ -5644,9 +5671,9 @@ dependencies = [
  "cssparser 0.38.0",
  "euclid",
  "malloc_size_of_derive",
- "selectors",
+ "selectors 0.41.0",
  "serde",
- "servo_arc",
+ "servo_arc 0.5.0",
  "stylo_atoms",
  "stylo_malloc_size_of",
  "thin-vec",
@@ -6021,7 +6048,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbf077da8dd01cc18453bd7d9bc3a945c262f5f344562e5f6deb3914b4dd6f14"
 dependencies = [
  "cssparser 0.38.0",
- "servo_arc",
+ "servo_arc 0.5.0",
  "smallbitvec",
  "smallvec",
  "string_cache",
@@ -6684,7 +6711,7 @@ dependencies = [
  "kurbo",
  "publicsuffix",
  "reqwest",
- "selectors",
+ "selectors 0.42.0",
  "serde",
  "serde_json",
  "sha1 0.11.0",
