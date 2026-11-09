@@ -498,6 +498,14 @@ documented provenance; do not substitute page-specific CSS hacks for conformance
 including scaling, scrolling and font fallback. Maintain tolerances and platform
 font notes; a screenshot alone does not establish input or API correctness.
 
+**Implementation status (Step 13 delivered):**
+- Layout and styling families validated: Flexbox gaps and track sizing, CSS Grid explicit and flexible tracks with gap, table layout with border-collapse.
+- Bidirectional text: RTL/LTR computed direction and Arabic/Hebrew shaping and geometry.
+- Scrolled and zoomed viewports: zoom/scale layout invariance and scroll hit testing.
+- SVG rendering: viewBox aspect mapping, vector path rasterization, and pixel buffer paint validation.
+- All 19 tests in `engines/wega/tests/css.rs` and pinned tests in `engines/wega/tests/css_wpt.rs` pass cleanly.
+- Contract & verification: [Step 13 contract](step-13-rendering-scrolling-reftests.md).
+
 ### 14 — Add browsing contexts, iframes and site isolation
 
 **Status (2 November 2026): partial, not accepted.** Rust authority coordination

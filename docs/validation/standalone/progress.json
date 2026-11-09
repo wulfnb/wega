@@ -95,6 +95,12 @@
       "acceptance": "Range and Selection DOM interfaces, contentEditable and document.designMode, TreeWalker and NodeFilter, clipboard commands and navigator.clipboard, in-page find and browser find bar integration, and DataTransfer/DragEvent structures implemented and verified.",
       "contract": "docs/step-12-selection-editing-clipboard-find.md",
       "acceptance_verified": true
+    },
+    "13": {
+      "implementation": "complete",
+      "acceptance": "Flexbox gaps and track sizing, CSS Grid explicit and flexible tracks with gap, table layout with border-collapse, bidirectional text shaping/metrics, scrolled and zoomed viewport layout/hit testing, SVG viewBox scaling, and pinned WPT CSS tests verified passing.",
+      "contract": "docs/step-13-rendering-scrolling-reftests.md",
+      "acceptance_verified": true
     }
   },
   "substeps": {

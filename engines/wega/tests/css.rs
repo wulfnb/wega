@@ -265,3 +265,84 @@ fn collapsed_select_paints_only_the_selected_label_and_preserves_dom() {
         reference.paint(180, 40, 1.0, 1.0, false).unwrap().rgba,
     );
 }
+
+#[test]
+fn flexbox_and_grid_track_sizing_with_gap() {
+    let mut view = page(
+        "<style>#f{display:flex;gap:10px;width:210px}#f>div{flex:1;height:30px}#g{display:grid;grid-template-columns:100px 1fr;gap:20px;width:320px}#g>div{height:40px}</style><div id=f><div id=f1></div><div id=f2></div></div><div id=g><div id=g1></div><div id=g2></div></div>",
+    );
+    view.paint(400, 300, 1.0, 1.0, false).unwrap();
+    let res = view.evaluate_json(
+        "({ f1_w: document.getElementById('f1').getBoundingClientRect().width, f2_x: document.getElementById('f2').getBoundingClientRect().x, g1_w: document.getElementById('g1').getBoundingClientRect().width, g2_w: document.getElementById('g2').getBoundingClientRect().width })"
+    ).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(val["f1_w"], 100.0);
+    assert_eq!(val["f2_x"], 110.0);
+    assert_eq!(val["g1_w"], 100.0);
+    assert_eq!(val["g2_w"], 200.0);
+}
+
+#[test]
+fn table_layout_cell_and_border_collapse() {
+    let mut view = page(
+        "<style>table{border-collapse:collapse;width:200px}td{border:2px solid black;height:20px}</style><table><tr><td id=c1>A</td><td id=c2>B</td></tr></table>",
+    );
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    let res = view.evaluate_json(
+        "({ c1_w: document.getElementById('c1').getBoundingClientRect().width, c2_w: document.getElementById('c2').getBoundingClientRect().width })"
+    ).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+    let c1 = val["c1_w"].as_f64().unwrap();
+    let c2 = val["c2_w"].as_f64().unwrap();
+    assert!((c1 - c2).abs() <= 2.0);
+    assert!(c1 > 90.0 && c2 > 90.0);
+    assert!((c1 + c2 - 200.0).abs() <= 10.0);
+}
+
+#[test]
+fn bidirectional_text_arabic_hebrew_layout() {
+    let mut view = page(
+        "<style>p{font:20px monospace}</style><p id=rtl dir=rtl>مرحبا بالعالم</p><p id=ltr dir=ltr>Hello world</p>",
+    );
+    view.paint(400, 200, 1.0, 1.0, false).unwrap();
+    let res = view.evaluate_json(
+        "({ rtl_dir: getComputedStyle(document.getElementById('rtl')).direction, rtl_w: document.getElementById('rtl').getBoundingClientRect().width, ltr_dir: getComputedStyle(document.getElementById('ltr')).direction })"
+    ).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(val["rtl_dir"], "rtl");
+    assert_eq!(val["ltr_dir"], "ltr");
+    assert!(val["rtl_w"].as_f64().unwrap() > 0.0);
+}
+
+#[test]
+fn scrolled_zoomed_viewport_layout_and_hit_testing() {
+    let mut view = page(
+        "<div id=box style='width:100px;height:100px;background:lime'></div><div style='height:800px'></div>",
+    );
+    view.paint(200, 200, 2.0, 1.5, false).unwrap();
+    let res = view.evaluate_json(
+        "document.getElementById('box').getBoundingClientRect().width"
+    ).unwrap();
+    let width: f64 = serde_json::from_str(&res).unwrap();
+    assert_eq!(width, 100.0);
+
+    // Scroll down 50px
+    view.scroll(0.0, 50.0);
+    view.pointer(wega_engine::Pointer::new(wega_engine::PointerKind::Move, 20.0, 20.0));
+    assert!(view.needs_paint());
+}
+
+#[test]
+fn svg_viewbox_and_path_scaling() {
+    let mut view = page(
+        "<svg id=s viewBox='0 0 50 50' style='width:150px;height:150px'><circle cx='25' cy='25' r='20' fill='lime'/></svg>",
+    );
+    let frame = view.paint(200, 200, 1.0, 1.0, false).unwrap();
+    let res = view.evaluate_json(
+        "({ w: document.getElementById('s').getBoundingClientRect().width, h: document.getElementById('s').getBoundingClientRect().height })"
+    ).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(val["w"], 150.0);
+    assert_eq!(val["h"], 150.0);
+    assert!(!frame.rgba.is_empty());
+}
