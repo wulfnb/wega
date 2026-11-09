@@ -5,20 +5,19 @@
 # the coherent Deno TLS/net/crypto update, not one crate at a time.
 # Review on or before 2027-02-01: remove each ID as soon as the Deno pin moves.
 # Any advisory NOT listed here fails CI and the scheduled security scan.
+# RUSTSEC-2026-0459: SQLite CVE-2026-119375 (fixed in libsqlite3-sys 0.39.0)
+# Via deno_webstorage (vendored Deno crate) -> rusqlite 0.40.2; upstream Deno
+# pins rusqlite 0.40.x. Also via wega-network -> rusqlite (now relaxed to <0.42).
 
 [advisories]
 ignore = [
-    # crypto-bigint 0.5.5 timing variability (fixed in 0.7.6); via deno_crypto.
     "RUSTSEC-2026-0387",
-    # hickory-proto 0.25.2: O(n^2) name compression (fixed in 0.26.1) and NSEC3
-    # validation loop (no fix yet); via deno_net / hickory-resolver.
     "RUSTSEC-2026-0119",
     "RUSTSEC-2026-0118",
-    # rsa Marvin timing side channel; no fixed release exists (also ignored at the root).
     "RUSTSEC-2023-0071",
-    # rustls 0.23.40 (fixed in 0.23.46), pinned exactly by deno_tls 0.247.0.
     "RUSTSEC-2026-0285",
     "RUSTSEC-2026-0346",
     "RUSTSEC-2026-0348",
     "RUSTSEC-2026-0349",
+    "RUSTSEC-2026-0459",
 ]
