@@ -31,8 +31,15 @@ fn browser_back_walks_pushstate_entries_before_leaving_the_document() {
     );
     view.traverse(-1);
     view.traverse(-1);
+    let traverse_event = loop {
+        match view.events.pop_front() {
+            Some(PageEvent::Traverse(delta)) => break Some(PageEvent::Traverse(delta)),
+            Some(_) => continue,
+            None => break None,
+        }
+    };
     assert_eq!(
-        view.events.pop_front(),
+        traverse_event,
         Some(PageEvent::Traverse(-1)),
         "leaving the document goes to the browser"
     );
@@ -73,4 +80,21 @@ fn fragments_scroll_fire_hashchange_and_never_refetch() {
     view.traverse(-1);
     assert_eq!(view.url.fragment(), Some("top"));
     assert_eq!(server.requests("/").len(), 1);
+}
+
+#[test]
+fn clear_history_resets_session_history_entries() {
+    let server = page();
+    let engine = engine();
+    let mut view = open(&engine, &server.url("127.0.0.1", "/"));
+    view.evaluate("history.pushState({step:1},'','/one');history.pushState({step:2},'','/two')")
+        .unwrap();
+    view.poll();
+    assert_eq!(view.url.path(), "/two");
+    assert_eq!(view.document_history(), (true, false));
+
+    view.clear_history();
+    view.poll();
+    assert_eq!(view.document_history(), (false, false));
+    assert_eq!(view.evaluate_json("history.length").unwrap(), "1");
 }

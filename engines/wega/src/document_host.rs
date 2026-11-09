@@ -476,6 +476,7 @@ impl View {
             self.loading = false;
             self.resource_events();
             self.run("document._readyState='complete';document.dispatchEvent(new Event('readystatechange'));window.dispatchEvent(new Event('load'))", "wega:load");
+            self.check_favicon();
         }
     }
     /// `load`/`error` on images and stylesheets whose fetches finished.

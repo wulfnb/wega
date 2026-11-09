@@ -54,6 +54,12 @@ pub enum ContentEvent {
     },
     TraverseUnhandled(i32),
     Cursor(String),
+    Favicon(String),
+    Status(Option<String>),
+    Authentication {
+        url: String,
+        realm: Option<String>,
+    },
     Dialog {
         id: DialogId,
         kind: String,
@@ -88,6 +94,12 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
         ContentEvent::ActivatedOpenWindow { url, .. } => Event::OpenWindow(url),
         ContentEvent::TraverseUnhandled(delta) => Event::TraverseUnhandled(delta),
         ContentEvent::Cursor(cursor) => Event::Cursor(cursor),
+        ContentEvent::Favicon(url) => Event::Notice(format!("Favicon: {url}")),
+        ContentEvent::Status(Some(status)) => Event::Notice(status),
+        ContentEvent::Status(None) => Event::Notice("Status cleared".into()),
+        ContentEvent::Authentication { url, .. } => {
+            Event::Notice(format!("Authentication requested for {url}"))
+        }
         ContentEvent::Dialog {
             kind,
             message,
@@ -286,6 +298,8 @@ pub enum Command {
     Load {
         url: String,
         serial: u64,
+        #[serde(default)]
+        bypass_cache: bool,
     },
     FrameConsumed {
         slot: u8,
@@ -324,10 +338,13 @@ pub enum Command {
     Freeze(bool),
     Stop,
     Redraw,
+    ClearHistory,
     Policy {
         offline: bool,
         blocked_hosts: String,
         allowed_hosts: String,
+        #[serde(default)]
+        user_script: String,
     },
     Evaluate(String),
     CheckPageState(u64),
@@ -724,5 +741,44 @@ mod tests {
         assert!(!is_permitted_cross_origin_property("document"));
         assert!(!is_permitted_cross_origin_property("eval"));
         assert!(!is_permitted_cross_origin_property("cookie"));
+    }
+    #[test]
+    fn navigation_and_browser_integrations_wire_compatibility() {
+        let load_default: Command = serde_json::from_str(r#"{"Load":{"url":"https://example.test/","serial":1}}"#).unwrap();
+        match load_default {
+            Command::Load { bypass_cache, .. } => assert!(!bypass_cache),
+            _ => panic!("Expected Command::Load"),
+        }
+
+        let load_bypass: Command = serde_json::from_str(r#"{"Load":{"url":"https://example.test/","serial":1,"bypass_cache":true}}"#).unwrap();
+        match load_bypass {
+            Command::Load { bypass_cache, .. } => assert!(bypass_cache),
+            _ => panic!("Expected Command::Load"),
+        }
+
+        let clear: Command = serde_json::from_str(r#""ClearHistory""#).unwrap();
+        assert!(matches!(clear, Command::ClearHistory));
+
+        let policy_default: Command = serde_json::from_str(r#"{"Policy":{"offline":false,"blocked_hosts":"","allowed_hosts":""}}"#).unwrap();
+        match policy_default {
+            Command::Policy { user_script, .. } => assert!(user_script.is_empty()),
+            _ => panic!("Expected Command::Policy"),
+        }
+
+        let policy_script: Command = serde_json::from_str(r#"{"Policy":{"offline":false,"blocked_hosts":"","allowed_hosts":"","user_script":"console.log(1)"}}"#).unwrap();
+        match policy_script {
+            Command::Policy { user_script, .. } => assert_eq!(user_script, "console.log(1)"),
+            _ => panic!("Expected Command::Policy"),
+        }
+
+        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
+        let favicon_event = content_event(VERSION, context, ContentEvent::Favicon("https://example.test/favicon.ico".into()));
+        assert!(matches!(favicon_event, Event::Content { event: ContentEvent::Favicon(ref u), .. } if u == "https://example.test/favicon.ico"));
+
+        let status_event = content_event(VERSION, context, ContentEvent::Status(Some("https://example.test/link".into())));
+        assert!(matches!(status_event, Event::Content { event: ContentEvent::Status(Some(ref s)), .. } if s == "https://example.test/link"));
+
+        let auth_event = content_event(VERSION, context, ContentEvent::Authentication { url: "https://example.test/admin".into(), realm: Some("Secured".into()) });
+        assert!(matches!(auth_event, Event::Content { event: ContentEvent::Authentication { ref realm, .. }, .. } if realm.as_deref() == Some("Secured")));
     }
 }

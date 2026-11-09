@@ -168,11 +168,9 @@ impl Browser {
     }
     pub fn reload_without_cache(&mut self) {
         if self.is_wega() {
-            self.notify(
-                crate::ux::Severity::Info,
-                "This page action requires Servo in this version. Use the engine selector below.",
-                None,
-            );
+            if let Some(tab) = self.tab_mut().wega.as_mut() {
+                let _ = tab.reload_bypass_cache();
+            }
             return;
         }
         if let Some(url) = self.view().url() {

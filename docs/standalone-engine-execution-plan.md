@@ -408,6 +408,13 @@ semantics are completed in 14; do not call the popup work finished before then.
 against Wega; cancellation preserves drafts, failures stay visible, and completion
 cannot be satisfied by unrelated load events. Profile/session formats remain readable.
 
+**Implementation status (Step 09 delivered):**
+- Navigation commands (bypass-cache, reload, clear-history) wired in protocol, engine, and browser host.
+- Favicon discovery, status-bar link hover, and HTTP 401 authentication requests implemented.
+- Privileged external schemes safely routed through browser confirmation prompt.
+- User scripts and injected page styles (Reader view, dark style) enabled for Wega tabs.
+- See the [Step 09 contract and evidence](step-09-navigation-and-browser-integrations.md).
+
 ### 10 — Render internal pages natively and preserve chrome/viewer UX
 
 **Depends on:** 09.

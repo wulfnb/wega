@@ -297,3 +297,34 @@ fn replacing_content_returns_its_node_and_text_budget() {
     assert!(nodes < 200, "replaced nodes stay counted: {nodes}");
     assert!(bytes < 512 * 1024, "replaced text stays charged: {bytes}");
 }
+
+#[test]
+fn favicon_detection_from_link_rel_and_default_fallback() {
+    let mut view = page(Limits::default());
+    view.url = Url::parse("http://example.test/app/").unwrap();
+    view.set_html(r#"<!doctype html><html><head><link rel="icon" href="/custom-icon.png"></head><body></body></html>"#)
+        .unwrap();
+    assert_eq!(
+        view.favicon_url().map(|u| u.to_string()),
+        Some("http://example.test/custom-icon.png".into())
+    );
+
+    view.set_html(r#"<!doctype html><html><head></head><body></body></html>"#)
+        .unwrap();
+    assert_eq!(
+        view.favicon_url().map(|u| u.to_string()),
+        Some("http://example.test/favicon.ico".into())
+    );
+}
+
+#[test]
+fn user_script_runs_on_document_creation() {
+    let mut view = page(Limits::default());
+    view.set_user_script("globalThis.__user_script_ran = 42;".into());
+    view.set_html(r#"<!doctype html><title>User Script Test</title><body></body>"#)
+        .unwrap();
+    assert_eq!(
+        view.evaluate_json("globalThis.__user_script_ran").unwrap(),
+        "42"
+    );
+}

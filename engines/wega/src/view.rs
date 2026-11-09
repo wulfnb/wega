@@ -51,6 +51,15 @@ pub enum PageEvent {
     Traverse(i32),
     /// The CSS cursor over the hovered element changed.
     Cursor(String),
+    /// A discovered or updated favicon URL.
+    Favicon(Url),
+    /// The link URL hovered by the pointer, or None if no link is hovered.
+    Status(Option<String>),
+    /// HTTP 401 basic/digest authentication request from the origin.
+    Authentication {
+        url: String,
+        realm: Option<String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -269,6 +278,9 @@ pub struct View {
     composing: bool,
     showing_error: bool,
     cursor: String,
+    pub status: Option<String>,
+    pub last_favicon: Option<Url>,
+    pub user_script: String,
     pub url: Url,
     pub loading: bool,
     pub notices: VecDeque<String>,
@@ -323,6 +335,9 @@ impl View {
             composing: false,
             showing_error: false,
             cursor: String::new(),
+            status: None,
+            last_favicon: None,
+            user_script: String::new(),
             url: url.clone(),
             loading: false,
             notices: VecDeque::new(),
@@ -384,16 +399,27 @@ impl View {
         self.document_generation.get()
     }
     pub fn load_for_navigation(&mut self, url: Url, generation: u64) -> Result<(), String> {
+        self.load_for_navigation_bypass_cache(url, generation, false)
+    }
+    pub fn load_for_navigation_bypass_cache(
+        &mut self,
+        url: Url,
+        generation: u64,
+        bypass_cache: bool,
+    ) -> Result<(), String> {
         self.events.clear();
         self.navigate.borrow_mut().clear();
         self.navigation_generation = generation;
-        self.load(url)
+        self.load_bypass_cache(url, bypass_cache)
     }
     pub fn stop_for_navigation(&mut self, generation: u64) {
         self.navigation_generation = generation;
         self.stop();
     }
     pub fn load(&mut self, url: Url) -> Result<(), String> {
+        self.load_bypass_cache(url, false)
+    }
+    pub fn load_bypass_cache(&mut self, url: Url, bypass_cache: bool) -> Result<(), String> {
         if self.same_document(&url) {
             self.document_generation.set(self.navigation_generation);
             self.navigate_fragment(&url);
@@ -401,6 +427,7 @@ impl View {
         }
         let context = FetchContext {
             destination: Destination::Document,
+            bypass_cache,
             ..Default::default()
         };
         self.load_request(url, context)
@@ -557,6 +584,10 @@ impl View {
         )
         .map_err(|e| e.to_string())?;
         self.script = Some(host);
+        if !self.user_script.trim().is_empty() {
+            let script = self.user_script.clone();
+            let _ = self.run(&script, "wega:userscript");
+        }
         if xml {
             // XML documents are parsed in one pass; their scripts run in order afterwards.
             let scripts = self
@@ -583,6 +614,7 @@ impl View {
         self.loading = true;
         // Parse (and run inline scripts) as far as possible before returning.
         self.advance();
+        self.check_favicon();
         Ok(())
     }
     fn csp(&self) -> std::sync::RwLockReadGuard<'_, Csp> {
@@ -685,6 +717,23 @@ impl View {
     /// Show a navigation response according to its type.
     fn commit(&mut self, response: Response) {
         self.url = response.url.clone();
+        if response.status == 401 {
+            let realm = response.header("www-authenticate").and_then(|h| {
+                let lower = h.to_ascii_lowercase();
+                if let Some(pos) = lower.find("realm=") {
+                    let rem = &h[pos + 6..];
+                    let trimmed = rem.trim_matches(|c| c == '"' || c == '\'');
+                    let end = trimmed.find('"').or_else(|| trimmed.find(',')).unwrap_or(trimmed.len());
+                    Some(trimmed[..end].to_string())
+                } else {
+                    None
+                }
+            });
+            self.events.push_back(PageEvent::Authentication {
+                url: response.url.to_string(),
+                realm,
+            });
+        }
         if response.status >= 400 {
             self.notice(format!("HTTP {} for {}", response.status, response.url));
         }
@@ -775,6 +824,7 @@ impl View {
             initiator: Some(self.document.borrow().url().clone()),
             referrer_policy: self.referrer_policy.clone(),
             destination: Destination::Document,
+            bypass_cache: false,
         };
         if let Err(error) = self.load_request(options.url, context) {
             self.notice(error);
@@ -889,6 +939,46 @@ impl View {
         }
         self.drain_requests();
         result.map_err(|e| e.to_string())
+    }
+    pub fn clear_history(&mut self) {
+        self.run(
+            "if (typeof __wega_clear_history === 'function') __wega_clear_history();",
+            "wega:history",
+        );
+    }
+    pub fn set_user_script(&mut self, script: String) {
+        self.user_script = script;
+    }
+    pub fn favicon_url(&self) -> Option<Url> {
+        let doc = self.document.borrow();
+        for selector in &["link[rel~='icon']", "link[rel='shortcut icon']", "link[rel='icon']"] {
+            if let Ok(Some(id)) = doc.query_selector(selector) {
+                if let Some(node) = doc.get_node(id) {
+                    if let Some(elem) = node.element_data() {
+                        if let Some(href) = elem.attr(LocalName::from("href")) {
+                            if let Ok(url) = self.url.join(href) {
+                                return Some(url);
+                            } else if let Ok(url) = Url::parse(href) {
+                                return Some(url);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if matches!(self.url.scheme(), "http" | "https") {
+            self.url.join("/favicon.ico").ok()
+        } else {
+            None
+        }
+    }
+    pub(crate) fn check_favicon(&mut self) {
+        if let Some(favicon) = self.favicon_url() {
+            if self.last_favicon.as_ref() != Some(&favicon) {
+                self.last_favicon = Some(favicon.clone());
+                self.events.push_back(PageEvent::Favicon(favicon));
+            }
+        }
     }
     pub fn take_script_failure(&mut self) -> Option<String> {
         self.script_failure.take()
@@ -1169,6 +1259,23 @@ impl View {
                 self.dispatch_pointer("pointerenter", *node, pointer, previous);
                 self.dispatch_pointer("mouseenter", *node, pointer, previous);
             }
+        }
+        let link_status = {
+            let doc = self.document.borrow();
+            new_chain.iter().find_map(|node_id| {
+                let node = doc.get_node(*node_id)?;
+                let elem = node.element_data()?;
+                if elem.name.local == LocalName::from("a") {
+                    let href = elem.attr(LocalName::from("href"))?;
+                    self.url.join(href).ok().map(|u| u.to_string())
+                } else {
+                    None
+                }
+            })
+        };
+        if link_status != self.status {
+            self.status = link_status.clone();
+            self.events.push_back(PageEvent::Status(link_status));
         }
     }
     /// Run Blitz's default action for a pointer event and handle what it generates.

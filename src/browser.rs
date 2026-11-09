@@ -453,6 +453,7 @@ impl Browser {
                     old.offline != new.offline
                         || old.blocked_hosts != new.blocked_hosts
                         || old.allowed_hosts != new.allowed_hosts
+                        || old.user_script != new.user_script
                 };
                 *self.delegate.policy.borrow_mut() = self.profile().policy.clone();
                 for page in self
@@ -467,6 +468,7 @@ impl Browser {
                         offline: policy.offline,
                         blocked_hosts: policy.blocked_hosts.clone(),
                         allowed_hosts: policy.allowed_hosts.clone(),
+                        user_script: policy.user_script.clone(),
                     });
                 }
                 self.changed();

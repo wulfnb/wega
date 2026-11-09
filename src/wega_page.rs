@@ -1072,6 +1072,14 @@ impl Page {
             storage_dir: None,
         })?;
         page.send(Request::Capabilities)?;
+        if !policy.user_script.trim().is_empty() {
+            let _ = page.send(Request::Policy {
+                offline: policy.offline,
+                blocked_hosts: policy.blocked_hosts.clone(),
+                allowed_hosts: policy.allowed_hosts.clone(),
+                user_script: policy.user_script.clone(),
+            });
+        }
         Ok(page)
     }
     pub fn cancel_queued(&self, contexts: Vec<RequestContext>) {
@@ -1192,6 +1200,7 @@ impl Page {
             offline,
             blocked_hosts,
             allowed_hosts,
+            ..
         } = &request
         {
             self.broker.set_policy(wega_network::Policy {
@@ -1388,7 +1397,7 @@ impl Page {
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
-    fn request_load(&self, url: &url::Url) -> Result<(), String> {
+    fn request_load_opt(&self, url: &url::Url, bypass_cache: bool) -> Result<(), String> {
         let mut state = self
             .state
             .lock()
@@ -1403,6 +1412,7 @@ impl Page {
         self.send(Request::Load {
             url: url.to_string(),
             serial: document.0,
+            bypass_cache,
         })?;
         state.lifecycle.navigate();
         if let Some(authority) = &mut state.authority {
@@ -1434,6 +1444,24 @@ impl Page {
         state.fallback_reported = false;
         drop(state);
         Ok(())
+    }
+    fn request_load(&self, url: &url::Url) -> Result<(), String> {
+        self.request_load_opt(url, false)
+    }
+    pub fn reload_bypass_cache(&mut self) -> Result<(), String> {
+        if let Ok(url) = url::Url::parse(&self.url()) {
+            self.request_load_opt(&url, true)?;
+        }
+        Ok(())
+    }
+    pub fn clear_history(&mut self) {
+        let current = self.url();
+        self.history.clear();
+        if !current.is_empty() {
+            self.history.push(current);
+        }
+        self.index = 0;
+        let _ = self.send(Request::ClearHistory);
     }
     pub fn load_url(&mut self, url: url::Url) -> Result<(), String> {
         self.request_load(&url)?;
@@ -1481,6 +1509,12 @@ impl NavigationPort for Page {
         if let Ok(url) = url::Url::parse(&self.url()) {
             let _ = self.request_load(&url);
         }
+    }
+    fn reload_bypass_cache(&mut self) {
+        let _ = self.reload_bypass_cache();
+    }
+    fn clear_history(&mut self) {
+        self.clear_history();
     }
     fn traverse(&mut self, forward: bool) -> bool {
         // The page's own entries first; it reports TraverseUnhandled otherwise.

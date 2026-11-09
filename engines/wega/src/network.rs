@@ -54,6 +54,7 @@ pub(crate) struct FetchContext {
     pub initiator: Option<Url>,
     pub referrer_policy: Option<String>,
     pub destination: Destination,
+    pub bypass_cache: bool,
 }
 impl Default for FetchContext {
     fn default() -> Self {
@@ -64,6 +65,7 @@ impl Default for FetchContext {
             initiator: None,
             referrer_policy: None,
             destination: Destination::Other,
+            bypass_cache: false,
         }
     }
 }
@@ -388,6 +390,11 @@ impl Network {
             }
             if let Some(kind) = &content_type {
                 request.headers.push(("content-type".into(), kind.clone()));
+            }
+            if context.bypass_cache {
+                request.cache = "reload".into();
+                request.headers.push(("cache-control".into(), "no-cache".into()));
+                request.headers.push(("pragma".into(), "no-cache".into()));
             }
             let response = client.response(&request)?;
             let status =

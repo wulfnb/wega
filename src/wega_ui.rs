@@ -188,6 +188,37 @@ impl Browser {
                         state.cursor = Some(cursor);
                     }
                 }
+                ContentEvent::Status(status) => {
+                    if self.tab().key == owner {
+                        self.status = status;
+                    }
+                }
+                ContentEvent::Favicon(favicon_url) => {
+                    let page = self.session().tabs()[index].wega.as_ref().unwrap();
+                    let tab_url = page.url();
+                    if let Some(gui) = &self.gui
+                        && let Some(icon) = self.profile().favicons.get(&tab_url).or_else(|| self.profile().favicons.get(&favicon_url))
+                        && let Some((width, height, pixels)) = crate::browser::decode_favicon(icon)
+                    {
+                        let image = egui::ColorImage::from_rgba_unmultiplied([width, height], &pixels);
+                        self.favicons.insert(
+                            tab_url,
+                            gui.egui_ctx.load_texture("favicon", image, egui::TextureOptions::LINEAR),
+                        );
+                        self.window.request_redraw();
+                    }
+                }
+                ContentEvent::Authentication { url, realm } => {
+                    if let Ok(target) = url::Url::parse(&url) {
+                        let prompt_title = realm.unwrap_or_else(|| target.host_str().unwrap_or("Website").to_string());
+                        self.dialogs.push_prompt(crate::capabilities::Prompt {
+                            origin: target.origin().ascii_serialization(),
+                            title: format!("Authentication required: {prompt_title}"),
+                            detail: format!("The server at {url} requires authentication."),
+                            decision: crate::capabilities::Decision::Permission,
+                        });
+                    }
+                }
                 event => {
                     let selected = self.tab().key;
                     self.select_tab(index);
@@ -227,6 +258,15 @@ impl Browser {
                             let current = self.current_url();
                             match url::Url::parse(&address) {
                                 Ok(url) if wega::navigation::content_navigation_allowed(&url, current.as_ref()) && matches!(url.scheme(), "http" | "https" | "file") => self.navigate(&address),
+                                Ok(url) if matches!(url.scheme(), "mailto" | "tel" | "sms" | "zoommtg") => {
+                                    let origin = current.as_ref().map(|u| u.origin().ascii_serialization()).unwrap_or_else(|| "null".into());
+                                    self.dialogs.push_prompt(crate::capabilities::Prompt {
+                                        origin,
+                                        title: "Open another application?".into(),
+                                        detail: url.to_string(),
+                                        decision: crate::capabilities::Decision::External(url),
+                                    });
+                                }
                                 _ => self.notify(crate::ux::Severity::Warning, "This navigation is unavailable in Wega. Use Servo for this page.", None),
                             }
                         }

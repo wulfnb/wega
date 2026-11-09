@@ -652,6 +652,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 PageEvent::Traverse(delta) => ContentEvent::TraverseUnhandled(delta),
                 PageEvent::Cursor(cursor) => ContentEvent::Cursor(cursor),
+                PageEvent::Favicon(url) => ContentEvent::Favicon(url.to_string()),
+                PageEvent::Status(status) => ContentEvent::Status(status),
+                PageEvent::Authentication { url, realm } => ContentEvent::Authentication { url, realm },
             };
             write(&protocol::content_event(
                 version,
@@ -962,6 +965,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Command::Load {
                     url,
                     serial: requested,
+                    bypass_cache,
                 } => {
                     if version >= 11 && serial.checked_add(1) != Some(requested) {
                         return Err("Reused or out-of-order navigation identity".into());
@@ -969,7 +973,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     serial = requested;
                     if let Err(error) = Url::parse(&url)
                         .map_err(|e| e.to_string())
-                        .and_then(|url| view.load_for_navigation(url, requested))
+                        .and_then(|url| view.load_for_navigation_bypass_cache(url, requested, bypass_cache))
                     {
                         view.stop_for_navigation(requested);
                         report_commit(&view, serial)?;
@@ -1096,10 +1100,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Command::Stop => view.stop(),
                 Command::Redraw => view.request_redraw(),
+                Command::ClearHistory => view.clear_history(),
                 Command::Policy {
                     offline,
                     blocked_hosts,
                     allowed_hosts,
+                    user_script,
                 } => {
                     engine.set_policy(NetworkPolicy {
                         offline,
@@ -1108,6 +1114,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         allow_loopback: true,
                         ..Default::default()
                     });
+                    view.set_user_script(user_script);
                     // Apply live permissions without discarding the current DOM/input state.
                 }
                 Command::Evaluate(source) => {

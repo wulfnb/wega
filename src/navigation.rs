@@ -16,6 +16,10 @@ pub trait NavigationPort {
     fn traverse(&mut self, forward: bool) -> bool;
     fn zoom(&self) -> f32;
     fn set_zoom(&mut self, value: f32);
+    fn reload_bypass_cache(&mut self) {
+        self.reload();
+    }
+    fn clear_history(&mut self) {}
 }
 /// False means no operation was dispatched (e.g. no forward history).
 pub fn dispatch(command: Command, port: &mut impl NavigationPort) -> Result<bool, String> {

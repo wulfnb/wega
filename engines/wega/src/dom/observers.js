@@ -504,6 +504,12 @@
       this.go(1);
     },
   };
+  globalThis.__wega_clear_history = () => {
+    historyEntries.length = 1;
+    historyEntries[0] = { state: null, url: location.href };
+    historyIndex = 0;
+    reportHistory();
+  };
   const withoutHash = (url) => url.split("#")[0];
   // Move within this document's session history: popstate, and hashchange
   // when only the fragment differs.

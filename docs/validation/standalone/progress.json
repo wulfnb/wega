@@ -70,6 +70,13 @@
         "Selectors :invalid and :has()",
         "WPT files depending on iframes or XML documents (Node-removeChild, Node-contains, Node-textContent, location-protocol-setter-non-broken)"
       ]
+    },
+    "09": {
+      "implementation": "complete",
+      "protocol_version": 15,
+      "acceptance": "Local protocol tests, history traversal/clearing, page favicon and user script execution pass; navigation cache bypass, status hover, auth prompt and external scheme mediation wired.",
+      "contract": "docs/step-09-navigation-and-browser-integrations.md",
+      "acceptance_verified": true
     }
   },
   "substeps": {
