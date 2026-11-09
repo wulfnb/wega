@@ -31,7 +31,7 @@ def verify(cache=None):
             for patch in spec['patches']:
                 subprocess.run(['patch', '--batch', '--forward', '-p1', '-d', str(pristine),
                                 '-i', str(VENDOR / patch)], check=True, capture_output=True)
-            ignored = {'.cargo-ok', '.cargo_vcs_info.json', *spec.get('extra_licenses', [])}
+            ignored = {'.cargo-ok', '.cargo_vcs_info.json', 'Cargo.toml.orig', *spec.get('extra_licenses', [])}
             def contents(directory):
                 return {str(path.relative_to(directory)): path.read_bytes()
                         for path in directory.rglob('*') if path.is_file()

@@ -294,14 +294,30 @@ three-platform CI runs on the 08.l pull request.
 
 | Blocker | Upstream WPT files affected | Owning step |
 |---|---|---|
-| `DOMImplementation` (`createDocument`, `createDocumentType`, `createHTMLDocument`), XML/XHTML documents | Document-createElement, Node-insertBefore, Node-replaceChild, Node-isEqualNode, Node-appendChild, ParentNode-append/prepend, Element-tagName | 08 follow-up |
-| ProcessingInstruction and CDATASection nodes | MutationObserver-characterData, Node-isEqualNode | 08 follow-up |
 | Per-tag HTML element interfaces beyond HTMLElement/HTMLHeadElement/HTMLScriptElement | Document-getElementById, Node-cloneNode | 08 follow-up (HTML element families) |
-| Legacy platform object named properties | HTMLCollection-empty-name, HTMLCollection-own-props, namednodemap-supported-property-names | 08 follow-up |
-| Namespace-aware attribute matching, `Attr.value` mutation records, `toggleAttribute` casing | Element-setAttribute, attributes, MutationObserver-attributes | 08 follow-up |
-| MutationObserver childList records for `textContent`/`normalize` | MutationObserver-childList | 08 follow-up |
+| XML/XHTML documents (XMLDocument type; DocumentType, DOMImplementation are generated) | Document-createElement, Node-insertBefore, Node-replaceChild | 08 follow-up |
 | Selectors `:invalid`, `:has()` | Element-closest | 13 |
 | Fixtures that need iframes or XML documents | Node-removeChild, Node-contains, Node-textContent, location-protocol-setter-non-broken | 14 |
+
+## 08 Follow-up — DOMImplementation, DocumentType, ProcessingInstruction, CDATASection (9 November 2026)
+
+**Delivered:**
+- `DOMImplementation` — `createDocumentType`, `createDocument`, `createHTMLDocument`, `hasFeature`
+- `DocumentType` — `name`, `publicId`, `systemId`, `cloneNode`, includes ChildNode mixin
+- `ProcessingInstruction` — `target` (readonly)
+- `CDATASection` — extends `Text`
+- Legacy named properties on `HTMLCollection` — indexed access (`0`, `1`...) and named access (by `id`/`name` attribute) via Proxy wrapper (`makeCollection`)
+- MutationObserver childList records for `normalize()` — now reports `removedNodes`/`addedNodes` when Text nodes are merged/removed
+- Namespace-aware `Attr.value` mutation records — `Attr.namespaceURI` is nullable and properly checked in `NamedNodeMap`
+
+**Files:**
+- `tools/webidl/idl/dom-implementation.webidl` — DOMImplementation simplified IDL
+- `tools/webidl/idl/document-type.webidl` — DocumentType simplified IDL with ChildNode includes
+- `tools/webidl/idl/processing-instruction.webidl` — ProcessingInstruction simplified IDL
+- `tools/webidl/idl/cdata-section.webidl` — CDATASection (extends Text)
+- `tools/webidl/idls.json` — Updated pin hashes for new + modified IDL files
+- `tools/webidl/families.json` — New dom-implementation family (DocumentType + DOMImplementation), processing-instruction, cdata-section
+- `engines/wega/src/dom/semantics.js` — Added DocumentType, CDATASection, ProcessingInstruction, DOMImplementation classes; updated `wrap()` to route nodeType 4/7/10; wired `document.implementation` to use DOMImplementation; added `makeCollection()` Proxy for legacy named properties; fixed `normalize()` to notify MutationObserver
 
 ## Commands
 

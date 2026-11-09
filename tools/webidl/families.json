@@ -1540,6 +1540,149 @@
           "reaction": null
         }
       }
+    },
+    {
+      "name": "dom-implementation",
+      "hook_prefix": "domImpl",
+      "files": [
+        "tools/webidl/idl/document-type.webidl",
+        "tools/webidl/idl/dom-implementation.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/dom-implementation.js",
+      "manifest": "engines/wega/src/dom/generated/dom-implementation.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window"
+      },
+      "base_mixins": [
+        "ChildNode"
+      ],
+      "globals": [
+        "DocumentType",
+        "DOMImplementation"
+      ],
+      "hooks": {
+        "domImpl.name": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domImpl.publicId": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domImpl.systemId": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domImpl.createDocumentType": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domImpl.createDocument": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domImpl.createHTMLDocument": {
+          "result": "typed semantic value",
+          "reaction": null
+        },
+        "domImpl.hasFeature": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "processing-instruction",
+      "hook_prefix": "pi",
+      "files": [
+        "tools/webidl/idl/processing-instruction.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/processing-instruction.js",
+      "manifest": "engines/wega/src/dom/generated/processing-instruction.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window"
+      },
+      "base_mixins": [],
+      "globals": [
+        "ProcessingInstruction"
+      ],
+      "hooks": {
+        "pi.target": {
+          "result": "typed semantic value",
+          "reaction": null
+        }
+      }
+    },
+    {
+      "name": "cdata-section",
+      "hook_prefix": "cdata",
+      "files": [
+        "tools/webidl/idl/cdata-section.webidl"
+      ],
+      "output": "engines/wega/src/dom/generated/cdata-section.js",
+      "manifest": "engines/wega/src/dom/generated/cdata-section.hooks.json",
+      "native_base": {
+        "Node": "dom.base.Node",
+        "EventTarget": "dom.base.EventTarget",
+        "Event": "dom.classes.Event",
+        "Document": "dom.classes.Document",
+        "Element": "dom.classes.Element",
+        "HTMLElement": "dom.classes.HTMLElement",
+        "DocumentFragment": "dom.classes.DocumentFragment",
+        "CharacterData": "dom.classes.CharacterData",
+        "Text": "dom.classes.Text",
+        "Comment": "dom.classes.Comment",
+        "Attr": "dom.classes.Attr",
+        "NamedNodeMap": "dom.classes.NamedNodeMap",
+        "NodeList": "dom.classes.NodeList",
+        "HTMLCollection": "dom.classes.HTMLCollection",
+        "DOMTokenList": "dom.classes.DOMTokenList",
+        "MutationObserver": "dom.classes.MutationObserver",
+        "MutationRecord": "dom.classes.MutationRecord",
+        "Range": "dom.classes.Range",
+        "Window": "dom.classes.Window"
+      },
+      "base_mixins": [],
+      "globals": [
+        "CDATASection"
+      ],
+      "hooks": {}
     }
   ]
 }

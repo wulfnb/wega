@@ -1,0 +1,320 @@
+{
+  "base_mixins": [
+    "ChildNode"
+  ],
+  "family": "dom-implementation",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "DocumentType",
+    "DOMImplementation"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "DocumentType",
+      "kind": "attribute-getter",
+      "line": 6,
+      "member": "name",
+      "name": "domImpl.name",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "DocumentType",
+      "kind": "attribute-getter",
+      "line": 7,
+      "member": "publicId",
+      "name": "domImpl.publicId",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "DocumentType",
+      "kind": "attribute-getter",
+      "line": 8,
+      "member": "systemId",
+      "name": "domImpl.systemId",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString",
+        "DOMString",
+        "DOMString"
+      ],
+      "interface": "DOMImplementation",
+      "kind": "operation",
+      "line": 7,
+      "member": "createDocumentType",
+      "name": "domImpl.createDocumentType",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DocumentType",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString?",
+        "DOMString",
+        "Document?"
+      ],
+      "interface": "DOMImplementation",
+      "kind": "operation",
+      "line": 8,
+      "member": "createDocument",
+      "name": "domImpl.createDocument",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Document",
+      "throws": false
+    },
+    {
+      "args": [
+        "DOMString"
+      ],
+      "interface": "DOMImplementation",
+      "kind": "operation",
+      "line": 9,
+      "member": "createHTMLDocument",
+      "name": "domImpl.createHTMLDocument",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "Document",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "DOMImplementation",
+      "kind": "operation",
+      "line": 10,
+      "member": "hasFeature",
+      "name": "domImpl.hasFeature",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "boolean",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/document-type.webidl",
+      "297b01ef174281ec648b43b53d8a2b43046be1a3c505927b17e301bbac314a40"
+    ],
+    [
+      "tools/webidl/idl/dom-implementation.webidl",
+      "69913e07dd8f13d8044d11ebeee3dbb66aa76139d39926f3da11bb7a730ba8fc"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": "Node",
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "name",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "publicId",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "systemId",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        }
+      ],
+      "name": "DocumentType",
+      "prefix": "domImpl"
+    },
+    {
+      "base": null,
+      "exposed": true,
+      "members": [
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createDocumentType",
+          "parameters": [
+            {
+              "name": "qualifiedName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "publicId",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "name": "systemId",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "DocumentType",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createDocument",
+          "parameters": [
+            {
+              "name": "namespace",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": true
+              },
+              "variadic": false
+            },
+            {
+              "name": "qualifiedName",
+              "optional": false,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            },
+            {
+              "default": null,
+              "name": "doctype",
+              "optional": true,
+              "type": {
+                "kind": "interface",
+                "name": "Document",
+                "nullable": true
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Document",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "createHTMLDocument",
+          "parameters": [
+            {
+              "name": "title",
+              "optional": true,
+              "type": {
+                "kind": "string",
+                "nullable": false
+              },
+              "variadic": false
+            }
+          ],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "interface",
+            "name": "Document",
+            "nullable": false
+          }
+        },
+        {
+          "getter": false,
+          "kind": "operation",
+          "name": "hasFeature",
+          "parameters": [],
+          "sameObject": false,
+          "static": false,
+          "type": {
+            "kind": "boolean"
+          }
+        }
+      ],
+      "name": "DOMImplementation",
+      "prefix": "domImpl"
+    }
+  ],
+  "native_base": {
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

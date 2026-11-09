@@ -1,0 +1,73 @@
+{
+  "base_mixins": [],
+  "family": "processing-instruction",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "ProcessingInstruction"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "ProcessingInstruction",
+      "kind": "attribute-getter",
+      "line": 6,
+      "member": "target",
+      "name": "pi.target",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/processing-instruction.webidl",
+      "f2fbee12f1593ebd4488908a376315a030aed825b02c3ec8fdb09b5ccbef16b4"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": "CharacterData",
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "target",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        }
+      ],
+      "name": "ProcessingInstruction",
+      "prefix": "pi"
+    }
+  ],
+  "native_base": {
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

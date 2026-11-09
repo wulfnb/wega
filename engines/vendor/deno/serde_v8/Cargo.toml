@@ -53,7 +53,7 @@ name = "ser"
 path = "tests/ser.rs"
 
 [dependencies.deno_error]
-version = "=0.7.3"
+version = "=0.7.1"
 
 [dependencies.num-bigint]
 version = "0.5"
