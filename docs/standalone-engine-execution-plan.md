@@ -474,6 +474,15 @@ reader/user-script behavior after DOM replacement.
 cross-paragraph copy, editable content, scrolled/zoomed find and clipboard denial
 work on the real layout; unsupported editing commands remain explicitly tracked.
 
+**Implementation status (Step 12 delivered):**
+- W3C Range and Selection DOM interfaces implemented: multi-node boundaries, content deletion/extraction/cloning, and bounding box geometry.
+- ContentEditable and document.designMode enabled; document.execCommand editing commands (selectAll, copy, cut, paste, insertText, delete, formatting) dispatched.
+- TreeWalker, NodeIterator, and NodeFilter traversal implemented for script and search operations.
+- Browser-mediated clipboard transport: protocol commands (Copy, Cut, Paste), ContentEvent::ClipboardWrite, and navigator.clipboard (writeText, readText).
+- Page find fully wired: window.find algorithm, Command::FindInPage, ContentEvent::FindResult, and chrome find bar integration for Wega tabs.
+- DataTransfer, DragEvent, and ClipboardEvent structures exposed.
+- Contract & verification: [Step 12 contract](step-12-selection-editing-clipboard-find.md).
+
 ### 13 — Close rendering and scrolling gaps with reference tests
 
 **Depends on:** 11, 12.

@@ -242,6 +242,22 @@ impl Browser {
                     };
                     page.select_files(id, paths);
                 }
+                ContentEvent::ClipboardWrite(text) => {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(text);
+                    }
+                }
+                ContentEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
+                    let page = self.session().tabs()[index].wega.as_ref().unwrap();
+                    if let Ok(mut state) = page.state.lock() {
+                        state.find_result = Some((active_match_ordinal, number_of_matches, query.clone()));
+                    }
+                    if number_of_matches == 0 {
+                        *self.features.find_status.borrow_mut() = "No matches".to_string();
+                    } else {
+                        *self.features.find_status.borrow_mut() = format!("{active_match_ordinal} of {number_of_matches}");
+                    }
+                }
                 event => {
                     let selected = self.tab().key;
                     self.select_tab(index);

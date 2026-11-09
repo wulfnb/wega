@@ -68,6 +68,12 @@ pub enum PageEvent {
         multiple: bool,
         accept: Vec<String>,
     },
+    ClipboardWrite(String),
+    FindResult {
+        active_match_ordinal: u32,
+        number_of_matches: u32,
+        query: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1076,6 +1082,61 @@ impl View {
         crate::dom::Dom::reset_form_controls(&mut doc, form);
         self.dirty = true;
     }
+    pub fn copy(&mut self) -> Option<String> {
+        let text = self.evaluate_json("window.getSelection()?.toString() || ''").ok();
+        let text = text.filter(|s| !s.is_empty());
+        if let Some(ref text) = text {
+            self.events.push_back(PageEvent::ClipboardWrite(text.clone()));
+        }
+        let _ = self.evaluate_json("document.execCommand('copy')");
+        text
+    }
+    pub fn cut(&mut self) -> Option<String> {
+        let text = self.evaluate_json("window.getSelection()?.toString() || ''").ok();
+        let text = text.filter(|s| !s.is_empty());
+        if let Some(ref text) = text {
+            self.events.push_back(PageEvent::ClipboardWrite(text.clone()));
+        }
+        let _ = self.evaluate_json("document.execCommand('cut')");
+        self.dirty = true;
+        text
+    }
+    pub fn paste(&mut self, text: &str) {
+        let text_json = serde_json::to_string(text).unwrap_or_default();
+        let _ = self.evaluate_json(&format!("document.execCommand('paste', false, {text_json})"));
+        self.dirty = true;
+    }
+    pub fn select_all(&mut self) {
+        let _ = self.evaluate_json("document.execCommand('selectAll')");
+        self.dirty = true;
+    }
+    pub fn find_in_page(&mut self, query: &str, backwards: bool, case_sensitive: bool) -> (u32, u32) {
+        let query_json = serde_json::to_string(query).unwrap_or_default();
+        let js = format!(
+            "window.find({query_json}, {}, {}, true); (window.__wegaBrowserFind || {{}})",
+            if case_sensitive { "true" } else { "false" },
+            if backwards { "true" } else { "false" }
+        );
+        let mut active = 0u32;
+        let mut total = 0u32;
+        if let Ok(result_str) = self.evaluate_json(&js) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&result_str) {
+                if let Some(idx) = val.get("index").and_then(|v| v.as_u64()) {
+                    active = (idx as u32) + 1;
+                }
+                if let Some(tot) = val.get("total").and_then(|v| v.as_u64()) {
+                    total = tot as u32;
+                }
+            }
+        }
+        self.events.push_back(PageEvent::FindResult {
+            active_match_ordinal: active,
+            number_of_matches: total,
+            query: query.to_string(),
+        });
+        self.dirty = true;
+        (active, total)
+    }
     pub fn favicon_url(&self) -> Option<Url> {
         let doc = self.document.borrow();
         for selector in &["link[rel~='icon']", "link[rel='shortcut icon']", "link[rel='icon']"] {
@@ -1708,6 +1769,25 @@ impl View {
         }
         if pressed {
             let key = event.key.to_string();
+            let is_ctrl_or_meta = event.modifiers.contains(Modifiers::CONTROL) || event.modifiers.contains(Modifiers::META);
+            if is_ctrl_or_meta {
+                if key.eq_ignore_ascii_case("c") {
+                    self.copy();
+                    return;
+                }
+                if key.eq_ignore_ascii_case("x") {
+                    self.cut();
+                    return;
+                }
+                if key.eq_ignore_ascii_case("a") {
+                    self.select_all();
+                    return;
+                }
+                if key.eq_ignore_ascii_case("v") {
+                    self.paste("");
+                    return;
+                }
+            }
             if key == "Enter" && self.implicit_submission(target) {
                 self.dirty = true;
                 return;
@@ -2363,5 +2443,98 @@ mod tests {
         view.file_selected(42, vec![]);
         assert!(view.selected_files.is_empty());
         assert!(view.pending_file_dialog.is_none());
+    }
+    #[test]
+    fn range_and_selection_dom_apis() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        view.set_html("<!doctype html><div id='test'>Hello <b>beautiful</b> world</div>").unwrap();
+        let js = r#"
+            const div = document.getElementById('test');
+            const range = document.createRange();
+            range.selectNodeContents(div);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            const text = sel.toString();
+            const count = sel.rangeCount;
+            const collapsed = sel.isCollapsed;
+            ({ text, count, collapsed });
+        "#;
+        let res = view.evaluate_json(js).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert_eq!(val["count"], 1);
+        assert_eq!(val["collapsed"], false);
+        assert!(val["text"].as_str().unwrap().contains("Hello"));
+    }
+    #[test]
+    fn content_editable_and_exec_command() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        view.set_html("<!doctype html><div id='ed' contenteditable='true'>Initial text</div>").unwrap();
+        let js = r#"
+            const el = document.getElementById('ed');
+            el.focus();
+            const ce = el.contentEditable;
+            const isCe = el.isContentEditable;
+            const supported = document.queryCommandSupported('insertText');
+            document.execCommand('selectAll');
+            document.execCommand('insertText', false, 'Replacement text');
+            ({ ce, isCe, supported, text: el.textContent });
+        "#;
+        let res = view.evaluate_json(js).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert_eq!(val["ce"], "true");
+        assert_eq!(val["isCe"], true);
+        assert_eq!(val["supported"], true);
+        assert_eq!(val["text"], "Replacement text");
+    }
+    #[test]
+    fn find_in_page_and_tree_walker() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        view.set_html("<!doctype html><p>The quick brown fox jumps over the lazy dog. The fox was quick.</p>").unwrap();
+        let (active1, total1) = view.find_in_page("fox", false, false);
+        assert_eq!(active1, 1);
+        assert_eq!(total1, 2);
+
+        let (active2, total2) = view.find_in_page("fox", false, false);
+        assert_eq!(active2, 2);
+        assert_eq!(total2, 2);
+
+        // Check TreeWalker directly
+        let js = r#"
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            const textNodes = [];
+            let n;
+            while (n = walker.nextNode()) textNodes.push(n.data);
+            ({ count: textNodes.length, sample: textNodes[0] || '' });
+        "#;
+        let res = view.evaluate_json(js).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert!(val["count"].as_u64().unwrap() >= 1);
+        assert!(val["sample"].as_str().unwrap().contains("quick"));
+    }
+    #[test]
+    fn clipboard_and_datatransfer_apis() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        view.set_html("<!doctype html><div>Test</div>").unwrap();
+        let js = r#"
+            navigator.clipboard.writeText('clipboard test payload');
+            const dt = new DataTransfer();
+            dt.setData('text/plain', 'drag payload');
+            const dtRead = dt.getData('text/plain');
+            const evt = new DragEvent('dragstart', { dataTransfer: dt });
+            ({ dtRead, evtType: evt.type });
+        "#;
+        let res = view.evaluate_json(js).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert_eq!(val["dtRead"], "drag payload");
+        assert_eq!(val["evtType"], "dragstart");
     }
 }

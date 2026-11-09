@@ -382,24 +382,22 @@ impl Browser {
         if self.is_wega() {
             // Settings do not depend on the page engine; only the page tools do.
             self.settings_sheet(ctx);
-            if self.features.site_info || self.features.find_open || self.features.diagnostics {
+            if self.features.site_info || self.features.diagnostics {
                 let mut open = true;
                 let mut servo = false;
                 egui::Window::new("Wega experimental engine").open(&mut open).show(ctx,|ui|{
-                    ui.label("This engine currently supports article rendering and basic JavaScript. Site-data inspection, page find, forms, media, accessibility content and page tools require Servo.");
+                    ui.label("This engine currently supports article rendering, page find, form controls and accessibility. Site-data inspection, media and page tools require Servo.");
                     servo=ui.button("Reload this page in Servo").clicked();
                     ui.label("Website cookies and sign-in state are separate. Engine selection is remembered per open tab.");
                 });
                 if !open {
                     self.features.site_info = false;
-                    self.features.find_open = false;
                     self.features.diagnostics = false;
                 }
                 if servo {
                     self.switch_engine(wega::engine_choice::EngineKind::Servo);
                 }
             }
-            return;
         }
 
         if !self.dialogs.prompts.is_empty() {
@@ -762,21 +760,33 @@ if button.clicked() || cancel {self.features.clear_data=false;}
                 open = false;
             }
             if let Some(backward) = search {
-                let text = serde_json::to_string(&self.features.find).unwrap();
-                let source = include_str!("page_actions.js")
-                    .replace("BACKWARDS", if backward { "true" } else { "false" })
-                    .replace("QUERY", &text);
-                let status = self.features.find_status.clone();
-                self.view().evaluate_javascript(source, move |result| {
-                    if let Ok(servo::JSValue::String(text)) = result {
-                        *status.borrow_mut() = text;
+                if self.is_wega() {
+                    if let Some(ref page) = self.tab().wega {
+                        page.find_in_page(self.features.find.clone(), backward, false);
                     }
-                });
+                } else {
+                    let text = serde_json::to_string(&self.features.find).unwrap();
+                    let source = include_str!("page_actions.js")
+                        .replace("BACKWARDS", if backward { "true" } else { "false" })
+                        .replace("QUERY", &text);
+                    let status = self.features.find_status.clone();
+                    self.view().evaluate_javascript(source, move |result| {
+                        if let Ok(servo::JSValue::String(text)) = result {
+                            *status.borrow_mut() = text;
+                        }
+                    });
+                }
             }
             if !open {
                 // Clear the highlighted match along with the bar.
-                self.view()
-                    .evaluate_javascript("window.getSelection().removeAllRanges()", |_| {});
+                if self.is_wega() {
+                    if let Some(ref page) = self.tab().wega {
+                        page.evaluate("window.getSelection()?.removeAllRanges()");
+                    }
+                } else {
+                    self.view()
+                        .evaluate_javascript("window.getSelection().removeAllRanges()", |_| {});
+                }
                 self.features.find_status.borrow_mut().clear();
                 self.features.find_focused = false;
             }

@@ -89,6 +89,12 @@
       "acceptance": "Form control interactions, form reset, file selection dialog with capability containment, real multipart file upload encoding, and AccessKit accessibility tree and action transport implemented and verified.",
       "contract": "docs/step-11-input-controls-accessibility.md",
       "acceptance_verified": true
+    },
+    "12": {
+      "implementation": "complete",
+      "acceptance": "Range and Selection DOM interfaces, contentEditable and document.designMode, TreeWalker and NodeFilter, clipboard commands and navigator.clipboard, in-page find and browser find bar integration, and DataTransfer/DragEvent structures implemented and verified.",
+      "contract": "docs/step-12-selection-editing-clipboard-find.md",
+      "acceptance_verified": true
     }
   },
   "substeps": {

@@ -73,6 +73,12 @@ pub enum ContentEvent {
         multiple: bool,
         accept: Vec<String>,
     },
+    ClipboardWrite(String),
+    FindResult {
+        active_match_ordinal: u32,
+        number_of_matches: u32,
+        query: String,
+    },
 }
 
 pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent) -> Event {
@@ -119,6 +125,10 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
         ContentEvent::DialogClosed(_) => Event::Notice("Page dialog closed".into()),
         ContentEvent::Accessibility(_) => Event::Notice("Accessibility update".into()),
         ContentEvent::FileDialog { id, .. } => Event::Notice(format!("File dialog {id}")),
+        ContentEvent::ClipboardWrite(text) => Event::Notice(format!("Clipboard write: {text}")),
+        ContentEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
+            Event::Notice(format!("Find {query}: {active_match_ordinal}/{number_of_matches}"))
+        }
     }
 }
 
@@ -385,6 +395,17 @@ pub enum Command {
         id: u64,
         #[serde(default)]
         paths: Vec<String>,
+    },
+    Copy,
+    Cut,
+    Paste(String),
+    SelectAll,
+    FindInPage {
+        query: String,
+        #[serde(default)]
+        backwards: bool,
+        #[serde(default)]
+        case_sensitive: bool,
     },
     Shutdown,
     /// Instruct child frame browsing context to navigate.
@@ -828,5 +849,29 @@ mod tests {
 
         let file_dialog = content_event(VERSION, context, ContentEvent::FileDialog { id: 7, multiple: true, accept: vec![".png".into()] });
         assert!(matches!(file_dialog, Event::Content { event: ContentEvent::FileDialog { id: 7, multiple: true, .. }, .. }));
+    }
+    #[test]
+    fn selection_editing_find_clipboard_transport() {
+        let copy_cmd: Command = serde_json::from_str(r#""Copy""#).unwrap();
+        assert!(matches!(copy_cmd, Command::Copy));
+
+        let cut_cmd: Command = serde_json::from_str(r#""Cut""#).unwrap();
+        assert!(matches!(cut_cmd, Command::Cut));
+
+        let paste_cmd: Command = serde_json::from_str(r#"{"Paste":"hello"}"#).unwrap();
+        assert!(matches!(paste_cmd, Command::Paste(ref text) if text == "hello"));
+
+        let select_all_cmd: Command = serde_json::from_str(r#""SelectAll""#).unwrap();
+        assert!(matches!(select_all_cmd, Command::SelectAll));
+
+        let find_cmd: Command = serde_json::from_str(r#"{"FindInPage":{"query":"test","backwards":true}}"#).unwrap();
+        assert!(matches!(find_cmd, Command::FindInPage { ref query, backwards: true, case_sensitive: false } if query == "test"));
+
+        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
+        let clip_event = content_event(VERSION, context, ContentEvent::ClipboardWrite("copied text".into()));
+        assert!(matches!(clip_event, Event::Content { event: ContentEvent::ClipboardWrite(ref s), .. } if s == "copied text"));
+
+        let find_event = content_event(VERSION, context, ContentEvent::FindResult { active_match_ordinal: 2, number_of_matches: 5, query: "sample".into() });
+        assert!(matches!(find_event, Event::Content { event: ContentEvent::FindResult { active_match_ordinal: 2, number_of_matches: 5, ref query }, .. } if query == "sample"));
     }
 }

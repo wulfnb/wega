@@ -56,6 +56,7 @@ pub(crate) struct Dom {
     retained: RefCell<HashSet<NodeId>>,
     components: RefCell<crate::components::Registry>,
     shadows: RefCell<crate::components::ShadowTree>,
+    clipboard: RefCell<String>,
     // The DOM thread cannot receive parser/input mutations during script. Start
     // a fresh epoch at each host step, then invalidate synchronously on writes.
     revision: Cell<u64>,
@@ -86,6 +87,7 @@ impl Dom {
             retained: Default::default(),
             components: Default::default(),
             shadows: Default::default(),
+            clipboard: Default::default(),
             revision: Cell::new(0),
             layout_dirty: Cell::new(true),
         }
@@ -127,6 +129,14 @@ impl Dom {
             return Ok(Value::Null);
         }
         match text(0) {
+            "clipboardWrite" => {
+                self.clipboard.borrow_mut().clear();
+                self.clipboard.borrow_mut().push_str(text(1));
+                return Ok(Value::Null);
+            }
+            "clipboardRead" => {
+                return Ok(json!(self.clipboard.borrow().clone()));
+            }
             "customNameValid" => return Ok(json!(crate::components::valid_name(text(1)))),
             "customDefinition" => return Ok(json!(self.components.borrow().get(text(1)))),
             "customDefinitionId" => {

@@ -1747,7 +1747,40 @@
       finalizer?.register(this, id);
     }
   }
-  class SVGElement extends Element {}
+  Object.defineProperty(HTMLElement.prototype, "contentEditable", {
+    get() {
+      const val = this.getAttribute("contenteditable");
+      if (val === null) return "inherit";
+      const lower = val.toLowerCase();
+      if (lower === "" || lower === "true") return "true";
+      if (lower === "false") return "false";
+      if (lower === "plaintext-only") return "plaintext-only";
+      return "inherit";
+    },
+    set(value) {
+      const lower = String(value).toLowerCase();
+      if (lower === "inherit") {
+        this.removeAttribute("contenteditable");
+      } else if (lower === "true" || lower === "false" || lower === "plaintext-only") {
+        this.setAttribute("contenteditable", lower);
+      } else {
+        fail("SyntaxError", "Invalid contentEditable value");
+      }
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "isContentEditable", {
+    get() {
+      let cur = this;
+      while (cur && cur.nodeType === 1) {
+        const ce = cur.contentEditable;
+        if (ce === "true" || ce === "plaintext-only") return true;
+        if (ce === "false") return false;
+        cur = cur.parentElement;
+      }
+      return (this.ownerDocument || document).designMode === "on";
+    },
+  });
+    class SVGElement extends Element {}
   for (const key of [
     "title",
     "lang",
@@ -2711,6 +2744,136 @@
       if (!this.collapsed) walk(this.commonAncestorContainer);
       return result;
     }
+    deleteContents() {
+      if (this.collapsed) return;
+      const start = this.startContainer;
+      const end = this.endContainer;
+      const startOffset = this.startOffset;
+      const endOffset = this.endOffset;
+      if (start === end && start.nodeType === 3) {
+        start.deleteData(startOffset, endOffset - startOffset);
+        this.collapse(true);
+        return;
+      }
+      if (start === end && (start.nodeType === 1 || start.nodeType === 11)) {
+        const toRemove = [...start.childNodes].slice(startOffset, endOffset);
+        for (const child of toRemove) start.removeChild(child);
+        this.collapse(true);
+        return;
+      }
+      const common = this.commonAncestorContainer;
+      const nodesToRemove = [];
+      const truncateNodes = [];
+      const walk = (node) => {
+        if (node === common) {
+          for (const child of node.childNodes) walk(child);
+          return;
+        }
+        const nodeStart = [node.parentNode, nodeIndex(node)];
+        const nodeEnd = [node.parentNode, nodeIndex(node) + 1];
+        if (comparePoints(nodeStart, this._start) >= 0 && comparePoints(nodeEnd, this._end) <= 0) {
+          nodesToRemove.push(node);
+        } else if (this.intersectsNode(node)) {
+          if (node.nodeType === 3) {
+            truncateNodes.push(node);
+          } else {
+            for (const child of node.childNodes) walk(child);
+          }
+        }
+      };
+      walk(common);
+      for (const node of nodesToRemove) {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
+      for (const node of truncateNodes) {
+        if (node === start && node.nodeType === 3) {
+          node.deleteData(startOffset, node.length - startOffset);
+        } else if (node === end && node.nodeType === 3) {
+          node.deleteData(0, endOffset);
+        }
+      }
+      this.collapse(true);
+    }
+    extractContents() {
+      const doc = this.startContainer.ownerDocument || document;
+      const fragment = doc.createDocumentFragment();
+      if (this.collapsed) return fragment;
+      const clone = this.cloneContents();
+      this.deleteContents();
+      return clone;
+    }
+    cloneContents() {
+      const doc = this.startContainer.ownerDocument || document;
+      const fragment = doc.createDocumentFragment();
+      if (this.collapsed) return fragment;
+      const start = this.startContainer;
+      const end = this.endContainer;
+      const startOffset = this.startOffset;
+      const endOffset = this.endOffset;
+      if (start === end && start.nodeType === 3) {
+        const clone = start.cloneNode(true);
+        clone.data = clone.data.slice(startOffset, endOffset);
+        fragment.appendChild(clone);
+        return fragment;
+      }
+      const common = this.commonAncestorContainer;
+      const walk = (node) => {
+        if (node.nodeType === 3) {
+          if (comparePoints([node, node.length], this._start) <= 0 || comparePoints([node, 0], this._end) >= 0) return;
+          const clone = node.cloneNode(true);
+          const s = node === start ? startOffset : 0;
+          const e = node === end ? endOffset : node.length;
+          clone.data = node.data.slice(s, e);
+          fragment.appendChild(clone);
+        } else {
+          for (const child of node.childNodes) walk(child);
+        }
+      };
+      walk(common);
+      return fragment;
+    }
+    surroundContents(newParent) {
+      if (!(newParent instanceof Node)) throw new TypeError("Expected a Node");
+      if (newParent.nodeType === 9 || newParent.nodeType === 11 || newParent.nodeType === 10) {
+        fail("HierarchyRequestError", "Invalid parent node type");
+      }
+      const fragment = this.extractContents();
+      while (newParent.firstChild) newParent.removeChild(newParent.firstChild);
+      this.insertNode(newParent);
+      newParent.appendChild(fragment);
+      this.selectNode(newParent);
+    }
+    getBoundingClientRect() {
+      if (this.collapsed) {
+        const node = this.startContainer.nodeType === 1 ? this.startContainer : this.startContainer.parentElement;
+        return node?.getBoundingClientRect?.() || new DOMRect();
+      }
+      const rects = this.getClientRects();
+      if (!rects.length) return new DOMRect();
+      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+      for (const r of rects) {
+        left = Math.min(left, r.left);
+        top = Math.min(top, r.top);
+        right = Math.max(right, r.right);
+        bottom = Math.max(bottom, r.bottom);
+      }
+      return new DOMRect(left, top, right - left, bottom - top);
+    }
+    getClientRects() {
+      const rects = [];
+      const common = this.commonAncestorContainer;
+      const walk = (node) => {
+        if (this.intersectsNode(node)) {
+          if (node.nodeType === 1) {
+            const r = node.getBoundingClientRect?.();
+            if (r && (r.width > 0 || r.height > 0)) rects.push(r);
+          }
+          for (const child of node.childNodes) walk(child);
+        }
+      };
+      if (common) walk(common);
+      return rects;
+    }
   }
   for (
     const [name, value] of Object.entries({
@@ -2726,6 +2889,316 @@
   Object.defineProperty(Range.prototype, Symbol.toStringTag, {
     value: "Range",
   });
+  class Selection {
+    constructor(doc) {
+      this._doc = doc;
+      this._range = null;
+      this._direction = "none";
+    }
+    get anchorNode() {
+      return this._range ? (this._direction === "backward" ? this._range.endContainer : this._range.startContainer) : null;
+    }
+    get anchorOffset() {
+      return this._range ? (this._direction === "backward" ? this._range.endOffset : this._range.startOffset) : 0;
+    }
+    get focusNode() {
+      return this._range ? (this._direction === "backward" ? this._range.startContainer : this._range.endContainer) : null;
+    }
+    get focusOffset() {
+      return this._range ? (this._direction === "backward" ? this._range.startOffset : this._range.endOffset) : 0;
+    }
+    get isCollapsed() {
+      return !this._range || this._range.collapsed;
+    }
+    get rangeCount() {
+      return this._range ? 1 : 0;
+    }
+    get type() {
+      if (!this._range) return "None";
+      if (this._range.collapsed) return "Caret";
+      return "Range";
+    }
+    getRangeAt(index) {
+      if (Number(index) !== 0 || !this._range) {
+        fail("IndexSizeError", "Index out of bounds");
+      }
+      return this._range;
+    }
+    addRange(range) {
+      if (!(range instanceof Range)) throw new TypeError("Expected a Range");
+      if (!this._range) {
+        this._range = range;
+        this._direction = "forward";
+      }
+    }
+    removeRange(range) {
+      if (this._range === range) {
+        this._range = null;
+        this._direction = "none";
+      } else {
+        fail("NotFoundError", "Range not found in selection");
+      }
+    }
+    removeAllRanges() {
+      this._range = null;
+      this._direction = "none";
+    }
+    empty() {
+      this.removeAllRanges();
+    }
+    collapse(node, offset = 0) {
+      if (!node) {
+        this.removeAllRanges();
+        return;
+      }
+      const range = this._doc.createRange();
+      range.setStart(node, offset);
+      range.setEnd(node, offset);
+      this._range = range;
+      this._direction = "none";
+    }
+    setPosition(node, offset = 0) {
+      this.collapse(node, offset);
+    }
+    collapseToStart() {
+      if (!this._range) fail("InvalidStateError", "Selection has no ranges");
+      this._range.collapse(true);
+      this._direction = "none";
+    }
+    collapseToEnd() {
+      if (!this._range) fail("InvalidStateError", "Selection has no ranges");
+      this._range.collapse(false);
+      this._direction = "none";
+    }
+    extend(node, offset = 0) {
+      if (!this._range) fail("InvalidStateError", "Selection has no ranges");
+      const anchor = [this.anchorNode, this.anchorOffset];
+      const newFocus = boundary(node, offset);
+      const range = this._doc.createRange();
+      if (comparePoints(anchor, newFocus) <= 0) {
+        range.setStart(anchor[0], anchor[1]);
+        range.setEnd(newFocus[0], newFocus[1]);
+        this._direction = "forward";
+      } else {
+        range.setStart(newFocus[0], newFocus[1]);
+        range.setEnd(anchor[0], anchor[1]);
+        this._direction = "backward";
+      }
+      this._range = range;
+    }
+    setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset) {
+      const anchor = boundary(anchorNode, anchorOffset);
+      const focus = boundary(focusNode, focusOffset);
+      const range = this._doc.createRange();
+      if (comparePoints(anchor, focus) <= 0) {
+        range.setStart(anchor[0], anchor[1]);
+        range.setEnd(focus[0], focus[1]);
+        this._direction = "forward";
+      } else {
+        range.setStart(focus[0], focus[1]);
+        range.setEnd(anchor[0], anchor[1]);
+        this._direction = "backward";
+      }
+      this._range = range;
+    }
+    selectAllChildren(node) {
+      if (!(node instanceof Node)) throw new TypeError("Expected a Node");
+      const range = this._doc.createRange();
+      range.selectNodeContents(node);
+      this._range = range;
+      this._direction = "forward";
+    }
+    deleteFromDocument() {
+      if (this._range) {
+        this._range.deleteContents();
+      }
+    }
+    containsNode(node, allowPartial = false) {
+      if (!this._range || !(node instanceof Node)) return false;
+      return allowPartial
+        ? this._range.intersectsNode(node)
+        : (this._range.comparePoint(node, 0) >= 0 && this._range.comparePoint(node, nodeLength(node)) <= 0);
+    }
+    toString() {
+      return this._range ? this._range.toString() : "";
+    }
+  }
+  Object.defineProperty(Selection.prototype, Symbol.toStringTag, { value: "Selection" });
+
+  const NodeFilter = {
+    FILTER_ACCEPT: 1,
+    FILTER_REJECT: 2,
+    FILTER_SKIP: 3,
+    SHOW_ALL: 0xFFFFFFFF,
+    SHOW_ELEMENT: 0x1,
+    SHOW_ATTRIBUTE: 0x2,
+    SHOW_TEXT: 0x4,
+    SHOW_CDATA_SECTION: 0x8,
+    SHOW_PROCESSING_INSTRUCTION: 0x40,
+    SHOW_COMMENT: 0x80,
+    SHOW_DOCUMENT: 0x100,
+    SHOW_DOCUMENT_TYPE: 0x200,
+    SHOW_DOCUMENT_FRAGMENT: 0x400,
+  };
+  Object.defineProperty(globalThis, "NodeFilter", { value: NodeFilter, configurable: true, writable: true });
+
+  class TreeWalker {
+    constructor(root, whatToShow = NodeFilter.SHOW_ALL, filter = null) {
+      if (!(root instanceof Node)) throw new TypeError("Expected a Node");
+      this.root = root;
+      this.whatToShow = Number(whatToShow) >>> 0;
+      this.filter = typeof filter === "function" ? { acceptNode: filter } : filter;
+      this.currentNode = root;
+    }
+    _accept(node) {
+      const mask = 1 << (node.nodeType - 1);
+      if (!(this.whatToShow & mask)) return NodeFilter.FILTER_SKIP;
+      if (!this.filter || typeof this.filter.acceptNode !== "function") return NodeFilter.FILTER_ACCEPT;
+      return this.filter.acceptNode(node);
+    }
+    nextNode() {
+      let node = this.currentNode;
+      while (node) {
+        let next = node.firstChild;
+        while (!next && node && node !== this.root) {
+          next = node.nextSibling;
+          if (!next) node = node.parentNode;
+        }
+        if (!next || (node === this.root && !next)) return null;
+        node = next;
+        const res = this._accept(node);
+        if (res === NodeFilter.FILTER_ACCEPT) {
+          this.currentNode = node;
+          return node;
+        }
+      }
+      return null;
+    }
+    previousNode() {
+      let node = this.currentNode;
+      while (node && node !== this.root) {
+        let prev = node.previousSibling;
+        if (prev) {
+          while (prev.lastChild) prev = prev.lastChild;
+          node = prev;
+        } else {
+          node = node.parentNode;
+        }
+        if (!node) return null;
+        const res = this._accept(node);
+        if (res === NodeFilter.FILTER_ACCEPT) {
+          this.currentNode = node;
+          return node;
+        }
+      }
+      return null;
+    }
+    parentNode() {
+      let node = this.currentNode;
+      while (node && node !== this.root) {
+        node = node.parentNode;
+        if (!node) return null;
+        if (this._accept(node) === NodeFilter.FILTER_ACCEPT) {
+          this.currentNode = node;
+          return node;
+        }
+      }
+      return null;
+    }
+    firstChild() {
+      let child = this.currentNode.firstChild;
+      while (child) {
+        const res = this._accept(child);
+        if (res === NodeFilter.FILTER_ACCEPT) {
+          this.currentNode = child;
+          return child;
+        }
+        child = child.nextSibling;
+      }
+      return null;
+    }
+    lastChild() {
+      let child = this.currentNode.lastChild;
+      while (child) {
+        const res = this._accept(child);
+        if (res === NodeFilter.FILTER_ACCEPT) {
+          this.currentNode = child;
+          return child;
+        }
+        child = child.previousSibling;
+      }
+      return null;
+    }
+    nextSibling() {
+      let sib = this.currentNode.nextSibling;
+      while (sib) {
+        const res = this._accept(sib);
+        if (res === NodeFilter.FILTER_ACCEPT) {
+          this.currentNode = sib;
+          return sib;
+        }
+        sib = sib.nextSibling;
+      }
+      return null;
+    }
+    previousSibling() {
+      let sib = this.currentNode.previousSibling;
+      while (sib) {
+        const res = this._accept(sib);
+        if (res === NodeFilter.FILTER_ACCEPT) {
+          this.currentNode = sib;
+          return sib;
+        }
+        sib = sib.previousSibling;
+      }
+      return null;
+    }
+  }
+  Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, { value: "TreeWalker" });
+
+  class DataTransfer {
+    constructor() {
+      this._data = new Map();
+      this.dropEffect = "none";
+      this.effectAllowed = "uninitialized";
+      this.files = [];
+    }
+    get types() {
+      return Object.freeze([...this._data.keys()]);
+    }
+    getData(format) {
+      return this._data.get(String(format).toLowerCase()) || "";
+    }
+    setData(format, data) {
+      this._data.set(String(format).toLowerCase(), String(data));
+    }
+    clearData(format) {
+      if (format !== undefined) {
+        this._data.delete(String(format).toLowerCase());
+      } else {
+        this._data.clear();
+      }
+    }
+    setDragImage(image, x, y) {}
+  }
+  Object.defineProperty(DataTransfer.prototype, Symbol.toStringTag, { value: "DataTransfer" });
+
+  class DragEvent extends (globalThis.MouseEvent || Event) {
+    constructor(type, init = {}) {
+      super(type, init);
+      this.dataTransfer = init.dataTransfer || new DataTransfer();
+    }
+  }
+  Object.defineProperty(DragEvent.prototype, Symbol.toStringTag, { value: "DragEvent" });
+
+  class ClipboardEvent extends Event {
+    constructor(type, init = {}) {
+      super(type, init);
+      this.clipboardData = init.clipboardData || new DataTransfer();
+    }
+  }
+  Object.defineProperty(ClipboardEvent.prototype, Symbol.toStringTag, { value: "ClipboardEvent" });
+
   class Document extends Node {
     constructor(id, info) {
       if (id === undefined) return wrap(host("createDocument"));
@@ -2766,6 +3239,135 @@
       range._start = [this, 0];
       range._end = [this, 0];
       return range;
+    }
+    getSelection() {
+      if (!this._selection) this._selection = new Selection(this);
+      return this._selection;
+    }
+    get designMode() {
+      return this._designMode || "off";
+    }
+    set designMode(val) {
+      const lower = String(val).toLowerCase();
+      this._designMode = lower === "on" ? "on" : "off";
+    }
+    createTreeWalker(root, whatToShow = NodeFilter.SHOW_ALL, filter = null) {
+      return new TreeWalker(root, whatToShow, filter);
+    }
+    createNodeIterator(root, whatToShow = NodeFilter.SHOW_ALL, filter = null) {
+      return new TreeWalker(root, whatToShow, filter);
+    }
+    execCommand(command, showUI = false, value = "") {
+      const cmd = String(command).toLowerCase();
+      const sel = this.getSelection();
+      switch (cmd) {
+        case "selectall": {
+          let target = this.activeElement && this.activeElement.isContentEditable ? this.activeElement : null;
+          if (!target && sel.anchorNode) {
+            let cur = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+            while (cur && cur.isContentEditable && cur.parentElement && cur.parentElement.isContentEditable) {
+              cur = cur.parentElement;
+            }
+            if (cur && cur.isContentEditable) target = cur;
+          }
+          if (!target) target = this.body || this.documentElement;
+          if (target) sel.selectAllChildren(target);
+          return true;
+        }
+        case "copy": {
+          const text = sel.toString();
+          if (text) {
+            try { host("clipboardWrite", text); } catch(_) {}
+          }
+          const evt = new CustomEvent("copy", { bubbles: true, cancelable: true });
+          (sel.anchorNode?.parentElement || this.body || this.documentElement)?.dispatchEvent(evt);
+          return true;
+        }
+        case "cut": {
+          const text = sel.toString();
+          if (text) {
+            try { host("clipboardWrite", text); } catch(_) {}
+          }
+          const evt = new CustomEvent("cut", { bubbles: true, cancelable: true });
+          const target = sel.anchorNode?.parentElement || this.body || this.documentElement;
+          if (!target?.dispatchEvent(evt)) return true;
+          sel.deleteFromDocument();
+          return true;
+        }
+        case "paste": {
+          let text = String(value || "");
+          if (!text) {
+            try { text = host("clipboardRead") || ""; } catch(_) {}
+          }
+          if (text) {
+            const evt = new CustomEvent("paste", { bubbles: true, cancelable: true });
+            const target = sel.anchorNode?.parentElement || this.body || this.documentElement;
+            if (target?.dispatchEvent(evt)) {
+              if (sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                const node = this.createTextNode(text);
+                range.insertNode(node);
+                range.collapse(false);
+              }
+            }
+          }
+          return true;
+        }
+        case "inserttext": {
+          const text = String(value || "");
+          if (sel.rangeCount > 0) {
+            const range = sel.getRangeAt(0);
+            range.deleteContents();
+            const node = this.createTextNode(text);
+            range.insertNode(node);
+            range.collapse(false);
+          }
+          return true;
+        }
+        case "delete":
+        case "forwarddelete": {
+          sel.deleteFromDocument();
+          return true;
+        }
+        case "bold":
+        case "italic":
+        case "underline": {
+          if (sel.rangeCount > 0 && !sel.isCollapsed) {
+            const tag = cmd === "bold" ? "b" : cmd === "italic" ? "i" : "u";
+            const el = this.createElement(tag);
+            try { sel.getRangeAt(0).surroundContents(el); } catch(_) {}
+          }
+          return true;
+        }
+        case "undo":
+        case "redo":
+          return true;
+        default:
+          return false;
+      }
+    }
+    queryCommandSupported(command) {
+      const cmd = String(command).toLowerCase();
+      return [
+        "selectall", "copy", "cut", "paste", "inserttext", "delete", "forwarddelete",
+        "bold", "italic", "underline", "undo", "redo"
+      ].includes(cmd);
+    }
+    queryCommandEnabled(command) {
+      return this.queryCommandSupported(command);
+    }
+    queryCommandState(command) {
+      const cmd = String(command).toLowerCase();
+      const sel = this.getSelection();
+      if (!sel.anchorNode) return false;
+      const tag = cmd === "bold" ? "b, strong" : cmd === "italic" ? "i, em" : cmd === "underline" ? "u" : null;
+      if (!tag) return false;
+      const parent = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+      return !!parent?.closest(tag);
+    }
+    queryCommandValue(command) {
+      return "";
     }
     get defaultView() {
       return this === document ? globalThis : (this._defaultView || null);
@@ -3019,6 +3621,16 @@
     "mouseup",
     "load",
     "error",
+    "dragstart",
+    "drag",
+    "dragenter",
+    "dragover",
+    "dragleave",
+    "drop",
+    "dragend",
+    "copy",
+    "cut",
+    "paste",
   ])
     ensureHandler(name);
   const mutationObservers = new Set();
@@ -3243,6 +3855,23 @@
           return false;
         }
       },
+      clipboard: {
+        async writeText(text) {
+          try {
+            host("clipboardWrite", String(text));
+            return undefined;
+          } catch(e) {
+            throw new DOMException("Clipboard write failed", "NotAllowedError");
+          }
+        },
+        async readText() {
+          try {
+            return String(host("clipboardRead") || "");
+          } catch(e) {
+            throw new DOMException("Clipboard read failed", "NotAllowedError");
+          }
+        },
+      },
     },
     Image: function Image(width, height) {
       const image = document.createElement("img");
@@ -3268,6 +3897,46 @@
         blur() {},
         postMessage() {},
       };
+    },
+    getSelection: () => document.getSelection(),
+    find: (aString, aCaseSensitive = false, aBackwards = false, aWrapAround = true, aWholeWord = false, aSearchInFrames = false, aShowDialog = false) => {
+      const query = String(aString || "");
+      if (!query) return false;
+      const doc = window.document;
+      const body = doc.body || doc.documentElement;
+      if (!body) return false;
+      const needle = aCaseSensitive ? query : query.toLocaleLowerCase();
+      const walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      const matches = [];
+      let node, count = 0;
+      while ((node = walker.nextNode()) && ++count < 50000 && matches.length < 10000) {
+        const parent = node.parentElement;
+        if (!parent || parent.closest("script,style,noscript,textarea,input,[hidden]")) continue;
+        const text = aCaseSensitive ? node.data : node.data.toLocaleLowerCase();
+        let offset = 0, at;
+        while ((at = text.indexOf(needle, offset)) !== -1 && matches.length < 10000) {
+          matches.push({ node, offset: at, length: needle.length });
+          offset = at + Math.max(1, needle.length);
+        }
+      }
+      if (!matches.length) return false;
+      const last = window.__wegaBrowserFind;
+      let index = 0;
+      if (last && last.query === query) {
+        index = aBackwards ? (last.index - 1 + matches.length) % matches.length : (last.index + 1) % matches.length;
+      } else {
+        index = aBackwards ? matches.length - 1 : 0;
+      }
+      const match = matches[index];
+      const range = doc.createRange();
+      range.setStart(match.node, match.offset);
+      range.setEnd(match.node, match.offset + match.length);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      match.node.parentElement?.scrollIntoView?.({ block: "center", behavior: "auto" });
+      window.__wegaBrowserFind = { query, index, total: matches.length };
+      return true;
     },
     getComputedStyle: (element) => new CSSStyleDeclaration(element, true),
     CSS: {
@@ -3431,7 +4100,12 @@
   const classes = { Node, Element, Document, DocumentFragment, CharacterData, Text, Comment, CDATASection, ProcessingInstruction, DocumentType,
     Attr, NamedNodeMap, NodeList, HTMLCollection, DOMTokenList, MutationObserver, MutationRecord,
     Location, Event, EventTarget: BaseTarget, HTMLElement, HTMLHeadElement: HTMLElement,
-    HTMLScriptElement, ShadowRoot, Range, Window, DOMImplementation, AbortSignal: web.AbortSignal };
+    HTMLScriptElement, ShadowRoot, Range, Selection, TreeWalker, DataTransfer, DragEvent, ClipboardEvent, Window, DOMImplementation, AbortSignal: web.AbortSignal };
+  globalThis.Selection = Selection;
+  globalThis.TreeWalker = TreeWalker;
+  globalThis.DataTransfer = DataTransfer;
+  globalThis.DragEvent = DragEvent;
+  globalThis.ClipboardEvent = ClipboardEvent;
   const eventTypeGetter = Object.getOwnPropertyDescriptor(Event.prototype, "type").get;
   const targetAdd = BaseTarget.prototype.addEventListener;
   Object.defineProperty(globalThis, "__wega_semantics", { configurable: true, value: {

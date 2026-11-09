@@ -657,6 +657,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 PageEvent::Authentication { url, realm } => ContentEvent::Authentication { url, realm },
                 PageEvent::Accessibility(json) => ContentEvent::Accessibility(json),
                 PageEvent::FileDialog { id, multiple, accept } => ContentEvent::FileDialog { id, multiple, accept },
+                PageEvent::ClipboardWrite(text) => ContentEvent::ClipboardWrite(text),
+                PageEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
+                    ContentEvent::FindResult { active_match_ordinal, number_of_matches, query }
+                }
             };
             write(&protocol::content_event(
                 version,
@@ -1141,6 +1145,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Command::FileSelected { id, paths } => {
                     view.file_selected(id, paths);
+                }
+                Command::Copy => {
+                    view.copy();
+                }
+                Command::Cut => {
+                    view.cut();
+                }
+                Command::Paste(text) => {
+                    view.paste(&text);
+                }
+                Command::SelectAll => {
+                    view.select_all();
+                }
+                Command::FindInPage { query, backwards, case_sensitive } => {
+                    view.find_in_page(&query, backwards, case_sensitive);
                 }
             },
         }

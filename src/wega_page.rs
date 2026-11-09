@@ -95,6 +95,7 @@ pub(crate) struct Snapshot {
     pub accessibility: Option<String>,
     pub accessibility_enabled: bool,
     pub pending_file_dialog: Option<(u64, bool, Vec<String>)>,
+    pub find_result: Option<(u32, u32, String)>,
 }
 
 impl Snapshot {
@@ -1350,6 +1351,28 @@ impl Page {
     }
     pub fn select_files(&self, id: u64, paths: Vec<String>) {
         let _ = self.send(Request::FileSelected { id, paths });
+    }
+    #[allow(dead_code)]
+    pub fn copy(&self) {
+        let _ = self.send(Request::Copy);
+    }
+    #[allow(dead_code)]
+    pub fn cut(&self) {
+        let _ = self.send(Request::Cut);
+    }
+    #[allow(dead_code)]
+    pub fn paste(&self, text: String) {
+        let _ = self.send(Request::Paste(text));
+    }
+    #[allow(dead_code)]
+    pub fn select_all(&self) {
+        let _ = self.send(Request::SelectAll);
+    }
+    pub fn find_in_page(&self, query: String, backwards: bool, case_sensitive: bool) {
+        let _ = self.send(Request::FindInPage { query, backwards, case_sensitive });
+    }
+    pub fn evaluate(&self, source: &str) {
+        let _ = self.send(Request::Evaluate(source.to_string()));
     }
     pub fn pointer(
         &self,
