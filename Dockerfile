@@ -10,7 +10,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 # Shared with the CI jobs that build the same binaries outside Docker.
 COPY docker/builder-packages.txt /tmp/builder-packages.txt
-RUN apt-get update && xargs -a /tmp/builder-packages.txt apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && xargs -a /tmp/builder-packages.txt apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # Third-party license notices (cargo-about). Set LICENSE_NOTICES=0 to skip the
 # tool for quick local builds; the image then carries only LICENSE and NOTICE.
@@ -61,7 +62,8 @@ ENV BROWSER_METRICS_SCOPE=container
 ARG CJK_FONTS=1
 # No gstreamer1.0-libav: it bundles GPL-licensed FFmpeg components. Without it,
 # H.264/AAC media may not play; VP8/VP9/AV1/Opus/Vorbis use other plugins.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     ca-certificates curl tini gosu supervisor xvfb x11vnc x11-utils openbox \
     novnc websockify nginx-light openssl python3-cryptography \
     libegl1 libgl1 libgl1-mesa-dri libgles2 libgbm1 libvulkan1 \
