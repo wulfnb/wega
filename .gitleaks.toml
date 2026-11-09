@@ -8,7 +8,3 @@ description = "Ignore standard RFC 6455 WebSocket sample test nonce"
 regexes = [
     '''dGhlIHNhbXBsZSBub25jZQ==''',
 ]
-paths = [
-    # Generated files with embedded SHA256 hashes from WebIDL source — not secrets.
-    '''engines/wega/src/dom/generated/.*''',
-]

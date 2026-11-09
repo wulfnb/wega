@@ -5,10 +5,54 @@ use std::{
 };
 use wega_engine::{Engine, Limits, NetworkPolicy, Url, View};
 fn fixture(name: &str) -> View {
-    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(format!("{name}.html"));
-    Engine::new(
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let html_file = base.join(format!("{name}.html"));
+    let mut html = std::fs::read_to_string(&html_file)
+        .unwrap_or_else(|e| panic!("cannot read {:?}: {e}", html_file));
+    // Inline <script src="..."></script> references into the HTML so the engine
+    // doesn't need to resolve relative file:// URLs (it only supports about:blank).
+    // We do this by finding the src attribute, reading the JS file, and replacing
+    // the entire <script src="..."></script> tag with <script>...content...</script>.
+    while let Some(tag_start) = html.find("<script src=") {
+        // Find the closing > of the opening script tag (handle possible attributes)
+        let tag_body = &html[tag_start..];
+        if let Some(src_eq) = tag_body.find("src=") {
+            let after_src = &tag_body[src_eq + 4..];
+            let quote = after_src.chars().next();
+            if quote == Some('"') || quote == Some('\'') {
+                let quote_char = quote.unwrap();
+                if let Some(src_end) = after_src[1..].find(quote_char) {
+                    let src = &after_src[1..src_end + 1];
+                    let js_file = base.join(src.trim_matches(quote_char));
+                    if js_file.exists() {
+                        let js = std::fs::read_to_string(&js_file).unwrap_or_default();
+                        // Find the end of the script tag: look for ></script> or >></script>
+                        let search_from = tag_start + src_eq + 4 + 1 + src_end + 1;
+                        if let Some(end_tag) = html[search_from..].find("></script>") {
+                            let full_end = search_from + end_tag + 11; // > + </script> + >
+                            // Escape </script> in content to prevent early termination
+                            let safe_js = js.replace("</script>", "<\\/script>");
+                            html.replace_range(
+                                tag_start..full_end,
+                                &format!("<script>{safe_js}</script>"),
+                            );
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    let mut view = Engine::new(
         Limits {
             script_time: Duration::from_secs(2),
             js_heap_bytes: 64 * 1024 * 1024,
@@ -21,8 +65,10 @@ fn fixture(name: &str) -> View {
         Arc::new(|| {}),
     )
     .unwrap()
-    .create_view(Url::from_file_path(file).unwrap())
-    .unwrap()
+    .create_view(Url::parse("about:blank").unwrap())
+    .unwrap();
+    view.set_html(&html).unwrap();
+    view
 }
 fn counter(name: &str) {
     let mut view = fixture(name);
