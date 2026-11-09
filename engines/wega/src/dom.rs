@@ -31,6 +31,7 @@ pub(crate) struct Requests {
     pub writes: String,
     pub opened: Vec<url::Url>,
     pub traverse: Vec<i32>,
+    pub compatibility: Option<String>,
 }
 
 pub(crate) struct Dom {
@@ -53,6 +54,8 @@ pub(crate) struct Dom {
     used: Cell<usize>,
     start: Instant,
     retained: RefCell<HashSet<NodeId>>,
+    components: RefCell<crate::components::Registry>,
+    shadows: RefCell<crate::components::ShadowTree>,
     // The DOM thread cannot receive parser/input mutations during script. Start
     // a fresh epoch at each host step, then invalidate synchronously on writes.
     revision: Cell<u64>,
@@ -81,6 +84,8 @@ impl Dom {
             used: Cell::new(initial_bytes),
             start: Instant::now(),
             retained: Default::default(),
+            components: Default::default(),
+            shadows: Default::default(),
             revision: Cell::new(0),
             layout_dirty: Cell::new(true),
         }
@@ -99,6 +104,90 @@ impl Dom {
     }
     pub fn call(&self, args: &[Value]) -> Result<Value, String> {
         let text = |index: usize| args.get(index).and_then(Value::as_str).unwrap_or_default();
+        // Each committed document owns its realm and Dom, so only node
+        // liveness needs checking here.
+        if text(0) == "bindingCheck" {
+            let identities = args
+                .get(2)
+                .and_then(Value::as_array)
+                .ok_or("TypeError: invalid binding identities")?;
+            let document = self
+                .document
+                .try_borrow()
+                .map_err(|_| "InvalidStateError: reentrant native DOM borrow")?;
+            for identity in identities {
+                let id = identity
+                    .as_str()
+                    .and_then(|id| id.parse::<u64>().ok())
+                    .ok_or("TypeError: invalid binding node identity")?;
+                if document.get_node(NodeId::from_u64(id)).is_none() {
+                    return Err("InvalidStateError: binding node no longer exists".into());
+                }
+            }
+            return Ok(Value::Null);
+        }
+        match text(0) {
+            "customNameValid" => return Ok(json!(crate::components::valid_name(text(1)))),
+            "customDefinition" => return Ok(json!(self.components.borrow().get(text(1)))),
+            "customDefinitionId" => {
+                return Ok(json!(
+                    self.components
+                        .borrow()
+                        .by_id(text(1).parse().map_err(|_| "Invalid definition ID")?)
+                ));
+            }
+            "customPreflight" => {
+                self.components.borrow().preflight(
+                    text(1),
+                    text(2)
+                        .parse()
+                        .map_err(|_| "Invalid constructor identity")?,
+                    (!text(3).is_empty()).then_some(text(3)),
+                )?;
+                return Ok(Value::Null);
+            }
+            "messageTarget" => {
+                let doc = self.document.borrow();
+                let requested = text(1);
+                if requested == "*" || requested == "/" {
+                    return Ok(json!(true));
+                }
+                let target =
+                    url::Url::parse(requested).map_err(|_| "SyntaxError: invalid target origin")?;
+                let origin = target.origin();
+                return Ok(json!(
+                    matches!(origin, url::Origin::Tuple(..)) && origin == doc.url().origin()
+                ));
+            }
+            "customDefine" => {
+                let options: Value =
+                    serde_json::from_str(text(3)).map_err(|_| "Invalid custom element options")?;
+                let observed = options
+                    .get("observed")
+                    .and_then(Value::as_array)
+                    .ok_or("Invalid observed attributes")?
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_owned)
+                            .ok_or("Invalid observed attribute")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(json!(
+                    self.components.borrow_mut().define(
+                        text(1),
+                        text(2)
+                            .parse()
+                            .map_err(|_| "Invalid constructor identity")?,
+                        observed,
+                        options.get("extends").and_then(Value::as_str)
+                    )?
+                ));
+            }
+            "customReactions" => return Ok(json!(self.components.borrow_mut().drain()?)),
+            _ => {}
+        }
         if text(0) == "revision" {
             return Ok(json!(self.revision.get()));
         }
@@ -124,6 +213,7 @@ impl Dom {
                 | "setText"
                 | "setAttr"
                 | "removeAttr"
+                | "removeAttrNS"
                 | "create"
                 | "createText"
                 | "append"
@@ -249,6 +339,101 @@ impl Dom {
             }
         };
         let value = match text(0) {
+            "customUpgrade" => {
+                let target = node_id()?;
+                let name = doc.get_node(target).and_then(|node| node.element_data()).map(|element| element.name.local.as_ref()).unwrap_or("");
+                json!(self.components.borrow().needs_upgrade(target.as_u64(), name))
+            },
+            "customCandidates" => {
+                let root = node_id()?;
+                let definition: u64 = text(2).parse().map_err(|_| "Invalid definition ID")?;
+                let registry = self.components.borrow();
+                let candidates: Vec<_> = self.component_subtree(&doc, root).into_iter().filter(|id| {
+                    let name = doc.get_node(*id).and_then(|node| node.element_data()).map(|element| element.name.local.as_ref()).unwrap_or("");
+                    registry.needs_upgrade(id.as_u64(), name) == Some(definition)
+                }).map(|id| id.as_u64().to_string()).collect();
+                json!(candidates)
+            },
+            "customBegin" => {
+                let target = node_id()?;
+                let definition: u64 = text(2).parse().map_err(|_| "Invalid definition ID")?;
+                let mut registry = self.components.borrow_mut();
+                let name = doc.get_node(target).and_then(|node| node.element_data()).map(|element| element.name.local.as_ref()).ok_or("Custom element must be an element")?;
+                if registry.get(name).is_none_or(|entry| entry.id != definition) { return Err("Custom element definition does not match its node".into()); }
+                let began = registry.begin(target.as_u64(), definition)?;
+                if began {
+                    for attribute in doc.get_node(target).unwrap().element_data().unwrap().attrs.iter() {
+                        registry.attribute(target.as_u64(), attribute.name.local.as_ref(), None, Some(&attribute.value), (!attribute.name.ns.as_str().is_empty()).then_some(attribute.name.ns.as_str()));
+                    }
+                    if self.component_connected(&doc, target) { registry.lifecycle(target.as_u64(), true); }
+                }
+                json!(began)
+            },
+            "customComplete" => {
+                let target = node_id()?; self.components.borrow_mut().complete(target.as_u64(), text(2) == "true")?; Value::Null
+            },
+            "customConstruct" => {
+                let definition: u64 = text(1).parse().map_err(|_| "Invalid definition ID")?;
+                let name = self.components.borrow().by_id(definition).ok_or("TypeError: Illegal constructor")?.name.clone();
+                if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
+                let created = doc.mutate().create_element(QualName::new(None, ns!(html), LocalName::from(name)), vec![]);
+                self.allocated.set(self.allocated.get()+1); self.invalidate();
+                let mut registry = self.components.borrow_mut(); registry.begin(created.as_u64(), definition)?; registry.complete(created.as_u64(), true)?;
+                json!(created.as_u64().to_string())
+            },
+            "customConnected" | "customDisconnected" => {
+                let target = node_id()?; let nodes = self.component_subtree(&doc, target); let mut registry = self.components.borrow_mut();
+                for id in nodes { registry.lifecycle(id.as_u64(), text(0) == "customConnected"); } Value::Null
+            },
+            "customAdopt" => {
+                let target = node_id()?; let old = id(2)?; let new = id(3)?;
+                if !matches!(doc.get_node(old).map(|node|&node.data), Some(NodeData::Document(_))) || !matches!(doc.get_node(new).map(|node|&node.data), Some(NodeData::Document(_))) { return Err("Invalid adoption documents".into()); }
+                let mut registry = self.components.borrow_mut(); for child in self.component_subtree(&doc, target) { registry.adopted(child.as_u64(), old.as_u64(), new.as_u64()); } Value::Null
+            },
+            "shadowAttach" => {
+                let target = node_id()?;
+                if self.shadows.borrow().root(target.as_u64(), true).is_some() { return Err("NotSupportedError: shadow root already attached".into()); }
+                let tag = doc.get_node(target).and_then(|node| node.element_data()).ok_or("NotSupportedError: invalid shadow host")?.name.local.to_string();
+                if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
+                let root = doc.mutate().create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), vec![]);
+                let entry = match self.shadows.borrow_mut().attach(target.as_u64(), root.as_u64(), text(2), text(3) == "true", &tag) {
+                    Ok(entry) => entry, Err(error) => { doc.mutate().remove_and_drop_node(root); return Err(error); }
+                };
+                self.allocated.set(self.allocated.get()+1); self.invalidate();
+                self.requests.borrow_mut().compatibility = Some("Shadow DOM scoped style and flattened layout are not implemented by Wega".into());
+                json!(entry)
+            },
+            "shadowRoot" => json!(self.shadows.borrow().root(node_id()?.as_u64(), false)),
+            "shadowInternal" => json!(self.shadows.borrow().root(node_id()?.as_u64(), true)),
+            "shadowHost" => json!(self.shadows.borrow().host(node_id()?.as_u64()).map(|id|id.to_string())),
+            "eventParent" => {
+                let target = node_id()?;
+                if let Some(slot) = self.assigned_slot(&doc, target) { json!(slot.as_u64().to_string()) }
+                else if let Some(parent) = doc.get_node(target).unwrap().parent { json!(parent.as_u64().to_string()) }
+                else if text(2) != "true" && text(3) == text(1) { Value::Null }
+                else { json!(self.shadows.borrow().host(target.as_u64()).map(|id|id.to_string())) }
+            },
+            "assignedSlot" | "assignedSlotInternal" => {
+                let mut assigned = self.assigned_slot(&doc, node_id()?);
+                if text(0) == "assignedSlot" && let Some(slot) = assigned {
+                        let mut root = slot; while let Some(parent) = doc.get_node(root).and_then(|node|node.parent) { root = parent; }
+                        if let Some(host) = self.shadows.borrow().host(root.as_u64()) && self.shadows.borrow().root(host, false).is_none() { assigned = None; }
+                }
+                json!(assigned.map(|id|id.as_u64().to_string()))
+            },
+            "componentRoot" => {
+                let mut root = node_id()?;
+                loop {
+                    if let Some(parent) = doc.get_node(root).and_then(|node|node.parent) { root = parent; }
+                    else if text(2) == "true" && let Some(host) = self.shadows.borrow().host(root.as_u64()) { root = NodeId::from_u64(host); }
+                    else { break; }
+                }
+                json!(root.as_u64().to_string())
+            },
+            "assignedNodes" => {
+                let nodes = self.assigned_nodes(&doc, node_id()?, text(2) == "true", &mut HashSet::new());
+                json!(nodes.into_iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>())
+            },
             "cookie"=>json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite)),
             "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);Value::Null},
             "templateContent"=>{let target=node_id()?;let content=doc.mutate().template_contents(target);json!(content.as_u64().to_string())},
@@ -261,17 +446,17 @@ impl Dom {
             "history"=>{let url=doc.url().join(text(1)).map_err(|e|e.to_string())?;if url.origin()!=doc.url().origin()||!matches!(url.scheme(),"http"|"https"){return Err("SecurityError: history URL must have the same tuple origin".into());}doc.set_base_url(url.as_str());Value::Null},
             "media"=>{
                 let url_data=style::stylesheets::UrlExtraData(style::servo_arc::Arc::new(doc.url().clone()));
-                let mut context=style::parser::ParserContext::new(style::stylesheets::Origin::Author,&url_data,Some(style::stylesheets::CssRuleType::Media),style_traits::ParsingMode::DEFAULT,selectors::matching::QuirksMode::NoQuirks,std::borrow::Cow::Owned(Default::default()),None,None,Default::default());
+                let mut context=style::parser::ParserContext::new(style::stylesheets::Origin::Author,&url_data,Some(style::stylesheets::CssRuleType::Media),style_traits::ParsingMode::DEFAULT,style::context::QuirksMode::NoQuirks,std::borrow::Cow::Owned(Default::default()),None,None,Default::default());
                 let mut input=cssparser::Parser::new(text(1));let media=style::media_queries::MediaList::parse(&mut context,&mut input);
-                json!(media.evaluate(doc.stylist_device(),selectors::matching::QuirksMode::NoQuirks,&mut style::stylesheets::CustomMediaEvaluator::none()))
+                json!(media.evaluate(doc.stylist_device(),style::context::QuirksMode::NoQuirks,&mut style::stylesheets::CustomMediaEvaluator::none()))
             },
-            "subtree"=>json!(Self::subtree(&doc,node_id()?).iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
+            "subtree"=>json!(self.component_subtree(&doc,node_id()?).iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "documentDomain"=>{
                 if doc.url().origin().is_tuple() { Value::Null }
                 else {return Err("SecurityError: opaque documents have no domain".into());}
             },
             "resolveURL"=>{let base=url::Url::parse(text(2)).map_err(|e|e.to_string())?;let url=base.join(text(1)).map_err(|e|e.to_string())?;json!({"href":url.as_str(),"origin":url.origin().ascii_serialization(),"protocol":format!("{}:",url.scheme()),"host":url.host_str().map_or(String::new(),|host|url.port().map_or_else(||host.to_owned(),|port|format!("{host}:{port}"))),"hostname":url.host_str().unwrap_or_default(),"port":url.port().map(|p|p.to_string()).unwrap_or_default(),"pathname":url.path(),"search":url.query().map(|q|format!("?{q}")).unwrap_or_default(),"hash":url.fragment().map(|f|format!("#{f}")).unwrap_or_default()})},
-            "connected"=>{let mut root=node_id()?;while let Some(parent)=doc.get_node(root).and_then(|n|n.parent){root=parent;}json!(root==doc.root_node().id)},
+            "connected"=>json!(self.component_connected(&doc, node_id()?)),
             "retain" => {let id=node_id()?;self.retained.borrow_mut().insert(id);Value::Null},
             "release" => {let id=id(1)?;self.retained.borrow_mut().remove(&id);self.collect_detached(&mut doc,id);Value::Null},
             "info"=>{
@@ -296,12 +481,13 @@ impl Dom {
             "getById"=>json!(doc.get_element_by_id(text(1)).map(|id|id.as_u64().to_string())),
             "outerHTML"=>json!(doc.get_node(node_id()?).unwrap().outer_html()),
             "innerHTML" | "contextualFragment"=>{
-                let target=node_id()?;
+                let mut target=node_id()?;
+                if doc.get_node(target).and_then(|node|node.element_data()).is_some_and(|element|element.name.local.as_str()=="template") { target=doc.mutate().template_contents(target); }
                 if text(2).len()>self.limits.html_bytes{return Err("HTML fragment exceeds the size limit".into());}
                 // Parse into a detached same-context element first; reject budgets before
                 // replacing live children, and retain removed nodes held by JS wrappers.
                 let element=doc.get_node(target).unwrap().element_data().ok_or("innerHTML needs an element")?;
-                let name=element.name.clone();let staging=doc.mutate().create_element(name,vec![]);
+                let name=if element.name.local.as_str()=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.name.clone()};let staging=doc.mutate().create_element(name,vec![]);
                 {let mut mutation=doc.mutate();crate::parser::parse_fragment(&mut mutation,staging,text(2));}
                 let parsed=Self::subtree(&doc,staging);
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
@@ -340,7 +526,7 @@ impl Dom {
                 if doc.get_node(child).is_none(){return Err("Node no longer exists".into());}
                 let anchor=if text(3).is_empty(){None}else{Some(id(3)?)};
                 if anchor.is_some_and(|id|doc.get_node(id).is_none_or(|n|n.parent!=Some(parent))){return Err("NotFoundError: reference is not a child".into());}
-                let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.get_node(id).and_then(|n|n.parent);}
+                let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.get_node(id).and_then(|n|n.parent).or_else(||self.shadows.borrow().host(id.as_u64()).map(NodeId::from_u64));}
                 if anchor==Some(child){return Ok(json!(child.as_u64().to_string()));}
                 if let Some(anchor)=anchor{doc.mutate().insert_nodes_before(anchor,&[child]);}else{doc.mutate().append_children(parent,&[child]);}
                 json!(child.as_u64().to_string())
@@ -359,17 +545,21 @@ impl Dom {
                 let target=node_id()?;let payload=[text(3).to_owned(),text(4).to_owned()];
                 let (prefix,local)=payload[0].split_once(':').map_or((None,payload[0].as_str()),|(p,l)|(Some(html5ever::Prefix::from(p)),l));
                 let charge=payload[0].len()+payload[1].len();if self.used.get().saturating_add(charge)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}self.used.set(self.used.get()+charge);
-                doc.mutate().set_attribute(target,QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]);Value::Null
+                let old = doc.get_node(target).unwrap().attrs().unwrap_or_default().iter().find(|a|a.name.ns.as_str()==text(2)&&a.name.local.as_str()==local).map(|a|a.value.clone());
+                doc.mutate().set_attribute(target,QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]);
+                self.components.borrow_mut().attribute(target.as_u64(), local, old.as_deref(), Some(&payload[1]), (!text(2).is_empty()).then_some(text(2)));
+                Value::Null
             },
             "supports"=>json!(doc.css_supports_condition(text(1))),
             "supportsProperty"=>json!(doc.style_attr_set_property("",text(1),text(2),false).is_some_and(|css|!css.is_empty())),
             "inlineCSS"=>{let target=node_id()?;let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}json!(css)},
             "inlineProperty"=>{let target=node_id()?;let mut css=String::new();if let Ok(property)=style::properties::PropertyId::parse_enabled_for_all_content(text(2)) && let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).property_value_to_css(&property,&mut css);}json!(css)},
             "styleSet"=>{
-                let target=node_id()?;doc.mutate().remove_style_property(target,text(2));
+                let target=node_id()?;let old=Self::attribute(&doc,target,"style");doc.mutate().remove_style_property(target,text(2));
                 let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}
                 if !text(3).is_empty(){css.push_str(&format!("{}: {};",text(2),text(3)));}
-                doc.mutate().set_attribute(target,QualName::new(None,ns!(),LocalName::from("style")),&css);Value::Null
+                doc.mutate().set_attribute(target,QualName::new(None,ns!(),LocalName::from("style")),&css);
+                self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),Some(&css),None);Value::Null
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
             "checked"=>json!(doc.get_node(node_id()?).unwrap().element_data().and_then(|e|e.checkbox_input_checked()).unwrap_or(false)),
@@ -519,6 +709,7 @@ impl Dom {
             }
             "setAttr" => {
                 let id = node_id()?;
+                let old = Self::attribute(&doc, id, text(2));
                 if text(3).len() > 1024 * 1024 {
                     return Err("DOM attribute budget exceeded".into());
                 }
@@ -527,12 +718,26 @@ impl Dom {
                     QualName::new(None, ns!(), LocalName::from(text(2))),
                     text(3),
                 );
+                self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), Some(text(3)), None);
                 Value::Null
             }
             "removeAttr" => {
                 let id = node_id()?;
+                let old = Self::attribute(&doc, id, text(2));
                 doc.mutate()
                     .clear_attribute(id, QualName::new(None, ns!(), LocalName::from(text(2))));
+                if old.is_some() { self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), None, None); }
+                Value::Null
+            }
+            "removeAttrNS" => {
+                let target = node_id()?;
+                let name = doc.get_node(target).unwrap().attrs().unwrap_or_default().iter()
+                    .find(|attribute| attribute.name.ns.as_str() == text(2) && attribute.name.local.as_str() == text(3))
+                    .map(|attribute| (attribute.name.clone(), attribute.value.clone()));
+                if let Some((name, old)) = name {
+                    doc.mutate().clear_attribute(target, name);
+                    self.components.borrow_mut().attribute(target.as_u64(), text(3), Some(&old), None, (!text(2).is_empty()).then_some(text(2)));
+                }
                 Value::Null
             }
             "create" | "createText" => {
@@ -692,15 +897,141 @@ impl Dom {
         }
         nodes
     }
-    fn collect_detached(&self, doc: &mut BaseDocument, id: NodeId) {
-        let mut root = id;
-        while let Some(parent) = doc.get_node(root).and_then(|n| n.parent) {
+    fn attribute(doc: &BaseDocument, id: NodeId, name: &str) -> Option<String> {
+        doc.get_node(id)?
+            .element_data()?
+            .attr(LocalName::from(name))
+            .map(str::to_owned)
+    }
+    fn component_subtree(&self, doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
+        let mut nodes = Vec::new();
+        let mut pending = vec![root];
+        let mut seen = HashSet::new();
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(node) = doc.get_node(id) else {
+                continue;
+            };
+            nodes.push(id);
+            pending.extend(node.children.iter().rev().copied());
+            if let Some(root) = self.shadows.borrow().root(id.as_u64(), true)
+                && let Ok(root) = root.root.parse()
+            {
+                pending.push(NodeId::from_u64(root));
+            }
+        }
+        nodes
+    }
+    fn component_connected(&self, doc: &BaseDocument, mut node: NodeId) -> bool {
+        let mut seen = HashSet::new();
+        while seen.insert(node) {
+            if node == doc.root_node().id {
+                return true;
+            }
+            let Some(next) = doc.get_node(node).and_then(|node| node.parent).or_else(|| {
+                self.shadows
+                    .borrow()
+                    .host(node.as_u64())
+                    .map(NodeId::from_u64)
+            }) else {
+                return false;
+            };
+            node = next;
+        }
+        false
+    }
+    fn assigned_slot(&self, doc: &BaseDocument, target: NodeId) -> Option<NodeId> {
+        let node = doc.get_node(target)?;
+        if !matches!(node.data, NodeData::Element(_) | NodeData::Text(_)) {
+            return None;
+        }
+        let parent = node.parent?;
+        let root = self
+            .shadows
+            .borrow()
+            .root(parent.as_u64(), true)?
+            .root
+            .parse()
+            .ok()?;
+        let name = Self::attribute(doc, target, "slot").unwrap_or_default();
+        Self::subtree(doc, NodeId::from_u64(root))
+            .into_iter()
+            .find(|id| {
+                doc.get_node(*id)
+                    .and_then(|node| node.element_data())
+                    .is_some_and(|element| element.name.local.as_str() == "slot")
+                    && Self::attribute(doc, *id, "name").unwrap_or_default() == name
+            })
+    }
+    fn assigned_nodes(
+        &self,
+        doc: &BaseDocument,
+        slot: NodeId,
+        flatten: bool,
+        seen: &mut HashSet<NodeId>,
+    ) -> Vec<NodeId> {
+        if !seen.insert(slot) {
+            return vec![];
+        }
+        let mut root = slot;
+        while let Some(parent) = doc.get_node(root).and_then(|node| node.parent) {
             root = parent;
         }
-        if root == doc.root_node().id || doc.get_node(root).is_none() {
+        let Some(host) = self
+            .shadows
+            .borrow()
+            .host(root.as_u64())
+            .map(NodeId::from_u64)
+        else {
+            return vec![];
+        };
+        let mut assigned: Vec<_> = doc
+            .get_node(host)
+            .into_iter()
+            .flat_map(|node| node.children.iter().copied())
+            .filter(|id| self.assigned_slot(doc, *id) == Some(slot))
+            .collect();
+        if flatten {
+            if assigned.is_empty() {
+                assigned = doc
+                    .get_node(slot)
+                    .map(|node| node.children.to_vec())
+                    .unwrap_or_default();
+            }
+            assigned
+                .into_iter()
+                .flat_map(|id| {
+                    if doc
+                        .get_node(id)
+                        .and_then(|node| node.element_data())
+                        .is_some_and(|element| element.name.local.as_str() == "slot")
+                    {
+                        self.assigned_nodes(doc, id, true, seen)
+                    } else {
+                        vec![id]
+                    }
+                })
+                .collect()
+        } else {
+            assigned
+        }
+    }
+    fn collect_detached(&self, doc: &mut BaseDocument, id: NodeId) {
+        let mut root = id;
+        while let Some(parent) = doc.get_node(root).and_then(|n| n.parent).or_else(|| {
+            self.shadows
+                .borrow()
+                .host(root.as_u64())
+                .map(NodeId::from_u64)
+        }) {
+            root = parent;
+        }
+        if self.component_connected(doc, root) || doc.get_node(root).is_none() {
             return;
         }
-        let nodes = Self::subtree(doc, root);
+        let nodes = self.component_subtree(doc, root);
         if nodes.iter().any(|id| self.retained.borrow().contains(id)) {
             return;
         }
@@ -720,6 +1051,14 @@ impl Dom {
                 }
             })
             .sum();
+        for id in &nodes {
+            self.components.borrow_mut().release(id.as_u64());
+            if let Some(shadow) = self.shadows.borrow_mut().release(id.as_u64())
+                && let Ok(id) = shadow.root.parse()
+            {
+                doc.mutate().remove_and_drop_node(NodeId::from_u64(id));
+            }
+        }
         doc.mutate().remove_and_drop_node(root);
         self.allocated
             .set(self.allocated.get().saturating_sub(nodes.len()));
