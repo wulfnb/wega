@@ -42,6 +42,28 @@ fn document_location_html_document_and_live_names_support_trak_scripts() {
     );
 }
 #[test]
+fn html_document_creation_keeps_mutations_separate_from_the_active_page() {
+    let mut view = page("<title>Active</title><main id='mount'>kept</main>");
+    assert_eq!(
+        view.evaluate_json(
+            r#"(() => {
+                const detached = document.implementation.createHTMLDocument('Detached');
+                detached.body.innerHTML = '<form></form><form></form>';
+                const nested = detached.implementation.createHTMLDocument();
+                nested.body.textContent = 'nested';
+                return [detached !== document, detached.title, detached.forms.length,
+                    detached.body.ownerDocument === detached,
+                    detached.location, detached.defaultView, detached.visibilityState,
+                    nested !== detached, nested.body.textContent, detached.forms.length,
+                    document.title, document.getElementById('mount').textContent,
+                    document.forms.length];
+            })()"#,
+        )
+        .unwrap(),
+        r#"[true,"Detached",2,true,null,null,"hidden",true,"nested",2,"Active","kept",0]"#
+    );
+}
+#[test]
 fn mutations_namespaces_collections_and_native_style_share_one_tree() {
     let mut view = page("<main id='root'></main>");
     assert_eq!(view.evaluate_json("(()=>{const root=document.getElementById('root'),live=root.children;root.innerHTML='<div class=one data-kind=test><b>hello</b></div><!-- kept -->';const first=root.firstElementChild;const clone=first.cloneNode(true);root.append(clone);clone.after(document.createTextNode('tail'));const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','#shape');root.prepend(svg);first.style.color='rgb(1, 2, 3)';return [live.length,root.querySelector('.one')===first,first.matches('.one'),first.closest('main')===root,first.dataset.kind,clone.textContent,svg.getAttributeNS('http://www.w3.org/1999/xlink','href'),getComputedStyle(first).color,root.innerHTML.includes('<!-- kept -->')];})()").unwrap(),"[3,true,true,true,\"test\",\"hello\",\"#shape\",\"rgb(1, 2, 3)\",true]");
