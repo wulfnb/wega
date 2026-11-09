@@ -1,0 +1,7 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -0,0 +1 @@
++# Modified by Wega contributors, 2026: use the patched bundled SQLite.
+@@ -233 +234 @@
+-version = "0.38"
++version = "0.41.1"

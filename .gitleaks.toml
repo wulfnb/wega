@@ -4,7 +4,11 @@
 useDefault = true
 
 [allowlist]
-description = "Ignore standard RFC 6455 WebSocket sample test nonce"
+description = "Ignore standard RFC 6455 sample nonce and the published Servo TLS test key"
 regexes = [
     '''dGhlIHNhbXBsZSBub25jZQ==''',
+]
+# Public fixture shipped in the checksum-verified servo-net 0.7.0 crate.
+paths = [
+    '''^vendor/servo-net/tests/privatekey_for_testing\.key$''',
 ]

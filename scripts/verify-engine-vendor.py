@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / 'engines/vendor'
 
 
-def verify(cache=None):
-    manifest = json.loads((VENDOR / 'sources.json').read_text())
+def verify(cache=None, vendor=VENDOR):
+    manifest = json.loads((vendor / 'sources.json').read_text())
     with tempfile.TemporaryDirectory(prefix='wega-vendor-') as scratch:
         scratch = Path(scratch)
         for name, spec in manifest.items():
@@ -30,13 +30,13 @@ def verify(cache=None):
             pristine = scratch / f'{name}-{spec["version"]}'
             for patch in spec['patches']:
                 subprocess.run(['patch', '--batch', '--forward', '-p1', '-d', str(pristine),
-                                '-i', str(VENDOR / patch)], check=True, capture_output=True)
+                                '-i', str(vendor / patch)], check=True, capture_output=True)
             ignored = {'.cargo-ok', '.cargo_vcs_info.json', 'Cargo.toml.orig', *spec.get('extra_licenses', [])}
             def contents(directory):
                 return {str(path.relative_to(directory)): path.read_bytes()
                         for path in directory.rglob('*') if path.is_file()
                         and path.name not in ignored}
-            expected, actual = contents(pristine), contents(VENDOR / spec['directory'])
+            expected, actual = contents(pristine), contents(vendor / spec['directory'])
             different = sorted(key for key in expected.keys() | actual.keys()
                                if expected.get(key) != actual.get(key))
             if different:
@@ -47,4 +47,6 @@ def verify(cache=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cache', type=Path, help='Use a local Cargo archive cache without network')
-    verify(parser.parse_args().cache)
+    parser.add_argument('--vendor', type=Path, default=VENDOR, help='Vendor directory containing sources.json')
+    args = parser.parse_args()
+    verify(args.cache, args.vendor.resolve())

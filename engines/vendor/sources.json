@@ -91,7 +91,8 @@
     "directory": "deno/deno_webstorage",
     "sha256": "1b962adf844324d1267fb841efa5d46fbee7dbc878542ae9916b00ea52b4697e",
     "patches": [
-      "deno/patches/deno_webstorage-broker.patch"
+      "deno/patches/deno_webstorage-broker.patch",
+      "deno/patches/deno_webstorage-sqlite-upgrade.patch"
     ],
     "extra_licenses": [
       "LICENSE.md"

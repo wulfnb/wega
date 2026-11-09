@@ -110,6 +110,10 @@ storage/stream backends; upstream JavaScript WebIDL/proxy/framing code is unchan
 Bound content workers use the host resource broker; unbound library embeddings
 retain the original backend behavior. Integrity verification now covers 11 crates.
 
+`deno/patches/deno_webstorage-sqlite-upgrade.patch` updates rusqlite to 0.41.1,
+matching the browser service and error collector. Its bundled libsqlite3-sys
+0.39 release fixes RUSTSEC-2026-0459. The engine no longer exempts that advisory.
+
 `blitz/patches/content-image-budgets.patch` applies after `blitz-dom.patch` and
 adds bounded bitmap/SVG decode, retained-image accounting, no external SVG file
 resolver, and explicit broker font data with system discovery disabled. SVG charges
