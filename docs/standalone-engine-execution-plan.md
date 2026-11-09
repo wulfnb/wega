@@ -453,6 +453,13 @@ IDs, coordinate transforms and focus synchronization.
 real controls; canceling a file dialog leaks no grant. Screen-reader runtime checks
 cover page and chrome on all release platforms; viewer upload/clipboard still works.
 
+**Implementation status (Step 11 delivered):**
+- Input interactions wired: keyboard focus, space-to-toggle, checkbox/radio input/change events, disabled state enforcement.
+- Form controls lifecycle: form reset restoring defaultValue and defaultChecked, multipart form body encoding with file entries.
+- Browser-mediated file selection: protocol events/commands, capability isolation where canceling dialog leaks no grant, native dialog integration via rfd.
+- AccessKit accessibility integration: AccessKit feature enabled on Blitz DOM, window action/tree forwarding to active Wega tabs, style resolution before tree build.
+- Contract & verification: [Step 11 contract](step-11-input-controls-accessibility.md).
+
 ### 12 — Implement selection, editing, clipboard, find and drag/drop
 
 **Depends on:** 11.

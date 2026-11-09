@@ -92,6 +92,9 @@ pub(crate) struct Snapshot {
     pub document_forward: bool,
     pub cursor: Option<String>,
     pub dialog: Option<Dialog>,
+    pub accessibility: Option<String>,
+    pub accessibility_enabled: bool,
+    pub pending_file_dialog: Option<(u64, bool, Vec<String>)>,
 }
 
 impl Snapshot {
@@ -248,6 +251,14 @@ impl Snapshot {
                         ContentEvent::ActivatedOpenWindow { url, activation },
                     );
                 }
+            }
+            ContentEvent::Accessibility(ref json) => {
+                self.accessibility = Some(json.clone());
+                self.queue_native(context, event);
+            }
+            ContentEvent::FileDialog { id, multiple, ref accept } => {
+                self.pending_file_dialog = Some((id, multiple, accept.clone()));
+                self.queue_native(context, event);
             }
             event => {
                 self.queue_native(context, event);
@@ -1324,6 +1335,22 @@ impl Page {
     }
     /// Pointer input in viewport CSS pixels; see `Command::Pointer`.
     /// `buttons` is (DOM `button`, DOM `buttons`).
+    pub fn enable_accessibility(&self, enable: bool) {
+        if let Ok(mut state) = self.state.lock() {
+            state.accessibility_enabled = enable;
+        }
+        let _ = self.send(Request::EnableAccessibility(enable));
+    }
+    pub fn accessibility_action(&self, action: &str, target: u64, data: Option<&str>) {
+        let _ = self.send(Request::AccessibilityAction {
+            action: action.to_string(),
+            target,
+            data: data.map(str::to_string),
+        });
+    }
+    pub fn select_files(&self, id: u64, paths: Vec<String>) {
+        let _ = self.send(Request::FileSelected { id, paths });
+    }
     pub fn pointer(
         &self,
         kind: &str,

@@ -18,7 +18,7 @@ use blitz_traits::{
     shell::{ColorScheme, Viewport},
 };
 use encoding_rs::Encoding;
-use html5ever::LocalName;
+use html5ever::{LocalName, QualName, ns};
 use keyboard_types::Modifiers;
 use std::{
     cell::{Cell, RefCell},
@@ -59,6 +59,14 @@ pub enum PageEvent {
     Authentication {
         url: String,
         realm: Option<String>,
+    },
+    /// Accessibility tree update
+    Accessibility(String),
+    /// Native file chooser dialog request
+    FileDialog {
+        id: u64,
+        multiple: bool,
+        accept: Vec<String>,
     },
 }
 
@@ -285,6 +293,10 @@ pub struct View {
     pub loading: bool,
     pub notices: VecDeque<String>,
     pub events: VecDeque<PageEvent>,
+    pub accessibility_enabled: bool,
+    pub next_dialog_id: u64,
+    pub pending_file_dialog: Option<(u64, NodeId)>,
+    pub selected_files: std::collections::HashMap<NodeId, Vec<String>>,
 }
 impl View {
     pub(crate) fn new(url: Url, network: Network, limits: Limits) -> Result<Self, String> {
@@ -342,6 +354,10 @@ impl View {
             loading: false,
             notices: VecDeque::new(),
             events: VecDeque::new(),
+            accessibility_enabled: false,
+            next_dialog_id: 1,
+            pending_file_dialog: None,
+            selected_files: std::collections::HashMap::new(),
         };
         view.load(url)?;
         Ok(view)
@@ -949,6 +965,117 @@ impl View {
     pub fn set_user_script(&mut self, script: String) {
         self.user_script = script;
     }
+    pub fn set_accessibility_enabled(&mut self, enabled: bool) {
+        self.accessibility_enabled = enabled;
+        if enabled {
+            if let Some(json) = self.accessibility_tree() {
+                self.events.push_back(PageEvent::Accessibility(json));
+            }
+        }
+    }
+    pub fn accessibility_tree(&self) -> Option<String> {
+        self.document
+            .borrow_mut()
+            .resolve(self.started.elapsed().as_secs_f64());
+        let doc = self.document.borrow();
+        let update = doc.build_accessibility_tree();
+        serde_json::to_string(&update).ok()
+    }
+    pub fn accessibility_action(&mut self, action: &str, target: u64, data: Option<&str>) {
+        let target_node = NodeId::from_u64(target);
+        match action.to_ascii_lowercase().as_str() {
+            "focus" => {
+                let mut doc = self.document.borrow_mut();
+                doc.set_focus_to(target_node);
+                self.dirty = true;
+            }
+            "default" | "click" => {
+                self.activate();
+                let event = self
+                    .document
+                    .borrow()
+                    .get_node(target_node)
+                    .map(|n| n.synthetic_click_event_data(Modifiers::empty()));
+                if let Some(event) = event {
+                    self.click_event(target_node, event, None);
+                }
+            }
+            "set_value" | "setvalue" => {
+                if let Some(val) = data {
+                    let mut doc = self.document.borrow_mut();
+                    if let Some(node) = doc.get_node_mut(target_node) {
+                        if let Some(elem) = node.element_data_mut() {
+                            if let Some(text_input) = elem.text_input_data_mut() {
+                                text_input.editor.set_text(val);
+                            }
+                        }
+                        node.mark_ancestors_dirty();
+                    }
+                    doc.mutate().set_attribute(target_node, QualName::new(None, ns!(), LocalName::from("value")), val);
+                    drop(doc);
+                    let source = format!(
+                        "__wega_native_event('input', {}, {{data:{}}}); __wega_native_event('change', {}, {{data:{}}});",
+                        serde_json::json!(target_node.as_u64().to_string()),
+                        serde_json::json!(val),
+                        serde_json::json!(target_node.as_u64().to_string()),
+                        serde_json::json!(val)
+                    );
+                    self.run(&source, "wega:accessibility-action");
+                    self.dirty = true;
+                }
+            }
+            _ => {}
+        }
+        if self.accessibility_enabled {
+            if let Some(json) = self.accessibility_tree() {
+                self.events.push_back(PageEvent::Accessibility(json));
+            }
+        }
+    }
+    pub fn file_selected(&mut self, dialog_id: u64, paths: Vec<String>) {
+        if let Some((pending_id, target)) = self.pending_file_dialog.take() {
+            if pending_id == dialog_id && !paths.is_empty() {
+                self.selected_files.insert(target, paths.clone());
+                let path_bufs: Vec<std::path::PathBuf> =
+                    paths.iter().map(std::path::PathBuf::from).collect();
+                let file_names: Vec<String> = paths
+                    .iter()
+                    .filter_map(|p| {
+                        std::path::Path::new(p)
+                            .file_name()
+                            .map(|f| f.to_string_lossy().to_string())
+                    })
+                    .collect();
+                let display_val = file_names.first().cloned().unwrap_or_default();
+                {
+                    let mut doc = self.document.borrow_mut();
+                    if let Some(node) = doc.get_node_mut(target) {
+                        if let Some(el) = node.element_data_mut() {
+                            el.special_data =
+                                blitz_dom::node::SpecialElementData::FileInput(path_bufs.into());
+                        }
+                        node.mark_ancestors_dirty();
+                    }
+                    let val = format!("C:\\fakepath\\{display_val}");
+                    doc.mutate().set_attribute(target, QualName::new(None, ns!(), LocalName::from("value")), &val);
+                }
+                let files_json =
+                    serde_json::to_string(&file_names).unwrap_or_else(|_| "[]".into());
+                let source = format!(
+                    "__wega_native_file_input({}, {});",
+                    serde_json::json!(target.as_u64().to_string()),
+                    files_json
+                );
+                self.run(&source, "wega:file-input");
+                self.dirty = true;
+            }
+        }
+    }
+    pub fn reset_form(&mut self, form: NodeId) {
+        let mut doc = self.document.borrow_mut();
+        crate::dom::Dom::reset_form_controls(&mut doc, form);
+        self.dirty = true;
+    }
     pub fn favicon_url(&self) -> Option<Url> {
         let doc = self.document.borrow();
         for selector in &["link[rel~='icon']", "link[rel='shortcut icon']", "link[rel='icon']"] {
@@ -1322,6 +1449,28 @@ impl View {
             event.coords.client_y,
         );
         let pointer = *pointer.unwrap_or(&fallback);
+        let disabled = {
+            let doc = self.document.borrow();
+            let mut cur = Some(target);
+            let mut dis = false;
+            while let Some(id) = cur {
+                if let Some(node) = doc.get_node(id) {
+                    if let Some(el) = node.element_data() {
+                        if el.attr(LocalName::from("disabled")).is_some() {
+                            dis = true;
+                            break;
+                        }
+                    }
+                    cur = node.parent;
+                } else {
+                    break;
+                }
+            }
+            dis
+        };
+        if disabled {
+            return;
+        }
         self.activate();
         if self.dispatch_pointer("click", target, &pointer, None) {
             return;
@@ -1342,6 +1491,8 @@ impl View {
     fn default_click(&mut self, target: NodeId) -> bool {
         enum Action {
             Submit(NodeId, NodeId),
+            Reset(NodeId),
+            FileDialog(NodeId, bool, Vec<String>),
             NewWindow(Url),
             Fragment(Url),
         }
@@ -1353,10 +1504,30 @@ impl View {
                 let Some(node) = doc.get_node(id) else { break };
                 if let Some(element) = node.element_data() {
                     if element.attr(LocalName::from("disabled")).is_some() {
-                        break;
+                        return true;
                     }
                     let tag = &*element.name.local;
                     let kind = element.attr(LocalName::from("type")).unwrap_or_default();
+                    if matches!(tag, "input" | "button") && kind.eq_ignore_ascii_case("reset") {
+                        if let Some(form) = crate::dom::Dom::form_owner(&doc, id) {
+                            action = Some(Action::Reset(form));
+                            break;
+                        }
+                    }
+                    if tag == "input" && kind.eq_ignore_ascii_case("file") {
+                        let multiple = element.attr(LocalName::from("multiple")).is_some();
+                        let accept = element
+                            .attr(LocalName::from("accept"))
+                            .map(|a| {
+                                a.split(",")
+                                    .map(|s| s.trim().to_string())
+                                    .filter(|s| !s.is_empty())
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        action = Some(Action::FileDialog(id, multiple, accept));
+                        break;
+                    }
                     if matches!(tag, "input" | "button")
                         && (element.is_submit_button()
                             || kind.eq_ignore_ascii_case("submit")
@@ -1390,6 +1561,30 @@ impl View {
         };
         match action {
             None => false,
+            Some(Action::Reset(form)) => {
+                let cancelled = self
+                    .evaluate_json(&format!(
+                        "__wega_native_event('reset', {}, {{}})",
+                        serde_json::json!(form.as_u64().to_string())
+                    ))
+                    .as_deref()
+                    == Ok("true");
+                if !cancelled {
+                    self.reset_form(form);
+                }
+                true
+            }
+            Some(Action::FileDialog(target_id, multiple, accept)) => {
+                let dialog_id = self.next_dialog_id;
+                self.next_dialog_id += 1;
+                self.pending_file_dialog = Some((dialog_id, target_id));
+                self.events.push_back(PageEvent::FileDialog {
+                    id: dialog_id,
+                    multiple,
+                    accept,
+                });
+                true
+            }
             Some(Action::Submit(form, submitter)) => {
                 let cancelled = self
                     .evaluate_json(&format!(
@@ -1456,6 +1651,26 @@ impl View {
                 }
             );
             self.run(&source, "wega:native-event");
+            if event_type == "input" {
+                let is_checkable = {
+                    let doc = self.document.borrow();
+                    doc.get_node(target).and_then(|n| n.element_data()).is_some_and(|el| {
+                        el.name.local == LocalName::from("input")
+                            && matches!(
+                                el.attr(LocalName::from("type")).unwrap_or_default().to_ascii_lowercase().as_str(),
+                                "checkbox" | "radio"
+                            )
+                    })
+                };
+                if is_checkable {
+                    let source = format!(
+                        "__wega_native_event('change', {}, {})",
+                        serde_json::json!(target.as_u64().to_string()),
+                        input_options
+                    );
+                    self.run(&source, "wega:native-event");
+                }
+            }
         }
     }
     /// Native editing goes through Blitz/Parley after cancelable DOM events.
@@ -1468,6 +1683,15 @@ impl View {
             .borrow()
             .get_focussed_node_id()
             .unwrap_or(self.document.borrow().root_node().id);
+        let disabled = self
+            .document
+            .borrow()
+            .get_node(target)
+            .and_then(|n| n.element_data())
+            .is_some_and(|el| el.attr(LocalName::from("disabled")).is_some());
+        if disabled {
+            return;
+        }
         let pressed = event.state.is_pressed();
         if pressed {
             self.activate();
@@ -1487,6 +1711,58 @@ impl View {
             if key == "Enter" && self.implicit_submission(target) {
                 self.dirty = true;
                 return;
+            }
+            if key == " " || key == "Space" {
+                let toggled = {
+                    let mut doc = self.document.borrow_mut();
+                    if let Some(node) = doc.get_node_mut(target) {
+                        if let Some(el) = node.element_data_mut() {
+                            if el.name.local == LocalName::from("input") {
+                                let kind = el.attr(LocalName::from("type")).unwrap_or_default().to_ascii_lowercase();
+                                if kind == "checkbox" {
+                                    let is_checked = el.checkbox_input_checked().unwrap_or(false);
+                                    el.set_checkbox_input_checked(!is_checked);
+                                    node.mark_ancestors_dirty();
+                                    Some(true)
+                                } else if kind == "radio" {
+                                    let is_checked = el.checkbox_input_checked().unwrap_or(false);
+                                    if !is_checked {
+                                        el.set_checkbox_input_checked(true);
+                                        node.mark_ancestors_dirty();
+                                        Some(false)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                };
+                if let Some(is_cb) = toggled {
+                    if !is_cb {
+                        let name = self.document.borrow().get_node(target).and_then(|n| n.element_data()).and_then(|el| el.attr(LocalName::from("name")).map(str::to_string));
+                        if let Some(name) = name {
+                            let mut doc = self.document.borrow_mut();
+                            blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
+                        }
+                    }
+                    let source = format!(
+                        "__wega_native_event('input', {}, {{}}); __wega_native_event('change', {}, {{}});",
+                        serde_json::json!(target.as_u64().to_string()),
+                        serde_json::json!(target.as_u64().to_string())
+                    );
+                    self.run(&source, "wega:native-toggle");
+                    self.dirty = true;
+                    return;
+                }
             }
             let input_type = match key.as_str() {
                 "Backspace" => "deleteContentBackward",
@@ -1943,12 +2219,42 @@ fn encode_body(body: &Body, content_type: Option<&str>) -> (Vec<u8>, String) {
                     .map_or(0, |d| d.as_nanos() as u64)
             );
             let mut out = Vec::new();
-            for (name, value) in entries {
-                let name = name.replace('"', "%22").replace(['\r', '\n'], " ");
-                out.extend_from_slice(
-                    format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
-                        .as_bytes(),
-                );
+            if let Body::Form(form) = body {
+                for entry in &form.0 {
+                    let name = entry.name.replace('"', "%22").replace(['\r', '\n'], " ");
+                    match &entry.value {
+                        blitz_traits::net::EntryValue::String(text) => {
+                            out.extend_from_slice(
+                                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{text}\r\n")
+                                    .as_bytes(),
+                            );
+                        }
+                        blitz_traits::net::EntryValue::File(path) => {
+                            let filename = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+                            let data = std::fs::read(path).unwrap_or_default();
+                            out.extend_from_slice(
+                                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n")
+                                    .as_bytes(),
+                            );
+                            out.extend_from_slice(&data);
+                            out.extend_from_slice(b"\r\n");
+                        }
+                        blitz_traits::net::EntryValue::EmptyFile => {
+                            out.extend_from_slice(
+                                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n")
+                                    .as_bytes(),
+                            );
+                        }
+                    }
+                }
+            } else {
+                for (name, value) in entries {
+                    let name = name.replace('"', "%22").replace(['\r', '\n'], " ");
+                    out.extend_from_slice(
+                        format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
+                            .as_bytes(),
+                    );
+                }
             }
             out.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
             (out, format!("multipart/form-data; boundary={boundary}"))
@@ -2010,5 +2316,52 @@ mod tests {
             "--{boundary}\r\nContent-Disposition: form-data; name=\"q\"\r\n\r\na b&c\r\n"
         )));
         assert!(text.ends_with(&format!("--{boundary}--\r\n")));
+    }
+    #[test]
+    fn form_bodies_support_file_entries_multipart() {
+        use blitz_traits::net::{Entry, EntryValue, FormData};
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("upload.txt");
+        std::fs::write(&file_path, b"Hello file content!").unwrap();
+
+        let form = Body::Form(FormData(vec![
+            Entry {
+                name: "file".into(),
+                value: EntryValue::File(file_path),
+            },
+            Entry {
+                name: "empty".into(),
+                value: EntryValue::EmptyFile,
+            },
+        ]));
+        let (body, kind) = encode_body(&form, Some("multipart/form-data"));
+        let boundary = kind.split("boundary=").nth(1).unwrap();
+        let text = String::from_utf8(body).unwrap();
+        assert!(text.contains(&format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"upload.txt\"\r\nContent-Type: application/octet-stream\r\n\r\nHello file content!\r\n")));
+        assert!(text.contains(&format!("--{boundary}\r\nContent-Disposition: form-data; name=\"empty\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n")));
+        assert!(text.ends_with(&format!("--{boundary}--\r\n")));
+    }
+    #[test]
+    fn accessibility_tree_generates_valid_json() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("data:text/html,<button>Click me</button>").unwrap(), network, limits).unwrap();
+        view.set_accessibility_enabled(true);
+        let tree_json = view.accessibility_tree();
+        assert!(tree_json.is_some());
+        let json_str = tree_json.unwrap();
+        assert!(json_str.contains("nodes"));
+        let update: accesskit::TreeUpdate = serde_json::from_str(&json_str).unwrap();
+        assert!(!update.nodes.is_empty());
+    }
+    #[test]
+    fn file_dialog_canceling_leaks_no_grant() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("data:text/html,<input type='file' id='f'>").unwrap(), network, limits).unwrap();
+        view.pending_file_dialog = Some((42, NodeId::from_u64(1)));
+        view.file_selected(42, vec![]);
+        assert!(view.selected_files.is_empty());
+        assert!(view.pending_file_dialog.is_none());
     }
 }

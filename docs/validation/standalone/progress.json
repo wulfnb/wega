@@ -83,6 +83,12 @@
       "acceptance": "Internal pages (wega://newtab, history, bookmarks, settings, about) route natively via egui views without initializing Servo. Untrusted content navigation blocked from internal pages. History stack, address bar, and session restore verified. Developer --wega-only startup mode delivered.",
       "contract": "docs/step-10-internal-pages-and-viewer-ux.md",
       "acceptance_verified": true
+    },
+    "11": {
+      "implementation": "complete",
+      "acceptance": "Form control interactions, form reset, file selection dialog with capability containment, real multipart file upload encoding, and AccessKit accessibility tree and action transport implemented and verified.",
+      "contract": "docs/step-11-input-controls-accessibility.md",
+      "acceptance_verified": true
     }
   },
   "substeps": {

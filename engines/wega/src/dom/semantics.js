@@ -1583,6 +1583,16 @@
     set type(value) {
       this.setAttribute("type", value);
     }
+    get files() {
+      if (this.type !== "file") return null;
+      const fileList = this._files || [];
+      return {
+        length: fileList.length,
+        item(index) { return fileList[index] || null; },
+        [Symbol.iterator]: function* () { for (const f of fileList) yield f; },
+        ...fileList
+      };
+    }
     get disabled() {
       return this.hasAttribute("disabled");
     }
@@ -2012,13 +2022,15 @@
         this.dispatchEvent(
           new Event("reset", { bubbles: true, cancelable: true }),
         )
-      )
+      ) {
+        host("resetForm", this._id, "");
         for (const control of this.elements) {
           if (["checkbox", "radio"].includes(control.type))
             control.checked = control.defaultChecked;
           else if (control.localName !== "select" && "defaultValue" in control)
             control.value = control.defaultValue;
         }
+      }
     }
     get length() {
       return this.elements.length;

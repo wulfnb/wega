@@ -655,6 +655,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 PageEvent::Favicon(url) => ContentEvent::Favicon(url.to_string()),
                 PageEvent::Status(status) => ContentEvent::Status(status),
                 PageEvent::Authentication { url, realm } => ContentEvent::Authentication { url, realm },
+                PageEvent::Accessibility(json) => ContentEvent::Accessibility(json),
+                PageEvent::FileDialog { id, multiple, accept } => ContentEvent::FileDialog { id, multiple, accept },
             };
             write(&protocol::content_event(
                 version,
@@ -1130,6 +1132,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Command::Init { .. } => {
                     return Err("Worker was initialized more than once".into());
+                }
+                Command::EnableAccessibility(enabled) => {
+                    view.set_accessibility_enabled(enabled);
+                }
+                Command::AccessibilityAction { action, target, data } => {
+                    view.accessibility_action(&action, target, data.as_deref());
+                }
+                Command::FileSelected { id, paths } => {
+                    view.file_selected(id, paths);
                 }
             },
         }

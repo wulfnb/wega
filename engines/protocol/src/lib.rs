@@ -67,6 +67,12 @@ pub enum ContentEvent {
         default: String,
     },
     DialogClosed(DialogId),
+    Accessibility(String),
+    FileDialog {
+        id: u64,
+        multiple: bool,
+        accept: Vec<String>,
+    },
 }
 
 pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent) -> Event {
@@ -111,6 +117,8 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
             default,
         },
         ContentEvent::DialogClosed(_) => Event::Notice("Page dialog closed".into()),
+        ContentEvent::Accessibility(_) => Event::Notice("Accessibility update".into()),
+        ContentEvent::FileDialog { id, .. } => Event::Notice(format!("File dialog {id}")),
     }
 }
 
@@ -366,6 +374,18 @@ pub enum Command {
     /// The answer to `Event::Dialog`: None for cancel, Some("true") for an accepted
     /// confirm, Some(text) for prompt (alert ignores the value).
     DialogReply(Option<String>),
+    AccessibilityAction {
+        action: String,
+        target: u64,
+        #[serde(default)]
+        data: Option<String>,
+    },
+    EnableAccessibility(bool),
+    FileSelected {
+        id: u64,
+        #[serde(default)]
+        paths: Vec<String>,
+    },
     Shutdown,
     /// Instruct child frame browsing context to navigate.
     FrameNavigate {
@@ -780,5 +800,33 @@ mod tests {
 
         let auth_event = content_event(VERSION, context, ContentEvent::Authentication { url: "https://example.test/admin".into(), realm: Some("Secured".into()) });
         assert!(matches!(auth_event, Event::Content { event: ContentEvent::Authentication { ref realm, .. }, .. } if realm.as_deref() == Some("Secured")));
+    }
+    #[test]
+    fn input_controls_and_accessibility_transport() {
+        let action: Command = serde_json::from_str(r#"{"AccessibilityAction":{"action":"focus","target":42}}"#).unwrap();
+        match action {
+            Command::AccessibilityAction { action, target, data } => {
+                assert_eq!(action, "focus");
+                assert_eq!(target, 42);
+                assert!(data.is_none());
+            }
+            _ => panic!("Expected AccessibilityAction"),
+        }
+
+        let file_selected: Command = serde_json::from_str(r#"{"FileSelected":{"id":10,"paths":["/tmp/test.txt"]}}"#).unwrap();
+        match file_selected {
+            Command::FileSelected { id, paths } => {
+                assert_eq!(id, 10);
+                assert_eq!(paths, vec!["/tmp/test.txt"]);
+            }
+            _ => panic!("Expected FileSelected"),
+        }
+
+        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
+        let a11y_event = content_event(VERSION, context, ContentEvent::Accessibility(r#"{"tree_id":"root"}"#.into()));
+        assert!(matches!(a11y_event, Event::Content { event: ContentEvent::Accessibility(ref json), .. } if json.contains("tree_id")));
+
+        let file_dialog = content_event(VERSION, context, ContentEvent::FileDialog { id: 7, multiple: true, accept: vec![".png".into()] });
+        assert!(matches!(file_dialog, Event::Content { event: ContentEvent::FileDialog { id: 7, multiple: true, .. }, .. }));
     }
 }

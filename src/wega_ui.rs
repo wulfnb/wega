@@ -219,6 +219,29 @@ impl Browser {
                         });
                     }
                 }
+                ContentEvent::Accessibility(json) => {
+                    if let Ok(update) = serde_json::from_str::<accesskit::TreeUpdate>(&json) {
+                        if let Some(gui) = self.gui.as_mut() {
+                            if let Some(adapter) = gui.egui_winit.accesskit.as_mut() {
+                                adapter.update_if_active(|| update);
+                            }
+                        }
+                    }
+                }
+                ContentEvent::FileDialog { id, multiple, accept } => {
+                    let page = self.session().tabs()[index].wega.as_ref().unwrap();
+                    let mut dialog = rfd::FileDialog::new().set_parent(self.window.as_ref()).set_title("Choose file for website");
+                    if !accept.is_empty() {
+                        let extensions: Vec<&str> = accept.iter().map(|s| s.trim_start_matches('.')).collect();
+                        dialog = dialog.add_filter("Allowed Files", &extensions);
+                    }
+                    let paths: Vec<String> = if multiple {
+                        dialog.pick_files().unwrap_or_default().into_iter().map(|p| p.to_string_lossy().to_string()).collect()
+                    } else {
+                        dialog.pick_file().into_iter().map(|p| p.to_string_lossy().to_string()).collect()
+                    };
+                    page.select_files(id, paths);
+                }
                 event => {
                     let selected = self.tab().key;
                     self.select_tab(index);

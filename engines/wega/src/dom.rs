@@ -222,6 +222,7 @@ impl Dom {
                 | "write"
                 | "fragment"
                 | "submitForm"
+                | "resetForm"
         ) {
             self.invalidate();
         }
@@ -849,6 +850,12 @@ impl Dom {
                 doc.submit_form(form, submitter);
                 Value::Null
             }
+            "resetForm" => {
+                let form = node_id()?;
+                self.resolve(&mut doc);
+                Self::reset_form_controls(&mut doc, form);
+                Value::Null
+            }
             "url" => json!(doc.url().as_str()),
             "navigate" => {
                 let target = doc.url().join(text(1)).map_err(|e| e.to_string())?;
@@ -1093,6 +1100,47 @@ impl Dom {
             parent = node.parent;
         }
         None
+    }
+    /// Resets all controls owned by `form` to their default state (defaultValue / defaultChecked).
+    pub fn reset_form_controls(doc: &mut BaseDocument, form: NodeId) {
+        let controls: Vec<NodeId> = blitz_dom::traversal::TreeTraverser::new(doc)
+            .filter(|id| Self::form_owner(doc, *id) == Some(form))
+            .collect();
+        for id in controls {
+            if let Some(node) = doc.get_node_mut(id) {
+                if let Some(element) = node.element_data_mut() {
+                    let tag = &*element.name.local;
+                    if tag == "input" {
+                        let kind = element
+                            .attr(LocalName::from("type"))
+                            .unwrap_or("text")
+                            .to_ascii_lowercase();
+                        if matches!(kind.as_str(), "checkbox" | "radio") {
+                            let default_checked =
+                                element.attr(LocalName::from("checked")).is_some();
+                            element.set_checkbox_input_checked(default_checked);
+                        } else {
+                            let default_value = element
+                                .attr(LocalName::from("value"))
+                                .unwrap_or_default()
+                                .to_string();
+                            if let Some(text_input) = element.text_input_data_mut() {
+                                text_input.editor.set_text(&default_value);
+                            }
+                        }
+                    } else if tag == "textarea" {
+                        let default_value = element
+                            .attr(LocalName::from("value"))
+                            .unwrap_or_default()
+                            .to_string();
+                        if let Some(text_input) = element.text_input_data_mut() {
+                            text_input.editor.set_text(&default_value);
+                        }
+                    }
+                }
+                node.mark_ancestors_dirty();
+            }
+        }
     }
     /// The form data set of a form (HTML "constructing the entry list"), for
     /// `new FormData(form)`. File inputs contribute empty entries.

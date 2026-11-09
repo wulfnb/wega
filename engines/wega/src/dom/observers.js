@@ -255,6 +255,18 @@
       return !target.dispatchEvent(event);
     },
   });
+  Object.defineProperty(globalThis, "__wega_native_file_input", {
+    value: (id, fileNames) => {
+      const target = __wega_node(id);
+      if (!target) return;
+      const files = (fileNames || []).map(
+        (name) => new File([""], name, { type: "application/octet-stream" })
+      );
+      target._files = files;
+      target.dispatchEvent(new Event("input", { bubbles: true, cancelable: false }));
+      target.dispatchEvent(new Event("change", { bubbles: true, cancelable: false }));
+    },
+  });
   const raf = new Map(),
     resize = new Set(),
     intersection = new Set(),
