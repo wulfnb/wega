@@ -1069,10 +1069,11 @@
       return wrap(id, this._document || document);
     }
     createHTMLDocument(title) {
-      const doc = this._document || document;
+      const doc = new Document();
       const wrapper = doc.createElement("html");
       wrapper.append(doc.createElement("head"), doc.createElement("body"));
-      doc.replaceWith(wrapper);
+      doc.appendChild(wrapper);
+      if (title !== undefined) doc.title = String(title);
       doc._readyState = "complete";
       return doc;
     }

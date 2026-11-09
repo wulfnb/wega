@@ -5,9 +5,6 @@
 # the coherent Deno TLS/net/crypto update, not one crate at a time.
 # Review on or before 2027-02-01: remove each ID as soon as the Deno pin moves.
 # Any advisory NOT listed here fails CI and the scheduled security scan.
-# RUSTSEC-2026-0459: SQLite CVE-2026-119375 (fixed in libsqlite3-sys 0.39.0)
-# Via deno_webstorage (vendored Deno crate) -> rusqlite 0.40.2; upstream Deno
-# pins rusqlite 0.40.x. Also via wega-network -> rusqlite (now relaxed to <0.42).
 
 [advisories]
 ignore = [
@@ -19,5 +16,4 @@ ignore = [
     "RUSTSEC-2026-0346",
     "RUSTSEC-2026-0348",
     "RUSTSEC-2026-0349",
-    "RUSTSEC-2026-0459",
 ]

@@ -4,7 +4,23 @@
 useDefault = true
 
 [allowlist]
-description = "Ignore standard RFC 6455 WebSocket sample test nonce"
+description = "Ignore standard RFC 6455 sample nonce and the published Servo TLS test key"
 regexes = [
     '''dGhlIHNhbXBsZSBub25jZQ==''',
 ]
+# Public fixture shipped in the checksum-verified servo-net 0.7.0 crate.
+paths = [
+    '''^vendor/servo-net/tests/privatekey_for_testing\.key$''',
+]
+
+[[rules]]
+id = "generic-api-key"
+
+# wega-webidl embeds source checksums in generated JavaScript headers.
+# Require both the generated-file path and the entire checksum comment.
+[[rules.allowlists]]
+description = "Generated WebIDL source SHA-256 comments"
+condition = "AND"
+regexTarget = "line"
+paths = ['''^engines/wega/src/dom/generated/[a-z0-9-]+\.js$''']
+regexes = ['''(?m)^// tools/webidl/idl/[a-z0-9-]+\.webidl sha256=[0-9a-f]{64}$''']

@@ -1,4 +1,21 @@
-# epaint 0.37.0 compatibility patch
+# Wega browser vendored sources
+
+## Patched SQLite for Servo networking and storage
+
+`servo-net/` and `servo-storage/` 0.7.0 (MPL-2.0), and `sea-query-rusqlite/` 0.8.0
+(MIT/Apache-2.0) are published crates.io sources. Their only changes are the
+manifest patches in `patches/`, upgrading rusqlite from 0.38 to 0.41.1.
+All consumers must move together because Cargo permits only one native
+SQLite library in the browser dependency graph. Wega networking and Deno
+WebStorage use the same release, with bundled libsqlite3-sys 0.39.1 fixing
+RUSTSEC-2026-0459. No advisory exemption is needed for SQLite.
+
+`sources.json` records the upstream archive checksums and exact patches for
+these three crates. Run `python3 scripts/verify-engine-vendor.py --vendor vendor`
+to verify them. Remove these patches when upstream's SQLite requirements
+include the fixed release.
+
+## epaint 0.37.0 compatibility patch
 
 `epaint/` is the published epaint 0.37.0 crate from crates.io, with its original
 MIT/Apache license files. It is used through `[patch.crates-io]`.

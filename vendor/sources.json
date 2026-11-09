@@ -1,0 +1,26 @@
+{
+  "servo-net": {
+    "version": "0.7.0",
+    "directory": "servo-net",
+    "sha256": "98af1ef87ba1355f3fae135c4b4ff26b52b75bf5eea1802751ecf3ba5ce65f15",
+    "patches": [
+      "patches/servo-net-sqlite-upgrade.patch"
+    ]
+  },
+  "sea-query-rusqlite": {
+    "version": "0.8.0",
+    "directory": "sea-query-rusqlite",
+    "sha256": "1ec6038023c8517c623e5bf9606b3c54d40bc8296bb6b2986040428dd84deddd",
+    "patches": [
+      "patches/sea-query-rusqlite-sqlite-upgrade.patch"
+    ]
+  },
+  "servo-storage": {
+    "version": "0.7.0",
+    "directory": "servo-storage",
+    "sha256": "8c6c49ecb99094f10b7a465ee0bb49a1f4d1f167a95690a2cae4b6a41c079d08",
+    "patches": [
+      "patches/servo-storage-sqlite-upgrade.patch"
+    ]
+  }
+}

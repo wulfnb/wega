@@ -6,10 +6,14 @@
 *.lock text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
+*.webidl text eol=lf
 *.png binary
 *.icns binary
 *.webm binary
 *.wav binary
+
+# WebIDL bindings are compared byte-for-byte with the generator's LF output.
+engines/wega/src/dom/generated/** text eol=lf
 
 # Pinned WPT checksums cover upstream LF bytes on every checkout platform.
 engines/wega/tests/fixtures/wpt/** text eol=lf

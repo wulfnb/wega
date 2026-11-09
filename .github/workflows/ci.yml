@@ -88,6 +88,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Formatting check
         run: cargo fmt --check
+      - name: Verify patched SQLite consumers against upstream sources
+        run: python3 scripts/verify-engine-vendor.py --vendor vendor
       - name: Core lints
         run: cargo clippy --locked --no-default-features --all-targets -- -D warnings
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
