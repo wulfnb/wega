@@ -197,8 +197,11 @@ def resource_run(binary, engine, url, tabs, idle, folder, expected_title="PASS:a
     profile = folder / 'profile'
     profile.mkdir()
     # Existing profiles have no defaults dependency; serde fills unspecified settings.
+    policy = {'discard_after_minutes': 0, 'wega_fallback': False}
+    if '://127.0.0.1' in url or '://localhost' in url:
+        policy['allowed_hosts'] = '127.0.0.1 localhost'
     (profile / 'browser.json').write_text(json.dumps({'urls': [url] * tabs, 'active': 0,
-        'policy': {'discard_after_minutes': 0, 'wega_fallback': False}, 'engines': [engine.capitalize()] * tabs}))
+        'policy': policy, 'engines': [engine.capitalize()] * tabs}))
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
@@ -267,7 +270,10 @@ def compatibility_run(binary, engine, name, url, folder, required):
     folder.mkdir(parents=True)
     profile = folder / 'profile'
     profile.mkdir()
-    (profile / 'browser.json').write_text(json.dumps({'policy': {'wega_fallback': False}}))
+    policy = {'wega_fallback': False}
+    if '://127.0.0.1' in url or '://localhost' in url:
+        policy['allowed_hosts'] = '127.0.0.1 localhost'
+    (profile / 'browser.json').write_text(json.dumps({'policy': policy}))
     image = folder / 'page.png'
     command = [str(binary), '--engine', engine, '--profile-dir', str(folder / 'profile'), '--capture', str(image), url]
     result = {'engine': engine, 'case': name, 'url': url, 'required': required, 'status': 'error'}

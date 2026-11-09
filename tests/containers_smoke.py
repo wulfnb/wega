@@ -104,7 +104,10 @@ def main():
             for identity in ['personal', 'work', 'shopping']:
                 profile = root / 'containers' / identity
                 profile.mkdir(parents=True)
-                (profile / 'browser.json').write_text(json.dumps({'urls': [origin], 'policy': {'wega_fallback': False}}))
+                policy = {'wega_fallback': False}
+                if '://127.0.0.1' in origin or '://localhost' in origin:
+                    policy['allowed_hosts'] = '127.0.0.1 localhost'
+                (profile / 'browser.json').write_text(json.dumps({'urls': [origin], 'policy': policy}))
             for identity, account in [('personal', 'alice'), ('work', 'bob')]:
                 initial = capture(root, identity, engine, 'set', account)
                 assert initial['local'] == account and initial['session'] == account, initial
