@@ -50,8 +50,8 @@
     },
     {
       "path": "tools/webidl/idl/attr.webidl",
-      "sha256": "b2bf3f9dac26aff0ba96c55805a0e675c9eae8f82293bea8a6ab113e4c9799e8",
-      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "sha256": "45b387e0ec71748308ac22e4918d4046b25b40c962a5c8dba75b5117aa92d02e",
+      "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; namespace-aware)",
       "license": "MPL-2.0"
     },
     {
@@ -94,6 +94,30 @@
       "path": "tools/webidl/idl/dom-token-list.webidl",
       "sha256": "7e6d4903414776346c462ef22406f20953ad49cac7501ead96d79a688f5fcf7e",
       "origin": "https://dom.spec.whatwg.org/ (audited Wega surface; Location from https://html.spec.whatwg.org/)",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/dom-implementation.webidl",
+      "sha256": "69913e07dd8f13d8044d11ebeee3dbb66aa76139d39926f3da11bb7a730ba8fc",
+      "origin": "https://dom.spec.whatwg.org/#domimplementation",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/document-type.webidl",
+      "sha256": "297b01ef174281ec648b43b53d8a2b43046be1a3c505927b17e301bbac314a40",
+      "origin": "https://dom.spec.whatwg.org/#documenttype",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/processing-instruction.webidl",
+      "sha256": "f2fbee12f1593ebd4488908a376315a030aed825b02c3ec8fdb09b5ccbef16b4",
+      "origin": "https://dom.spec.whatwg.org/#processinginstruction",
+      "license": "MPL-2.0"
+    },
+    {
+      "path": "tools/webidl/idl/cdata-section.webidl",
+      "sha256": "9c685089f79118028f60446555292f82d02bb711e8cd7ae007dcafc4a129ae7c",
+      "origin": "https://dom.spec.whatwg.org/#cdatasection",
       "license": "MPL-2.0"
     }
   ]

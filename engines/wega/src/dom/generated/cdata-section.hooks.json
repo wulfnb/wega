@@ -1,0 +1,45 @@
+{
+  "base_mixins": [],
+  "family": "cdata-section",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "CDATASection"
+  ],
+  "hooks": [],
+  "idls": [
+    [
+      "tools/webidl/idl/cdata-section.webidl",
+      "9c685089f79118028f60446555292f82d02bb711e8cd7ae007dcafc4a129ae7c"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": "Text",
+      "exposed": true,
+      "members": [],
+      "name": "CDATASection",
+      "prefix": "cdata"
+    }
+  ],
+  "native_base": {
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

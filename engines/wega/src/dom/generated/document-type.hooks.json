@@ -1,0 +1,127 @@
+{
+  "base_mixins": [
+    "ChildNode"
+  ],
+  "family": "document-type",
+  "generator": "wega-webidl typed descriptors v2",
+  "globals": [
+    "DocumentType"
+  ],
+  "hooks": [
+    {
+      "args": [],
+      "interface": "DocumentType",
+      "kind": "attribute-getter",
+      "line": 6,
+      "member": "name",
+      "name": "docType.name",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "DocumentType",
+      "kind": "attribute-getter",
+      "line": 7,
+      "member": "publicId",
+      "name": "docType.publicId",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    },
+    {
+      "args": [],
+      "interface": "DocumentType",
+      "kind": "attribute-getter",
+      "line": 8,
+      "member": "systemId",
+      "name": "docType.systemId",
+      "new_object": false,
+      "pure": false,
+      "reaction": null,
+      "result": "DOMString",
+      "throws": false
+    }
+  ],
+  "idls": [
+    [
+      "tools/webidl/idl/document-type.webidl",
+      "297b01ef174281ec648b43b53d8a2b43046be1a3c505927b17e301bbac314a40"
+    ]
+  ],
+  "interfaces": [
+    {
+      "base": "Node",
+      "exposed": true,
+      "members": [
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "name",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "publicId",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        },
+        {
+          "constant": false,
+          "forwards": null,
+          "kind": "attribute",
+          "legacyNull": false,
+          "name": "systemId",
+          "readonly": true,
+          "sameObject": false,
+          "type": {
+            "kind": "string",
+            "nullable": false
+          }
+        }
+      ],
+      "name": "DocumentType",
+      "prefix": "docType"
+    }
+  ],
+  "native_base": {
+    "Attr": "dom.classes.Attr",
+    "CharacterData": "dom.classes.CharacterData",
+    "Comment": "dom.classes.Comment",
+    "DOMTokenList": "dom.classes.DOMTokenList",
+    "Document": "dom.classes.Document",
+    "DocumentFragment": "dom.classes.DocumentFragment",
+    "Element": "dom.classes.Element",
+    "Event": "dom.classes.Event",
+    "EventTarget": "dom.base.EventTarget",
+    "HTMLCollection": "dom.classes.HTMLCollection",
+    "HTMLElement": "dom.classes.HTMLElement",
+    "MutationObserver": "dom.classes.MutationObserver",
+    "MutationRecord": "dom.classes.MutationRecord",
+    "NamedNodeMap": "dom.classes.NamedNodeMap",
+    "Node": "dom.base.Node",
+    "NodeList": "dom.classes.NodeList",
+    "Range": "dom.classes.Range",
+    "Text": "dom.classes.Text",
+    "Window": "dom.classes.Window"
+  }
+}

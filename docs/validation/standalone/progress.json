@@ -350,5 +350,29 @@
     "regression_baseline": "Every probed WPT file was also run against the pre-08.k commit d354dae; no file regressed and 16 improved before the 08.l fixes",
     "hosted": "Pending on the 08.l PR",
     "completion_boundary": "Proves the listed families against the pinned subset and local suites; does not prove the recorded blockers, per-tag HTML element interfaces or other platforms."
+  },
+  "step_08_followup": {
+    "date": "2026-11-09",
+    "platform": "macOS arm64",
+    "description": "DOMImplementation, DocumentType, ProcessingInstruction, CDATASection families; legacy named properties; MutationObserver childList for normalize()",
+    "families_added": [
+      "dom-implementation (DocumentType + DOMImplementation)",
+      "processing-instruction",
+      "cdata-section"
+    ],
+    "semantics_updates": [
+      "wrap() routes nodeType 4 (CDATASection), 7 (ProcessingInstruction), 10 (DocumentType) to correct constructors",
+      "document.implementation returns DOMImplementation instance with createDocumentType/createDocument/createHTMLDocument/hasFeature",
+      "makeCollection() Proxy adds legacy named properties on HTMLCollection (indexed + named by id/name)",
+      "normalize() notifies MutationObserver childList when Text nodes are merged/removed"
+    ],
+    "passed_checks": [
+      "cargo check --locked --no-default-features --lib (core compilation)",
+      "cargo run --bin wega-webidl -- check (all family outputs current)",
+      "node --check on all generated and semantics JS sources"
+    ],
+    "remaining_blockers": [
+      "Per-tag HTML element interfaces (64 classes: HTMLDivElement, HTMLAreaElement, ...)"
+    ]
   }
 }

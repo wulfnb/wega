@@ -297,13 +297,19 @@
         ? Document
         : info.nodeType === 11
           ? DocumentFragment
-          : info.nodeType === 3
-            ? Text
+          : info.nodeType === 10
+            ? DocumentType
             : info.nodeType === 8
               ? Comment
-              : info.namespaceURI === "http://www.w3.org/2000/svg"
-                ? SVGElement
-                : htmlConstructors[info.localName] || HTMLElement;
+              : info.nodeType === 7
+                ? ProcessingInstruction
+                : info.nodeType === 4
+                  ? CDATASection
+                  : info.nodeType === 3
+                    ? Text
+                    : info.namespaceURI === "http://www.w3.org/2000/svg"
+                      ? SVGElement
+                      : htmlConstructors[info.localName] || HTMLElement;
     let instance;
     constructingNode++;
     try { instance = new Ctor(id, info); } finally { constructingNode--; }
@@ -463,6 +469,48 @@
         ) || null
       );
     }
+  }
+  function makeCollection(target) {
+    const proxy = new Proxy(target, {
+      get(t, key, r) {
+        if (typeof key === "string" && /^(0|[1-9]\d*)$/.test(key)) return t.item(Number(key)) ?? undefined;
+        const value = Reflect.get(t, key, r);
+        if (value !== undefined) return value;
+        if (typeof key === "string") {
+          // Legacy named properties: try namedItem first (by id/name)
+          const named = t.namedItem(key);
+          if (named) return named;
+        }
+        return value;
+      },
+      ownKeys(t) {
+        const len = t.length;
+        const keys = [];
+        for (let i = 0; i < len; i++) keys.push(String(i));
+        // Also add named properties by id/name
+        const seen = new Set(keys);
+        for (const node of [...t]) {
+          if (node.id && !seen.has(node.id)) { keys.push(node.id); seen.add(node.id); }
+          const name = node.getAttribute("name");
+          if (name && !seen.has(name)) { keys.push(name); seen.add(name); }
+        }
+        return keys;
+      },
+      getOwnPropertyDescriptor(t, key) {
+        if (typeof key === "string" && /^(0|[1-9]\d*)$/.test(key) && Number(key) < t.length)
+          return { configurable: true, enumerable: true, value: t.item(Number(key)) };
+        if (typeof key === "string" && t.namedItem(key))
+          return { configurable: true, enumerable: true, value: t.namedItem(key) };
+        return Reflect.getOwnPropertyDescriptor(t, key);
+      },
+      has(t, key) {
+        if (typeof key === "string" && /^(0|[1-9]\d*)$/.test(key)) return Number(key) < t.length;
+        if (typeof key === "string") return !!t.namedItem(key);
+        return Reflect.has(t, key);
+      },
+    });
+    collectionData.set(proxy, collectionData.get(target));
+    return proxy;
   }
   for (const name of ["keys", "values", "entries", "forEach"])
     NodeList.prototype[name] = Array.prototype[name];
@@ -814,18 +862,49 @@
       return wrap(host("clone", this._id, String(!!deep)), this.ownerDocument);
     }
     normalize() {
+      if (mutationObservers.size === 0) {
+        let previous = null;
+        for (const child of [...this.childNodes]) {
+          if (child.nodeType === 3) {
+            if (child.data === "") child.remove();
+            else if (previous) {
+              previous.data += child.data;
+              child.remove();
+            } else previous = child;
+          } else {
+            previous = null;
+            child.normalize();
+          }
+        }
+        return;
+      }
+      // Track mutations for MutationObserver childList records.
+      const removed = [], added = [];
+      function walk(node) {
+        if (node.childNodes?.length) node.childNodes.forEach(walk);
+      }
+      walk(this);
       let previous = null;
       for (const child of [...this.childNodes]) {
         if (child.nodeType === 3) {
-          if (child.data === "") child.remove();
-          else if (previous) {
+          if (child.data === "") {
+            removed.push(child);
+            child.remove();
+          } else if (previous) {
+            const oldLen = previous.length;
             previous.data += child.data;
+            const newLen = previous.length;
+            removed.push(child);
+            added.push(previous);
             child.remove();
           } else previous = child;
         } else {
           previous = null;
           child.normalize();
         }
+      }
+      if (removed.length || added.length) {
+        notify(this, "childList", { removedNodes: new NodeList(removed), addedNodes: new NodeList(added) });
       }
     }
     addEventListener(type, callback, options = {}) {
@@ -954,6 +1033,51 @@
     }
   }
   class Comment extends CharacterData {}
+  class CDATASection extends Text {
+    constructor(token, descriptor) {
+      if (token !== internalToken) throw new TypeError("Illegal constructor");
+      super(descriptor, descriptor);
+    }
+  }
+  class ProcessingInstruction extends CharacterData {
+    get target() {
+      const info = host("info", this._id);
+      return info.localName;
+    }
+  }
+  class DocumentType extends Node {
+    constructor(token, descriptor) {
+      if (token !== internalToken) throw new TypeError("Illegal constructor");
+      super(descriptor.root, host("info", descriptor.root));
+    }
+    get name() { return this._name || ""; }
+    get publicId() { return this._publicId || ""; }
+    get systemId() { return this._systemId || ""; }
+    cloneNode(deep = false) {
+      const target = component("clone", this._id, deep);
+      const doc = this.ownerDocument || document;
+      return new DocumentType(internalToken, { root: target, name: this.name, publicId: this.publicId, systemId: this.systemId });
+    }
+  }
+  class DOMImplementation {
+    createDocumentType(qualifiedName, publicId, systemId) {
+      const target = component("createDocumentType", qualifiedName, publicId, systemId);
+      return new DocumentType(internalToken, { root: target, name: qualifiedName, publicId, systemId });
+    }
+    createDocument(namespace, qualifiedName, doctype) {
+      const id = component("createDocument", namespace || "", qualifiedName);
+      return wrap(id, this._document || document);
+    }
+    createHTMLDocument(title) {
+      const doc = this._document || document;
+      const wrapper = doc.createElement("html");
+      wrapper.append(doc.createElement("head"), doc.createElement("body"));
+      doc.replaceWith(wrapper);
+      doc._readyState = "complete";
+      return doc;
+    }
+    hasFeature() { return true; }
+  }
   class DocumentFragment extends Node {
     querySelector(selector) {
       return wrap(
@@ -2765,18 +2889,11 @@
       return event;
     }
     get implementation() {
-      return {
-        createHTMLDocument: (title) => {
-          const doc = wrap(host("createDocument"));
-          const html = doc.createElement("html");
-          doc.appendChild(html);
-          html.append(doc.createElement("head"), doc.createElement("body"));
-          doc.title = title || "";
-          doc._readyState = "complete";
-          return doc;
-        },
-        hasFeature: () => true,
-      };
+      if (!this._implementation) {
+        this._implementation = new DOMImplementation();
+        this._implementation._document = this;
+      }
+      return this._implementation;
     }
     importNode(node, deep = false) {
       const clone = node.cloneNode(deep);
@@ -3298,10 +3415,10 @@
     slot: node => node?._id ? wrap(component("assignedSlotInternal", node._id)) : null,
   });
   Object.defineProperty(globalThis, "length", { get: () => 0, configurable: true });
-  const classes = { Node, Element, Document, DocumentFragment, CharacterData, Text, Comment,
+  const classes = { Node, Element, Document, DocumentFragment, CharacterData, Text, Comment, CDATASection, ProcessingInstruction, DocumentType,
     Attr, NamedNodeMap, NodeList, HTMLCollection, DOMTokenList, MutationObserver, MutationRecord,
     Location, Event, EventTarget: BaseTarget, HTMLElement, HTMLHeadElement: HTMLElement,
-    HTMLScriptElement, ShadowRoot, Range, Window, AbortSignal: web.AbortSignal };
+    HTMLScriptElement, ShadowRoot, Range, Window, DOMImplementation, AbortSignal: web.AbortSignal };
   const eventTypeGetter = Object.getOwnPropertyDescriptor(Event.prototype, "type").get;
   const targetAdd = BaseTarget.prototype.addEventListener;
   Object.defineProperty(globalThis, "__wega_semantics", { configurable: true, value: {
