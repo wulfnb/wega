@@ -164,7 +164,7 @@ version = "0.2.168"
 version = "0.5"
 
 [dependencies.parking_lot]
-version = "0.12.0"
+version = "0.13.0"
 
 [dependencies.percent-encoding]
 version = "2.3.0"
