@@ -7,9 +7,34 @@ $url = "https://gstreamer.freedesktop.org/pkg/windows/$version/msvc/gstreamer-1.
 $expected = 'E4C41EE6EE9C6C32A45D198463EC08D79BAC3BD5FA58ADC93D13FE4A08ABC9D9'
 # CI restores the installer from actions/cache; download only when it is absent or stale.
 if (!(Test-Path $installer) -or (Get-FileHash $installer -Algorithm SHA256).Hash -ne $expected) {
-    Invoke-WebRequest $url -OutFile $installer
+    Remove-Item $installer -Force -ErrorAction SilentlyContinue
+    $downloaded = $false
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        Write-Host "Downloading GStreamer SDK installer (attempt $attempt/5)..."
+        try {
+            if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+                & curl.exe -fSL --retry 5 --retry-delay 3 -o $installer $url
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "curl.exe exited with code $LASTEXITCODE"
+                }
+            } else {
+                Invoke-WebRequest $url -OutFile $installer
+            }
+        } catch {
+            Write-Warning "Download attempt $attempt encountered an error: $_"
+        }
+        if ((Test-Path $installer) -and (Get-FileHash $installer -Algorithm SHA256).Hash -eq $expected) {
+            $downloaded = $true
+            break
+        }
+        Write-Warning "Checksum mismatch or incomplete download on attempt $attempt; retrying..."
+        Remove-Item $installer -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds (3 * $attempt)
+    }
+    if (!$downloaded -or (Get-FileHash $installer -Algorithm SHA256).Hash -ne $expected) {
+        throw 'Failed to download valid GStreamer SDK installer after 5 attempts'
+    }
 }
-if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $expected) { throw 'GStreamer SDK checksum mismatch' }
 $process = Start-Process $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/portable=1', '/CURRENTUSER', '/TYPE=devel', "/DIR=`"$sdk`"" -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "GStreamer SDK installation failed: $($process.ExitCode)" }
 if (!(Test-Path "$sdk\bin\gst-inspect-1.0.exe")) { throw 'GStreamer SDK has an unexpected layout' }
