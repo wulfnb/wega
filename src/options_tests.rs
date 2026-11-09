@@ -91,6 +91,13 @@ fn rejects_invalid_and_missing_arguments_before_startup() {
     );
 }
 #[test]
+fn wega_only_option_configures_engine_choice() {
+    let options = parse(&["--wega-only"]).unwrap();
+    assert!(options.wega_only);
+    assert_eq!(options.engine, Some(crate::engine_choice::EngineKind::Wega));
+}
+
+#[test]
 fn normal_startup_and_capture_do_not_require_test_harness() {
     let options = parse(&[
         "--capture",

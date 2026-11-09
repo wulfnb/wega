@@ -43,11 +43,13 @@ pub fn dispatch(command: Command, port: &mut impl NavigationPort) -> Result<bool
 /// never ask, so local files and data documents stay reachable for the user.
 /// Like Chromium and Firefox, web content may not open local files or top-level
 /// `data:` documents; local and internal pages may still link to local files.
+/// Untrusted pages cannot navigate to internal `wega://` chrome pages.
 pub fn content_navigation_allowed(target: &url::Url, current: Option<&url::Url>) -> bool {
     let from = current.map(url::Url::scheme).unwrap_or_default();
     match target.scheme() {
         "file" => matches!(from, "file" | "wega"),
         "data" => from == "wega",
+        "wega" => from == "wega",
         _ => true,
     }
 }
@@ -84,18 +86,57 @@ impl Completion {
             None => true,
         }
     }
+    pub fn update(&mut self, loading: bool, current: &str) -> bool {
+        if loading {
+            self.started = true;
+            return false;
+        }
+        self.ready(current, true)
+    }
 }
 
 /// Snapshot of the engine's history, used to correlate traversal destinations.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct History {
     urls: Vec<String>,
     active: usize,
 }
 impl History {
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn update(&mut self, urls: Vec<String>, active: usize) {
         self.active = active.min(urls.len().saturating_sub(1));
         self.urls = urls;
+    }
+    pub fn push(&mut self, url: String) {
+        if self.urls.get(self.active).map(String::as_str) == Some(&url) {
+            return;
+        }
+        if !self.urls.is_empty() {
+            self.urls.truncate(self.active + 1);
+        }
+        self.urls.push(url);
+        self.active = self.urls.len() - 1;
+    }
+    pub fn can_back(&self) -> bool {
+        self.active > 0
+    }
+    pub fn can_forward(&self) -> bool {
+        self.active + 1 < self.urls.len()
+    }
+    pub fn traverse(&mut self, forward: bool) -> Option<&str> {
+        let index = if forward {
+            self.active.checked_add(1)?
+        } else {
+            self.active.checked_sub(1)?
+        };
+        if index < self.urls.len() {
+            self.active = index;
+            Some(&self.urls[self.active])
+        } else {
+            None
+        }
     }
     pub fn target(&self, forward: bool) -> Option<&str> {
         let index = if forward {
@@ -104,6 +145,14 @@ impl History {
             self.active.checked_sub(1)?
         };
         self.urls.get(index).map(String::as_str)
+    }
+    pub fn clear(&mut self) {
+        let current = self.urls.get(self.active).cloned();
+        self.urls.clear();
+        self.active = 0;
+        if let Some(url) = current {
+            self.urls.push(url);
+        }
     }
 }
 

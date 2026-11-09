@@ -61,7 +61,7 @@ impl Tab {
         self.view().map(WebView::id)
     }
     pub(crate) fn loaded(&self) -> bool {
-        self.live.is_some() || self.wega.is_some()
+        self.live.is_some() || self.wega.is_some() || self.is_internal()
     }
     /// WebDriver handle and drag-and-drop identity; survives unloading.
     pub(crate) fn handle(&self) -> String {
@@ -70,6 +70,9 @@ impl Tab {
     pub(crate) fn url(&self) -> String {
         if let Some(page) = &self.wega {
             return page.url();
+        }
+        if self.live.is_none() && self.initial_url.starts_with("wega://") {
+            return self.initial_url.clone();
         }
         self.view()
             .and_then(WebView::url)
@@ -88,6 +91,23 @@ impl Tab {
                 title
             };
         }
+        if self.is_internal() {
+            let url = self.url();
+            let page = url
+                .strip_prefix("wega://")
+                .unwrap_or(&url)
+                .split('?')
+                .next()
+                .unwrap_or("newtab");
+            return match page {
+                "newtab" => "New tab".into(),
+                "history" => "History".into(),
+                "bookmarks" => "Bookmarks".into(),
+                "settings" => "Settings".into(),
+                "about" => "About Wega".into(),
+                other => format!("Wega {other}"),
+            };
+        }
         let fallback = |url: Option<url::Url>| {
             url.and_then(|u| u.host_str().map(str::to_owned))
                 .unwrap_or_else(|| "New tab".into())
@@ -102,6 +122,9 @@ impl Tab {
         }
     }
     pub(crate) fn loading(&self) -> bool {
+        if self.is_internal() {
+            return false;
+        }
         if let Some(page) = &self.wega {
             return page.loading();
         }
@@ -150,6 +173,7 @@ pub struct Browser {
     pub(crate) repaint_deadline: Arc<std::sync::Mutex<Option<Instant>>>,
     pub(crate) pending_save: Option<Instant>,
     pub(crate) capture: Option<crate::capture::Capture>,
+    pub(crate) internal_state: crate::internal_pages::InternalPagesState,
     next_tab_key: u64,
     discard_checked: Instant,
     /// The window is minimized or fully covered; skip work that only updates pixels.
@@ -360,7 +384,13 @@ impl Browser {
                 .capture
                 .as_ref()
                 .map(|path| crate::capture::Capture::new(path.clone())),
+            internal_state: Default::default(),
         };
+        if options.wega_only {
+            let mut policy = browser.profile().policy.clone();
+            policy.wega_only = true;
+            browser.apply(AppCommand::Policy(policy));
+        }
         #[cfg(all(target_os = "windows", not(feature = "media")))]
         browser.notify(
             crate::ux::Severity::Warning,
@@ -492,6 +522,10 @@ impl Browser {
     pub(crate) fn tab(&self) -> &Tab {
         &self.session.tabs()[self.session.active()]
     }
+    pub(crate) fn tab_mut(&mut self) -> &mut Tab {
+        let active = self.session.active();
+        &mut self.session.tabs_mut()[active]
+    }
     pub(crate) fn is_wega(&self) -> bool {
         self.tab().engine == EngineKind::Wega
     }
@@ -505,12 +539,18 @@ impl Browser {
             .map_or_else(|| self.view().page_zoom(), |page| page.zoom)
     }
     pub(crate) fn can_go_back(&self) -> bool {
+        if self.tab().is_internal() {
+            return self.tab().history.can_back();
+        }
         self.tab()
             .wega
             .as_ref()
             .map_or_else(|| self.view().can_go_back(), |page| page.can_back())
     }
     pub(crate) fn can_go_forward(&self) -> bool {
+        if self.tab().is_internal() {
+            return self.tab().history.can_forward();
+        }
         self.tab()
             .wega
             .as_ref()
@@ -541,11 +581,19 @@ impl Browser {
         url: url::Url,
         remember: bool,
     ) -> bool {
-        if target == EngineKind::Wega
-            && !matches!(url.scheme(), "http" | "https" | "file" | "about")
-        {
-            self.notify(crate::ux::Severity::Warning,"Open a web or HTML file page before choosing Wega. Internal browser pages use Servo.",None);
+        if self.profile().policy.wega_only && target == EngineKind::Servo {
+            self.notify(
+                crate::ux::Severity::Warning,
+                "Servo engine is disabled in developer --wega-only mode.",
+                None,
+            );
             return false;
+        }
+        if url.scheme() == "wega" {
+            let active = self.session.active();
+            self.session.tabs_mut()[active].engine = target;
+            self.window.request_redraw();
+            return true;
         }
         let page = if target == EngineKind::Wega {
             match crate::wega_page::Page::new(
@@ -667,6 +715,7 @@ impl Browser {
         );
         let index = self.push_tab(None, url.to_string(), String::new(), false);
         self.session.tabs_mut()[index].engine = engine;
+        self.session.tabs_mut()[index].history.push(url.to_string());
         self.select_tab(index);
         self.changed();
     }
@@ -760,6 +809,9 @@ impl Browser {
         }
         let url = profile::resolve_address(&tab.initial_url)
             .unwrap_or_else(|_| url::Url::parse("about:blank").expect("static URL"));
+        if url.scheme() == "wega" {
+            return;
+        }
         if tab.engine == EngineKind::Wega {
             match crate::wega_page::Page::new(
                 &url,
@@ -1098,10 +1150,82 @@ impl Browser {
     ) -> Result<bool, String> {
         if let wega::navigation::Command::Load(address) = &command {
             let url = profile::resolve_address(address)?;
+            if url.scheme() == "wega" {
+                if url.host_str() == Some("download") {
+                    let mut dl_url = String::new();
+                    let mut dl_name = String::new();
+                    for (k, v) in url.query_pairs() {
+                        if k == "url" {
+                            dl_url = v.into_owned();
+                        } else if k == "name" {
+                            dl_name = v.into_owned();
+                        }
+                    }
+                    if !dl_url.is_empty() {
+                        self.offer_download(&dl_url, &dl_name);
+                        return Ok(true);
+                    }
+                }
+                let active = self.session.active();
+                let tab = &mut self.session.tabs_mut()[active];
+                tab.history.push(url.to_string());
+                tab.initial_url = url.to_string();
+                tab.saved_title = tab.title();
+                self.chrome.address = url.to_string();
+                self.chrome.last_url = self.chrome.address.clone();
+                self.window.request_redraw();
+                return Ok(true);
+            }
             let target = self.engine_for_navigation(&url);
             if target != self.tab().engine {
                 return Ok(self.replace_engine_confirmed(target, url, false));
             }
+            let active = self.session.active();
+            if self.tab().is_internal() && self.tab().wega.is_none() && self.tab().live.is_none() {
+                self.session.tabs_mut()[active].history.push(url.to_string());
+                self.session.tabs_mut()[active].initial_url = url.to_string();
+                if target == EngineKind::Wega {
+                    match crate::wega_page::Page::new(
+                        &url,
+                        &self.profile().policy,
+                        self.event_proxy.clone(),
+                        &self.profile_dir,
+                        self.tab().key,
+                    ) {
+                        Ok(page) => {
+                            self.session.tabs_mut()[active].wega = Some(page);
+                            self.window.request_redraw();
+                            return Ok(true);
+                        }
+                        Err(error) => {
+                            self.status = Some(format!("{error} Opening this tab in Servo."));
+                            self.session.tabs_mut()[active].engine = EngineKind::Servo;
+                        }
+                    }
+                }
+                let live = self.create_view(Some(&url));
+                self.session.tabs_mut()[active].live = Some(live);
+                self.window.request_redraw();
+                return Ok(true);
+            }
+        }
+        if let wega::navigation::Command::Traverse { forward } = command {
+            if self.tab().is_internal() {
+                let active = self.session.active();
+                if let Some(dest) = self.session.tabs_mut()[active]
+                    .history
+                    .traverse(forward)
+                    .map(str::to_owned)
+                {
+                    self.navigate(&dest);
+                    return Ok(true);
+                }
+                return Ok(false);
+            }
+        }
+        if matches!(command, wega::navigation::Command::Reload) && self.tab().is_internal() {
+            self.window.request_redraw();
+            return Ok(true);
         }
         let active = self.session.active();
         if let Some(page) = &mut self.session.tabs_mut()[active].wega {
@@ -1943,7 +2067,9 @@ impl Browser {
                 return;
             }
             if self.chrome.page_focused && !self.modal() {
-                if self.is_wega() {
+                if self.is_internal() {
+                    // Internal pages are handled by egui widgets directly
+                } else if self.is_wega() {
                     if let Some(page) = self.tab().wega.as_ref()
                         && let Err(error) = page.keyboard(event, self.chrome.modifiers.state())
                     {
@@ -1979,7 +2105,7 @@ impl Browser {
         if response.repaint && !matches!(event, WindowEvent::RedrawRequested) {
             self.window.request_redraw();
         }
-        if self.is_wega() {
+        if self.is_wega() || self.is_internal() {
             if let WindowEvent::CursorMoved { position, .. } = &event {
                 self.chrome.pointer = *position;
             }
@@ -2341,6 +2467,10 @@ impl Browser {
             outer.shrink(8.0)
         };
         self.chrome.page_rect = rect;
+        if self.is_internal() {
+            self.internal_viewport(ui, rect, outer);
+            return;
+        }
         if self.is_wega() {
             self.wega_viewport(ui, rect, outer);
             return;
@@ -2446,7 +2576,7 @@ fn encode_favicon(width: usize, height: usize, rgba: Vec<u8>) -> Option<Vec<u8>>
 }
 
 /// Pixels of a saved favicon, decoding the PNG form.
-fn decode_favicon(icon: &profile::SavedFavicon) -> Option<(usize, usize, Vec<u8>)> {
+pub(crate) fn decode_favicon(icon: &profile::SavedFavicon) -> Option<(usize, usize, Vec<u8>)> {
     match icon {
         profile::SavedFavicon::Rgba {
             width,

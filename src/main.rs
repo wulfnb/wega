@@ -22,6 +22,7 @@ use wega::downloads;
 mod downloads_ui;
 mod engine;
 mod input;
+mod internal_pages;
 mod inspector_probes;
 mod inspector_ui;
 #[cfg(target_os = "macos")]

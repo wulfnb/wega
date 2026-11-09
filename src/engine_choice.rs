@@ -42,8 +42,11 @@ pub fn choose(
     explicit: Option<EngineKind>,
     available: bool,
 ) -> EngineKind {
+    if policy.wega_only {
+        return EngineKind::Wega;
+    }
     if url.scheme() == "wega" {
-        return EngineKind::Servo;
+        return explicit.or(saved).unwrap_or(EngineKind::Wega);
     }
     let choice = explicit
         .or_else(|| site_key(url).and_then(|key| policy.site_engines.get(&key).copied()))
@@ -141,7 +144,19 @@ mod tests {
                 Some(EngineKind::Wega),
                 true
             ),
-            EngineKind::Servo
+            EngineKind::Wega
+        );
+        let mut wega_only_policy = policy.clone();
+        wega_only_policy.wega_only = true;
+        assert_eq!(
+            choose(
+                &wega_only_policy,
+                &url::Url::parse("https://example.com").unwrap(),
+                None,
+                None,
+                true
+            ),
+            EngineKind::Wega
         );
     }
 }

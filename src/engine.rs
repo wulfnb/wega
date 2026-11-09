@@ -169,7 +169,7 @@ impl servo::WebViewDelegate for Delegate {
                 )));
                 request.deny();
             }
-            "data" | "file"
+            "data" | "file" | "wega"
                 if !wega::navigation::content_navigation_allowed(
                     &request.url,
                     view.url()

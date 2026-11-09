@@ -430,6 +430,14 @@ this is useful integration evidence, not a parity release.
 privileged web-document dependency, and existing profile/container/viewer flows
 retain their behavior. Old internal URLs still restore meaningfully.
 
+**Implementation status (Step 10 delivered):**
+- Internal URLs (`wega://newtab`, `history`, `bookmarks`, `settings`, `about`) rendered natively via egui views.
+- Startup and internal pages run with zero engine overhead without initializing Servo.
+- Untrusted content navigation blocked from internal `wega://` pages and chrome privileges.
+- Developer `--wega-only` startup path implemented with explicit missing-feature notifications.
+- Session restore, address bar, history stack, and container workflows preserved.
+- Contract & verification: [Step 10 contract](step-10-internal-pages-and-viewer-ux.md).
+
 ### 11 — Complete input, native controls and accessibility transport
 
 **Depends on:** 08–10.

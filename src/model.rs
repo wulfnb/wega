@@ -122,6 +122,8 @@ pub struct Policy {
     pub performance_visibility_version: u8,
     /// Exact canonical HTTP(S) origins; no wildcard or credential/path matching.
     pub site_engines: std::collections::BTreeMap<String, crate::engine_choice::EngineKind>,
+    #[serde(default)]
+    pub wega_only: bool,
     pub wega_rollout: bool,
     pub wega_fallback: bool,
     pub blocked_site_permissions:
@@ -142,6 +144,7 @@ impl Default for Policy {
             show_performance: true,
             performance_visibility_version: 1,
             site_engines: Default::default(),
+            wega_only: false,
             wega_rollout: true,
             wega_fallback: true,
             blocked_site_permissions: Default::default(),

@@ -121,7 +121,15 @@ impl Browser {
         docs.insert("settings".into(),document("Settings","<p>Settings open in their own panel: appearance, browsing, privacy, downloads and advanced options.</p><p>If the panel is closed, open it from the <b>⋯</b> menu → <b>Browser settings</b>.</p>"));
     }
     pub fn screenshot_page(&mut self) {
-        if self.is_wega() {
+        if self.profile().policy.wega_only {
+            self.notify(
+                crate::ux::Severity::Warning,
+                "This page action requires Servo, which is disabled in --wega-only mode.",
+                None,
+            );
+            return;
+        }
+        if self.is_wega() || self.is_internal() {
             self.notify(
                 crate::ux::Severity::Info,
                 "This page action requires Servo in this version. Use the engine selector below.",

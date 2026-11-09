@@ -215,7 +215,7 @@ impl Browser {
                             origin: target.origin().ascii_serialization(),
                             title: format!("Authentication required: {prompt_title}"),
                             detail: format!("The server at {url} requires authentication."),
-                            decision: crate::capabilities::Decision::Permission,
+                            decision: crate::capabilities::Decision::External(target.clone()),
                         });
                     }
                 }

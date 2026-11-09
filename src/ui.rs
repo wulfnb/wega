@@ -830,7 +830,7 @@ impl Browser {
                     let script = include_str!("reader.js");
                     if self.is_wega() {
                         if let Some(tab) = self.tab_mut().wega.as_mut() {
-                            let _ = tab.evaluate(script.to_string(), |_| {});
+                            let _ = tab.send(wega::engine_protocol::Command::Evaluate(script.to_string()));
                         }
                     } else {
                         self.view().evaluate_javascript(script, |_| {});
@@ -878,7 +878,7 @@ impl Browser {
                         let script = "(()=>{let s=document.getElementById('__wega_dark');if(s){s.remove();return} s=document.createElement('style');s.id='__wega_dark';s.textContent='html{color-scheme:dark!important;background:#171717!important;color:#eee!important}body,main,article,section,header,footer,nav{background-color:#171717!important;color:#eee!important}a{color:#a9caff!important}';document.head.appendChild(s)})()";
                         if self.is_wega() {
                             if let Some(tab) = self.tab_mut().wega.as_mut() {
-                                let _ = tab.evaluate(script.to_string(), |_| {});
+                                let _ = tab.send(wega::engine_protocol::Command::Evaluate(script.to_string()));
                             }
                         } else {
                             self.view().evaluate_javascript(script, |_| {});

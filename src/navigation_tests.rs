@@ -100,6 +100,37 @@ fn history_targets_preserve_duplicate_urls_and_validate_boundaries() {
 }
 
 #[test]
+fn history_push_traverse_and_clear_semantics() {
+    let mut history = History::new();
+    assert!(!history.can_back());
+    assert!(!history.can_forward());
+
+    history.push("wega://newtab".into());
+    assert!(!history.can_back());
+    assert!(!history.can_forward());
+
+    history.push("https://example.com/".into());
+    assert!(history.can_back());
+    assert!(!history.can_forward());
+    assert_eq!(history.target(false), Some("wega://newtab"));
+
+    assert_eq!(history.traverse(false), Some("wega://newtab"));
+    assert!(!history.can_back());
+    assert!(history.can_forward());
+    assert_eq!(history.target(true), Some("https://example.com/"));
+
+    // Navigating from back state truncates forward history
+    history.push("wega://history".into());
+    assert!(history.can_back());
+    assert!(!history.can_forward());
+    assert_eq!(history.target(false), Some("wega://newtab"));
+
+    history.clear();
+    assert!(!history.can_back());
+    assert!(!history.can_forward());
+}
+
+#[test]
 fn web_content_cannot_open_local_files_or_top_level_data_documents() {
     let url = |s: &str| url::Url::parse(s).unwrap();
     let web = url("https://example.com/");
@@ -125,4 +156,18 @@ fn web_content_cannot_open_local_files_or_top_level_data_documents() {
         &url("blob:https://example.com/x"),
         Some(&web)
     ));
+
+    // Internal privileges protection
+    assert!(
+        !content_navigation_allowed(&internal, Some(&web)),
+        "Untrusted web content cannot navigate to internal pages"
+    );
+    assert!(
+        !content_navigation_allowed(&internal, None),
+        "Script popups cannot navigate to internal pages"
+    );
+    assert!(
+        content_navigation_allowed(&internal, Some(&url("wega://newtab"))),
+        "Internal pages can link to each other"
+    );
 }
