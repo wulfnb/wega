@@ -75,10 +75,10 @@
     finalizer?.register(root, descriptor.root);
     return root;
   }
+  // DOM algorithms throw DOMException; only Web IDL's simple errors stay JS errors.
+  const jsErrors = { TypeError, RangeError, ReferenceError, EvalError };
   const fail = (name, message) => {
-    const error = new Error(message);
-    error.name = name;
-    throw error;
+    throw jsErrors[name] ? new jsErrors[name](message) : new DOMException(message, name);
   };
   const fatal = (error) =>
     (error?.name === "InternalError" &&
@@ -474,6 +474,50 @@
   Object.defineProperty(HTMLCollection.prototype, Symbol.toStringTag, {
     value: "HTMLCollection",
   });
+  // DOM "ensure pre-insertion validity" and replaceChild's variant (replaced
+  // is the node being replaced, else null), in specification order.
+  const insertionToken = {};
+  function insertionValidity(parent, node, child, replaced) {
+    const hierarchy = (message) => fail("HierarchyRequestError", message);
+    if (![1, 9, 11].includes(parent.nodeType)) hierarchy("Parent cannot have children");
+    for (let n = parent; n; n = n.parentNode || (n.nodeType === 11 ? n.host : null)) {
+      if (n === node) hierarchy("Cannot create a DOM cycle");
+    }
+    if (child && child.parentNode !== parent) fail("NotFoundError", "Reference is not a child");
+    if (![1, 3, 4, 7, 8, 10, 11].includes(node.nodeType)) hierarchy("Node cannot be inserted");
+    if ((node.nodeType === 3 && parent.nodeType === 9) || (node.nodeType === 10 && parent.nodeType !== 9)) {
+      hierarchy("Node cannot be inserted here");
+    }
+    if (parent.nodeType !== 9) return;
+    const children = [...parent.childNodes];
+    const others = children.filter((n) => n !== replaced);
+    const after = child ? children.slice(children.indexOf(child) + 1) : [];
+    const before = child ? children.slice(0, children.indexOf(child)) : children;
+    const doctypeAfter = (child && child.nodeType === 10 && child !== replaced) || after.some((n) => n.nodeType === 10);
+    const elementOf = (nodes) => nodes.some((n) => n.nodeType === 1);
+    if (node.nodeType === 11 || node.nodeType === 1) {
+      const elements = node.nodeType === 1 ? 1 : [...node.childNodes].filter((n) => n.nodeType === 1).length;
+      if (node.nodeType === 11 && (elements > 1 || [...node.childNodes].some((n) => n.nodeType === 3))) hierarchy("Document can have one element");
+      if (elements === 1 && (elementOf(others) || doctypeAfter)) hierarchy("Document can have one element");
+    } else if (node.nodeType === 10) {
+      if (others.some((n) => n.nodeType === 10) || elementOf(before.filter((n) => n !== replaced)) || (!child && elementOf(children))) {
+        hierarchy("Document can have one doctype before its element");
+      }
+    }
+  }
+  // DOM "convert nodes into a node" and ChildNode's viable next sibling.
+  function nodesIntoNode(document, values) {
+    const nodes = values.map((value) => value instanceof Node ? value : document.createTextNode(String(value)));
+    if (nodes.length === 1) return nodes[0];
+    const fragment = document.createDocumentFragment();
+    for (const node of nodes) fragment.appendChild(node);
+    return fragment;
+  }
+  function viableNextSibling(node, values) {
+    let next = node.nextSibling;
+    while (next && values.includes(next)) next = next.nextSibling;
+    return next;
+  }
   class Node extends BaseTarget {
     constructor(id, info) {
       if (!constructingNode && new.target !== Attr && new.target !== ShadowRoot && !constructorDefinitions.has(new.target)) throw new TypeError("Illegal constructor");
@@ -673,17 +717,12 @@
     appendChild(child) {
       return this.insertBefore(child, null);
     }
-    insertBefore(child, reference) {
+    insertBefore(child, reference, validated) {
       if (!(child instanceof Node)) throw new TypeError("Expected a Node");
-      if (reference !== null && reference?.parentNode !== this) {
-        fail("NotFoundError", "Reference is not a child");
-      }
-      if (child.contains(this)) {
-        fail("HierarchyRequestError", "Cannot create a DOM cycle");
-      }
+      if (validated !== insertionToken) insertionValidity(this, child, reference ?? null, null);
       if (child.nodeType === 11) {
         for (const node of [...child.childNodes]) {
-          this.insertBefore(node, reference);
+          this.insertBefore(node, reference, insertionToken);
         }
         return child;
       }
@@ -729,10 +768,10 @@
       return child;
     }
     replaceChild(child, old) {
-      if (old?.parentNode !== this)
-        fail("NotFoundError", "Node is not a child");
+      if (!(child instanceof Node)) throw new TypeError("Expected a Node");
+      insertionValidity(this, child, old, old);
       if (child === old) return old;
-      this.insertBefore(child, old);
+      this.insertBefore(child, old, insertionToken);
       this.removeChild(old);
       return old;
     }
@@ -741,47 +780,32 @@
       this.append(...values);
     }
     append(...values) {
-      for (const value of values)
-        this.appendChild(
-          value instanceof Node
-            ? value
-            : (this.ownerDocument || this).createTextNode(String(value)),
-        );
+      this.appendChild(nodesIntoNode(this.ownerDocument || this, values));
     }
     prepend(...values) {
-      const anchor = this.firstChild;
-      for (const value of values)
-        this.insertBefore(
-          value instanceof Node
-            ? value
-            : (this.ownerDocument || this).createTextNode(String(value)),
-          anchor,
-        );
+      this.insertBefore(nodesIntoNode(this.ownerDocument || this, values), this.firstChild);
     }
     before(...values) {
-      if (!this.parentNode) return;
-      for (const value of values)
-        this.parentNode.insertBefore(
-          value instanceof Node
-            ? value
-            : this.ownerDocument.createTextNode(String(value)),
-          this,
-        );
+      const parent = this.parentNode;
+      if (!parent) return;
+      let previous = this.previousSibling;
+      while (previous && values.includes(previous)) previous = previous.previousSibling;
+      const node = nodesIntoNode(this.ownerDocument, values);
+      parent.insertBefore(node, previous ? previous.nextSibling : parent.firstChild);
     }
     after(...values) {
-      if (!this.parentNode) return;
-      const anchor = this.nextSibling;
-      for (const value of values)
-        this.parentNode.insertBefore(
-          value instanceof Node
-            ? value
-            : this.ownerDocument.createTextNode(String(value)),
-          anchor,
-        );
+      const parent = this.parentNode;
+      if (!parent) return;
+      const next = viableNextSibling(this, values);
+      parent.insertBefore(nodesIntoNode(this.ownerDocument, values), next);
     }
     replaceWith(...values) {
-      this.before(...values);
-      this.remove();
+      const parent = this.parentNode;
+      if (!parent) return;
+      const next = viableNextSibling(this, values);
+      const node = nodesIntoNode(this.ownerDocument, values);
+      if (this.parentNode === parent) parent.replaceChild(node, this);
+      else parent.insertBefore(node, next);
     }
     remove() {
       this.parentNode?.removeChild(this);
@@ -1752,24 +1776,37 @@
       const state = tokenData.get(this);
       return [...new Set((state.element.getAttribute(state.attribute) || "").split(/[\t\n\f\r ]+/).filter(Boolean))];
     }
+    // DOMTokenList update steps: no attribute is created for an empty set.
     _write(tokens) {
       const state = tokenData.get(this);
+      if (!tokens.length && !state.element.hasAttribute(state.attribute)) return;
       state.element.setAttribute(state.attribute, tokens.join(" "));
     }
     item(index) { return this._tokens()[index] ?? null; }
-    contains(token) { tokensChecked([token]); return this._tokens().includes(token); }
+    contains(token) { return this._tokens().includes(String(token)); }
     add(...tokens) { tokensChecked(tokens); this._write([...new Set([...this._tokens(), ...tokens])]); }
     remove(...tokens) { tokensChecked(tokens); this._write(this._tokens().filter(token => !tokens.includes(token))); }
     toggle(token, force) {
-      tokensChecked([token]); const has = this._tokens().includes(token);
-      if (has) { if (force === undefined || !force) { this.remove(token); return false; } return true; }
-      if (force === undefined || force) { this.add(token); return true; } return false;
+      tokensChecked([token]);
+      const tokens = this._tokens();
+      if (tokens.includes(token)) {
+        if (force) return true;
+        this._write(tokens.filter((t) => t !== token));
+        return false;
+      }
+      if (force === undefined || force) { this._write([...tokens, token]); return true; }
+      return false;
     }
     replace(token, replacement) {
-      tokensChecked([token, replacement]); const tokens = this._tokens(); const at = tokens.indexOf(token);
-      if (at < 0) return false;
-      if (tokens.includes(replacement)) tokens.splice(at, 1); else tokens[at] = replacement;
-      this._write(tokens); return true;
+      // replace() checks both for emptiness before either for whitespace.
+      if (!token || !replacement) fail("SyntaxError", "Token must not be empty");
+      tokensChecked([token, replacement]);
+      const tokens = this._tokens();
+      if (!tokens.includes(token)) return false;
+      // Ordered-set replace: the first of either becomes replacement, others go.
+      const first = tokens.findIndex((t) => t === token || t === replacement);
+      this._write(tokens.filter((t, i) => i === first || (t !== token && t !== replacement)).map((t, i) => (i === first ? replacement : t)));
+      return true;
     }
     supports(token) {
       const state = tokenData.get(this);
@@ -3155,6 +3192,9 @@
       set(value) { const url = new URL(this.href); url[key] = value; __wega_location_navigate(url.href, false); },
     });
   const location = new Location(internalToken);
+  // HTML Location object creation: unforgeable own valueOf and @@toPrimitive.
+  Object.defineProperty(location, "valueOf", { value: Object.prototype.valueOf, writable: false, enumerable: false, configurable: false });
+  Object.defineProperty(location, Symbol.toPrimitive, { value: undefined, writable: false, enumerable: false, configurable: false });
   Object.defineProperty(globalThis, "location", { configurable: true, get: () => location, set: value => { location.href = value; } });
   Object.defineProperties(globalThis, {
     __wega_dispatch: {
@@ -3240,6 +3280,13 @@
         ),
     },
   });
+  // HTML [Replaceable] window.event backed by the dispatcher's current event.
+  Object.defineProperty(globalThis, "event", {
+    configurable: true,
+    enumerable: true,
+    get: () => web.event.getWegaCurrentEvent(),
+    set(value) { Object.defineProperty(globalThis, "event", { value, writable: true, configurable: true, enumerable: true }); },
+  });
   web.event.setWegaDomHooks({
     parent: (node, event, originalRoot) => {
       if (!node?._id) return null;
@@ -3259,6 +3306,8 @@
   const targetAdd = BaseTarget.prototype.addEventListener;
   Object.defineProperty(globalThis, "__wega_semantics", { configurable: true, value: {
     classes,
+    // [LegacyUnforgeable] interfaces: members become own instance properties.
+    unforgeable: { Location: [location] },
     brand(name, value) {
       if (value === null || (typeof value !== "object" && typeof value !== "function")) return false;
       const Ctor = classes[name] || globalThis[name];

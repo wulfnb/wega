@@ -19,7 +19,7 @@ pub(crate) fn adapt_extension(
         for (original, replacement) in [
             (
                 "function getParent(eventTarget) {\n  return isNode(eventTarget) ? eventTarget.parentNode : null;\n}",
-                "let wegaDomHooks;\nfunction setWegaDomHooks(hooks) { if (wegaDomHooks) throw new TypeError(\"DOM hooks already installed\"); wegaDomHooks = hooks; }\nfunction getParent(eventTarget, event = null, originalRoot = null) {\n  return isNode(eventTarget) ? wegaDomHooks.parent(eventTarget, event, originalRoot) : null;\n}",
+                "let wegaDomHooks;\nlet wegaCurrentEvent;\nlet wegaListenerPhase = \"bubbling\";\nfunction getWegaCurrentEvent() { return wegaCurrentEvent; }\nfunction setWegaDomHooks(hooks) { if (wegaDomHooks) throw new TypeError(\"DOM hooks already installed\"); wegaDomHooks = hooks; }\nfunction getParent(eventTarget, event = null, originalRoot = null) {\n  return isNode(eventTarget) ? wegaDomHooks.parent(eventTarget, event, originalRoot) : null;\n}",
             ),
             (
                 "    if (data === undefined || !data.listeners[event.type]) {",
@@ -53,7 +53,43 @@ pub(crate) fn adapt_extension(
                 "return Boolean(target?.[eventTargetData]?.assignedSlot);",
                 "return wegaDomHooks?.slot(target) ?? null;",
             ),
-            ("  setTarget,\n};", "  setTarget,\n  setWegaDomHooks,\n};"),
+            (
+                "  setTarget,\n};",
+                "  setTarget,\n  setWegaDomHooks,\n  getWegaCurrentEvent,\n};",
+            ),
+            // Dispatch end clears the flag directly; the spec setter ignores false.
+            (
+                "  eventImpl.cancelBubble = false;\n  setStopImmediatePropagation(eventImpl, false);",
+                "  eventImpl[_stopPropagationFlag] = false;\n  setStopImmediatePropagation(eventImpl, false);",
+            ),
+            // DOM dispatch: capture listeners at the target run in the capture pass.
+            (
+                "    for (let i = path.length - 1; i >= 0; --i) {\n      const tuple = path[i];\n\n      if (tuple.target === null) {\n        invokeEventListeners(tuple, eventImpl);\n      }\n    }",
+                "    wegaListenerPhase = \"capturing\";\n    for (let i = path.length - 1; i >= 0; --i) {\n      const tuple = path[i];\n\n      setEventPhase(eventImpl, tuple.target !== null ? Event.AT_TARGET : Event.CAPTURING_PHASE);\n      invokeEventListeners(tuple, eventImpl);\n    }",
+            ),
+            (
+                "    for (let i = 0; i < path.length; i++) {\n      const tuple = path[i];\n\n      if (tuple.target !== null) {",
+                "    wegaListenerPhase = \"bubbling\";\n    for (let i = 0; i < path.length; i++) {\n      const tuple = path[i];\n\n      if (tuple.target !== null) {",
+            ),
+            (
+                "    if (\n      (eventImpl.eventPhase === Event.CAPTURING_PHASE && !capture) ||\n      (eventImpl.eventPhase === Event.BUBBLING_PHASE && capture)\n    ) {",
+                "    if (\n      (wegaListenerPhase === \"capturing\" && !capture) ||\n      (wegaListenerPhase === \"bubbling\" && capture)\n    ) {",
+            ),
+            // DOM: setting cancelBubble to false has no effect.
+            (
+                "    this[_stopPropagationFlag] = webidl.converters.boolean(value);",
+                "    if (webidl.converters.boolean(value)) this[_stopPropagationFlag] = true;",
+            ),
+            // HTML window.event: the global's current event during listener
+            // invocation, undefined for listeners inside a shadow tree.
+            (
+                "    try {\n      if (typeof listener.callback === \"object\") {",
+                "    const wegaPreviousEvent = wegaCurrentEvent;\n    wegaCurrentEvent = isShadowRoot(getRoot(eventImpl.currentTarget)) ? undefined : eventImpl;\n    try {\n      if (typeof listener.callback === \"object\") {",
+            ),
+            (
+                "    } catch (error) {\n      reportException(error);\n    }\n\n    setInPassiveListener(eventImpl, false);",
+                "    } catch (error) {\n      reportException(error);\n    } finally {\n      wegaCurrentEvent = wegaPreviousEvent;\n    }\n\n    setInPassiveListener(eventImpl, false);",
+            ),
             // Legacy DOM initEvent; the generated Event binding requires it.
             (
                 "  [SymbolFor(\"Deno.privateCustomInspect\")](inspect, inspectOptions) {\n    return inspect(\n      getCreateFilteredInspectProxy()({\n        object: this,\n        evaluate: ObjectPrototypeIsPrototypeOf(EventPrototype, this),\n        keys: EVENT_PROPS,",

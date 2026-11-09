@@ -53,7 +53,7 @@
   "idls": [
     [
       "tools/webidl/idl/html-collection.webidl",
-      "f8846ffaaf0ae4909db673c8eced8ff0fbb9b0cebc003926288a95a780be8a4c"
+      "35a580f17ba4251d5ae57270caba45cde4cd1016292fc3e2df9513c8ff25d6ba"
     ]
   ],
   "interfaces": [
@@ -119,17 +119,6 @@
             "name": "Element",
             "nullable": true
           }
-        },
-        {
-          "kind": "iterable",
-          "name": "@@iterator",
-          "types": [
-            {
-              "kind": "interface",
-              "name": "Element",
-              "nullable": false
-            }
-          ]
         }
       ],
       "name": "HTMLCollection",

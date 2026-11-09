@@ -495,3 +495,49 @@ fn canvas_and_screen_support_speedtest_and_lottie() {
         "[true,true,true,400,200,300,150,true,true,true,true,true,true,true]"
     );
 }
+
+// Step 08 generated-binding contracts: brands, conversions, WebIDL descriptors,
+// hidden bootstrap internals and reentrant mutation during conversion/dispatch.
+#[test]
+fn generated_bindings_enforce_brands_conversions_and_survive_reentrancy() {
+    let mut view = page("<main id='root'><p id='a' class='x y'>text</p></main>");
+    let throws = |view: &mut View, source: &str| {
+        view.evaluate_json(&format!(
+            "(()=>{{try{{{source};return 'no throw'}}catch(e){{return e.name}}}})()"
+        ))
+        .unwrap()
+    };
+    for source in [
+        "Object.getOwnPropertyDescriptor(Node.prototype,'firstChild').get.call({})",
+        "Element.prototype.getAttribute.call(document.createTextNode('t'),'id')",
+        "new Node()",
+        "new Element()",
+        "document.body.appendChild({})",
+        "document.body.insertBefore(document.createElement('i'),'not a node')",
+        "a.classList.add('bad token')",
+    ] {
+        let name = throws(&mut view, source);
+        assert!(
+            name == "\"TypeError\"" || name == "\"InvalidCharacterError\"",
+            "{source}: {name}"
+        );
+    }
+    assert_eq!(
+        view.evaluate_json("(()=>{const c=Object.getOwnPropertyDescriptor(Node,'ELEMENT_NODE'),e=Object.getOwnPropertyDescriptor(Event,'NONE');return [Node.ELEMENT_NODE,c.writable,c.configurable,Node.prototype.DOCUMENT_POSITION_CONTAINS,e.configurable,new Text('t').data]})()").unwrap(),
+        "[1,false,false,8,false,\"t\"]"
+    );
+    assert_eq!(
+        view.evaluate_json("(()=>{const p=document.getElementById('a');return [p.childNodes===p.childNodes,p.classList===p.classList,p.attributes===p.attributes,NodeList.prototype[Symbol.iterator]===Array.prototype.values,[...p.classList].join()]})()").unwrap(),
+        "[true,true,true,true,\"x,y\"]"
+    );
+    assert_eq!(
+        view.evaluate_json("['__wega_dom','__wega_semantics','__wega_guard_binding','__wega_call'].map(n=>typeof globalThis[n])").unwrap(),
+        "[\"undefined\",\"undefined\",\"undefined\",\"undefined\"]"
+    );
+    // Conversion callbacks and listeners mutate the tree mid-call; the native
+    // DOM must not be borrowed across JS and the call must stay consistent.
+    assert_eq!(
+        view.evaluate_json("(()=>{const p=document.getElementById('a'),root=document.getElementById('root');p.setAttribute('data-v',{toString(){p.remove();root.innerHTML='<b>new</b>';return 'v'}});const order=[];p.addEventListener('ping',()=>{order.push('listener');p.remove();root.append(p);p.textContent='moved'});p.dispatchEvent(new Event('ping'));order.push(p.parentNode===root);return [p.getAttribute('data-v'),p.isConnected,root.firstChild.nodeName,p.textContent,order]})()").unwrap(),
+        "[\"v\",true,\"B\",\"moved\",[\"listener\",true]]"
+    );
+}

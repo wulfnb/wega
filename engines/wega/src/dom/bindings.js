@@ -239,6 +239,13 @@
         Object.defineProperty(prototype, Symbol.iterator, { value: prototype.values, configurable: true, writable: true });
       }
     }
+    // Indexed-getter interfaces without iterable<> (HTMLCollection, NamedNodeMap)
+    // get only @@iterator = %Array.prototype.values%.
+    const indexed = spec.members.some(member => member.kind === "operation" && member.getter && member.parameters[0]?.type.kind === "unsigned");
+    if (indexed && !spec.members.some(member => member.kind === "iterable")) {
+      for (const kind of ["keys", "values", "entries", "forEach"]) if (Object.getOwnPropertyDescriptor(Ctor.prototype, kind)?.configurable) delete Ctor.prototype[kind];
+      Object.defineProperty(Ctor.prototype, Symbol.iterator, { value: Array.prototype.values, configurable: true, writable: true });
+    }
     const tag = Object.getOwnPropertyDescriptor(Ctor.prototype, Symbol.toStringTag);
     if (!tag || tag.configurable) Object.defineProperty(Ctor.prototype, Symbol.toStringTag, { value: spec.name, configurable: true });
     if (spec.exposed) {
@@ -251,6 +258,15 @@
       }});
       Object.defineProperty(Ctor.prototype, "constructor", { value: facade, configurable: true, writable: true });
       globalThis[spec.name] = facade;
+    }
+    for (const instance of semantics.unforgeable?.[spec.name] || []) {
+      for (const member of spec.members) {
+        if (member.kind !== "attribute" && member.kind !== "operation") continue;
+        const descriptor = Object.getOwnPropertyDescriptor(Ctor.prototype, member.name);
+        if (!descriptor) continue;
+        if ("value" in descriptor) descriptor.writable = false;
+        Object.defineProperty(instance, member.name, { ...descriptor, configurable: false });
+      }
     }
     installed.add(spec.name);
   }

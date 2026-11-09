@@ -3,5 +3,4 @@
  readonly attribute unsigned long length;
  getter Element? item(unsigned long index);
  getter Element? namedItem(DOMString name);
- iterable<Element>;
 };
