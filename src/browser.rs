@@ -545,19 +545,19 @@ impl Browser {
         if self.tab().is_internal() {
             return self.tab().history.can_back();
         }
-        self.tab()
-            .wega
-            .as_ref()
-            .map_or_else(|| self.view().can_go_back(), |page| page.can_back())
+        if self.is_wega() {
+            return self.tab().wega.as_ref().map_or(false, |page| page.can_back());
+        }
+        self.tab().view().map_or(false, |view| view.can_go_back())
     }
     pub(crate) fn can_go_forward(&self) -> bool {
         if self.tab().is_internal() {
             return self.tab().history.can_forward();
         }
-        self.tab()
-            .wega
-            .as_ref()
-            .map_or_else(|| self.view().can_go_forward(), |page| page.can_forward())
+        if self.is_wega() {
+            return self.tab().wega.as_ref().map_or(false, |page| page.can_forward());
+        }
+        self.tab().view().map_or(false, |view| view.can_go_forward())
     }
     pub(crate) fn history_target(&self, forward: bool) -> Option<String> {
         if self.tab().is_internal() {
@@ -1261,7 +1261,9 @@ impl Browser {
             self.window.request_redraw();
             return result;
         }
-        let view = self.view().clone();
+        let Some(view) = self.tab().view().cloned() else {
+            return Ok(false);
+        };
         let result = wega::navigation::dispatch(
             command,
             &mut crate::navigation_adapter::Navigation {

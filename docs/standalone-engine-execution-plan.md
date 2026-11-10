@@ -752,6 +752,22 @@ as targets until verified. Fix busy loops and bound caches before chasing microb
 recorded budgets; freeze/thaw, repeated navigation, close/reopen and soak tests show
 no unbounded growth. Low RSS from a crashed or incomplete page is a failed result.
 
+**Implementation status (Step 24 delivered):**
+- Isolated resource benchmarking and telemetry:
+  - Validated `scripts/browser-bench.py` and `tests/test_browser_bench.py` across compatibility and multi-tab resource profiles.
+  - All 7 capability probes pass against standalone Wega (`article`, `dom`, `timer`, `events`, `forms`, `storage`, `fetch`).
+  - Recorded process-tree RSS and CPU metrics: 1 tab (307.9 MiB median idle RSS), 5 tabs (620.9 MiB median idle RSS), 10 tabs (1006.3 MiB median idle RSS).
+- Supervisor capacity and memory quota scaling:
+  - Scaled supervisor worker limits from 8 to 32 concurrent processes in `engines/platform/src/supervision.rs`.
+  - Scaled aggregate memory budget to 8 GiB and aggregate frame budget to 2 GiB to comfortably accommodate 10+ tabs.
+- Tab loading resilience:
+  - Eliminated panics in `can_go_back` and `can_go_forward` during background tab initialization.
+  - Protected `dispatch_navigation` against missing engine views during tab switching.
+- Harness test synchronization:
+  - Updated `src/harness/engines.rs` for Wega default assertions and ComboBox labels.
+  - Verified `scripts/native-tests.py --suite engine` and `--suite webdriver` pass 100%.
+- Contract & verification: [Step 24 contract](step-24-resource-use-and-tuning.md).
+
 ### 25 — Validate release platforms, packaging and Docker
 
 **Depends on:** 23, 24.

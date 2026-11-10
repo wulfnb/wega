@@ -23,11 +23,11 @@ pub struct Budgets {
 impl Default for Budgets {
     fn default() -> Self {
         Self {
-            workers: 8,
+            workers: 32,
             worker_resident_bytes: 512 * 1024 * 1024,
-            aggregate_resident_bytes: 2 * 1024 * 1024 * 1024,
+            aggregate_resident_bytes: 8 * 1024 * 1024 * 1024,
             worker_frame_bytes: 2 * 4096 * 2160 * 4,
-            aggregate_frame_bytes: 1024 * 1024 * 1024,
+            aggregate_frame_bytes: 2 * 1024 * 1024 * 1024,
             startup_timeout: Duration::from_secs(20),
         }
     }
