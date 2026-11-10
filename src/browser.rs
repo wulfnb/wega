@@ -1462,10 +1462,12 @@ impl Browser {
                         && self.chrome.page_focused
                         && !self.modal()
                     {
-                        self.view().evaluate_javascript(
-                            "document.getElementById('search')?.focus()",
-                            |_| {},
-                        );
+                        if let Some(view) = self.tab().view() {
+                            view.evaluate_javascript(
+                                "document.getElementById('search')?.focus()",
+                                |_| {},
+                            );
+                        }
                     }
                 }
                 Event::History(owner, urls, active) => {
@@ -1937,18 +1939,20 @@ impl Browser {
             && matches!(character.as_str(), "i" | "e" | "k")
         {
             self.chrome.show_console = true;
-            if self.is_wega() {
+            if self.is_wega() || self.is_internal() {
                 self.window.request_redraw();
                 return true;
             }
-            self.tools.active = match character.as_str() {
-                "e" => crate::toolbox::Tool::Network,
-                "k" => crate::toolbox::Tool::Console,
-                _ => crate::toolbox::Tool::Inspector,
-            };
-            let view = self.view().clone();
-            self.tools.refresh(&view, &self.servo);
-            self.window.request_redraw();
+            let view = self.tab().view().cloned();
+            if let Some(view) = view {
+                self.tools.active = match character.as_str() {
+                    "e" => crate::toolbox::Tool::Network,
+                    "k" => crate::toolbox::Tool::Console,
+                    _ => crate::toolbox::Tool::Inspector,
+                };
+                self.tools.refresh(&view, &self.servo);
+                self.window.request_redraw();
+            }
             return true;
         }
         if pressed && command {
@@ -2103,8 +2107,8 @@ impl Browser {
                     {
                         self.status = Some(error);
                     }
-                } else {
-                    input::keyboard(self.view(), event, self.chrome.modifiers);
+                } else if let Some(view) = self.tab().view() {
+                    input::keyboard(view, event, self.chrome.modifiers);
                 }
                 self.pump();
                 return;
@@ -2169,26 +2173,32 @@ impl Browser {
             WindowEvent::CursorMoved { position, .. } => {
                 let was_over = self.over_page();
                 self.chrome.pointer = position;
-                if (self.over_page() || !self.chrome.pressed_buttons.is_empty())
+                if self.is_internal() || self.is_wega() {
+                    // Handled by egui or wega_ui directly
+                } else if (self.over_page() || !self.chrome.pressed_buttons.is_empty())
                     && !self.modal()
                     && !self.ui_blocks_pointer()
                 {
-                    self.view().notify_input_event(InputEvent::MouseMove(
-                        servo::MouseMoveEvent::new(self.page_point()),
-                    ));
-                    self.window.set_cursor(input::cursor(self.view().cursor()));
+                    if let Some(view) = self.tab().view() {
+                        view.notify_input_event(InputEvent::MouseMove(servo::MouseMoveEvent::new(
+                            self.page_point(),
+                        )));
+                        self.window.set_cursor(input::cursor(view.cursor()));
+                    }
                 } else if was_over {
-                    self.view()
-                        .notify_input_event(InputEvent::MouseLeftViewport(
+                    if let Some(view) = self.tab().view() {
+                        view.notify_input_event(InputEvent::MouseLeftViewport(
                             servo::MouseLeftViewportEvent::default(),
                         ));
+                    }
                 }
             }
             WindowEvent::CursorLeft { .. } => {
-                self.view()
-                    .notify_input_event(InputEvent::MouseLeftViewport(
+                if let Some(view) = self.tab().view() {
+                    view.notify_input_event(InputEvent::MouseLeftViewport(
                         servo::MouseLeftViewportEvent::default(),
                     ));
+                }
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let up = state == ElementState::Released;
@@ -2209,17 +2219,19 @@ impl Browser {
                             view.set_focused(true);
                         }
                     }
-                    self.view().notify_input_event(InputEvent::MouseButton(
-                        servo::MouseButtonEvent::new(
-                            if up {
-                                servo::MouseButtonAction::Up
-                            } else {
-                                servo::MouseButtonAction::Down
-                            },
-                            Self::mouse_button(button),
-                            self.page_point(),
-                        ),
-                    ));
+                    if let Some(view) = self.tab().view() {
+                        view.notify_input_event(InputEvent::MouseButton(
+                            servo::MouseButtonEvent::new(
+                                if up {
+                                    servo::MouseButtonAction::Up
+                                } else {
+                                    servo::MouseButtonAction::Down
+                                },
+                                Self::mouse_button(button),
+                                self.page_point(),
+                            ),
+                        ));
+                    }
                 } else if !up {
                     self.chrome.page_focused = false;
                     if let Some(view) = self.tab().view() {
@@ -2241,11 +2253,12 @@ impl Browser {
                     }
                     MouseScrollDelta::PixelDelta(p) => (p.x, p.y, servo::WheelMode::DeltaPixel),
                 };
-                self.view()
-                    .notify_input_event(InputEvent::Wheel(servo::WheelEvent::new(
+                if let Some(view) = self.tab().view() {
+                    view.notify_input_event(InputEvent::Wheel(servo::WheelEvent::new(
                         servo::WheelDelta { x, y, z: 0.0, mode },
                         self.page_point(),
                     )));
+                }
             }
             WindowEvent::PinchGesture { delta, .. } if self.over_page() && !self.modal() => {
                 let scale = self.window.scale_factor() as f32;
@@ -2253,8 +2266,9 @@ impl Browser {
                     self.chrome.pointer.x as f32 - self.chrome.page_rect.min.x * scale,
                     self.chrome.pointer.y as f32 - self.chrome.page_rect.min.y * scale,
                 );
-                self.view()
-                    .adjust_pinch_zoom((1.0 + delta as f32).max(0.01), center);
+                if let Some(view) = self.tab().view() {
+                    view.adjust_pinch_zoom((1.0 + delta as f32).max(0.01), center);
+                }
                 self.window.request_redraw();
             }
             WindowEvent::Ime(event) if self.chrome.page_focused && !self.modal() => {
@@ -2262,12 +2276,14 @@ impl Browser {
                     Ime::Preedit(text, _) => {
                         if !self.chrome.ime_composing {
                             self.chrome.ime_composing = true;
-                            self.view().notify_input_event(InputEvent::Ime(
-                                servo::ImeEvent::Composition(servo::CompositionEvent {
-                                    state: servo::CompositionState::Start,
-                                    data: String::new(),
-                                }),
-                            ));
+                            if let Some(view) = self.tab().view() {
+                                view.notify_input_event(InputEvent::Ime(
+                                    servo::ImeEvent::Composition(servo::CompositionEvent {
+                                        state: servo::CompositionState::Start,
+                                        data: String::new(),
+                                    }),
+                                ));
+                            }
                         }
                         (servo::CompositionState::Update, text)
                     }
@@ -2280,10 +2296,11 @@ impl Browser {
                         return;
                     }
                 };
-                self.view()
-                    .notify_input_event(InputEvent::Ime(servo::ImeEvent::Composition(
+                if let Some(view) = self.tab().view() {
+                    view.notify_input_event(InputEvent::Ime(servo::ImeEvent::Composition(
                         servo::CompositionEvent { state, data },
                     )));
+                }
             }
             WindowEvent::ThemeChanged(_) => {
                 if (cfg!(target_os = "windows")
@@ -2341,8 +2358,10 @@ impl Browser {
         }
         self.flush_accessibility(&mut gui);
         // Servo may bind its framebuffer while painting. Restore the window target before egui.
-        if self.tab().crash.is_none() && !self.is_wega() {
-            self.view().paint();
+        if self.tab().crash.is_none() && !self.is_wega() && !self.is_internal() {
+            if let Some(view) = self.tab().view() {
+                view.paint();
+            }
         }
         self.context.prepare_for_rendering();
         gui.painter.clear(
@@ -2550,23 +2569,25 @@ impl Browser {
             (rect.width() * scale).round().max(1.0) as u32,
             (rect.height() * scale).round().max(1.0) as u32,
         );
-        if self.live().surface.size() != size {
-            self.view().resize(size);
-        }
-        if let Some(blit) = self.live().surface.render_to_parent_callback() {
-            ui.painter().add(egui::PaintCallback {
-                rect,
-                callback: Arc::new(egui_glow::CallbackFn::new(move |info, painter| {
-                    let viewport = info.viewport_in_pixels();
-                    blit(
-                        painter.gl(),
-                        euclid::default::Rect::new(
-                            euclid::point2(viewport.left_px, viewport.from_bottom_px),
-                            euclid::size2(viewport.width_px, viewport.height_px),
-                        ),
-                    );
-                })),
-            });
+        if let Some(live) = self.tab().live.as_ref() {
+            if live.surface.size() != size {
+                live.view.resize(size);
+            }
+            if let Some(blit) = live.surface.render_to_parent_callback() {
+                ui.painter().add(egui::PaintCallback {
+                    rect,
+                    callback: Arc::new(egui_glow::CallbackFn::new(move |info, painter| {
+                        let viewport = info.viewport_in_pixels();
+                        blit(
+                            painter.gl(),
+                            euclid::default::Rect::new(
+                                euclid::point2(viewport.left_px, viewport.from_bottom_px),
+                                euclid::size2(viewport.width_px, viewport.height_px),
+                            ),
+                        );
+                    })),
+                });
+            }
         }
         if !self.fullscreen {
             crate::ui::page_corners(ui.painter(), rect);

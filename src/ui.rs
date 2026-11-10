@@ -832,8 +832,8 @@ impl Browser {
                         if let Some(tab) = self.tab_mut().wega.as_mut() {
                             let _ = tab.send(wega::engine_protocol::Command::Evaluate(script.to_string()));
                         }
-                    } else {
-                        self.view().evaluate_javascript(script, |_| {});
+                    } else if let Some(view) = self.tab().view() {
+                        view.evaluate_javascript(script, |_| {});
                     }
                     ui.close();
                 }
@@ -880,8 +880,8 @@ impl Browser {
                             if let Some(tab) = self.tab_mut().wega.as_mut() {
                                 let _ = tab.send(wega::engine_protocol::Command::Evaluate(script.to_string()));
                             }
-                        } else {
-                            self.view().evaluate_javascript(script, |_| {});
+                        } else if let Some(view) = self.tab().view() {
+                            view.evaluate_javascript(script, |_| {});
                         }
                         ui.close();
                     }
