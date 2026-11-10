@@ -686,6 +686,15 @@ requiring an explicit scope decision before retirement, not a silent success.
 workers; unsupported commands return errors; closing/navigating a target invalidates
 handles. Loopback browser content cannot invoke privileged debugging operations.
 
+**Implementation status (Step 22 delivered):**
+- W3C WebDriver bridge (`src/automation.rs`): All baseline WebDriver commands (`NewSession`, `DeleteSession`, `Status`, `GetWindowHandle`, `GetWindowHandles`, `SwitchToWindow`, `GetCurrentUrl`, `GetTitle`, `Get`, `GoBack`, `GoForward`, `Refresh`, `ExecuteScript`, `GetPageSource`, `TakeScreenshot`, `Extension`) operate identically across Servo and Wega engines. Unsupported operations return W3C `unsupported operation` errors without crashing or disconnecting.
+- Real load completion & cancellation: `PendingNavigation` tracks both Servo webviews and Wega tabs with correlation via `wega::navigation::Completion`. Closing or navigating invalidates handles and cancels pending navigations cleanly.
+- Synchronous JavaScript evaluation bridge: `evaluate_sync_parts` and `Page::eval_parts()` dispatch requests to the worker process and await results within bounded timeouts without holding state locks.
+- Viewport screenshot capture: Encodes RGBA8 frames into standard base64 PNGs.
+- Native developer tools UI (`src/devtools_ui.rs`, `src/tool_window.rs`, `src/browser.rs`): Renders engine diagnostics and metrics panel for Wega tabs with safe handling for internal and unloaded tabs.
+- Verification: `tests/webdriver_smoke.py` passes completely against both engines; all workspace tests pass; `cargo check --bin wega` zero warnings/errors.
+- Contract & verification: [Step 22 contract](step-22-developer-tools-and-automation.md).
+
 ### 23 — Make the standalone application and unified workspace the default
 
 **Depends on:** 01–22 and no unresolved required parity rows.

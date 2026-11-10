@@ -138,6 +138,12 @@
       "acceptance": "Origin-scoped permissions registry with Permissions-Policy enforcement, opaque origin denial, pending prompt queuing and document navigation cancellation. Protocol version 21 with Capability::PermissionsRevocation, Command::AnswerPermission, Command::RevokePermission, Command::ExitFullscreen, and typed content events for notifications, prompts, fullscreen, protocol registrations, and external apps. Native device lifecycle tracking for MediaStreamTrack audio/video capture and WakeLock sentinels with acknowledged embedder revocation tearing down active tracks (readyState = 'ended', firing 'ended') and releasing wake locks (released = true, firing 'release'). Full Web API semantics for navigator.permissions, Notification, navigator.mediaDevices.getUserMedia, MediaStreamTrack, MediaStream, navigator.wakeLock, screen.orientation, and requestFullscreen/exitFullscreen requiring user activation.",
       "acceptance_verified": true,
       "contract": "docs/step-21-permissions-and-native-capabilities.md"
+    },
+    "22": {
+      "implementation": "complete",
+      "acceptance": "W3C WebDriver support across Servo and Wega runtimes: session/window management, engine navigation (Get, GoBack, GoForward, Refresh) with load completion correlation, ExecuteScript with JSON argument serialization and exception mapping, GetPageSource, GetTitle, TakeScreenshot viewport PNG encoding, and /wega/resources extension reporting live worker process metrics. Native developer tools panel displaying URL, Title, PID, Worker RSS, JS Heap, DOM Nodes, Loading, Lifecycle phase, and Compatibility for Wega tabs. Safe guards for internal/unloaded tabs preventing panics. Verified with tests/webdriver_smoke.py against both engines.",
+      "acceptance_verified": true,
+      "contract": "docs/step-22-developer-tools-and-automation.md"
     }
   },
   "substeps": {

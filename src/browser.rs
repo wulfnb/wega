@@ -533,10 +533,13 @@ impl Browser {
         url::Url::parse(&self.tab().url()).ok()
     }
     pub(crate) fn page_zoom(&self) -> f32 {
+        if self.tab().is_internal() {
+            return 1.0;
+        }
         self.tab()
             .wega
             .as_ref()
-            .map_or_else(|| self.view().page_zoom(), |page| page.zoom)
+            .map_or_else(|| self.tab().view().map_or(1.0, |v| v.page_zoom()), |page| page.zoom)
     }
     pub(crate) fn can_go_back(&self) -> bool {
         if self.tab().is_internal() {
@@ -877,7 +880,7 @@ impl Browser {
             || self
                 .automation_navigation
                 .as_ref()
-                .is_some_and(|p| p.owner == id)
+                .is_some_and(|p| p.owner == Some(id))
     }
 
     /// Unload a background tab, keeping its address, title and favicon.
@@ -1038,6 +1041,17 @@ impl Browser {
         }
         if let Some(id) = self.session.tabs()[index].id() {
             self.forget_view(id);
+        }
+        let closed_tab = &self.session.tabs()[index];
+        if let Some(pending) = &self.automation_navigation {
+            if pending.tab_key == closed_tab.key || (closed_tab.id().is_some() && pending.owner == closed_tab.id()) {
+                if let Some(pending) = self.automation_navigation.take() {
+                    let _ = pending.reply.send(Err(crate::automation::error(
+                        webdriver::error::ErrorStatus::NoSuchWindow,
+                        "Window was closed",
+                    )));
+                }
+            }
         }
         self.session.apply(Command::Close(index));
         if self.session.tabs().is_empty() {
@@ -1904,15 +1918,11 @@ impl Browser {
             && (state.shift_key() || state.alt_key())
             && matches!(character.as_str(), "i" | "e" | "k")
         {
+            self.chrome.show_console = true;
             if self.is_wega() {
-                self.notify(
-                    crate::ux::Severity::Info,
-                    "Page developer tools require Servo in this version.",
-                    None,
-                );
+                self.window.request_redraw();
                 return true;
             }
-            self.chrome.show_console = true;
             self.tools.active = match character.as_str() {
                 "e" => crate::toolbox::Tool::Network,
                 "k" => crate::toolbox::Tool::Console,

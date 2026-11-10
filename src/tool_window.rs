@@ -56,14 +56,6 @@ impl Browser {
         }
     }
     pub fn toggle_developer_tools(&mut self) {
-        if self.is_wega() {
-            self.notify(
-                crate::ux::Severity::Info,
-                "Page developer tools require Servo in this version.",
-                None,
-            );
-            return;
-        }
         if self.chrome.show_console {
             self.close_developer_tools();
         } else {

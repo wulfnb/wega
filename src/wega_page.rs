@@ -489,7 +489,47 @@ fn accept_frame(
         state.frame = Some((width, height, bytes));
     }
 }
+pub(crate) fn evaluate_sync_parts(
+    requests: &mpsc::SyncSender<Request>,
+    state: &Arc<Mutex<Snapshot>>,
+    source: &str,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    let (request, context) = {
+        let mut s = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !s.lifecycle.accepts_requests() {
+            return Err("Content worker is stopped".into());
+        }
+        let context = s.requests.begin(RequestKind::Evaluate, timeout).map_err(|e| e.message)?;
+        s.interacted = true;
+        s.evaluated = None;
+        (Request::EvaluateDocument { context, source: source.to_string() }, context)
+    };
+    requests.send(request).map_err(|e| e.to_string())?;
+
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        {
+            let mut s = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(pos) = s.evaluations.iter().position(|(c, _)| *c == context) {
+                let (_, res) = s.evaluations.remove(pos).unwrap();
+                return res.map_err(|e| e.message);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    Err("Evaluation timed out".into())
+}
+
 impl Page {
+    pub fn eval_parts(&self) -> Option<(mpsc::SyncSender<Request>, Arc<Mutex<Snapshot>>)> {
+        self.requests.as_ref().map(|r| (r.clone(), self.state.clone()))
+    }
+    #[allow(dead_code)]
+    pub fn evaluate_sync(&self, source: &str, timeout: std::time::Duration) -> Result<String, String> {
+        let requests = self.requests.as_ref().ok_or("No request channel")?;
+        evaluate_sync_parts(requests, &self.state, source, timeout)
+    }
     pub fn download_cookies(&self, url: &str) -> Result<String, String> {
         self.broker
             .download_cookies(&url::Url::parse(url).map_err(|error| error.to_string())?)
