@@ -268,6 +268,7 @@ impl Browser {
                 }
                 let is_wega = self.is_wega();
                 let is_internal = url.scheme() == "wega";
+                let initial_internal = self.tab().is_internal();
                 let owner = self.tab().id();
                 let tab_key = self.tab().key;
                 let mut pending = PendingNavigation::new(
@@ -277,7 +278,7 @@ impl Browser {
                     reply,
                     self.tab().url(),
                 );
-                if is_wega || is_internal {
+                if is_wega || is_internal || initial_internal {
                     pending.completion.started();
                 }
                 self.automation_navigation = Some(pending);
@@ -287,6 +288,7 @@ impl Browser {
                     && pending.owner.is_none()
                 {
                     pending.owner = current_owner;
+                    pending.completion.started();
                 }
                 self.automation_poll();
                 return;
@@ -563,11 +565,15 @@ impl PendingNavigation {
 }
 impl Browser {
     pub fn automation_load_status(&mut self, view: servo::WebViewId, status: servo::LoadStatus) {
-        if let Some(pending) = &mut self.automation_navigation
-            && pending.owner == Some(view)
-            && status == servo::LoadStatus::Started
-        {
-            pending.completion.started();
+        if let Some(pending) = &mut self.automation_navigation {
+            if (pending.owner == Some(view) || pending.owner.is_none())
+                && status == servo::LoadStatus::Started
+            {
+                pending.completion.started();
+            }
+            if pending.owner.is_none() {
+                pending.owner = Some(view);
+            }
         }
     }
     pub fn automation_traversal(&mut self, view: servo::WebViewId, id: &servo::TraversalId) {

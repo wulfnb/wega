@@ -113,8 +113,8 @@ jobs:
         run: cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test inherited_broker a_required_worker_runs_jit_storage_cookies_and_frames_through_grants -- --ignored --nocapture
       - name: Engine regression suite
         run: |
-          cargo test --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets
-          WEGA_TEST_BROKER=1 cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test security --test forms --test scripts --test documents --test history
+          cargo test --locked --workspace --manifest-path engines/Cargo.toml --target-dir target/wega-engine --all-targets -- --test-threads=1
+          WEGA_TEST_BROKER=1 cargo test --locked --manifest-path engines/Cargo.toml --target-dir target/wega-engine -p wega-engine --test security --test forms --test scripts --test documents --test history -- --test-threads=1
       - name: Formatting and lints
         run: |
           cargo fmt --manifest-path engines/Cargo.toml --all --check
