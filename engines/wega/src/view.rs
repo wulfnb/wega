@@ -1160,6 +1160,24 @@ impl View {
         self.dirty = true;
         (active, total)
     }
+    pub fn notify_media_session_action(&mut self, action: wega_protocol::media::MediaSessionAction) {
+        let action_str = match action {
+            wega_protocol::media::MediaSessionAction::Play => "play",
+            wega_protocol::media::MediaSessionAction::Pause => "pause",
+            wega_protocol::media::MediaSessionAction::Stop => "stop",
+            wega_protocol::media::MediaSessionAction::SeekBackward => "seekbackward",
+            wega_protocol::media::MediaSessionAction::SeekForward => "seekforward",
+            wega_protocol::media::MediaSessionAction::PreviousTrack => "previoustrack",
+            wega_protocol::media::MediaSessionAction::NextTrack => "nexttrack",
+            wega_protocol::media::MediaSessionAction::SkipAd => "skipad",
+            wega_protocol::media::MediaSessionAction::SeekTo { .. } => "seekto",
+        };
+        let js = format!(
+            "(function() {{                 if (typeof navigator !== \"undefined\" && navigator.mediaSession && navigator.mediaSession._handlers) {{                     const h = navigator.mediaSession._handlers[\"{}\"];                     if (typeof h === \"function\") {{ h({{ action: \"{}\" }}); }}                 }}             }})()",
+            action_str, action_str
+        );
+        let _ = self.evaluate_json(&js);
+    }
     pub fn post_frame_message(
         &mut self,
         _target: FrameId,

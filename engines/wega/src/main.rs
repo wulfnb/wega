@@ -1179,6 +1179,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Command::FindInPage { query, backwards, case_sensitive } => {
                     view.find_in_page(&query, backwards, case_sensitive);
                 }
+                Command::MediaSessionAction(action) => {
+                    view.notify_media_session_action(action);
+                }
             },
         }
     }

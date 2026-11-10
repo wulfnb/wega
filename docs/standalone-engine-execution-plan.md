@@ -644,6 +644,7 @@ FFmpeg/VAAPI names alone do not supply a complete web media stack.
 **Done when:** actual playback/seek/pause/teardown and media-session tests pass per
 platform, including software fallback and packaged codec closure. Report hardware
 acceleration separately; physical OS media controls require their own evidence.
+- Contract & verification: [Step 20 contract](step-20-media-playback-and-audio.md).
 
 ### 21 — Complete permissions and native/device capabilities
 

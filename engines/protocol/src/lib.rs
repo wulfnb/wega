@@ -9,7 +9,8 @@ pub mod lifecycle;
 pub mod queue;
 pub mod requests;
 pub mod storage;
-pub const VERSION: u32 = 16;
+pub mod media;
+pub const VERSION: u32 = 20;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -80,6 +81,7 @@ pub enum ContentEvent {
         number_of_matches: u32,
         query: String,
     },
+    MediaSession(media::MediaSessionEvent),
 }
 
 pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent) -> Event {
@@ -88,6 +90,9 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
             ContentEvent::OpenWindow(url)
         }
         ContentEvent::ScriptStopped(reason) if version < 14 => ContentEvent::Notice(reason),
+        ContentEvent::MediaSession(_) if version < 20 => {
+            ContentEvent::Notice("Media session update".into())
+        }
         event => event,
     };
     if version >= 9 {
@@ -130,6 +135,7 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
         ContentEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
             Event::Notice(format!("Find {query}: {active_match_ordinal}/{number_of_matches}"))
         }
+        ContentEvent::MediaSession(_) => Event::Notice("Media session update".into()),
     }
 }
 
@@ -163,6 +169,7 @@ pub enum Capability {
     ScriptRecovery,
     SiteIsolationFrames,
     AuthoritativeStorage,
+    MediaPlayback,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -182,6 +189,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::ScriptRecovery,
     Capability::SiteIsolationFrames,
     Capability::AuthoritativeStorage,
+    Capability::MediaPlayback,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,6 +264,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     | Capability::ScriptRecovery => 14,
                     Capability::SiteIsolationFrames => 15,
                     Capability::AuthoritativeStorage => 16,
+                    Capability::MediaPlayback => 20,
                 }
         })
         .collect()
@@ -425,6 +434,7 @@ pub enum Command {
         target_origin: Option<String>,
         message: String,
     },
+    MediaSessionAction(media::MediaSessionAction),
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
@@ -881,8 +891,36 @@ mod tests {
     }
     #[test]
     fn authoritative_storage_capability_and_version() {
-        assert_eq!(VERSION, 16);
+        assert_eq!(VERSION, 20);
         assert!(capabilities(16).contains(&Capability::AuthoritativeStorage));
         assert!(!capabilities(15).contains(&Capability::AuthoritativeStorage));
+        assert!(capabilities(20).contains(&Capability::MediaPlayback));
+        assert!(!capabilities(19).contains(&Capability::MediaPlayback));
+    }
+    #[test]
+    fn media_session_command_and_event_transport() {
+        let action_cmd: Command = serde_json::from_str(r#"{"MediaSessionAction":"Play"}"#).unwrap();
+        assert!(matches!(action_cmd, Command::MediaSessionAction(media::MediaSessionAction::Play)));
+
+        let seek_cmd: Command = serde_json::from_str(r#"{"MediaSessionAction":{"SeekTo":{"seek_time":12.5,"fast_seek":false}}}"#).unwrap();
+        match seek_cmd {
+            Command::MediaSessionAction(media::MediaSessionAction::SeekTo { seek_time, fast_seek }) => {
+                assert_eq!(seek_time, 12.5);
+                assert!(!fast_seek);
+            }
+            _ => panic!("Expected SeekTo"),
+        }
+
+        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
+        let meta_event = content_event(VERSION, context, ContentEvent::MediaSession(media::MediaSessionEvent::SetMetadata(media::MediaMetadata {
+            title: "Test Track".into(),
+            artist: "Artist".into(),
+            album: "Album".into(),
+            artwork: vec![],
+        })));
+        assert!(matches!(meta_event, Event::Content { event: ContentEvent::MediaSession(media::MediaSessionEvent::SetMetadata(ref m)), .. } if m.title == "Test Track"));
+
+        let downgraded = content_event(19, context, ContentEvent::MediaSession(media::MediaSessionEvent::PlaybackStateChange(media::MediaSessionPlaybackState::Playing)));
+        assert!(matches!(downgraded, Event::Content { event: ContentEvent::Notice(ref s), .. } if s.contains("Media session")));
     }
 }

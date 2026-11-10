@@ -262,6 +262,9 @@
       if (!event._stopped) {
         invoke(this, true, 2);
         if (!event._immediate) invoke(this, false, 2);
+        if (!event._immediate && typeof this["on" + event.type] === "function") {
+          try { this["on" + event.type].call(this, event); } catch (error) { report(error); }
+        }
       }
       if (event.bubbles)
         for (let i = 1; i < path.length && !event._stopped; i++)
@@ -3266,6 +3269,425 @@
     }
   }
   const screen = new Screen();
+  class MediaError {
+    constructor(code, message) {
+      this.code = code;
+      this.message = message || "";
+    }
+    static get MEDIA_ERR_ABORTED() { return 1; }
+    static get MEDIA_ERR_NETWORK() { return 2; }
+    static get MEDIA_ERR_DECODE() { return 3; }
+    static get MEDIA_ERR_SRC_NOT_SUPPORTED() { return 4; }
+  }
+
+  class TimeRanges {
+    constructor(ranges = []) {
+      this._ranges = ranges;
+    }
+    get length() {
+      return this._ranges.length;
+    }
+    start(index) {
+      if (index < 0 || index >= this._ranges.length) {
+        fail("IndexSizeError", "TimeRanges index out of range");
+      }
+      return this._ranges[index].start;
+    }
+    end(index) {
+      if (index < 0 || index >= this._ranges.length) {
+        fail("IndexSizeError", "TimeRanges index out of range");
+      }
+      return this._ranges[index].end;
+    }
+  }
+
+  class HTMLMediaElement extends HTMLElement {
+    static get NETWORK_EMPTY() { return 0; }
+    static get NETWORK_IDLE() { return 1; }
+    static get NETWORK_LOADING() { return 2; }
+    static get NETWORK_NO_SOURCE() { return 3; }
+
+    static get HAVE_NOTHING() { return 0; }
+    static get HAVE_METADATA() { return 1; }
+    static get HAVE_CURRENT_DATA() { return 2; }
+    static get HAVE_FUTURE_DATA() { return 3; }
+    static get HAVE_ENOUGH_DATA() { return 4; }
+
+    _ensureHost() {
+      if (!this._mediaId) {
+        const kind = this.localName === "video" ? "video" : "audio";
+        this._mediaId = host("mediaCreate", kind);
+      }
+      return this._mediaId;
+    }
+
+    _ensureLoaded() {
+      if (!this._mediaId && (this.getAttribute("src") || this.src)) {
+        this.load();
+      }
+    }
+
+    _syncFromHost() {
+      this._ensureLoaded();
+      if (!this._mediaId) return;
+      try {
+        const state = host("mediaGetState", String(this._mediaId));
+        if (state) {
+          this._currentTime = state.currentTime;
+          this._duration = state.duration;
+          this._paused = state.paused;
+          this._ended = state.ended;
+          this._seeking = state.seeking;
+          this._playbackRate = state.playbackRate;
+          this._volume = state.volume;
+          this._muted = state.muted;
+          this._loop = state.loop;
+          this._readyState = state.readyState;
+          this._networkState = state.networkState;
+          if (state.videoWidth) this._videoWidth = state.videoWidth;
+          if (state.videoHeight) this._videoHeight = state.videoHeight;
+          if (state.error) {
+            this._error = new MediaError(state.error.code, state.error.message);
+          } else {
+            this._error = null;
+          }
+          if (state.duration > 0) {
+            this._buffered = new TimeRanges([{ start: 0, end: state.duration }]);
+          }
+        }
+      } catch {}
+    }
+
+    get src() {
+      return this.getAttribute("src") || "";
+    }
+    set src(value) {
+      this.setAttribute("src", String(value));
+      this.load();
+    }
+
+    get currentSrc() {
+      const s = this.src;
+      if (!s) return "";
+      try {
+        return new URL(s, location.href).href;
+      } catch {
+        return s;
+      }
+    }
+
+    get currentTime() {
+      this._syncFromHost();
+      return this._currentTime;
+    }
+    set currentTime(value) {
+      const t = Math.max(0, Number(value) || 0);
+      this._currentTime = t;
+      this._ensureHost();
+      host("mediaSeek", String(this._mediaId), String(t));
+      this.dispatchEvent(new Event("seeking"));
+      this.dispatchEvent(new Event("timeupdate"));
+      this.dispatchEvent(new Event("seeked"));
+    }
+
+    get duration() {
+      this._syncFromHost();
+      return this._duration || NaN;
+    }
+
+    get paused() {
+      this._syncFromHost();
+      return this._paused;
+    }
+
+    get ended() {
+      this._syncFromHost();
+      return this._ended;
+    }
+
+    get seeking() {
+      return this._seeking;
+    }
+
+    get volume() {
+      return this._volume;
+    }
+    set volume(value) {
+      const v = Number(value);
+      if (isNaN(v) || v < 0 || v > 1) {
+        fail("IndexSizeError", "Volume must be in the range [0.0, 1.0]");
+      }
+      this._volume = v;
+      this._ensureHost();
+      host("mediaSetVolume", String(this._mediaId), String(v));
+      this.dispatchEvent(new Event("volumechange"));
+    }
+
+    get muted() {
+      return this.hasAttribute("muted") || this._muted;
+    }
+    set muted(value) {
+      this._muted = Boolean(value);
+      if (this._muted) {
+        this.setAttribute("muted", "");
+      } else {
+        this.removeAttribute("muted");
+      }
+      this._ensureHost();
+      host("mediaSetMuted", String(this._mediaId), String(this._muted));
+      this.dispatchEvent(new Event("volumechange"));
+    }
+
+    get loop() {
+      return this.hasAttribute("loop") || this._loop;
+    }
+    set loop(value) {
+      this._loop = Boolean(value);
+      if (this._loop) this.setAttribute("loop", "");
+      else this.removeAttribute("loop");
+      this._ensureHost();
+      host("mediaSetLoop", String(this._mediaId), String(this._loop));
+    }
+
+    get autoplay() {
+      return this.hasAttribute("autoplay") || this._autoplay;
+    }
+    set autoplay(value) {
+      this._autoplay = Boolean(value);
+      if (this._autoplay) this.setAttribute("autoplay", "");
+      else this.removeAttribute("autoplay");
+    }
+
+    get controls() {
+      return this.hasAttribute("controls") || this._controls;
+    }
+    set controls(value) {
+      this._controls = Boolean(value);
+      if (this._controls) this.setAttribute("controls", "");
+      else this.removeAttribute("controls");
+    }
+
+    get playbackRate() {
+      return this._playbackRate;
+    }
+    set playbackRate(value) {
+      this._playbackRate = Number(value) || 1.0;
+      this._ensureHost();
+      host("mediaSetRate", String(this._mediaId), String(this._playbackRate));
+      this.dispatchEvent(new Event("ratechange"));
+    }
+
+    get defaultPlaybackRate() {
+      return this._defaultPlaybackRate;
+    }
+    set defaultPlaybackRate(value) {
+      this._defaultPlaybackRate = Number(value) || 1.0;
+    }
+
+    get readyState() {
+      this._syncFromHost();
+      return this._readyState;
+    }
+
+    get networkState() {
+      this._syncFromHost();
+      return this._networkState;
+    }
+
+    get error() {
+      this._syncFromHost();
+      return this._error;
+    }
+
+    get buffered() {
+      this._syncFromHost();
+      return this._buffered;
+    }
+
+    canPlayType(type) {
+      return host("mediaCanPlayType", String(type)) || "";
+    }
+
+    load() {
+      this._ensureHost();
+      const s = this.src;
+      this._networkState = HTMLMediaElement.NETWORK_LOADING;
+      this.dispatchEvent(new Event("loadstart"));
+
+      if (!s) {
+        this._networkState = HTMLMediaElement.NETWORK_NO_SOURCE;
+        return;
+      }
+
+      try {
+        const fullUrl = this.currentSrc;
+        host("mediaLoad", String(this._mediaId), fullUrl);
+        this._syncFromHost();
+
+        if (this._error) {
+          this.dispatchEvent(new Event("error"));
+          return;
+        }
+
+        this.dispatchEvent(new Event("loadedmetadata"));
+        this.dispatchEvent(new Event("loadeddata"));
+        this.dispatchEvent(new Event("canplay"));
+        this.dispatchEvent(new Event("canplaythrough"));
+
+        if (this.autoplay) {
+          this.play().catch(() => {});
+        }
+      } catch (e) {
+        this._error = new MediaError(MediaError.MEDIA_ERR_DECODE, String(e.message || e));
+        this._networkState = HTMLMediaElement.NETWORK_NO_SOURCE;
+        this.dispatchEvent(new Event("error"));
+      }
+    }
+
+    play() {
+      this._ensureHost();
+      if (!this._duration && this.src) {
+        this.load();
+      }
+      if (this._error) {
+        return Promise.reject(new Error(this._error.message));
+      }
+      try {
+        host("mediaPlay", String(this._mediaId));
+        this._paused = false;
+        this.dispatchEvent(new Event("play"));
+        this.dispatchEvent(new Event("playing"));
+
+        if (!this._timer) {
+          this._timer = setInterval(() => {
+            this._syncFromHost();
+            if (!this._paused) {
+              this.dispatchEvent(new Event("timeupdate"));
+            }
+            if (this._ended) {
+              clearInterval(this._timer);
+              this._timer = null;
+              this.dispatchEvent(new Event("ended"));
+            }
+          }, 100);
+        }
+
+        return Promise.resolve();
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    }
+
+    pause() {
+      this._ensureHost();
+      host("mediaPause", String(this._mediaId));
+      this._paused = true;
+      if (this._timer) {
+        clearInterval(this._timer);
+        this._timer = null;
+      }
+      this.dispatchEvent(new Event("pause"));
+    }
+
+    fastSeek(time) {
+      this.currentTime = time;
+    }
+  }
+
+  class HTMLAudioElement extends HTMLMediaElement {}
+
+
+  class HTMLVideoElement extends HTMLMediaElement {
+    get videoWidth() {
+      this._syncFromHost();
+      return this._videoWidth || (this.getAttribute("width") ? parseInt(this.getAttribute("width"), 10) : 0);
+    }
+    get videoHeight() {
+      this._syncFromHost();
+      return this._videoHeight || (this.getAttribute("height") ? parseInt(this.getAttribute("height"), 10) : 0);
+    }
+    get poster() {
+      return this.getAttribute("poster") || "";
+    }
+    set poster(val) {
+      this.setAttribute("poster", String(val));
+    }
+    get playsInline() {
+      return this.hasAttribute("playsinline");
+    }
+    set playsInline(val) {
+      if (val) this.setAttribute("playsinline", "");
+      else this.removeAttribute("playsinline");
+    }
+  }
+
+  class MediaMetadata {
+    constructor(init = {}) {
+      this.title = String(init.title || "");
+      this.artist = String(init.artist || "");
+      this.album = String(init.album || "");
+      this.artwork = Array.isArray(init.artwork) ? init.artwork : [];
+    }
+  }
+
+  class MediaSession {
+    constructor() {
+      this._metadata = null;
+      this._playbackState = "none";
+      this._positionState = null;
+      this._handlers = {};
+    }
+
+    get metadata() {
+      return this._metadata;
+    }
+    set metadata(val) {
+      this._metadata = val instanceof MediaMetadata ? val : new MediaMetadata(val || {});
+      try {
+        host("mediaSessionEvent", "metadata", JSON.stringify({
+          title: this._metadata.title,
+          artist: this._metadata.artist,
+          album: this._metadata.album,
+          artwork: this._metadata.artwork,
+        }));
+      } catch {}
+    }
+
+    get playbackState() {
+      return this._playbackState;
+    }
+    set playbackState(val) {
+      const valid = ["none", "paused", "playing"];
+      const s = valid.includes(val) ? val : "none";
+      this._playbackState = s;
+      try {
+        host("mediaSessionEvent", "playbackState", JSON.stringify(s));
+      } catch {}
+    }
+
+    setActionHandler(action, handler) {
+      const act = String(action || "").toLowerCase();
+      if (typeof handler === "function") {
+        this._handlers[act] = handler;
+      } else {
+        delete this._handlers[act];
+      }
+    }
+
+    setPositionState(state = {}) {
+      this._positionState = {
+        duration: Number(state.duration) || 0,
+        playbackRate: Number(state.playbackRate) || 1.0,
+        position: Number(state.position) || 0,
+      };
+      try {
+        host("mediaSessionEvent", "positionState", JSON.stringify(this._positionState));
+      } catch {}
+    }
+  }
+
+  const mediaSessionInstance = new MediaSession();
+
   const htmlConstructors = {
     iframe: HTMLIFrameElement,
     input: HTMLInputElement,
@@ -3277,6 +3699,8 @@
     a: HTMLAnchorElement,
     img: HTMLImageElement,
     canvas: HTMLCanvasElement,
+    video: HTMLVideoElement,
+    audio: HTMLAudioElement,
     script: HTMLScriptElement,
     template: HTMLTemplateElement,
     slot: HTMLSlotElement,
@@ -4517,6 +4941,33 @@
   }
   document = wrap(host("root"));
   document.readyState = "loading";
+  document.addEventListener("error", (event) => {
+    const media = event.target;
+    if (!media || !["VIDEO", "AUDIO"].includes(media.tagName) || !media.error || media.error.code === 1) return;
+    const existing = media.nextElementSibling;
+    if (existing && existing.hasAttribute("data-wega-media-message")) existing.remove();
+    const panel = document.createElement("div");
+    panel.setAttribute("data-wega-media-message", "");
+    panel.setAttribute("role", "status");
+    panel.style.cssText = "font:14px system-ui;padding:12px;margin:8px 0;border:1px solid currentColor;border-radius:8px;max-width:38rem";
+    const message = document.createElement("p");
+    message.textContent = media.error.code === 2
+      ? "The media could not be downloaded. Check your connection or try again."
+      : "This media could not be played. Its format may be unsupported, or the file may be damaged.";
+    panel.append(message);
+    try {
+      const url = new URL(media.currentSrc || media.src || "about:blank", location.href);
+      if (["http:", "https:"].includes(url.protocol)) {
+        const download = document.createElement("a");
+        download.href = url.href;
+        download.setAttribute("download", "");
+        download.textContent = "Download media to play in another app";
+        panel.append(download);
+      }
+    } catch {}
+    media.after(panel);
+  }, true);
+
   connected.set(document._id, document);
   const globalEvents = new BaseTarget();
   class Window extends BaseTarget {
@@ -4589,6 +5040,14 @@
     HTMLAnchorElement,
     HTMLImageElement,
     HTMLCanvasElement,
+    HTMLMediaElement,
+    HTMLAudioElement,
+    HTMLVideoElement,
+    Audio: HTMLAudioElement,
+    MediaError,
+    TimeRanges,
+    MediaMetadata,
+    MediaSession,
     HTMLScriptElement,
     HTMLTemplateElement,
     HTMLSlotElement,
@@ -4675,6 +5134,9 @@
           return false;
         }
       },
+      get mediaSession() {
+        return mediaSessionInstance;
+      },
       get serviceWorker() {
         return web ? web.serviceWorkerContainer : undefined;
       },
@@ -4696,6 +5158,11 @@
         },
       },
     },
+    Audio: function Audio(src) {
+      const audio = document.createElement("audio");
+      if (src !== undefined) audio.src = src;
+      return audio;
+    },
     Image: function Image(width, height) {
       const image = document.createElement("img");
       if (width !== undefined) image.setAttribute("width", String(width));
@@ -4713,7 +5180,7 @@
       if (url === "" || url === "about:blank") return null;
       if (!host("open", String(url))) return null;
       // The new page runs in its own engine; this handle cannot reach it.
-      return {
+return {
         closed: false,
         close() {},
         focus() {},

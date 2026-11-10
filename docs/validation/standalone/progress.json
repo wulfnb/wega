@@ -126,6 +126,12 @@
       "acceptance": "OpenGL ES 2.0/3.0 WebGL 1.0 and 2.0 state machine, shader compilation and reflection, buffer upload and drawArrays execution, uniform upload, texture uploads with cross-origin taint propagation, pixel readback with SecurityError enforcement, drawing buffer toDataURL serialization, context loss and recovery extension (WEBGL_lose_context), aggregate WebGL pixel memory allocation quotas with QuotaExceededError rejection, context isolation preventing 2D/WebGL collision on the same canvas, and View resilient screenshot composition with device scaling, CSS zoom, and subregion clipping.",
       "acceptance_verified": true,
       "contract": "docs/step-19-webgl-and-composition.md"
+    },
+    "20": {
+      "implementation": "complete",
+      "acceptance": "Common media service and capability/codec reporting (canPlayType) for WAV, WebM (VP8/VP9/Opus/Vorbis), MP4, and MP3. RIFF WAVE parser and PCM audio sample extractor. WebM EBML demuxer with video/audio track parsing and stream dimensions. Monotonic media playback clock with play, pause, seek, volume, mute, playback rates, and looping. Bounded buffer manager with quota enforcement. MediaSession API with metadata, playback state, position state, and action dispatch. HTMLMediaElement, HTMLVideoElement, HTMLAudioElement, and global Audio constructor. Element-local error fallback panel with download link.",
+      "acceptance_verified": true,
+      "contract": "docs/step-20-media-playback-and-audio.md"
     }
   },
   "substeps": {

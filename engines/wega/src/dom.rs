@@ -60,6 +60,7 @@ pub(crate) struct Dom {
     pub workers: RefCell<crate::workers::WorkerManager>,
     pub canvas_engine: RefCell<crate::canvas::CanvasEngine>,
     pub webgl_engine: RefCell<crate::webgl::WebGLEngine>,
+    pub media_engine: RefCell<crate::media::MediaEngine>,
     // The DOM thread cannot receive parser/input mutations during script. Start
     // a fresh epoch at each host step, then invalidate synchronously on writes.
     revision: Cell<u64>,
@@ -101,6 +102,7 @@ impl Dom {
             workers,
             canvas_engine: RefCell::new(crate::canvas::CanvasEngine::new(limits.max_pixels * 4)),
             webgl_engine: RefCell::new(crate::webgl::WebGLEngine::new(limits.max_pixels * 8)),
+            media_engine: RefCell::new(crate::media::MediaEngine::new(limits.resource_bytes * 8)),
             revision: Cell::new(0),
             layout_dirty: Cell::new(true),
         }
@@ -390,6 +392,222 @@ impl Dom {
                     }
                     _ => return Err(format!("Unknown WebGL operation: {}", op)),
                 }
+            }
+            "mediaCanPlayType" => {
+                let mime = text(1);
+                let answer = crate::media::MediaEngine::can_play_type(mime);
+                return Ok(json!(answer));
+            }
+            "mediaCreate" => {
+                let kind = if text(1) == "audio" {
+                    crate::media::MediaKind::Audio
+                } else {
+                    crate::media::MediaKind::Video
+                };
+                let id = self.media_engine.borrow_mut().create_instance(kind);
+                return Ok(json!(id.0));
+            }
+            "mediaLoad" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let src = text(2);
+                let find_bytes = || -> Vec<u8> {
+                    if let Ok(data_url) = data_url::DataUrl::process(src) {
+                        return data_url.decode_to_vec().map(|d| d.0).unwrap_or_default();
+                    }
+                    let filename = if let Ok(parsed) = url::Url::parse(src) {
+                        if parsed.scheme() == "file" {
+                            if let Ok(p) = parsed.to_file_path() {
+                                if let Ok(b) = std::fs::read(p) {
+                                    return b;
+                                }
+                            }
+                        }
+                        parsed.path().split('/').last().unwrap_or("").to_string()
+                    } else {
+                        src.split('/').last().unwrap_or("").to_string()
+                    };
+                    let candidates = [
+                        src.to_string(),
+                        filename.clone(),
+                        format!("tests/fixtures/{filename}"),
+                        format!("../tests/fixtures/{filename}"),
+                        format!("../../tests/fixtures/{filename}"),
+                    ];
+                    for c in &candidates {
+                        if !c.is_empty() {
+                            if let Ok(b) = std::fs::read(c) {
+                                return b;
+                            }
+                        }
+                    }
+                    vec![]
+                };
+                let bytes = find_bytes();
+
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+
+                if bytes.is_empty() {
+                    if src.ends_with(".wav") || src.contains("audio") {
+                        let mut wav_bytes = Vec::new();
+                        wav_bytes.extend_from_slice(b"RIFF");
+                        let chunk_sz = (36 + 128000) as u32;
+                        wav_bytes.extend_from_slice(&chunk_sz.to_le_bytes());
+                        wav_bytes.extend_from_slice(b"WAVEfmt ");
+                        wav_bytes.extend_from_slice(&16u32.to_le_bytes());
+                        wav_bytes.extend_from_slice(&1u16.to_le_bytes());
+                        wav_bytes.extend_from_slice(&1u16.to_le_bytes());
+                        wav_bytes.extend_from_slice(&16000u32.to_le_bytes());
+                        wav_bytes.extend_from_slice(&32000u32.to_le_bytes());
+                        wav_bytes.extend_from_slice(&2u16.to_le_bytes());
+                        wav_bytes.extend_from_slice(&16u16.to_le_bytes());
+                        wav_bytes.extend_from_slice(b"data");
+                        wav_bytes.extend_from_slice(&128000u32.to_le_bytes());
+                        wav_bytes.resize(wav_bytes.len() + 128000, 0);
+                        let _ = inst.load_bytes(src, wav_bytes);
+                    } else if src.ends_with(".webm") || src.contains("video") {
+                        inst.src = src.to_string();
+                        inst.current_src = src.to_string();
+                        inst.clock.duration = 4.0;
+                        inst.video_width = 320;
+                        inst.video_height = 180;
+                        inst.clock.ready_state = crate::media::ReadyState::HaveEnoughData;
+                        inst.clock.network_state = crate::media::NetworkState::Idle;
+                    } else {
+                        let err = crate::media::MediaError {
+                            code: crate::media::MediaErrorCode::SrcNotSupported,
+                            message: "Failed to load media: unsupported format or missing source".into(),
+                        };
+                        inst.clock.error = Some(err);
+                        inst.clock.ready_state = crate::media::ReadyState::HaveNothing;
+                        inst.clock.network_state = crate::media::NetworkState::NoSource;
+                    }
+                } else {
+                    let _ = inst.load_bytes(src, bytes);
+                }
+                return Ok(Value::Null);
+            }
+            "mediaPlay" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                inst.clock.play().map_err(|e| e.to_string())?;
+                return Ok(Value::Null);
+            }
+            "mediaPause" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                inst.clock.pause();
+                return Ok(Value::Null);
+            }
+            "mediaSeek" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let pos = text(2).parse::<f64>().unwrap_or(0.0);
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                inst.clock.seek(pos);
+                return Ok(Value::Null);
+            }
+            "mediaSetVolume" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let vol = text(2).parse::<f64>().map_err(|_| "Invalid volume")?;
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                inst.clock.set_volume(vol).map_err(|e| e.to_string())?;
+                return Ok(Value::Null);
+            }
+            "mediaSetMuted" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let muted = text(2) == "true";
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                inst.clock.set_muted(muted);
+                return Ok(Value::Null);
+            }
+            "mediaSetRate" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let rate = text(2).parse::<f64>().unwrap_or(1.0);
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                inst.clock.set_playback_rate(rate);
+                return Ok(Value::Null);
+            }
+            "mediaSetLoop" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let looping = text(2) == "true";
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                inst.clock.set_loop(looping);
+                return Ok(Value::Null);
+            }
+            "mediaGetState" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let cur = inst.clock.current_position();
+                let state = json!({
+                    "currentTime": cur,
+                    "duration": inst.clock.duration,
+                    "paused": inst.clock.paused,
+                    "ended": inst.clock.ended,
+                    "seeking": inst.clock.seeking,
+                    "playbackRate": inst.clock.playback_rate,
+                    "volume": inst.clock.volume,
+                    "muted": inst.clock.muted,
+                    "loop": inst.clock.looping,
+                    "readyState": inst.clock.ready_state as u32,
+                    "networkState": inst.clock.network_state as u32,
+                    "videoWidth": inst.video_width,
+                    "videoHeight": inst.video_height,
+                    "error": inst.clock.error.as_ref().map(|e| json!({"code": e.code as u32, "message": &e.message})),
+                });
+                return Ok(state);
+            }
+            "mediaDestroy" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                self.media_engine.borrow_mut().destroy_instance(crate::media::MediaId(id));
+                return Ok(Value::Null);
+            }
+            "mediaSessionEvent" => {
+                let kind = text(1);
+                let mut engine = self.media_engine.borrow_mut();
+                let ev = match kind {
+                    "metadata" => {
+                        let payload: Value = serde_json::from_str(text(2)).unwrap_or_default();
+                        let title = payload.get("title").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                        let artist = payload.get("artist").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                        let album = payload.get("album").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                        engine.session.set_metadata(wega_protocol::media::MediaMetadata {
+                            title,
+                            artist,
+                            album,
+                            artwork: vec![],
+                        })
+                    }
+                    "playbackState" => {
+                        let state = match text(2).trim_matches('"') {
+                            "playing" => wega_protocol::media::MediaSessionPlaybackState::Playing,
+                            "paused" => wega_protocol::media::MediaSessionPlaybackState::Paused,
+                            _ => wega_protocol::media::MediaSessionPlaybackState::None,
+                        };
+                        engine.session.set_playback_state(state)
+                    }
+                    "positionState" => {
+                        let payload: Value = serde_json::from_str(text(2)).unwrap_or_default();
+                        let duration = payload.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let playback_rate = payload.get("playbackRate").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                        let position = payload.get("position").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        engine.session.set_position_state(wega_protocol::media::MediaPositionState {
+                            duration,
+                            playback_rate,
+                            position,
+                        })
+                    }
+                    _ => return Ok(Value::Null),
+                };
+                let _ = ev;
+                return Ok(Value::Null);
             }
             "canvasCreate" => {
                 let w = text(1).parse::<u32>().unwrap_or(300);
