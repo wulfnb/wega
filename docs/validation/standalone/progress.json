@@ -101,6 +101,13 @@
       "acceptance": "Flexbox gaps and track sizing, CSS Grid explicit and flexible tracks with gap, table layout with border-collapse, bidirectional text shaping/metrics, scrolled and zoomed viewport layout/hit testing, SVG viewBox scaling, and pinned WPT CSS tests verified passing.",
       "contract": "docs/step-13-rendering-scrolling-reftests.md",
       "acceptance_verified": true
+    },
+    "16": {
+      "implementation": "complete",
+      "protocol_version": 16,
+      "acceptance": "Authoritative storage keys with origin, container/profile, and top-level partition context. Opaque origins and stale grants rejected. localStorage and sessionStorage scope and isolation verified. 10MB quota enforcement with QuotaExceededError rejection. Cookie inventory with HttpOnly inspector and script isolation. Per-site and global clear-data. Validated legacy data preservation on copies. CacheStorage and IndexedDB packages with SQLite WAL crash recovery.",
+      "acceptance_verified": true,
+      "contract": "docs/step-16-storage-and-browser-data-management.md"
     }
   },
   "substeps": {

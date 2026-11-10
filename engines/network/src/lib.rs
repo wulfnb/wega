@@ -25,8 +25,12 @@ use wega_protocol::{
     authority::{Origin, Principal},
     identity::{PartitionId, ServiceIdentity, ServiceSessionId},
 };
+pub mod cache_storage;
+pub mod indexeddb;
 mod cookies;
-pub use cookies::{Cookies, SiteContext};
+pub use cache_storage::{CacheEntry, CacheStorage};
+pub use cookies::{CookieEntry, Cookies, SiteContext};
+pub use indexeddb::IndexedDB;
 const MAX_HEADER: usize = 64 * 1024;
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;
@@ -910,6 +914,18 @@ impl SessionHandle {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = policy;
     }
+    pub fn clear_site_data(&self, origin: &str) -> Result<(), String> {
+        let root = PathBuf::from(&self.session.scope);
+        if let Ok(url) = Url::parse(origin) {
+            let _ = self.session.cookies.clear_site(&url);
+        }
+        self.broker.clear_site_data(&root, origin)
+    }
+    pub fn clear_all_data(&self) -> Result<(), String> {
+        self.session.cookies.clear();
+        let root = PathBuf::from(&self.session.scope);
+        self.broker.clear_all_data(&root)
+    }
 }
 impl Drop for SessionHandle {
     fn drop(&mut self) {
@@ -1132,6 +1148,18 @@ impl Broker {
         policy: Policy,
     ) -> Result<SessionHandle, String> {
         self.open_session_kind(directory, policy, true)
+    }
+    pub fn clear_site_data(&self, root: &std::path::Path, origin: &str) -> Result<(), String> {
+        self.storage
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_origin(root, origin)
+    }
+    pub fn clear_all_data(&self, root: &std::path::Path) -> Result<(), String> {
+        self.storage
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_all(root)
     }
     fn open_session_kind(
         self: &Arc<Self>,

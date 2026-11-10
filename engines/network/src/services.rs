@@ -200,6 +200,35 @@ impl StorageHub {
         self.transient
             .retain(|(service, _), _| *service != identity.0);
     }
+    pub(crate) fn clear_origin(&mut self, root: &std::path::Path, origin: &str) -> Result<(), String> {
+        let id = (root.to_path_buf(), origin.to_owned());
+        self.persistent.remove(&id);
+        let directory = root.join(
+            Sha256::digest(origin.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+        );
+        if directory.exists() {
+            let _ = std::fs::remove_dir_all(&directory);
+        }
+        Ok(())
+    }
+    pub(crate) fn clear_all(&mut self, root: &std::path::Path) -> Result<(), String> {
+        self.persistent.clear();
+        self.transient.clear();
+        if root.exists() {
+            if let Ok(entries) = std::fs::read_dir(root) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        let _ = std::fs::remove_dir_all(&path);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 impl Broker {
     pub(crate) fn resource(
@@ -521,5 +550,34 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+    #[test]
+    fn storage_clear_origin_and_clear_all_removes_data() {
+        let broker = Broker::new().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let origin_a = "https://a.test";
+        let origin_b = "https://b.test";
+        let session = broker
+            .open_bound_session(root.path().into(), Policy::default())
+            .unwrap();
+        let a = document(&session, &format!("{origin_a}/"));
+        storage(&a, origin_a, true, "set", "k1", "v1").unwrap();
+        assert_eq!(storage(&a, origin_a, true, "get", "k1", "").unwrap(), json!("v1"));
+
+        let b = document(&session, &format!("{origin_b}/"));
+        storage(&b, origin_b, true, "set", "k2", "v2").unwrap();
+        assert_eq!(storage(&b, origin_b, true, "get", "k2", "").unwrap(), json!("v2"));
+
+        // Clear site data for origin A
+        session.clear_site_data(origin_a).unwrap();
+        let a_new = document(&session, &format!("{origin_a}/"));
+        assert_eq!(storage(&a_new, origin_a, true, "get", "k1", "").unwrap(), Value::Null);
+        // Origin B remains untouched
+        assert_eq!(storage(&b, origin_b, true, "get", "k2", "").unwrap(), json!("v2"));
+
+        // Clear all data
+        session.clear_all_data().unwrap();
+        let b_new = document(&session, &format!("{origin_b}/"));
+        assert_eq!(storage(&b_new, origin_b, true, "get", "k2", "").unwrap(), Value::Null);
     }
 }

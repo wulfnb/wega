@@ -23,6 +23,17 @@ struct State {
     store: CookieStore,
     directory: Option<PathBuf>,
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CookieEntry {
+    pub name: String,
+    pub value: String,
+    pub domain: String,
+    pub path: String,
+    pub secure: bool,
+    pub http_only: bool,
+    pub same_site: Option<String>,
+}
+
 pub struct Cookies {
     state: Mutex<State>,
 }
@@ -216,6 +227,107 @@ impl Cookies {
         if state.store.insert(cookie, url).is_err() {
             return;
         }
+        Self::save_state(&state);
+    }
+    pub fn inventory(&self, url: &Url) -> Vec<CookieEntry> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut lookup = url.clone();
+        match url.scheme() {
+            "ws" => {
+                let _ = lookup.set_scheme("http");
+            }
+            "wss" => {
+                let _ = lookup.set_scheme("https");
+            }
+            _ => {}
+        }
+        let mut matching = state.store.matches(&lookup);
+        matching.sort_by_key(|cookie| std::cmp::Reverse(cookie.path.len()));
+        matching
+            .into_iter()
+            .map(|cookie| CookieEntry {
+                name: cookie.name().to_string(),
+                value: cookie.value().to_string(),
+                domain: cookie.domain.as_cow().unwrap_or_default().to_string(),
+                path: String::from(&cookie.path),
+                secure: cookie.secure().unwrap_or(false),
+                http_only: cookie.http_only().unwrap_or(false),
+                same_site: Self::same_site_of(cookie),
+            })
+            .collect()
+    }
+    pub fn clear_site(&self, url: &Url) -> usize {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let target_site = Self::site(url);
+        let mut count = 0;
+        let mut new_store = CookieStore::default().with_suffix_list(suffix_list());
+        let all_cookies: Vec<_> = state.store.iter_unexpired().cloned().collect();
+        for cookie in all_cookies {
+            let cookie_domain = cookie.domain.as_cow().unwrap_or_default();
+            let matches_site = target_site.as_ref().is_some_and(|(_, registrable)| {
+                let domain = cookie_domain.trim_start_matches('.').to_ascii_lowercase();
+                domain == *registrable || domain.ends_with(&format!(".{registrable}"))
+            });
+            if matches_site {
+                count += 1;
+            } else {
+                let domain = cookie.domain.as_cow().unwrap_or_default().trim_start_matches('.').to_string();
+                let scheme = if cookie.secure().unwrap_or(false) { "https" } else { "http" };
+                let path = String::from(&cookie.path);
+                if let Ok(entry_url) = Url::parse(&format!("{scheme}://{domain}{path}")) {
+                    let _ = new_store.insert(cookie, &entry_url);
+                }
+            }
+        }
+        state.store = new_store;
+        Self::save_state(&state);
+        count
+    }
+    pub fn clear(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.store = CookieStore::default().with_suffix_list(suffix_list());
+        Self::save_state(&state);
+    }
+    pub fn import_legacy_cookies(&self, path: &std::path::Path) -> Result<usize, String> {
+        let file = std::fs::File::open(path).map_err(|e| format!("Cannot open legacy cookie file: {e}"))?;
+        let metadata = file.metadata().map_err(|e| format!("Cannot read legacy metadata: {e}"))?;
+        if metadata.len() > 4 * 1024 * 1024 {
+            return Err("Legacy cookie file exceeds 4MB size limit".into());
+        }
+        let reader = std::io::BufReader::new(file);
+        let store = cookie_store::serde::json::load(reader)
+            .map_err(|e| format!("Invalid legacy cookie format: {e}"))?;
+        let mut count = 0;
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let imported_store = store.with_suffix_list(suffix_list());
+        for cookie in imported_store.iter_unexpired() {
+            if state.store.iter_unexpired().count() < 512 {
+                let domain = cookie.domain.as_cow().unwrap_or_default().trim_start_matches('.').to_string();
+                let scheme = if cookie.secure().unwrap_or(false) { "https" } else { "http" };
+                let path = String::from(&cookie.path);
+                if let Ok(url) = Url::parse(&format!("{scheme}://{domain}{path}")) {
+                    if state.store.insert(cookie.clone().into_owned(), &url).is_ok() {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        Self::save_state(&state);
+        Ok(count)
+    }
+    fn save_state(state: &State) {
         if let Some(directory) = &state.directory
             && std::fs::create_dir_all(directory).is_ok()
         {
@@ -283,5 +395,73 @@ mod tests {
         // A cross-site response may only store SameSite=None cookies.
         jar.set(&site, "tracker=1; Path=/", false, SiteContext::CrossSite);
         assert!(!cookies(SiteContext::SameSite).contains("tracker"));
+    }
+    #[test]
+    fn cookie_inventory_includes_httponly_while_script_reader_does_not() {
+        let jar = Cookies::default();
+        let site = url("https://auth.example.com/");
+        jar.set(&site, "session=secret; HttpOnly; Path=/; Secure", false, SiteContext::SameSite);
+        jar.set(&site, "theme=dark; Path=/", false, SiteContext::SameSite);
+
+        // Script cannot read HttpOnly
+        let script_cookies = jar.get(&site, true, SiteContext::SameSite);
+        assert_eq!(script_cookies, "theme=dark");
+        assert!(!script_cookies.contains("session=secret"));
+
+        // Non-script can read HttpOnly
+        let http_cookies = jar.get(&site, false, SiteContext::SameSite);
+        assert!(http_cookies.contains("session=secret"));
+        assert!(http_cookies.contains("theme=dark"));
+
+        // Inventory inspects both with explicit HttpOnly attribute metadata
+        let entries = jar.inventory(&site);
+        assert_eq!(entries.len(), 2);
+        let session_entry = entries.iter().find(|c| c.name == "session").unwrap();
+        assert!(session_entry.http_only);
+        assert_eq!(session_entry.value, "secret");
+        let theme_entry = entries.iter().find(|c| c.name == "theme").unwrap();
+        assert!(!theme_entry.http_only);
+        assert_eq!(theme_entry.value, "dark");
+    }
+
+    #[test]
+    fn cookie_clear_site_and_clear_all_and_legacy_import() {
+        let dir = tempfile::tempdir().unwrap();
+        let jar = Cookies::default();
+        jar.set_directory(dir.path().to_path_buf());
+
+        let site_a = url("https://a.example.com/");
+        let site_b = url("https://b.other.org/");
+        jar.set(&site_a, "a=1; Path=/; Secure", false, SiteContext::SameSite);
+        jar.set(&site_b, "b=2; Path=/; Secure", false, SiteContext::SameSite);
+
+        assert_eq!(jar.inventory(&site_a).len(), 1);
+        assert_eq!(jar.inventory(&site_b).len(), 1);
+
+        // Clear site A only
+        let cleared = jar.clear_site(&site_a);
+        assert_eq!(cleared, 1);
+        assert_eq!(jar.inventory(&site_a).len(), 0);
+        assert_eq!(jar.inventory(&site_b).len(), 1);
+
+        // Test legacy cookie import on a copy
+        let backup = dir.path().join("cookies.json");
+        assert!(backup.exists());
+        let copy_path = dir.path().join("legacy_copy.json");
+        std::fs::copy(&backup, &copy_path).unwrap();
+
+        // Clear all cookies
+        jar.clear();
+        assert_eq!(jar.inventory(&site_b).len(), 0);
+
+        // Import from validated copy
+        let imported = jar.import_legacy_cookies(&copy_path).unwrap();
+        assert_eq!(imported, 1);
+        assert_eq!(jar.inventory(&site_b).len(), 1);
+
+        // Corrupted file rejected
+        let corrupted = dir.path().join("corrupt.json");
+        std::fs::write(&corrupted, b"not valid json").unwrap();
+        assert!(jar.import_legacy_cookies(&corrupted).is_err());
     }
 }

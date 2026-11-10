@@ -568,6 +568,14 @@ implement only validated import formats and explicitly report unavoidable re-log
 writes recover, clear-data removes the advertised stores, and opaque origins/stale
 grants are rejected. Test migrations on copies; never silently discard legacy data.
 
+- Authoritative storage keys: `StorageKey` with container/profile, top-level partition, and origin context; opaque origins and stale document grants are rejected.
+- Cookie management & inspector: `inventory()` provides full host attribute inspection including HttpOnly; script access strictly isolates and filters HttpOnly; selective site and global clearing.
+- Data clearing & crash recovery: `clear_origin()` and `clear_all()` purge storage databases and caches; SQLite WAL mode ensures atomic crash recovery.
+- Transactional packages: SQLite-backed `CacheStorage` for Request/Response pair caching and `IndexedDB` for transactional version changes, object stores, and structured records.
+- Legacy data preservation: import validation on copies rejects corruption and prevents silent data loss.
+- All 7 tests in `engines/wega/tests/storage.rs` and 10 in `engines/wega/tests/web.rs` pass cleanly.
+- Contract & verification: [Step 16 contract](step-16-storage-and-browser-data-management.md).
+
 ### 17 — Add workers and offline execution
 
 **Depends on:** 06–08, 14, 16.

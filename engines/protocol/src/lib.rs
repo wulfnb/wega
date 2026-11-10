@@ -8,7 +8,8 @@ pub mod identity;
 pub mod lifecycle;
 pub mod queue;
 pub mod requests;
-pub const VERSION: u32 = 15;
+pub mod storage;
+pub const VERSION: u32 = 16;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -161,6 +162,7 @@ pub enum Capability {
     DocumentTaskScheduling,
     ScriptRecovery,
     SiteIsolationFrames,
+    AuthoritativeStorage,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -179,6 +181,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::DocumentTaskScheduling,
     Capability::ScriptRecovery,
     Capability::SiteIsolationFrames,
+    Capability::AuthoritativeStorage,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -252,6 +255,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     | Capability::DocumentTaskScheduling
                     | Capability::ScriptRecovery => 14,
                     Capability::SiteIsolationFrames => 15,
+                    Capability::AuthoritativeStorage => 16,
                 }
         })
         .collect()
@@ -874,5 +878,11 @@ mod tests {
 
         let find_event = content_event(VERSION, context, ContentEvent::FindResult { active_match_ordinal: 2, number_of_matches: 5, query: "sample".into() });
         assert!(matches!(find_event, Event::Content { event: ContentEvent::FindResult { active_match_ordinal: 2, number_of_matches: 5, ref query }, .. } if query == "sample"));
+    }
+    #[test]
+    fn authoritative_storage_capability_and_version() {
+        assert_eq!(VERSION, 16);
+        assert!(capabilities(16).contains(&Capability::AuthoritativeStorage));
+        assert!(!capabilities(15).contains(&Capability::AuthoritativeStorage));
     }
 }

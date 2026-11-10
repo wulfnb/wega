@@ -5,7 +5,7 @@ use crate::{
 };
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Origin {
     Tuple(String),
     /// Opaque/unknown origins cannot receive remembered or device permissions.
@@ -107,6 +107,22 @@ impl FrameAuthority {
             document: context,
             principal: principal.clone(),
         })
+    }
+    /// Constructs a verified storage key for the given document and optional container context.
+    /// Rejects opaque origins and uncommitted/stale document grants.
+    pub fn storage_key(
+        &self,
+        context: DocumentContext,
+        container: Option<String>,
+    ) -> Result<crate::storage::StorageKey, crate::storage::StorageKeyError> {
+        let request = self
+            .resolve(context)
+            .ok_or(crate::storage::StorageKeyError::StaleGrant)?;
+        crate::storage::StorageKey::for_origin(
+            request.principal.origin,
+            request.principal.top_level_site,
+            container,
+        )
     }
     /// Only the trusted input adapter calls this. Evaluation and synthetic DOM events do not.
     pub fn activate(&mut self, context: DocumentContext, now: Instant) -> Option<ActivationId> {
@@ -212,5 +228,58 @@ mod tests {
             },
         );
         assert!(authority.activate(context, now).is_none());
+    }
+
+    #[test]
+    fn frame_authority_resolves_storage_key_and_rejects_opaque_or_stale() {
+        let session = SessionIdentity {
+            tab: TabId(1),
+            frame: FrameId(1),
+            process: ProcessSessionId([1; 16]),
+            service: None,
+        };
+        let mut authority = FrameAuthority::new(session);
+        let context = DocumentContext {
+            document: DocumentId(1),
+            revision: DocumentRevision(1),
+        };
+        // Stale grant returns StaleGrant
+        assert_eq!(
+            authority.storage_key(context, None),
+            Err(crate::storage::StorageKeyError::StaleGrant)
+        );
+
+        // Bind tuple origin
+        authority.bind(
+            context,
+            Principal {
+                origin: Origin::Tuple("https://site.example".into()),
+                top_level_site: Some(("https".into(), "site.example".into())),
+            },
+        );
+        let key = authority.storage_key(context, Some("work".into())).unwrap();
+        assert_eq!(key.container, "work");
+        assert_eq!(key.origin_str(), "https://site.example");
+        assert!(!key.is_third_party());
+
+        // Invalidate authority -> StaleGrant
+        authority.invalidate();
+        assert_eq!(
+            authority.storage_key(context, None),
+            Err(crate::storage::StorageKeyError::StaleGrant)
+        );
+
+        // Bind opaque origin -> OpaqueOrigin rejected
+        authority.bind(
+            context,
+            Principal {
+                origin: Origin::Opaque,
+                top_level_site: None,
+            },
+        );
+        assert_eq!(
+            authority.storage_key(context, None),
+            Err(crate::storage::StorageKeyError::OpaqueOrigin)
+        );
     }
 }
