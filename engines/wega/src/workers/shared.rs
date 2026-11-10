@@ -145,10 +145,10 @@ impl SharedWorkerInstance {
     }
 
     pub fn terminate(&mut self) {
-        if !self.terminated.swap(true, Ordering::Release) {
-            if let Some(thread) = self.thread.take() {
-                let _ = thread.join();
-            }
+        if !self.terminated.swap(true, Ordering::Release)
+            && let Some(thread) = self.thread.take()
+        {
+            let _ = thread.join();
         }
     }
 }

@@ -167,13 +167,7 @@ impl WorkerManager {
             .shared
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get_or_spawn(
-                &origin,
-                name,
-                &script_full,
-                content,
-                self.port_hub.clone(),
-            )?;
+            .get_or_spawn(&origin, name, &script_full, content, self.port_hub.clone())?;
 
         instance
             .lock()

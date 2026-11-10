@@ -170,19 +170,23 @@ impl Dom {
                 let w = text(1).parse::<u32>().unwrap_or(300);
                 let h = text(2).parse::<u32>().unwrap_or(150);
                 let is_webgl2 = text(3) == "webgl2";
-                let id = self
-                    .webgl_engine
-                    .borrow_mut()
-                    .create_context(w, h, is_webgl2, crate::webgl::ContextAttributes::default())?;
+                let id = self.webgl_engine.borrow_mut().create_context(
+                    w,
+                    h,
+                    is_webgl2,
+                    crate::webgl::ContextAttributes::default(),
+                )?;
                 return Ok(json!(id.0));
             }
             "webglResize" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
                 let w = text(2).parse::<u32>().unwrap_or(300);
                 let h = text(3).parse::<u32>().unwrap_or(150);
-                self.webgl_engine
-                    .borrow_mut()
-                    .resize_context(crate::webgl::WebGLContextId(id), w, h)?;
+                self.webgl_engine.borrow_mut().resize_context(
+                    crate::webgl::WebGLContextId(id),
+                    w,
+                    h,
+                )?;
                 return Ok(Value::Null);
             }
             "webglDestroy" => {
@@ -273,7 +277,10 @@ impl Dom {
                     }
                     "bufferData" => {
                         let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let data: Vec<u8> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let data: Vec<u8> = op_args
+                            .get(1)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
                         let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
                         ctx.buffer_data(target, &data, usage);
                         return Ok(Value::Null);
@@ -336,7 +343,10 @@ impl Dom {
                     }
                     "uniformValues" => {
                         let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let vals: Vec<f32> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let vals: Vec<f32> = op_args
+                            .get(1)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
                         ctx.uniform_values(loc, &vals);
                         return Ok(Value::Null);
                     }
@@ -391,9 +401,14 @@ impl Dom {
                         let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
                         let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
                         let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let pixels: Vec<u8> = op_args.get(8).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let pixels: Vec<u8> = op_args
+                            .get(8)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
                         let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
-                        ctx.tex_image_2d(target, level, iformat, w, h, border, format, ttype, &pixels, is_clean);
+                        ctx.tex_image_2d(
+                            target, level, iformat, w, h, border, format, ttype, &pixels, is_clean,
+                        );
                         return Ok(Value::Null);
                     }
                     "taint" => {
@@ -467,7 +482,9 @@ impl Dom {
                 let bytes = find_bytes();
 
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
 
                 if bytes.is_empty() {
                     if src.ends_with(".wav") || src.contains("audio") {
@@ -498,7 +515,8 @@ impl Dom {
                     } else {
                         let err = crate::media::MediaError {
                             code: crate::media::MediaErrorCode::SrcNotSupported,
-                            message: "Failed to load media: unsupported format or missing source".into(),
+                            message: "Failed to load media: unsupported format or missing source"
+                                .into(),
                         };
                         inst.clock.error = Some(err);
                         inst.clock.ready_state = crate::media::ReadyState::HaveNothing;
@@ -512,14 +530,18 @@ impl Dom {
             "mediaPlay" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
                 inst.clock.play().map_err(|e| e.to_string())?;
                 return Ok(Value::Null);
             }
             "mediaPause" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
                 inst.clock.pause();
                 return Ok(Value::Null);
             }
@@ -527,7 +549,9 @@ impl Dom {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
                 let pos = text(2).parse::<f64>().unwrap_or(0.0);
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
                 inst.clock.seek(pos);
                 return Ok(Value::Null);
             }
@@ -535,7 +559,9 @@ impl Dom {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
                 let vol = text(2).parse::<f64>().map_err(|_| "Invalid volume")?;
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
                 inst.clock.set_volume(vol).map_err(|e| e.to_string())?;
                 return Ok(Value::Null);
             }
@@ -543,7 +569,9 @@ impl Dom {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
                 let muted = text(2) == "true";
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
                 inst.clock.set_muted(muted);
                 return Ok(Value::Null);
             }
@@ -551,7 +579,9 @@ impl Dom {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
                 let rate = text(2).parse::<f64>().unwrap_or(1.0);
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
                 inst.clock.set_playback_rate(rate);
                 return Ok(Value::Null);
             }
@@ -559,14 +589,18 @@ impl Dom {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
                 let looping = text(2) == "true";
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
                 inst.clock.set_loop(looping);
                 return Ok(Value::Null);
             }
             "mediaGetState" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
                 let mut engine = self.media_engine.borrow_mut();
-                let inst = engine.get_instance_mut(crate::media::MediaId(id)).ok_or("Media instance not found")?;
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
                 let cur = inst.clock.current_position();
                 let state = json!({
                     "currentTime": cur,
@@ -588,7 +622,9 @@ impl Dom {
             }
             "mediaDestroy" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
-                self.media_engine.borrow_mut().destroy_instance(crate::media::MediaId(id));
+                self.media_engine
+                    .borrow_mut()
+                    .destroy_instance(crate::media::MediaId(id));
                 return Ok(Value::Null);
             }
             "mediaSessionEvent" => {
@@ -597,15 +633,29 @@ impl Dom {
                 let ev = match kind {
                     "metadata" => {
                         let payload: Value = serde_json::from_str(text(2)).unwrap_or_default();
-                        let title = payload.get("title").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                        let artist = payload.get("artist").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                        let album = payload.get("album").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                        engine.session.set_metadata(wega_protocol::media::MediaMetadata {
-                            title,
-                            artist,
-                            album,
-                            artwork: vec![],
-                        })
+                        let title = payload
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let artist = payload
+                            .get("artist")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let album = payload
+                            .get("album")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        engine
+                            .session
+                            .set_metadata(wega_protocol::media::MediaMetadata {
+                                title,
+                                artist,
+                                album,
+                                artwork: vec![],
+                            })
                     }
                     "playbackState" => {
                         let state = match text(2).trim_matches('"') {
@@ -617,14 +667,25 @@ impl Dom {
                     }
                     "positionState" => {
                         let payload: Value = serde_json::from_str(text(2)).unwrap_or_default();
-                        let duration = payload.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        let playback_rate = payload.get("playbackRate").and_then(|v| v.as_f64()).unwrap_or(1.0);
-                        let position = payload.get("position").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        engine.session.set_position_state(wega_protocol::media::MediaPositionState {
-                            duration,
-                            playback_rate,
-                            position,
-                        })
+                        let duration = payload
+                            .get("duration")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let playback_rate = payload
+                            .get("playbackRate")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(1.0);
+                        let position = payload
+                            .get("position")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        engine.session.set_position_state(
+                            wega_protocol::media::MediaPositionState {
+                                duration,
+                                playback_rate,
+                                position,
+                            },
+                        )
                     }
                     _ => return Ok(Value::Null),
                 };
@@ -665,7 +726,10 @@ impl Dom {
                         wega_protocol::authority::Origin::Tuple(s) => s.clone(),
                         wega_protocol::authority::Origin::Opaque => "null".into(),
                     };
-                    self.requests.borrow_mut().permission_prompts.push((id, origin_str, feature));
+                    self.requests
+                        .borrow_mut()
+                        .permission_prompts
+                        .push((id, origin_str, feature));
                 }
                 return Ok(json!({
                     "state": state.as_str(),
@@ -673,7 +737,9 @@ impl Dom {
                 }));
             }
             "notificationCreate" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid notification id")?;
+                let id = text(1)
+                    .parse::<u64>()
+                    .map_err(|_| "Invalid notification id")?;
                 let title = text(2);
                 let opts_raw = text(3);
                 let opts: wega_protocol::permissions::NotificationOptions =
@@ -688,11 +754,16 @@ impl Dom {
                 if state != wega_protocol::permissions::PermissionState::Granted {
                     return Err("Notification permission not granted".into());
                 }
-                self.requests.borrow_mut().notifications.push((id, title.to_string(), opts));
+                self.requests
+                    .borrow_mut()
+                    .notifications
+                    .push((id, title.to_string(), opts));
                 return Ok(Value::Null);
             }
             "notificationClose" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid notification id")?;
+                let id = text(1)
+                    .parse::<u64>()
+                    .map_err(|_| "Invalid notification id")?;
                 self.requests.borrow_mut().notification_closes.push(id);
                 return Ok(Value::Null);
             }
@@ -705,7 +776,11 @@ impl Dom {
                 let origin = origin_for_url(&url);
                 let origin_str = match origin {
                     wega_protocol::authority::Origin::Tuple(s) => s,
-                    wega_protocol::authority::Origin::Opaque => return Err("NotAllowedError: opaque origin cannot request wake lock".into()),
+                    wega_protocol::authority::Origin::Opaque => {
+                        return Err(
+                            "NotAllowedError: opaque origin cannot request wake lock".into()
+                        );
+                    }
                 };
                 let state = self.permissions.borrow().query(
                     &wega_protocol::authority::Origin::Tuple(origin_str.clone()),
@@ -719,7 +794,11 @@ impl Dom {
                     document: wega_protocol::DocumentId(self.document_generation.get()),
                     revision: wega_protocol::DocumentRevision(self.document_revision),
                 };
-                let lock_id = self.permissions.borrow_mut().devices.create_wake_lock(origin_str, doc_ctx);
+                let lock_id = self
+                    .permissions
+                    .borrow_mut()
+                    .devices
+                    .create_wake_lock(origin_str, doc_ctx);
                 return Ok(json!(lock_id));
             }
             "wakeLockRelease" => {
@@ -734,7 +813,11 @@ impl Dom {
                 let origin = origin_for_url(&url);
                 let origin_str = match origin {
                     wega_protocol::authority::Origin::Tuple(s) => s,
-                    wega_protocol::authority::Origin::Opaque => return Err("NotAllowedError: opaque origin cannot access media devices".into()),
+                    wega_protocol::authority::Origin::Opaque => {
+                        return Err(
+                            "NotAllowedError: opaque origin cannot access media devices".into()
+                        );
+                    }
                 };
                 let policy = self.network.policy.read().unwrap();
                 if need_video {
@@ -764,12 +847,26 @@ impl Dom {
                 let mut perms = self.permissions.borrow_mut();
                 let mut track_descriptors = Vec::new();
                 if need_video {
-                    let vid = perms.devices.create_track(origin_str.clone(), doc_ctx, crate::permissions::MediaTrackKind::Video, None);
-                    track_descriptors.push(json!({ "id": vid, "kind": "video", "label": "Default Video Camera" }));
+                    let vid = perms.devices.create_track(
+                        origin_str.clone(),
+                        doc_ctx,
+                        crate::permissions::MediaTrackKind::Video,
+                        None,
+                    );
+                    track_descriptors.push(
+                        json!({ "id": vid, "kind": "video", "label": "Default Video Camera" }),
+                    );
                 }
                 if need_audio {
-                    let aid = perms.devices.create_track(origin_str.clone(), doc_ctx, crate::permissions::MediaTrackKind::Audio, None);
-                    track_descriptors.push(json!({ "id": aid, "kind": "audio", "label": "Default Audio Device" }));
+                    let aid = perms.devices.create_track(
+                        origin_str.clone(),
+                        doc_ctx,
+                        crate::permissions::MediaTrackKind::Audio,
+                        None,
+                    );
+                    track_descriptors.push(
+                        json!({ "id": aid, "kind": "audio", "label": "Default Audio Device" }),
+                    );
                 }
                 return Ok(json!(track_descriptors));
             }
@@ -785,9 +882,15 @@ impl Dom {
             }
             "requestFullscreen" => {
                 let now = Instant::now();
-                let has_activation = self.activation.get().map(|until| until > now).unwrap_or(false);
+                let has_activation = self
+                    .activation
+                    .get()
+                    .map(|until| until > now)
+                    .unwrap_or(false);
                 if !has_activation {
-                    return Err("TypeError: requestFullscreen requires transient user activation".into());
+                    return Err(
+                        "TypeError: requestFullscreen requires transient user activation".into(),
+                    );
                 }
                 self.activation.set(None);
                 self.requests.borrow_mut().fullscreen.push(true);
@@ -810,7 +913,10 @@ impl Dom {
             }
             "openExternalApp" => {
                 let target_url = text(1);
-                self.requests.borrow_mut().external_apps.push(target_url.to_string());
+                self.requests
+                    .borrow_mut()
+                    .external_apps
+                    .push(target_url.to_string());
                 return Ok(Value::Null);
             }
             "canvasCreate" => {
@@ -897,7 +1003,8 @@ impl Dom {
                     w: i32,
                     h: i32,
                 }
-                let payload: PutPayload = serde_json::from_str(text(2)).map_err(|e| e.to_string())?;
+                let payload: PutPayload =
+                    serde_json::from_str(text(2)).map_err(|e| e.to_string())?;
                 let mut engine = self.canvas_engine.borrow_mut();
                 let ctx = engine
                     .get_mut(crate::canvas::CanvasId(id))
@@ -931,19 +1038,33 @@ impl Dom {
             }
             "canvasDrawImage" => {
                 let target_id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let src_id = text(2).parse::<u64>().map_err(|_| "Invalid source canvas ID")?;
+                let src_id = text(2)
+                    .parse::<u64>()
+                    .map_err(|_| "Invalid source canvas ID")?;
                 let is_clean = text(3) != "tainted";
                 let mut engine = self.canvas_engine.borrow_mut();
                 let (src_pixels, src_w, src_h) = {
-                    let src = engine.get_mut(crate::canvas::CanvasId(src_id)).ok_or("Source canvas not found")?;
+                    let src = engine
+                        .get_mut(crate::canvas::CanvasId(src_id))
+                        .ok_or("Source canvas not found")?;
                     let pixels = src.get_image_data(0, 0, src.width as i32, src.height as i32)?;
                     (pixels, src.width as i32, src.height as i32)
                 };
-                let target = engine.get_mut(crate::canvas::CanvasId(target_id)).ok_or("Target canvas not found")?;
+                let target = engine
+                    .get_mut(crate::canvas::CanvasId(target_id))
+                    .ok_or("Target canvas not found")?;
                 target.draw_image(
-                    &src_pixels, src_w, src_h,
-                    0.0, 0.0, src_w as f32, src_h as f32,
-                    0.0, 0.0, src_w as f32, src_h as f32,
+                    &src_pixels,
+                    src_w,
+                    src_h,
+                    0.0,
+                    0.0,
+                    src_w as f32,
+                    src_h as f32,
+                    0.0,
+                    0.0,
+                    src_w as f32,
+                    src_h as f32,
                     is_clean,
                 )?;
                 return Ok(Value::Null);
@@ -957,7 +1078,9 @@ impl Dom {
             }
             "workerPost" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
-                self.workers.borrow().post_dedicated(crate::workers::WorkerId(id), text(2).to_string())?;
+                self.workers
+                    .borrow()
+                    .post_dedicated(crate::workers::WorkerId(id), text(2).to_string())?;
                 return Ok(Value::Null);
             }
             "workerTerminate" => {
@@ -969,21 +1092,25 @@ impl Dom {
             }
             "workerPoll" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
-                let events = self.workers.borrow_mut().poll_dedicated_events(crate::workers::WorkerId(id));
+                let events = self
+                    .workers
+                    .borrow_mut()
+                    .poll_dedicated_events(crate::workers::WorkerId(id));
                 return Ok(json!(events));
             }
             "sharedWorkerConnect" => {
-                let (doc_port, worker_port) = self
-                    .workers
-                    .borrow_mut()
-                    .connect_shared(text(1), text(2), text(3).to_string())?;
+                let (doc_port, worker_port) = self.workers.borrow_mut().connect_shared(
+                    text(1),
+                    text(2),
+                    text(3).to_string(),
+                )?;
                 return Ok(json!({ "docPort": doc_port.0, "workerPort": worker_port.0 }));
             }
             "serviceWorkerRegister" => {
-                let info = self.workers.borrow_mut().register_service_worker(
-                    text(1),
-                    (!text(2).is_empty()).then_some(text(2)),
-                )?;
+                let info = self
+                    .workers
+                    .borrow_mut()
+                    .register_service_worker(text(1), (!text(2).is_empty()).then_some(text(2)))?;
                 return Ok(json!(info));
             }
             "serviceWorkerGetRegistration" => {
@@ -1007,8 +1134,15 @@ impl Dom {
             "portPost" => {
                 let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
                 let transferred: Vec<u64> = serde_json::from_str(text(3)).unwrap_or_default();
-                let ports = transferred.into_iter().map(crate::workers::PortId).collect();
-                self.workers.borrow_mut().post_port(crate::workers::PortId(port), text(2).to_string(), ports)?;
+                let ports = transferred
+                    .into_iter()
+                    .map(crate::workers::PortId)
+                    .collect();
+                self.workers.borrow_mut().post_port(
+                    crate::workers::PortId(port),
+                    text(2).to_string(),
+                    ports,
+                )?;
                 return Ok(Value::Null);
             }
             "portClose" => {
@@ -1020,7 +1154,10 @@ impl Dom {
             }
             "portPoll" => {
                 let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
-                let msgs = self.workers.borrow_mut().poll_port(crate::workers::PortId(port));
+                let msgs = self
+                    .workers
+                    .borrow_mut()
+                    .poll_port(crate::workers::PortId(port));
                 return Ok(json!(msgs));
             }
             "clipboardWrite" => {
@@ -1215,19 +1352,23 @@ impl Dom {
                 let w = text(1).parse::<u32>().unwrap_or(300);
                 let h = text(2).parse::<u32>().unwrap_or(150);
                 let is_webgl2 = text(3) == "webgl2";
-                let id = self
-                    .webgl_engine
-                    .borrow_mut()
-                    .create_context(w, h, is_webgl2, crate::webgl::ContextAttributes::default())?;
+                let id = self.webgl_engine.borrow_mut().create_context(
+                    w,
+                    h,
+                    is_webgl2,
+                    crate::webgl::ContextAttributes::default(),
+                )?;
                 return Ok(json!(id.0));
             }
             "webglResize" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
                 let w = text(2).parse::<u32>().unwrap_or(300);
                 let h = text(3).parse::<u32>().unwrap_or(150);
-                self.webgl_engine
-                    .borrow_mut()
-                    .resize_context(crate::webgl::WebGLContextId(id), w, h)?;
+                self.webgl_engine.borrow_mut().resize_context(
+                    crate::webgl::WebGLContextId(id),
+                    w,
+                    h,
+                )?;
                 return Ok(Value::Null);
             }
             "webglDestroy" => {
@@ -1318,7 +1459,10 @@ impl Dom {
                     }
                     "bufferData" => {
                         let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let data: Vec<u8> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let data: Vec<u8> = op_args
+                            .get(1)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
                         let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
                         ctx.buffer_data(target, &data, usage);
                         return Ok(Value::Null);
@@ -1381,7 +1525,10 @@ impl Dom {
                     }
                     "uniformValues" => {
                         let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let vals: Vec<f32> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let vals: Vec<f32> = op_args
+                            .get(1)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
                         ctx.uniform_values(loc, &vals);
                         return Ok(Value::Null);
                     }
@@ -1436,9 +1583,14 @@ impl Dom {
                         let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
                         let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
                         let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let pixels: Vec<u8> = op_args.get(8).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let pixels: Vec<u8> = op_args
+                            .get(8)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
                         let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
-                        ctx.tex_image_2d(target, level, iformat, w, h, border, format, ttype, &pixels, is_clean);
+                        ctx.tex_image_2d(
+                            target, level, iformat, w, h, border, format, ttype, &pixels, is_clean,
+                        );
                         return Ok(Value::Null);
                     }
                     "readPixels" => {

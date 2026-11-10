@@ -637,19 +637,19 @@ impl WebGLContext {
 
         // Rasterize simple geometric shapes based on current state & uniform colors
         let mut draw_color = [255u8, 255u8, 255u8, 255u8];
-        if let Some(prog_id) = self.current_program {
-            if let Some(prog) = self.programs.get(&prog_id) {
-                // Look for color uniform if provided
-                for u in prog.uniforms.values() {
-                    if (u.name.to_lowercase().contains("color") || u.name == "uColor")
-                        && u.value.len() >= 3
-                    {
-                        draw_color[0] = (u.value[0].clamp(0.0, 1.0) * 255.0) as u8;
-                        draw_color[1] = (u.value[1].clamp(0.0, 1.0) * 255.0) as u8;
-                        draw_color[2] = (u.value[2].clamp(0.0, 1.0) * 255.0) as u8;
-                        if u.value.len() >= 4 {
-                            draw_color[3] = (u.value[3].clamp(0.0, 1.0) * 255.0) as u8;
-                        }
+        if let Some(prog_id) = self.current_program
+            && let Some(prog) = self.programs.get(&prog_id)
+        {
+            // Look for color uniform if provided
+            for u in prog.uniforms.values() {
+                if (u.name.to_lowercase().contains("color") || u.name == "uColor")
+                    && u.value.len() >= 3
+                {
+                    draw_color[0] = (u.value[0].clamp(0.0, 1.0) * 255.0) as u8;
+                    draw_color[1] = (u.value[1].clamp(0.0, 1.0) * 255.0) as u8;
+                    draw_color[2] = (u.value[2].clamp(0.0, 1.0) * 255.0) as u8;
+                    if u.value.len() >= 4 {
+                        draw_color[3] = (u.value[3].clamp(0.0, 1.0) * 255.0) as u8;
                     }
                 }
             }
@@ -706,6 +706,7 @@ impl WebGLContext {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn tex_image_2d(
         &mut self,
         target: u32,

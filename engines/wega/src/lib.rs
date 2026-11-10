@@ -1,3 +1,13 @@
+#![allow(
+    clippy::get_first,
+    clippy::too_many_arguments,
+    clippy::let_unit_value,
+    clippy::collapsible_if,
+    clippy::cmp_owned,
+    clippy::double_ended_iterator_last,
+    clippy::manual_strip,
+    clippy::manual_slice_fill
+)]
 //! Owned page orchestration on Blitz, independent of Servo and SpiderMonkey.
 #![deny(unsafe_code)]
 pub use blitz_traits::events;
@@ -5,6 +15,7 @@ pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
 
 mod broker_socket;
+pub mod canvas;
 mod components;
 mod cookies;
 mod csp;
@@ -14,10 +25,12 @@ mod dom;
 mod encoding;
 mod event_loop;
 mod extension_adapter;
+pub mod media;
 mod module_loader;
 mod native_ops;
 mod network;
 mod parser;
+pub mod permissions;
 mod raster;
 mod script;
 mod security_context;
@@ -25,9 +38,6 @@ mod v8;
 mod view;
 mod web;
 mod web_extensions;
-pub mod canvas;
-pub mod media;
-pub mod permissions;
 pub mod webgl;
 pub mod workers;
 pub use dom::{DialogHandler, DocumentDialogHandler};

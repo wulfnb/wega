@@ -56,10 +56,10 @@ impl ServiceWorkerRegistration {
         let mut store = CacheStorage::open(storage_dir).ok()?;
         let cache_names = store.cache_names().ok()?;
         for name in cache_names {
-            if let Ok(cache_id) = store.open_cache(&name) {
-                if let Ok(Some(entry)) = store.match_entry(cache_id, url.as_str()) {
-                    return Some(entry);
-                }
+            if let Ok(cache_id) = store.open_cache(&name)
+                && let Ok(Some(entry)) = store.match_entry(cache_id, url.as_str())
+            {
+                return Some(entry);
             }
         }
         None
@@ -125,7 +125,7 @@ impl ServiceWorkerManager {
     }
 
     pub fn get_registration(&self, url: &Url) -> Option<ServiceWorkerInfo> {
-        for (_, reg) in &self.registrations {
+        for reg in self.registrations.values() {
             if reg.matches_scope(url) {
                 return Some(ServiceWorkerInfo {
                     script_url: reg.script_url.clone(),
@@ -142,11 +142,11 @@ impl ServiceWorkerManager {
     }
 
     pub fn intercept_fetch(&self, url: &Url) -> Option<CacheEntry> {
-        for (_, reg) in &self.registrations {
-            if reg.matches_scope(url) {
-                if let Some(entry) = reg.intercept_fetch(url) {
-                    return Some(entry);
-                }
+        for reg in self.registrations.values() {
+            if reg.matches_scope(url)
+                && let Some(entry) = reg.intercept_fetch(url)
+            {
+                return Some(entry);
             }
         }
         None

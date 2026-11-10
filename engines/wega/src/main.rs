@@ -629,8 +629,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         while let Some(event) = view.events.pop_front() {
             match event {
-                PageEvent::FrameAttached { parent, frame, url, name, sandbox } => {
-                    write(&Event::FrameAttached { parent, frame, url, name, sandbox })?;
+                PageEvent::FrameAttached {
+                    parent,
+                    frame,
+                    url,
+                    name,
+                    sandbox,
+                } => {
+                    write(&Event::FrameAttached {
+                        parent,
+                        frame,
+                        url,
+                        name,
+                        sandbox,
+                    })?;
                 }
                 PageEvent::FrameDetached { frame } => {
                     write(&Event::FrameDetached { frame })?;
@@ -638,8 +650,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 PageEvent::FrameNavigated { frame, url, origin } => {
                     write(&Event::FrameNavigated { frame, url, origin })?;
                 }
-                PageEvent::FramePostMessage { source, target, origin, target_origin, message } => {
-                    write(&Event::FramePostMessage { source, target, origin, target_origin, message })?;
+                PageEvent::FramePostMessage {
+                    source,
+                    target,
+                    origin,
+                    target_origin,
+                    message,
+                } => {
+                    write(&Event::FramePostMessage {
+                        source,
+                        target,
+                        origin,
+                        target_origin,
+                        message,
+                    })?;
                 }
                 other => {
                     let content_ev = match other {
@@ -668,27 +692,49 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         PageEvent::Cursor(cursor) => ContentEvent::Cursor(cursor),
                         PageEvent::Favicon(url) => ContentEvent::Favicon(url.to_string()),
                         PageEvent::Status(status) => ContentEvent::Status(status),
-                        PageEvent::Authentication { url, realm } => ContentEvent::Authentication { url, realm },
-                        PageEvent::Accessibility(json) => ContentEvent::Accessibility(json),
-                        PageEvent::FileDialog { id, multiple, accept } => ContentEvent::FileDialog { id, multiple, accept },
-                        PageEvent::ClipboardWrite(text) => ContentEvent::ClipboardWrite(text),
-                        PageEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
-                            ContentEvent::FindResult { active_match_ordinal, number_of_matches, query }
+                        PageEvent::Authentication { url, realm } => {
+                            ContentEvent::Authentication { url, realm }
                         }
-                        PageEvent::PermissionPrompt { id, origin, feature } => {
+                        PageEvent::Accessibility(json) => ContentEvent::Accessibility(json),
+                        PageEvent::FileDialog {
+                            id,
+                            multiple,
+                            accept,
+                        } => ContentEvent::FileDialog {
+                            id,
+                            multiple,
+                            accept,
+                        },
+                        PageEvent::ClipboardWrite(text) => ContentEvent::ClipboardWrite(text),
+                        PageEvent::FindResult {
+                            active_match_ordinal,
+                            number_of_matches,
+                            query,
+                        } => ContentEvent::FindResult {
+                            active_match_ordinal,
+                            number_of_matches,
+                            query,
+                        },
+                        PageEvent::PermissionPrompt {
+                            id,
+                            origin,
+                            feature,
+                        } => {
                             let session = protocol::identity::SessionIdentity {
                                 tab: protocol::identity::TabId(1),
                                 frame: protocol::identity::FrameId(1),
                                 process: protocol::identity::ProcessSessionId([1; 16]),
                                 service: None,
                             };
-                            ContentEvent::PermissionPrompt(wega_protocol::permissions::PermissionPromptRequest {
-                                id,
-                                session,
-                                document: document_context(&view, serial, version),
-                                origin: wega_protocol::authority::Origin::Tuple(origin),
-                                feature,
-                            })
+                            ContentEvent::PermissionPrompt(
+                                wega_protocol::permissions::PermissionPromptRequest {
+                                    id,
+                                    session,
+                                    document: document_context(&view, serial, version),
+                                    origin: wega_protocol::authority::Origin::Tuple(origin),
+                                    feature,
+                                },
+                            )
                         }
                         PageEvent::PermissionRevoked { origin, feature } => {
                             ContentEvent::PermissionRevoked { origin, feature }
@@ -699,15 +745,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         PageEvent::NotificationClose { id } => {
                             ContentEvent::NotificationClose { id }
                         }
-                        PageEvent::Fullscreen(enabled) => {
-                            ContentEvent::Fullscreen(enabled)
-                        }
-                        PageEvent::ProtocolRegister(reg) => {
-                            ContentEvent::ProtocolRegister(reg)
-                        }
-                        PageEvent::ExternalApp(url) => {
-                            ContentEvent::ExternalApp(url)
-                        }
+                        PageEvent::Fullscreen(enabled) => ContentEvent::Fullscreen(enabled),
+                        PageEvent::ProtocolRegister(reg) => ContentEvent::ProtocolRegister(reg),
+                        PageEvent::ExternalApp(url) => ContentEvent::ExternalApp(url),
                         _ => unreachable!(),
                     };
                     write(&protocol::content_event(
@@ -1010,7 +1050,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         ),
                     ))?;
                 }
-                Command::FramePostMessage { target, origin, target_origin, message } => {
+                Command::FramePostMessage {
+                    target,
+                    origin,
+                    target_origin,
+                    message,
+                } => {
                     view.post_frame_message(target, &origin, target_origin.as_deref(), &message);
                     write(&protocol::content_event(
                         version,
@@ -1038,9 +1083,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         return Err("Reused or out-of-order navigation identity".into());
                     }
                     serial = requested;
-                    if let Err(error) = Url::parse(&url)
-                        .map_err(|e| e.to_string())
-                        .and_then(|url| view.load_for_navigation_bypass_cache(url, requested, bypass_cache))
+                    if let Err(error) =
+                        Url::parse(&url).map_err(|e| e.to_string()).and_then(|url| {
+                            view.load_for_navigation_bypass_cache(url, requested, bypass_cache)
+                        })
                     {
                         view.stop_for_navigation(requested);
                         report_commit(&view, serial)?;
@@ -1201,7 +1247,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Command::EnableAccessibility(enabled) => {
                     view.set_accessibility_enabled(enabled);
                 }
-                Command::AccessibilityAction { action, target, data } => {
+                Command::AccessibilityAction {
+                    action,
+                    target,
+                    data,
+                } => {
                     view.accessibility_action(&action, target, data.as_deref());
                 }
                 Command::FileSelected { id, paths } => {
@@ -1219,7 +1269,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Command::SelectAll => {
                     view.select_all();
                 }
-                Command::FindInPage { query, backwards, case_sensitive } => {
+                Command::FindInPage {
+                    query,
+                    backwards,
+                    case_sensitive,
+                } => {
                     view.find_in_page(&query, backwards, case_sensitive);
                 }
                 Command::MediaSessionAction(action) => {

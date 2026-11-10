@@ -5,8 +5,8 @@ use super::state::{CanvasState, parse_composite_operation};
 use super::style::CanvasStyle;
 use skia_safe::paint::Style;
 use skia_safe::{
-    AlphaType, ClipOp, Color, ColorType, EncodedImageFormat, Font, ImageInfo, Matrix, Paint, Point, Rect, Surface,
-    surfaces,
+    AlphaType, ClipOp, Color, ColorType, EncodedImageFormat, Font, ImageInfo, Matrix, Paint, Point,
+    Rect, Surface, surfaces,
 };
 use std::collections::HashMap;
 

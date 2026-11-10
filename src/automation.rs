@@ -413,8 +413,8 @@ impl Browser {
                                 Duration::from_secs(30),
                             ) {
                                 Ok(json_str) => {
-                                    let html: String = serde_json::from_str(&json_str)
-                                        .unwrap_or(json_str);
+                                    let html: String =
+                                        serde_json::from_str(&json_str).unwrap_or(json_str);
                                     value(json!(html))
                                 }
                                 Err(e) => Err(error(ErrorStatus::UnknownError, e)),
@@ -426,7 +426,9 @@ impl Browser {
                     return;
                 }
                 let Some(view) = self.tab().view().cloned() else {
-                    let _ = reply.send(value(json!("<!DOCTYPE html><html><body>Internal</body></html>")));
+                    let _ = reply.send(value(json!(
+                        "<!DOCTYPE html><html><body>Internal</body></html>"
+                    )));
                     return;
                 };
                 let Some((sender, receiver)) = servo_base::generic_channel::channel() else {
@@ -471,7 +473,10 @@ impl Browser {
                                     }
                                 }
                                 if std::time::Instant::now() >= deadline {
-                                    return Err(error(ErrorStatus::UnknownError, "No frame rendered yet"));
+                                    return Err(error(
+                                        ErrorStatus::UnknownError,
+                                        "No frame rendered yet",
+                                    ));
                                 }
                                 std::thread::sleep(Duration::from_millis(20));
                             };

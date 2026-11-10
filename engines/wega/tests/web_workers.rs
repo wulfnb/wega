@@ -44,7 +44,11 @@ fn transferable_ownership_detaches_source_buffer() {
     assert_eq!(source.len(), 5);
 
     let transferred = ArrayBufferTransfer::detach(&mut source);
-    assert_eq!(source.len(), 0, "Source buffer must be detached with 0 length");
+    assert_eq!(
+        source.len(),
+        0,
+        "Source buffer must be detached with 0 length"
+    );
     assert_eq!(transferred.byte_length, 5);
     assert_eq!(transferred.bytes, vec![10, 20, 30, 40, 50]);
 }
@@ -70,7 +74,10 @@ fn message_channel_port_entanglement_and_closure() {
 
     // Closing Port 1 detangles and discards messages
     hub.close(p1);
-    assert!(hub.post_message(p2, "\"lost message\"".into(), vec![]).is_ok());
+    assert!(
+        hub.post_message(p2, "\"lost message\"".into(), vec![])
+            .is_ok()
+    );
     assert!(hub.poll_messages(p1).is_empty());
 }
 
@@ -108,10 +115,17 @@ fn dedicated_worker_script_execution_and_bidirectional_messaging() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(got_reply, "Dedicated worker must receive and reply to messages");
+    assert!(
+        got_reply,
+        "Dedicated worker must receive and reply to messages"
+    );
 
     // Terminate worker
-    assert_eq!(page.evaluate_json("globalThis.worker.terminate(); true").unwrap(), "true");
+    assert_eq!(
+        page.evaluate_json("globalThis.worker.terminate(); true")
+            .unwrap(),
+        "true"
+    );
 }
 
 #[test]
@@ -199,7 +213,10 @@ fn shared_worker_shares_state_across_same_origin_documents() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(doc2_got, "Doc 2 must receive accumulated total of 35 from shared isolate");
+    assert!(
+        doc2_got,
+        "Doc 2 must receive accumulated total of 35 from shared isolate"
+    );
 }
 
 #[test]
@@ -251,7 +268,10 @@ fn service_worker_registration_scope_matching_and_unregistration() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(page.evaluate_json("globalThis.__matched").unwrap(), "\"https://app.test/app/\"");
+    assert_eq!(
+        page.evaluate_json("globalThis.__matched").unwrap(),
+        "\"https://app.test/app/\""
+    );
 
     // Check non-matching scope
     let check_non_match = r#"
@@ -272,7 +292,10 @@ fn service_worker_registration_scope_matching_and_unregistration() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert_eq!(page.evaluate_json("globalThis.__nonMatched").unwrap(), "\"none\"");
+    assert_eq!(
+        page.evaluate_json("globalThis.__nonMatched").unwrap(),
+        "\"none\""
+    );
 
     // Unregister
     let unreg = r#"

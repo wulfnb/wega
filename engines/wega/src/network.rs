@@ -399,7 +399,9 @@ impl Network {
             }
             if context.bypass_cache {
                 request.cache = "reload".into();
-                request.headers.push(("cache-control".into(), "no-cache".into()));
+                request
+                    .headers
+                    .push(("cache-control".into(), "no-cache".into()));
                 request.headers.push(("pragma".into(), "no-cache".into()));
             }
             let response = client.response(&request)?;

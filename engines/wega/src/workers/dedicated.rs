@@ -183,21 +183,15 @@ impl DedicatedWorker {
 
     fn flush_outbox(runtime: &mut JsRuntime, from_worker: &SyncSender<WorkerEvent>) {
         let drain_js = "JSON.stringify(globalThis.__outbox.splice(0, globalThis.__outbox.length))";
-        match runtime.execute_script("drain_outbox", drain_js) {
-            Ok(val) => {
-                deno_core::scope!(scope, runtime);
-                let local = deno_core::v8::Local::new(scope, val);
-                let json_str = local.to_rust_string_lossy(scope);
-                match serde_json::from_str::<Vec<String>>(&json_str) {
-                    Ok(messages) => {
-                        for msg in messages {
-                            let _ = from_worker.send(WorkerEvent::Message(msg));
-                        }
-                    }
-                    Err(_) => {}
+        if let Ok(val) = runtime.execute_script("drain_outbox", drain_js) {
+            deno_core::scope!(scope, runtime);
+            let local = deno_core::v8::Local::new(scope, val);
+            let json_str = local.to_rust_string_lossy(scope);
+            if let Ok(messages) = serde_json::from_str::<Vec<String>>(&json_str) {
+                for msg in messages {
+                    let _ = from_worker.send(WorkerEvent::Message(msg));
                 }
             }
-            Err(_) => {}
         }
     }
 

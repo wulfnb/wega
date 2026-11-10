@@ -22,9 +22,9 @@ use wega::downloads;
 mod downloads_ui;
 mod engine;
 mod input;
-mod internal_pages;
 mod inspector_probes;
 mod inspector_ui;
+mod internal_pages;
 #[cfg(target_os = "macos")]
 mod mac_application;
 mod native_media;
@@ -292,7 +292,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     if (options.engine == Some(wega::engine_choice::EngineKind::Wega) || options.engine_test)
         && wega_page::executable().is_none()
     {
-        return Err("Wega engine is not installed. Run python3 scripts/build-wega-engine.py --debug.".into());
+        return Err(
+            "Wega engine is not installed. Run python3 scripts/build-wega-engine.py --debug."
+                .into(),
+        );
     }
     #[cfg(target_os = "windows")]
     let Some(instance) = windows_instance::claim(&options)? else {

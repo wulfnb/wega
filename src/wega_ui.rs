@@ -323,9 +323,24 @@ impl Browser {
                             navigated = true;
                             let current = self.current_url();
                             match url::Url::parse(&address) {
-                                Ok(url) if wega::navigation::content_navigation_allowed(&url, current.as_ref()) && matches!(url.scheme(), "http" | "https" | "file") => self.navigate(&address),
-                                Ok(url) if matches!(url.scheme(), "mailto" | "tel" | "sms" | "zoommtg") => {
-                                    let origin = current.as_ref().map(|u| u.origin().ascii_serialization()).unwrap_or_else(|| "null".into());
+                                Ok(url)
+                                    if wega::navigation::content_navigation_allowed(
+                                        &url,
+                                        current.as_ref(),
+                                    ) && matches!(url.scheme(), "http" | "https" | "file") =>
+                                {
+                                    self.navigate(&address)
+                                }
+                                Ok(url)
+                                    if matches!(
+                                        url.scheme(),
+                                        "mailto" | "tel" | "sms" | "zoommtg"
+                                    ) =>
+                                {
+                                    let origin = current
+                                        .as_ref()
+                                        .map(|u| u.origin().ascii_serialization())
+                                        .unwrap_or_else(|| "null".into());
                                     self.dialogs.push_prompt(crate::capabilities::Prompt {
                                         origin,
                                         title: "Open another application?".into(),
@@ -333,7 +348,11 @@ impl Browser {
                                         decision: crate::capabilities::Decision::External(url),
                                     });
                                 }
-                                _ => self.notify(crate::ux::Severity::Warning, "This navigation is unavailable.", None),
+                                _ => self.notify(
+                                    crate::ux::Severity::Warning,
+                                    "This navigation is unavailable.",
+                                    None,
+                                ),
                             }
                         }
                         _ => {}
@@ -455,13 +474,8 @@ impl Browser {
             .dark(self.window.theme() != Some(winit::window::Theme::Light));
         let context = ui.ctx().clone();
         let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::Role::Image,
-                true,
-                "Wega web page.",
-            )
-        });
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "Wega web page."));
         let Some(page) = self.wega_mut() else { return };
         let _ = page.resize(width, height, scale * factor, dark);
         let frame = page

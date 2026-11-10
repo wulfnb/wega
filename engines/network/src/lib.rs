@@ -26,8 +26,8 @@ use wega_protocol::{
     identity::{PartitionId, ServiceIdentity, ServiceSessionId},
 };
 pub mod cache_storage;
-pub mod indexeddb;
 mod cookies;
+pub mod indexeddb;
 pub use cache_storage::{CacheEntry, CacheStorage};
 pub use cookies::{CookieEntry, Cookies, SiteContext};
 pub use indexeddb::IndexedDB;

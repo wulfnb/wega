@@ -268,7 +268,11 @@ impl Snapshot {
                 self.accessibility = Some(json.clone());
                 self.queue_native(context, event);
             }
-            ContentEvent::FileDialog { id, multiple, ref accept } => {
+            ContentEvent::FileDialog {
+                id,
+                multiple,
+                ref accept,
+            } => {
                 self.pending_file_dialog = Some((id, multiple, accept.clone()));
                 self.queue_native(context, event);
             }
@@ -496,21 +500,34 @@ pub(crate) fn evaluate_sync_parts(
     timeout: std::time::Duration,
 ) -> Result<String, String> {
     let (request, context) = {
-        let mut s = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut s = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !s.lifecycle.accepts_requests() {
             return Err("Content worker is stopped".into());
         }
-        let context = s.requests.begin(RequestKind::Evaluate, timeout).map_err(|e| e.message)?;
+        let context = s
+            .requests
+            .begin(RequestKind::Evaluate, timeout)
+            .map_err(|e| e.message)?;
         s.interacted = true;
         s.evaluated = None;
-        (Request::EvaluateDocument { context, source: source.to_string() }, context)
+        (
+            Request::EvaluateDocument {
+                context,
+                source: source.to_string(),
+            },
+            context,
+        )
     };
     requests.send(request).map_err(|e| e.to_string())?;
 
     let deadline = std::time::Instant::now() + timeout;
     while std::time::Instant::now() < deadline {
         {
-            let mut s = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(pos) = s.evaluations.iter().position(|(c, _)| *c == context) {
                 let (_, res) = s.evaluations.remove(pos).unwrap();
                 return res.map_err(|e| e.message);
@@ -523,10 +540,16 @@ pub(crate) fn evaluate_sync_parts(
 
 impl Page {
     pub fn eval_parts(&self) -> Option<(mpsc::SyncSender<Request>, Arc<Mutex<Snapshot>>)> {
-        self.requests.as_ref().map(|r| (r.clone(), self.state.clone()))
+        self.requests
+            .as_ref()
+            .map(|r| (r.clone(), self.state.clone()))
     }
     #[allow(dead_code)]
-    pub fn evaluate_sync(&self, source: &str, timeout: std::time::Duration) -> Result<String, String> {
+    pub fn evaluate_sync(
+        &self,
+        source: &str,
+        timeout: std::time::Duration,
+    ) -> Result<String, String> {
         let requests = self.requests.as_ref().ok_or("No request channel")?;
         evaluate_sync_parts(requests, &self.state, source, timeout)
     }
@@ -1084,23 +1107,38 @@ impl Page {
                         | Event::Cursor(_)
                         | Event::Dialog { .. } => return Err("Unscoped content event".into()),
                         // Connect FrameTree to browser supervisor and authority
-                        Event::FrameAttached { parent, frame, url: frame_url, name: _, sandbox } => {
-                            let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        Event::FrameAttached {
+                            parent,
+                            frame,
+                            url: frame_url,
+                            name: _,
+                            sandbox,
+                        } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
                             let doc_context = DocumentContext {
                                 document: state.requests.document(),
                                 revision: state.requests.revision(),
                             };
                             if let Some(tree) = &mut state.frame_tree {
-                                let sandbox_policy = protocol::browsing::Sandbox::parse(sandbox.as_deref());
+                                let sandbox_policy =
+                                    protocol::browsing::Sandbox::parse(sandbox.as_deref());
                                 let parent_key = protocol::browsing::ContextKey {
-                                    session: SessionIdentity { frame: parent, ..identity },
+                                    session: SessionIdentity {
+                                        frame: parent,
+                                        ..identity
+                                    },
                                     document: doc_context,
                                 };
-                                let _ = tree.attach(parent_key, frame.0, &frame_url, sandbox_policy);
+                                let _ =
+                                    tree.attach(parent_key, frame.0, &frame_url, sandbox_policy);
                             }
                         }
                         Event::FrameDetached { frame } => {
-                            let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
                             let doc_context = DocumentContext {
                                 document: state.requests.document(),
                                 revision: state.requests.revision(),
@@ -1113,8 +1151,14 @@ impl Page {
                                 let _ = tree.detach(parent_key, frame);
                             }
                         }
-                        Event::FrameNavigated { frame, url: nav_url, origin: _ } => {
-                            let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        Event::FrameNavigated {
+                            frame,
+                            url: nav_url,
+                            origin: _,
+                        } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
                             let next_rev = state.requests.revision();
                             if let Some(tree) = &mut state.frame_tree {
                                 if let Ok(parsed) = url::Url::parse(&nav_url) {
@@ -1129,17 +1173,33 @@ impl Page {
                                 }
                             }
                         }
-                        Event::FramePostMessage { source, target, origin, target_origin, message } => {
-                            let state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        Event::FramePostMessage {
+                            source,
+                            target,
+                            origin,
+                            target_origin,
+                            message,
+                        } => {
+                            let state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
                             if let Some(tree) = &state.frame_tree {
                                 let source_key = protocol::browsing::ContextKey {
-                                    session: SessionIdentity { frame: source, ..identity },
+                                    session: SessionIdentity {
+                                        frame: source,
+                                        ..identity
+                                    },
                                     document: DocumentContext {
                                         document: state.requests.document(),
                                         revision: state.requests.revision(),
                                     },
                                 };
-                                if let Ok(msg) = tree.message(source_key, target, target_origin.as_deref(), message.as_bytes().to_vec()) {
+                                if let Ok(msg) = tree.message(
+                                    source_key,
+                                    target,
+                                    target_origin.as_deref(),
+                                    message.as_bytes().to_vec(),
+                                ) {
                                     if tree.accepts_message(&msg) {
                                         let _ = acknowledgements.send(Request::FramePostMessage {
                                             target,
@@ -1495,7 +1555,11 @@ impl Page {
         let _ = self.send(Request::SelectAll);
     }
     pub fn find_in_page(&self, query: String, backwards: bool, case_sensitive: bool) {
-        let _ = self.send(Request::FindInPage { query, backwards, case_sensitive });
+        let _ = self.send(Request::FindInPage {
+            query,
+            backwards,
+            case_sensitive,
+        });
     }
     pub fn evaluate(&self, source: &str) {
         let _ = self.send(Request::Evaluate(source.to_string()));

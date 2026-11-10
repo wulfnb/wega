@@ -547,10 +547,15 @@ impl View {
             }
         }
         for (id, origin, feature) in requests.permission_prompts {
-            self.events.push_back(PageEvent::PermissionPrompt { id, origin, feature });
+            self.events.push_back(PageEvent::PermissionPrompt {
+                id,
+                origin,
+                feature,
+            });
         }
         for (id, title, options) in requests.notifications {
-            self.events.push_back(PageEvent::NotificationShow { id, title, options });
+            self.events
+                .push_back(PageEvent::NotificationShow { id, title, options });
         }
         for id in requests.notification_closes {
             self.events.push_back(PageEvent::NotificationClose { id });

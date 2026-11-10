@@ -364,8 +364,7 @@ fn navigation_cancels_pending_permission_prompts() {
     };
 
     // Navigating to about:blank cancels site-a's pending prompt
-    view.load(Url::parse("about:blank").unwrap())
-        .unwrap();
+    view.load(Url::parse("about:blank").unwrap()).unwrap();
     view.poll();
 
     // Answering old prompt ID has no effect on site-b

@@ -5,11 +5,10 @@
 
 use crate::{
     browser::{Browser, Tab},
-    components,
-    theme,
+    components, theme,
 };
-use wega::application::Command as AppCommand;
 use egui::{CornerRadius, RichText, Sense, Stroke};
+use wega::application::Command as AppCommand;
 
 #[derive(Clone, Debug, Default)]
 pub struct InternalPagesState {
@@ -389,7 +388,8 @@ impl Browser {
                 });
             let click_resp = ui.interact(
                 row.response.rect,
-                ui.scope_id().with(("history-item", &entry.url, entry.visited_at)),
+                ui.scope_id()
+                    .with(("history-item", &entry.url, entry.visited_at)),
                 Sense::click(),
             );
             if click_resp.hovered() {

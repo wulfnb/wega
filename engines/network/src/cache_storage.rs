@@ -106,6 +106,7 @@ impl CacheStorage {
         Ok(names)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn put_entry(
         &mut self,
         cache_id: i64,

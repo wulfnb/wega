@@ -277,8 +277,17 @@ impl Cookies {
             if matches_site {
                 count += 1;
             } else {
-                let domain = cookie.domain.as_cow().unwrap_or_default().trim_start_matches('.').to_string();
-                let scheme = if cookie.secure().unwrap_or(false) { "https" } else { "http" };
+                let domain = cookie
+                    .domain
+                    .as_cow()
+                    .unwrap_or_default()
+                    .trim_start_matches('.')
+                    .to_string();
+                let scheme = if cookie.secure().unwrap_or(false) {
+                    "https"
+                } else {
+                    "http"
+                };
                 let path = String::from(&cookie.path);
                 if let Ok(entry_url) = Url::parse(&format!("{scheme}://{domain}{path}")) {
                     let _ = new_store.insert(cookie, &entry_url);
@@ -298,8 +307,11 @@ impl Cookies {
         Self::save_state(&state);
     }
     pub fn import_legacy_cookies(&self, path: &std::path::Path) -> Result<usize, String> {
-        let file = std::fs::File::open(path).map_err(|e| format!("Cannot open legacy cookie file: {e}"))?;
-        let metadata = file.metadata().map_err(|e| format!("Cannot read legacy metadata: {e}"))?;
+        let file = std::fs::File::open(path)
+            .map_err(|e| format!("Cannot open legacy cookie file: {e}"))?;
+        let metadata = file
+            .metadata()
+            .map_err(|e| format!("Cannot read legacy metadata: {e}"))?;
         if metadata.len() > 4 * 1024 * 1024 {
             return Err("Legacy cookie file exceeds 4MB size limit".into());
         }
@@ -314,13 +326,25 @@ impl Cookies {
         let imported_store = store.with_suffix_list(suffix_list());
         for cookie in imported_store.iter_unexpired() {
             if state.store.iter_unexpired().count() < 512 {
-                let domain = cookie.domain.as_cow().unwrap_or_default().trim_start_matches('.').to_string();
-                let scheme = if cookie.secure().unwrap_or(false) { "https" } else { "http" };
+                let domain = cookie
+                    .domain
+                    .as_cow()
+                    .unwrap_or_default()
+                    .trim_start_matches('.')
+                    .to_string();
+                let scheme = if cookie.secure().unwrap_or(false) {
+                    "https"
+                } else {
+                    "http"
+                };
                 let path = String::from(&cookie.path);
-                if let Ok(url) = Url::parse(&format!("{scheme}://{domain}{path}")) {
-                    if state.store.insert(cookie.clone().into_owned(), &url).is_ok() {
-                        count += 1;
-                    }
+                if let Ok(url) = Url::parse(&format!("{scheme}://{domain}{path}"))
+                    && state
+                        .store
+                        .insert(cookie.clone().into_owned(), &url)
+                        .is_ok()
+                {
+                    count += 1;
                 }
             }
         }
@@ -400,7 +424,12 @@ mod tests {
     fn cookie_inventory_includes_httponly_while_script_reader_does_not() {
         let jar = Cookies::default();
         let site = url("https://auth.example.com/");
-        jar.set(&site, "session=secret; HttpOnly; Path=/; Secure", false, SiteContext::SameSite);
+        jar.set(
+            &site,
+            "session=secret; HttpOnly; Path=/; Secure",
+            false,
+            SiteContext::SameSite,
+        );
         jar.set(&site, "theme=dark; Path=/", false, SiteContext::SameSite);
 
         // Script cannot read HttpOnly
@@ -433,7 +462,12 @@ mod tests {
         let site_a = url("https://a.example.com/");
         let site_b = url("https://b.other.org/");
         jar.set(&site_a, "a=1; Path=/; Secure", false, SiteContext::SameSite);
-        jar.set(&site_b, "b=2; Path=/; Secure; Max-Age=3600", false, SiteContext::SameSite);
+        jar.set(
+            &site_b,
+            "b=2; Path=/; Secure; Max-Age=3600",
+            false,
+            SiteContext::SameSite,
+        );
 
         assert_eq!(jar.inventory(&site_a).len(), 1);
         assert_eq!(jar.inventory(&site_b).len(), 1);

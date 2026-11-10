@@ -320,15 +320,19 @@ fn scrolled_zoomed_viewport_layout_and_hit_testing() {
         "<div id=box style='width:100px;height:100px;background:lime'></div><div style='height:800px'></div>",
     );
     view.paint(200, 200, 2.0, 1.5, false).unwrap();
-    let res = view.evaluate_json(
-        "document.getElementById('box').getBoundingClientRect().width"
-    ).unwrap();
+    let res = view
+        .evaluate_json("document.getElementById('box').getBoundingClientRect().width")
+        .unwrap();
     let width: f64 = serde_json::from_str(&res).unwrap();
     assert_eq!(width, 100.0);
 
     // Scroll down 50px
     view.scroll(0.0, 50.0);
-    view.pointer(wega_engine::Pointer::new(wega_engine::PointerKind::Move, 20.0, 20.0));
+    view.pointer(wega_engine::Pointer::new(
+        wega_engine::PointerKind::Move,
+        20.0,
+        20.0,
+    ));
     assert!(view.needs_paint());
 }
 

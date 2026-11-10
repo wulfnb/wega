@@ -138,12 +138,15 @@ fn failed_or_duplicate_transfers_leave_the_callers_buffers_attached() {
 fn post_frame_message_dispatches_message_event_with_origin_and_target_filtering() {
     let mut view = page();
     view.set_html("<p>Message target</p>").unwrap();
-    view.evaluate_json(r#"(() => {
+    view.evaluate_json(
+        r#"(() => {
         globalThis.inbound = [];
         window.addEventListener('message', e => {
             inbound.push({ data: e.data, origin: e.origin, source: e.source });
         });
-    })()"#).unwrap();
+    })()"#,
+    )
+    .unwrap();
 
     // 1. Valid origin matching targetOrigin
     view.post_frame_message(
@@ -154,7 +157,8 @@ fn post_frame_message_dispatches_message_event_with_origin_and_target_filtering(
     );
     let count1: u32 = serde_json::from_str(&view.evaluate_json("inbound.length").unwrap()).unwrap();
     assert_eq!(count1, 1);
-    let msg1: serde_json::Value = serde_json::from_str(&view.evaluate_json("inbound[0]").unwrap()).unwrap();
+    let msg1: serde_json::Value =
+        serde_json::from_str(&view.evaluate_json("inbound[0]").unwrap()).unwrap();
     assert_eq!(msg1["origin"], "https://trusted.test");
     assert_eq!(msg1["data"]["greeting"], "hello");
     assert_eq!(msg1["data"]["code"], 42);
@@ -178,7 +182,8 @@ fn post_frame_message_dispatches_message_event_with_origin_and_target_filtering(
     );
     let count3: u32 = serde_json::from_str(&view.evaluate_json("inbound.length").unwrap()).unwrap();
     assert_eq!(count3, 2);
-    let msg2: serde_json::Value = serde_json::from_str(&view.evaluate_json("inbound[1]").unwrap()).unwrap();
+    let msg2: serde_json::Value =
+        serde_json::from_str(&view.evaluate_json("inbound[1]").unwrap()).unwrap();
     assert_eq!(msg2["origin"], "https://wildcard.test");
     assert_eq!(msg2["data"], "wildcard-accepted");
 }
@@ -189,7 +194,10 @@ fn frame_tree_and_origin_policy_isolation() {
         DocumentContext, DocumentId, DocumentRevision,
         authority::is_permitted_cross_origin_property,
         browsing::{ContextKey, ContextOrigin, FrameTree, Placement, Sandbox},
-        identity::{FrameId, PartitionId, ProcessSessionId, ServiceIdentity, ServiceSessionId, SessionIdentity, TabId},
+        identity::{
+            FrameId, PartitionId, ProcessSessionId, ServiceIdentity, ServiceSessionId,
+            SessionIdentity, TabId,
+        },
     };
 
     fn make_key(frame: u64, process: u8, revision: u64) -> ContextKey {
@@ -215,7 +223,9 @@ fn frame_tree_and_origin_policy_isolation() {
     assert_eq!(tree.root(), FrameId(1));
 
     // 1. Same-origin frame (about:blank) inherits parent origin and SameAgent placement
-    let c1_id = tree.attach(top_key, 10, "about:blank", Sandbox::default()).unwrap();
+    let c1_id = tree
+        .attach(top_key, 10, "about:blank", Sandbox::default())
+        .unwrap();
     let c1_ctx = tree.get(c1_id).unwrap();
     assert_eq!(c1_ctx.origin.serialized(), "https://parent.test");
     assert_eq!(c1_ctx.placement, Placement::SameAgent(FrameId(1)));
@@ -223,7 +233,14 @@ fn frame_tree_and_origin_policy_isolation() {
     assert!(tree.can_access(top_key, c1_id).unwrap());
 
     // 2. Cross-origin frame gets isolated placement
-    let c2_id = tree.attach(top_key, 20, "https://foreign.test/embed", Sandbox::default()).unwrap();
+    let c2_id = tree
+        .attach(
+            top_key,
+            20,
+            "https://foreign.test/embed",
+            Sandbox::default(),
+        )
+        .unwrap();
     let c2_ctx = tree.get(c2_id).unwrap();
     assert_eq!(c2_ctx.origin.serialized(), "https://foreign.test");
     assert_eq!(c2_ctx.placement, Placement::Isolated);
@@ -234,12 +251,14 @@ fn frame_tree_and_origin_policy_isolation() {
     assert!(!tree.can_access(top_key, c2_id).unwrap());
 
     // 3. Sandboxed frame gets opaque origin even with about:srcdoc
-    let c3_id = tree.attach(
-        top_key,
-        30,
-        "about:srcdoc",
-        Sandbox::parse(Some("allow-scripts")),
-    ).unwrap();
+    let c3_id = tree
+        .attach(
+            top_key,
+            30,
+            "about:srcdoc",
+            Sandbox::parse(Some("allow-scripts")),
+        )
+        .unwrap();
     let c3_ctx = tree.get(c3_id).unwrap();
     assert_eq!(c3_ctx.origin.serialized(), "null");
     assert!(matches!(c3_ctx.origin, ContextOrigin::Opaque { .. }));

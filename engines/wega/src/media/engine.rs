@@ -1,9 +1,7 @@
 //! High-level media engine coordinating media elements, demuxers, buffers, and sessions.
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use wega_protocol::media::{
-    MediaSessionAction, MediaSessionPlaybackState,
-};
+use wega_protocol::media::{MediaSessionAction, MediaSessionPlaybackState};
 
 use super::buffer::MediaBufferManager;
 use super::clock::{MediaClock, MediaError, MediaErrorCode, NetworkState, ReadyState};

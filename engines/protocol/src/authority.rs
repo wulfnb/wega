@@ -5,7 +5,9 @@ use crate::{
 };
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum Origin {
     Tuple(String),
     /// Opaque/unknown origins cannot receive remembered or device permissions.

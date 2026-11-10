@@ -129,20 +129,20 @@ impl MessagePortHub {
         if let Some(state) = self.ports.get_mut(&port) {
             state.closed = true;
             state.queue.clear();
-            if let Some(other_id) = state.entangled.take() {
-                if let Some(other_state) = self.ports.get_mut(&other_id) {
-                    other_state.entangled = None;
-                }
+            if let Some(other_id) = state.entangled.take()
+                && let Some(other_state) = self.ports.get_mut(&other_id)
+            {
+                other_state.entangled = None;
             }
         }
     }
 
     /// Poll pending messages delivered to this port.
     pub fn poll_messages(&mut self, port: PortId) -> Vec<PortMessage> {
-        if let Some(state) = self.ports.get_mut(&port) {
-            if !state.closed {
-                return state.queue.drain(..).collect();
-            }
+        if let Some(state) = self.ports.get_mut(&port)
+            && !state.closed
+        {
+            return state.queue.drain(..).collect();
         }
         Vec::new()
     }

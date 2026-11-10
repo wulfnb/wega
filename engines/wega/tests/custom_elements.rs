@@ -500,10 +500,13 @@ fn component_library_template_cloning_and_nested_shadow_dom() {
         <ui-card id="c1">
             <h2 slot="header">Card Title</h2>
             <p>Main content paragraph</p>
-        </ui-card>"#
-    ).unwrap();
+        </ui-card>"#,
+    )
+    .unwrap();
 
-    let result = view.evaluate_json(r#"(() => {
+    let result = view
+        .evaluate_json(
+            r#"(() => {
         class UiCard extends HTMLElement {
             constructor() {
                 super();
@@ -529,16 +532,21 @@ fn component_library_template_cloning_and_nested_shadow_dom() {
             bodyCount: bodyAssigned.length,
             bodyTag: bodyAssigned[0]?.tagName,
         };
-    })()"#).unwrap();
+    })()"#,
+        )
+        .unwrap();
 
-    assert_json_eq!(result, r#"{
+    assert_json_eq!(
+        result,
+        r#"{
         "isCustom": true,
         "hasShadow": true,
         "headerCount": 1,
         "headerTag": "H2",
         "bodyCount": 1,
         "bodyTag": "P"
-    }"#);
+    }"#
+    );
 }
 
 #[test]
@@ -546,7 +554,9 @@ fn custom_element_observed_attributes_and_property_reflection() {
     let mut view = page(Limits::default());
     view.set_html("<div id=container></div>").unwrap();
 
-    let result = view.evaluate_json(r#"(() => {
+    let result = view
+        .evaluate_json(
+            r#"(() => {
         const events = [];
         class UserBadge extends HTMLElement {
             static get observedAttributes() {
@@ -580,7 +590,9 @@ fn custom_element_observed_attributes_and_property_reflection() {
             eventCount: events.length,
             events: events
         };
-    })()"#).unwrap();
+    })()"#,
+        )
+        .unwrap();
 
     let val: serde_json::Value = serde_json::from_str(&result).unwrap();
     assert_eq!(val["eventCount"], 7);
@@ -601,7 +613,9 @@ fn delegates_focus_and_event_composed_path_retargeting() {
     let mut view = page(Limits::default());
     view.set_html("<div id=host></div>").unwrap();
 
-    let result = view.evaluate_json(r#"(() => {
+    let result = view
+        .evaluate_json(
+            r#"(() => {
         const host = document.getElementById('host');
         const root = host.attachShadow({ mode: 'open', delegatesFocus: true });
         root.innerHTML = '<input id="inner-input" type="text"><span id="inner-span">Text</span>';
@@ -637,13 +651,18 @@ fn delegates_focus_and_event_composed_path_retargeting() {
             hasComposedPath: hostComposedPathLength > 0,
             nonComposedReachedHost
         };
-    })()"#).unwrap();
+    })()"#,
+        )
+        .unwrap();
 
-    assert_json_eq!(result, r#"{
+    assert_json_eq!(
+        result,
+        r#"{
         "delegatesFocus": true,
         "innerTarget": "inner-span",
         "hostTarget": "host",
         "hasComposedPath": true,
         "nonComposedReachedHost": false
-    }"#);
+    }"#
+    );
 }

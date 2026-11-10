@@ -798,7 +798,10 @@ impl View {
                 if let Some(pos) = lower.find("realm=") {
                     let rem = &h[pos + 6..];
                     let trimmed = rem.trim_matches(|c| c == '"' || c == '\'');
-                    let end = trimmed.find('"').or_else(|| trimmed.find(',')).unwrap_or(trimmed.len());
+                    let end = trimmed
+                        .find('"')
+                        .or_else(|| trimmed.find(','))
+                        .unwrap_or(trimmed.len());
                     Some(trimmed[..end].to_string())
                 } else {
                     None
@@ -1037,7 +1040,8 @@ impl View {
             origin: origin.to_string(),
             feature,
         });
-        let tracks_json = serde_json::to_string(&res.stopped_tracks).unwrap_or_else(|_| "[]".into());
+        let tracks_json =
+            serde_json::to_string(&res.stopped_tracks).unwrap_or_else(|_| "[]".into());
         let locks_json = serde_json::to_string(&res.released_locks).unwrap_or_else(|_| "[]".into());
         let _ = self.run(
             &format!(
@@ -1117,7 +1121,11 @@ impl View {
                         }
                         node.mark_ancestors_dirty();
                     }
-                    doc.mutate().set_attribute(target_node, QualName::new(None, ns!(), LocalName::from("value")), val);
+                    doc.mutate().set_attribute(
+                        target_node,
+                        QualName::new(None, ns!(), LocalName::from("value")),
+                        val,
+                    );
                     drop(doc);
                     let source = format!(
                         "__wega_native_event('input', {}, {{data:{}}}); __wega_native_event('change', {}, {{data:{}}});",
@@ -1163,10 +1171,13 @@ impl View {
                         node.mark_ancestors_dirty();
                     }
                     let val = format!("C:\\fakepath\\{display_val}");
-                    doc.mutate().set_attribute(target, QualName::new(None, ns!(), LocalName::from("value")), &val);
+                    doc.mutate().set_attribute(
+                        target,
+                        QualName::new(None, ns!(), LocalName::from("value")),
+                        &val,
+                    );
                 }
-                let files_json =
-                    serde_json::to_string(&file_names).unwrap_or_else(|_| "[]".into());
+                let files_json = serde_json::to_string(&file_names).unwrap_or_else(|_| "[]".into());
                 let source = format!(
                     "__wega_native_file_input({}, {});",
                     serde_json::json!(target.as_u64().to_string()),
@@ -1183,19 +1194,25 @@ impl View {
         self.dirty = true;
     }
     pub fn copy(&mut self) -> Option<String> {
-        let text = self.evaluate_json("window.getSelection()?.toString() || ''").ok();
+        let text = self
+            .evaluate_json("window.getSelection()?.toString() || ''")
+            .ok();
         let text = text.filter(|s| !s.is_empty());
         if let Some(ref text) = text {
-            self.events.push_back(PageEvent::ClipboardWrite(text.clone()));
+            self.events
+                .push_back(PageEvent::ClipboardWrite(text.clone()));
         }
         let _ = self.evaluate_json("document.execCommand('copy')");
         text
     }
     pub fn cut(&mut self) -> Option<String> {
-        let text = self.evaluate_json("window.getSelection()?.toString() || ''").ok();
+        let text = self
+            .evaluate_json("window.getSelection()?.toString() || ''")
+            .ok();
         let text = text.filter(|s| !s.is_empty());
         if let Some(ref text) = text {
-            self.events.push_back(PageEvent::ClipboardWrite(text.clone()));
+            self.events
+                .push_back(PageEvent::ClipboardWrite(text.clone()));
         }
         let _ = self.evaluate_json("document.execCommand('cut')");
         self.dirty = true;
@@ -1203,14 +1220,21 @@ impl View {
     }
     pub fn paste(&mut self, text: &str) {
         let text_json = serde_json::to_string(text).unwrap_or_default();
-        let _ = self.evaluate_json(&format!("document.execCommand('paste', false, {text_json})"));
+        let _ = self.evaluate_json(&format!(
+            "document.execCommand('paste', false, {text_json})"
+        ));
         self.dirty = true;
     }
     pub fn select_all(&mut self) {
         let _ = self.evaluate_json("document.execCommand('selectAll')");
         self.dirty = true;
     }
-    pub fn find_in_page(&mut self, query: &str, backwards: bool, case_sensitive: bool) -> (u32, u32) {
+    pub fn find_in_page(
+        &mut self,
+        query: &str,
+        backwards: bool,
+        case_sensitive: bool,
+    ) -> (u32, u32) {
         let query_json = serde_json::to_string(query).unwrap_or_default();
         let js = format!(
             "window.find({query_json}, {}, {}, true); (window.__wegaBrowserFind || {{}})",
@@ -1237,7 +1261,10 @@ impl View {
         self.dirty = true;
         (active, total)
     }
-    pub fn notify_media_session_action(&mut self, action: wega_protocol::media::MediaSessionAction) {
+    pub fn notify_media_session_action(
+        &mut self,
+        action: wega_protocol::media::MediaSessionAction,
+    ) {
         let action_str = match action {
             wega_protocol::media::MediaSessionAction::Play => "play",
             wega_protocol::media::MediaSessionAction::Pause => "pause",
@@ -1276,7 +1303,11 @@ impl View {
     }
     pub fn favicon_url(&self) -> Option<Url> {
         let doc = self.document.borrow();
-        for selector in &["link[rel~='icon']", "link[rel='shortcut icon']", "link[rel='icon']"] {
+        for selector in &[
+            "link[rel~='icon']",
+            "link[rel='shortcut icon']",
+            "link[rel='icon']",
+        ] {
             if let Ok(Some(id)) = doc.query_selector(selector) {
                 if let Some(node) = doc.get_node(id) {
                     if let Some(elem) = node.element_data() {
@@ -1412,7 +1443,8 @@ impl View {
         }
     }
     pub fn activate(&mut self) {
-        self.activation.set(Some(Instant::now() + Duration::from_secs(5)));
+        self.activation
+            .set(Some(Instant::now() + Duration::from_secs(5)));
     }
     fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
         let scroll = self.document.borrow().viewport_scroll();
@@ -1852,13 +1884,18 @@ impl View {
             if event_type == "input" {
                 let is_checkable = {
                     let doc = self.document.borrow();
-                    doc.get_node(target).and_then(|n| n.element_data()).is_some_and(|el| {
-                        el.name.local == LocalName::from("input")
-                            && matches!(
-                                el.attr(LocalName::from("type")).unwrap_or_default().to_ascii_lowercase().as_str(),
-                                "checkbox" | "radio"
-                            )
-                    })
+                    doc.get_node(target)
+                        .and_then(|n| n.element_data())
+                        .is_some_and(|el| {
+                            el.name.local == LocalName::from("input")
+                                && matches!(
+                                    el.attr(LocalName::from("type"))
+                                        .unwrap_or_default()
+                                        .to_ascii_lowercase()
+                                        .as_str(),
+                                    "checkbox" | "radio"
+                                )
+                        })
                 };
                 if is_checkable {
                     let source = format!(
@@ -1906,7 +1943,8 @@ impl View {
         }
         if pressed {
             let key = event.key.to_string();
-            let is_ctrl_or_meta = event.modifiers.contains(Modifiers::CONTROL) || event.modifiers.contains(Modifiers::META);
+            let is_ctrl_or_meta = event.modifiers.contains(Modifiers::CONTROL)
+                || event.modifiers.contains(Modifiers::META);
             if is_ctrl_or_meta {
                 if key.eq_ignore_ascii_case("c") {
                     self.copy();
@@ -1935,7 +1973,10 @@ impl View {
                     if let Some(node) = doc.get_node_mut(target) {
                         if let Some(el) = node.element_data_mut() {
                             if el.name.local == LocalName::from("input") {
-                                let kind = el.attr(LocalName::from("type")).unwrap_or_default().to_ascii_lowercase();
+                                let kind = el
+                                    .attr(LocalName::from("type"))
+                                    .unwrap_or_default()
+                                    .to_ascii_lowercase();
                                 if kind == "checkbox" {
                                     let is_checked = el.checkbox_input_checked().unwrap_or(false);
                                     el.set_checkbox_input_checked(!is_checked);
@@ -1965,7 +2006,12 @@ impl View {
                 };
                 if let Some(is_cb) = toggled {
                     if !is_cb {
-                        let name = self.document.borrow().get_node(target).and_then(|n| n.element_data()).and_then(|el| el.attr(LocalName::from("name")).map(str::to_string));
+                        let name = self
+                            .document
+                            .borrow()
+                            .get_node(target)
+                            .and_then(|n| n.element_data())
+                            .and_then(|el| el.attr(LocalName::from("name")).map(str::to_string));
                         if let Some(name) = name {
                             let mut doc = self.document.borrow_mut();
                             blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
@@ -2475,7 +2521,10 @@ fn encode_body(body: &Body, content_type: Option<&str>) -> (Vec<u8>, String) {
                             );
                         }
                         blitz_traits::net::EntryValue::File(path) => {
-                            let filename = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+                            let filename = path
+                                .file_name()
+                                .map(|f| f.to_string_lossy().to_string())
+                                .unwrap_or_default();
                             let data = std::fs::read(path).unwrap_or_default();
                             out.extend_from_slice(
                                 format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n")
@@ -2590,7 +2639,12 @@ mod tests {
     fn accessibility_tree_generates_valid_json() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("data:text/html,<button>Click me</button>").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("data:text/html,<button>Click me</button>").unwrap(),
+            network,
+            limits,
+        )
+        .unwrap();
         view.set_accessibility_enabled(true);
         let tree_json = view.accessibility_tree();
         assert!(tree_json.is_some());
@@ -2603,7 +2657,12 @@ mod tests {
     fn file_dialog_canceling_leaks_no_grant() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("data:text/html,<input type='file' id='f'>").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("data:text/html,<input type='file' id='f'>").unwrap(),
+            network,
+            limits,
+        )
+        .unwrap();
         view.pending_file_dialog = Some((42, NodeId::from_u64(1)));
         view.file_selected(42, vec![]);
         assert!(view.selected_files.is_empty());
@@ -2614,7 +2673,8 @@ mod tests {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
         let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
-        view.set_html("<!doctype html><div id='test'>Hello <b>beautiful</b> world</div>").unwrap();
+        view.set_html("<!doctype html><div id='test'>Hello <b>beautiful</b> world</div>")
+            .unwrap();
         let js = r#"
             const div = document.getElementById('test');
             const range = document.createRange();
@@ -2638,7 +2698,8 @@ mod tests {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
         let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
-        view.set_html("<!doctype html><div id='ed' contenteditable='true'>Initial text</div>").unwrap();
+        view.set_html("<!doctype html><div id='ed' contenteditable='true'>Initial text</div>")
+            .unwrap();
         let js = r#"
             const el = document.getElementById('ed');
             el.focus();
@@ -2661,7 +2722,10 @@ mod tests {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
         let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
-        view.set_html("<!doctype html><p>The quick brown fox jumps over the lazy dog. The fox was quick.</p>").unwrap();
+        view.set_html(
+            "<!doctype html><p>The quick brown fox jumps over the lazy dog. The fox was quick.</p>",
+        )
+        .unwrap();
         let (active1, total1) = view.find_in_page("fox", false, false);
         assert_eq!(active1, 1);
         assert_eq!(total1, 2);

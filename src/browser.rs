@@ -536,17 +536,21 @@ impl Browser {
         if self.tab().is_internal() {
             return 1.0;
         }
-        self.tab()
-            .wega
-            .as_ref()
-            .map_or_else(|| self.tab().view().map_or(1.0, |v| v.page_zoom()), |page| page.zoom)
+        self.tab().wega.as_ref().map_or_else(
+            || self.tab().view().map_or(1.0, |v| v.page_zoom()),
+            |page| page.zoom,
+        )
     }
     pub(crate) fn can_go_back(&self) -> bool {
         if self.tab().is_internal() {
             return self.tab().history.can_back();
         }
         if self.is_wega() {
-            return self.tab().wega.as_ref().map_or(false, |page| page.can_back());
+            return self
+                .tab()
+                .wega
+                .as_ref()
+                .map_or(false, |page| page.can_back());
         }
         self.tab().view().map_or(false, |view| view.can_go_back())
     }
@@ -555,9 +559,15 @@ impl Browser {
             return self.tab().history.can_forward();
         }
         if self.is_wega() {
-            return self.tab().wega.as_ref().map_or(false, |page| page.can_forward());
+            return self
+                .tab()
+                .wega
+                .as_ref()
+                .map_or(false, |page| page.can_forward());
         }
-        self.tab().view().map_or(false, |view| view.can_go_forward())
+        self.tab()
+            .view()
+            .map_or(false, |view| view.can_go_forward())
     }
     pub(crate) fn history_target(&self, forward: bool) -> Option<String> {
         if self.tab().is_internal() {
@@ -1053,7 +1063,9 @@ impl Browser {
         }
         let closed_tab = &self.session.tabs()[index];
         if let Some(pending) = &self.automation_navigation {
-            if pending.tab_key == closed_tab.key || (closed_tab.id().is_some() && pending.owner == closed_tab.id()) {
+            if pending.tab_key == closed_tab.key
+                || (closed_tab.id().is_some() && pending.owner == closed_tab.id())
+            {
                 if let Some(pending) = self.automation_navigation.take() {
                     let _ = pending.reply.send(Err(crate::automation::error(
                         webdriver::error::ErrorStatus::NoSuchWindow,
@@ -1205,7 +1217,9 @@ impl Browser {
             }
             let active = self.session.active();
             if self.tab().is_internal() && self.tab().wega.is_none() && self.tab().live.is_none() {
-                self.session.tabs_mut()[active].history.push(url.to_string());
+                self.session.tabs_mut()[active]
+                    .history
+                    .push(url.to_string());
                 self.session.tabs_mut()[active].initial_url = url.to_string();
                 if target == EngineKind::Wega {
                     match crate::wega_page::Page::new(

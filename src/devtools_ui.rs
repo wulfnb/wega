@@ -96,11 +96,17 @@ impl Browser {
             });
             ui.separator();
             if let Some(page) = self.tab().wega.as_ref() {
-                let state = page.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                let state = page
+                    .state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 ui.monospace(format!("URL: {}", self.tab().url()));
                 ui.monospace(format!("Title: {}", self.tab().title()));
                 ui.monospace(format!("PID: {}", page.pid()));
-                ui.monospace(format!("Worker RSS: {} KB", page.resident_bytes().unwrap_or(0) / 1024));
+                ui.monospace(format!(
+                    "Worker RSS: {} KB",
+                    page.resident_bytes().unwrap_or(0) / 1024
+                ));
                 ui.monospace(format!("JS Heap: {} KB", state.js_heap / 1024));
                 ui.monospace(format!("DOM Nodes: {}", state.nodes));
                 ui.monospace(format!("Loading: {}", state.lifecycle.loading()));

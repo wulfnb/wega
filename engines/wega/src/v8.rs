@@ -166,7 +166,9 @@ struct RawIsolateGuard(*mut deno_core::v8::Isolate);
 #[allow(unsafe_code)]
 impl RawIsolateGuard {
     fn new(isolate: &mut deno_core::v8::Isolate) -> Self {
-        unsafe { isolate.enter(); }
+        unsafe {
+            isolate.enter();
+        }
         Self(isolate as *mut _)
     }
 }
@@ -174,7 +176,9 @@ impl RawIsolateGuard {
 #[allow(unsafe_code)]
 impl Drop for RawIsolateGuard {
     fn drop(&mut self) {
-        unsafe { (*self.0).exit(); }
+        unsafe {
+            (*self.0).exit();
+        }
     }
 }
 
@@ -430,7 +434,10 @@ impl V8Host {
         self.dom.begin_task();
         let started = Instant::now();
         self.watchdog.arm(self.budget);
-        let _guard = self.runtime.as_mut().map(|rt| RawIsolateGuard::new(rt.v8_isolate()));
+        let _guard = self
+            .runtime
+            .as_mut()
+            .map(|rt| RawIsolateGuard::new(rt.v8_isolate()));
         let result = run(self);
         drop(_guard);
         let fired = self.watchdog.disarm();

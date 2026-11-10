@@ -6,11 +6,11 @@ pub mod authority;
 pub mod browsing;
 pub mod identity;
 pub mod lifecycle;
+pub mod media;
+pub mod permissions;
 pub mod queue;
 pub mod requests;
 pub mod storage;
-pub mod media;
-pub mod permissions;
 pub const VERSION: u32 = 21;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
@@ -170,16 +170,28 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
         ContentEvent::Accessibility(_) => Event::Notice("Accessibility update".into()),
         ContentEvent::FileDialog { id, .. } => Event::Notice(format!("File dialog {id}")),
         ContentEvent::ClipboardWrite(text) => Event::Notice(format!("Clipboard write: {text}")),
-        ContentEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
-            Event::Notice(format!("Find {query}: {active_match_ordinal}/{number_of_matches}"))
-        }
+        ContentEvent::FindResult {
+            active_match_ordinal,
+            number_of_matches,
+            query,
+        } => Event::Notice(format!(
+            "Find {query}: {active_match_ordinal}/{number_of_matches}"
+        )),
         ContentEvent::MediaSession(_) => Event::Notice("Media session update".into()),
         ContentEvent::PermissionPrompt(_) => Event::Notice("Permission prompt".into()),
-        ContentEvent::PermissionRevoked { feature, .. } => Event::Notice(format!("Permission revoked: {feature}")),
-        ContentEvent::NotificationShow { title, .. } => Event::Notice(format!("Notification: {title}")),
-        ContentEvent::NotificationClose { id } => Event::Notice(format!("Notification closed {id}")),
+        ContentEvent::PermissionRevoked { feature, .. } => {
+            Event::Notice(format!("Permission revoked: {feature}"))
+        }
+        ContentEvent::NotificationShow { title, .. } => {
+            Event::Notice(format!("Notification: {title}"))
+        }
+        ContentEvent::NotificationClose { id } => {
+            Event::Notice(format!("Notification closed {id}"))
+        }
         ContentEvent::Fullscreen(f) => Event::Notice(format!("Fullscreen: {f}")),
-        ContentEvent::ProtocolRegister(r) => Event::Notice(format!("Register protocol: {}", r.scheme)),
+        ContentEvent::ProtocolRegister(r) => {
+            Event::Notice(format!("Register protocol: {}", r.scheme))
+        }
         ContentEvent::ExternalApp(u) => Event::Notice(format!("External app: {u}")),
     }
 }
@@ -857,13 +869,17 @@ mod tests {
     }
     #[test]
     fn navigation_and_browser_integrations_wire_compatibility() {
-        let load_default: Command = serde_json::from_str(r#"{"Load":{"url":"https://example.test/","serial":1}}"#).unwrap();
+        let load_default: Command =
+            serde_json::from_str(r#"{"Load":{"url":"https://example.test/","serial":1}}"#).unwrap();
         match load_default {
             Command::Load { bypass_cache, .. } => assert!(!bypass_cache),
             _ => panic!("Expected Command::Load"),
         }
 
-        let load_bypass: Command = serde_json::from_str(r#"{"Load":{"url":"https://example.test/","serial":1,"bypass_cache":true}}"#).unwrap();
+        let load_bypass: Command = serde_json::from_str(
+            r#"{"Load":{"url":"https://example.test/","serial":1,"bypass_cache":true}}"#,
+        )
+        .unwrap();
         match load_bypass {
             Command::Load { bypass_cache, .. } => assert!(bypass_cache),
             _ => panic!("Expected Command::Load"),
@@ -872,7 +888,10 @@ mod tests {
         let clear: Command = serde_json::from_str(r#""ClearHistory""#).unwrap();
         assert!(matches!(clear, Command::ClearHistory));
 
-        let policy_default: Command = serde_json::from_str(r#"{"Policy":{"offline":false,"blocked_hosts":"","allowed_hosts":""}}"#).unwrap();
+        let policy_default: Command = serde_json::from_str(
+            r#"{"Policy":{"offline":false,"blocked_hosts":"","allowed_hosts":""}}"#,
+        )
+        .unwrap();
         match policy_default {
             Command::Policy { user_script, .. } => assert!(user_script.is_empty()),
             _ => panic!("Expected Command::Policy"),
@@ -884,21 +903,51 @@ mod tests {
             _ => panic!("Expected Command::Policy"),
         }
 
-        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
-        let favicon_event = content_event(VERSION, context, ContentEvent::Favicon("https://example.test/favicon.ico".into()));
-        assert!(matches!(favicon_event, Event::Content { event: ContentEvent::Favicon(ref u), .. } if u == "https://example.test/favicon.ico"));
+        let context = DocumentContext {
+            document: DocumentId(1),
+            revision: DocumentRevision(1),
+        };
+        let favicon_event = content_event(
+            VERSION,
+            context,
+            ContentEvent::Favicon("https://example.test/favicon.ico".into()),
+        );
+        assert!(
+            matches!(favicon_event, Event::Content { event: ContentEvent::Favicon(ref u), .. } if u == "https://example.test/favicon.ico")
+        );
 
-        let status_event = content_event(VERSION, context, ContentEvent::Status(Some("https://example.test/link".into())));
-        assert!(matches!(status_event, Event::Content { event: ContentEvent::Status(Some(ref s)), .. } if s == "https://example.test/link"));
+        let status_event = content_event(
+            VERSION,
+            context,
+            ContentEvent::Status(Some("https://example.test/link".into())),
+        );
+        assert!(
+            matches!(status_event, Event::Content { event: ContentEvent::Status(Some(ref s)), .. } if s == "https://example.test/link")
+        );
 
-        let auth_event = content_event(VERSION, context, ContentEvent::Authentication { url: "https://example.test/admin".into(), realm: Some("Secured".into()) });
-        assert!(matches!(auth_event, Event::Content { event: ContentEvent::Authentication { ref realm, .. }, .. } if realm.as_deref() == Some("Secured")));
+        let auth_event = content_event(
+            VERSION,
+            context,
+            ContentEvent::Authentication {
+                url: "https://example.test/admin".into(),
+                realm: Some("Secured".into()),
+            },
+        );
+        assert!(
+            matches!(auth_event, Event::Content { event: ContentEvent::Authentication { ref realm, .. }, .. } if realm.as_deref() == Some("Secured"))
+        );
     }
     #[test]
     fn input_controls_and_accessibility_transport() {
-        let action: Command = serde_json::from_str(r#"{"AccessibilityAction":{"action":"focus","target":42}}"#).unwrap();
+        let action: Command =
+            serde_json::from_str(r#"{"AccessibilityAction":{"action":"focus","target":42}}"#)
+                .unwrap();
         match action {
-            Command::AccessibilityAction { action, target, data } => {
+            Command::AccessibilityAction {
+                action,
+                target,
+                data,
+            } => {
                 assert_eq!(action, "focus");
                 assert_eq!(target, 42);
                 assert!(data.is_none());
@@ -906,7 +955,9 @@ mod tests {
             _ => panic!("Expected AccessibilityAction"),
         }
 
-        let file_selected: Command = serde_json::from_str(r#"{"FileSelected":{"id":10,"paths":["/tmp/test.txt"]}}"#).unwrap();
+        let file_selected: Command =
+            serde_json::from_str(r#"{"FileSelected":{"id":10,"paths":["/tmp/test.txt"]}}"#)
+                .unwrap();
         match file_selected {
             Command::FileSelected { id, paths } => {
                 assert_eq!(id, 10);
@@ -915,12 +966,39 @@ mod tests {
             _ => panic!("Expected FileSelected"),
         }
 
-        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
-        let a11y_event = content_event(VERSION, context, ContentEvent::Accessibility(r#"{"tree_id":"root"}"#.into()));
-        assert!(matches!(a11y_event, Event::Content { event: ContentEvent::Accessibility(ref json), .. } if json.contains("tree_id")));
+        let context = DocumentContext {
+            document: DocumentId(1),
+            revision: DocumentRevision(1),
+        };
+        let a11y_event = content_event(
+            VERSION,
+            context,
+            ContentEvent::Accessibility(r#"{"tree_id":"root"}"#.into()),
+        );
+        assert!(
+            matches!(a11y_event, Event::Content { event: ContentEvent::Accessibility(ref json), .. } if json.contains("tree_id"))
+        );
 
-        let file_dialog = content_event(VERSION, context, ContentEvent::FileDialog { id: 7, multiple: true, accept: vec![".png".into()] });
-        assert!(matches!(file_dialog, Event::Content { event: ContentEvent::FileDialog { id: 7, multiple: true, .. }, .. }));
+        let file_dialog = content_event(
+            VERSION,
+            context,
+            ContentEvent::FileDialog {
+                id: 7,
+                multiple: true,
+                accept: vec![".png".into()],
+            },
+        );
+        assert!(matches!(
+            file_dialog,
+            Event::Content {
+                event: ContentEvent::FileDialog {
+                    id: 7,
+                    multiple: true,
+                    ..
+                },
+                ..
+            }
+        ));
     }
     #[test]
     fn selection_editing_find_clipboard_transport() {
@@ -936,15 +1014,37 @@ mod tests {
         let select_all_cmd: Command = serde_json::from_str(r#""SelectAll""#).unwrap();
         assert!(matches!(select_all_cmd, Command::SelectAll));
 
-        let find_cmd: Command = serde_json::from_str(r#"{"FindInPage":{"query":"test","backwards":true}}"#).unwrap();
-        assert!(matches!(find_cmd, Command::FindInPage { ref query, backwards: true, case_sensitive: false } if query == "test"));
+        let find_cmd: Command =
+            serde_json::from_str(r#"{"FindInPage":{"query":"test","backwards":true}}"#).unwrap();
+        assert!(
+            matches!(find_cmd, Command::FindInPage { ref query, backwards: true, case_sensitive: false } if query == "test")
+        );
 
-        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
-        let clip_event = content_event(VERSION, context, ContentEvent::ClipboardWrite("copied text".into()));
-        assert!(matches!(clip_event, Event::Content { event: ContentEvent::ClipboardWrite(ref s), .. } if s == "copied text"));
+        let context = DocumentContext {
+            document: DocumentId(1),
+            revision: DocumentRevision(1),
+        };
+        let clip_event = content_event(
+            VERSION,
+            context,
+            ContentEvent::ClipboardWrite("copied text".into()),
+        );
+        assert!(
+            matches!(clip_event, Event::Content { event: ContentEvent::ClipboardWrite(ref s), .. } if s == "copied text")
+        );
 
-        let find_event = content_event(VERSION, context, ContentEvent::FindResult { active_match_ordinal: 2, number_of_matches: 5, query: "sample".into() });
-        assert!(matches!(find_event, Event::Content { event: ContentEvent::FindResult { active_match_ordinal: 2, number_of_matches: 5, ref query }, .. } if query == "sample"));
+        let find_event = content_event(
+            VERSION,
+            context,
+            ContentEvent::FindResult {
+                active_match_ordinal: 2,
+                number_of_matches: 5,
+                query: "sample".into(),
+            },
+        );
+        assert!(
+            matches!(find_event, Event::Content { event: ContentEvent::FindResult { active_match_ordinal: 2, number_of_matches: 5, ref query }, .. } if query == "sample")
+        );
     }
     #[test]
     fn authoritative_storage_capability_and_version() {
@@ -959,50 +1059,108 @@ mod tests {
     #[test]
     fn media_session_command_and_event_transport() {
         let action_cmd: Command = serde_json::from_str(r#"{"MediaSessionAction":"Play"}"#).unwrap();
-        assert!(matches!(action_cmd, Command::MediaSessionAction(media::MediaSessionAction::Play)));
+        assert!(matches!(
+            action_cmd,
+            Command::MediaSessionAction(media::MediaSessionAction::Play)
+        ));
 
-        let seek_cmd: Command = serde_json::from_str(r#"{"MediaSessionAction":{"SeekTo":{"seek_time":12.5,"fast_seek":false}}}"#).unwrap();
+        let seek_cmd: Command = serde_json::from_str(
+            r#"{"MediaSessionAction":{"SeekTo":{"seek_time":12.5,"fast_seek":false}}}"#,
+        )
+        .unwrap();
         match seek_cmd {
-            Command::MediaSessionAction(media::MediaSessionAction::SeekTo { seek_time, fast_seek }) => {
+            Command::MediaSessionAction(media::MediaSessionAction::SeekTo {
+                seek_time,
+                fast_seek,
+            }) => {
                 assert_eq!(seek_time, 12.5);
                 assert!(!fast_seek);
             }
             _ => panic!("Expected SeekTo"),
         }
 
-        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
-        let meta_event = content_event(VERSION, context, ContentEvent::MediaSession(media::MediaSessionEvent::SetMetadata(media::MediaMetadata {
-            title: "Test Track".into(),
-            artist: "Artist".into(),
-            album: "Album".into(),
-            artwork: vec![],
-        })));
-        assert!(matches!(meta_event, Event::Content { event: ContentEvent::MediaSession(media::MediaSessionEvent::SetMetadata(ref m)), .. } if m.title == "Test Track"));
+        let context = DocumentContext {
+            document: DocumentId(1),
+            revision: DocumentRevision(1),
+        };
+        let meta_event = content_event(
+            VERSION,
+            context,
+            ContentEvent::MediaSession(media::MediaSessionEvent::SetMetadata(
+                media::MediaMetadata {
+                    title: "Test Track".into(),
+                    artist: "Artist".into(),
+                    album: "Album".into(),
+                    artwork: vec![],
+                },
+            )),
+        );
+        assert!(
+            matches!(meta_event, Event::Content { event: ContentEvent::MediaSession(media::MediaSessionEvent::SetMetadata(ref m)), .. } if m.title == "Test Track")
+        );
 
-        let downgraded = content_event(19, context, ContentEvent::MediaSession(media::MediaSessionEvent::PlaybackStateChange(media::MediaSessionPlaybackState::Playing)));
-        assert!(matches!(downgraded, Event::Content { event: ContentEvent::Notice(ref s), .. } if s.contains("Media session")));
+        let downgraded = content_event(
+            19,
+            context,
+            ContentEvent::MediaSession(media::MediaSessionEvent::PlaybackStateChange(
+                media::MediaSessionPlaybackState::Playing,
+            )),
+        );
+        assert!(
+            matches!(downgraded, Event::Content { event: ContentEvent::Notice(ref s), .. } if s.contains("Media session"))
+        );
     }
 
     #[test]
     fn permissions_and_device_capabilities_transport() {
-        let answer_cmd: Command = serde_json::from_str(r#"{"AnswerPermission":{"id":42,"allow":true}}"#).unwrap();
-        assert!(matches!(answer_cmd, Command::AnswerPermission { id: 42, allow: true }));
+        let answer_cmd: Command =
+            serde_json::from_str(r#"{"AnswerPermission":{"id":42,"allow":true}}"#).unwrap();
+        assert!(matches!(
+            answer_cmd,
+            Command::AnswerPermission {
+                id: 42,
+                allow: true
+            }
+        ));
 
-        let revoke_cmd: Command = serde_json::from_str(r#"{"RevokePermission":{"origin":"https://a.test","feature":"Camera"}}"#).unwrap();
-        assert!(matches!(revoke_cmd, Command::RevokePermission { ref origin, feature: permissions::PermissionFeature::Camera } if origin == "https://a.test"));
+        let revoke_cmd: Command = serde_json::from_str(
+            r#"{"RevokePermission":{"origin":"https://a.test","feature":"Camera"}}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(revoke_cmd, Command::RevokePermission { ref origin, feature: permissions::PermissionFeature::Camera } if origin == "https://a.test")
+        );
 
         let exit_fs_cmd: Command = serde_json::from_str(r#""ExitFullscreen""#).unwrap();
         assert!(matches!(exit_fs_cmd, Command::ExitFullscreen));
 
-        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
-        let notif_event = content_event(VERSION, context, ContentEvent::NotificationShow {
-            id: 99,
-            title: "Test Alert".into(),
-            options: permissions::NotificationOptions { body: Some("Alert body".into()), ..Default::default() },
-        });
-        assert!(matches!(notif_event, Event::Content { event: ContentEvent::NotificationShow { id: 99, ref title, .. }, .. } if title == "Test Alert"));
+        let context = DocumentContext {
+            document: DocumentId(1),
+            revision: DocumentRevision(1),
+        };
+        let notif_event = content_event(
+            VERSION,
+            context,
+            ContentEvent::NotificationShow {
+                id: 99,
+                title: "Test Alert".into(),
+                options: permissions::NotificationOptions {
+                    body: Some("Alert body".into()),
+                    ..Default::default()
+                },
+            },
+        );
+        assert!(
+            matches!(notif_event, Event::Content { event: ContentEvent::NotificationShow { id: 99, ref title, .. }, .. } if title == "Test Alert")
+        );
 
         let fs_event = content_event(VERSION, context, ContentEvent::Fullscreen(true));
-        assert!(matches!(fs_event, Event::Content { event: ContentEvent::Fullscreen(true), .. }));
+        assert!(matches!(
+            fs_event,
+            Event::Content {
+                event: ContentEvent::Fullscreen(true),
+                ..
+            }
+        ));
     }
 }
