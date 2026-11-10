@@ -25,8 +25,12 @@ use wega_protocol::{
     authority::{Origin, Principal},
     identity::{PartitionId, ServiceIdentity, ServiceSessionId},
 };
+pub mod cache_storage;
 mod cookies;
-pub use cookies::{Cookies, SiteContext};
+pub mod indexeddb;
+pub use cache_storage::{CacheEntry, CacheStorage};
+pub use cookies::{CookieEntry, Cookies, SiteContext};
+pub use indexeddb::IndexedDB;
 const MAX_HEADER: usize = 64 * 1024;
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;
@@ -898,7 +902,13 @@ impl SessionHandle {
         Ok(self.session.cookies.netscape(url))
     }
     pub fn endpoint(&self) -> (String, String) {
-        (self.broker.address.to_string(), self.token.clone())
+        (
+            self.broker
+                .address
+                .map(|a| a.to_string())
+                .unwrap_or_default(),
+            self.token.clone(),
+        )
     }
     pub fn hsts(&self) -> &Mutex<HstsPolicy> {
         &self.broker.hsts
@@ -909,6 +919,18 @@ impl SessionHandle {
             .policy
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = policy;
+    }
+    pub fn clear_site_data(&self, origin: &str) -> Result<(), String> {
+        let root = PathBuf::from(&self.session.scope);
+        if let Ok(url) = Url::parse(origin) {
+            let _ = self.session.cookies.clear_site(&url);
+        }
+        self.broker.clear_site_data(&root, origin)
+    }
+    pub fn clear_all_data(&self) -> Result<(), String> {
+        self.session.cookies.clear();
+        let root = PathBuf::from(&self.session.scope);
+        self.broker.clear_all_data(&root)
     }
 }
 impl Drop for SessionHandle {
@@ -1038,7 +1060,7 @@ impl Drop for Completion {
 }
 type Job = Box<dyn FnOnce() + Send>;
 pub struct Broker {
-    address: SocketAddr,
+    address: Option<SocketAddr>,
     sessions: Mutex<HashMap<String, Weak<Session>>>,
     jars: Mutex<HashMap<PathBuf, Jar>>,
     cache: Mutex<Cache>,
@@ -1051,17 +1073,36 @@ pub struct Broker {
 }
 impl Drop for Broker {
     fn drop(&mut self) {
-        let _ = TcpStream::connect_timeout(&self.address, Duration::from_millis(100));
+        if let Some(address) = &self.address {
+            let _ = TcpStream::connect_timeout(address, Duration::from_millis(100));
+        }
     }
 }
 impl Broker {
     pub fn shared() -> Result<Arc<Self>, String> {
         static SHARED: OnceLock<Result<Arc<Broker>, String>> = OnceLock::new();
-        SHARED.get_or_init(Self::new).clone()
+        SHARED
+            .get_or_init(|| {
+                #[cfg(any(unix, windows))]
+                let bind_tcp = false;
+                #[cfg(not(any(unix, windows)))]
+                let bind_tcp = true;
+                Self::new_with_tcp(bind_tcp)
+            })
+            .clone()
     }
     pub fn new() -> Result<Arc<Self>, String> {
-        let listener =
-            TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).map_err(|e| e.to_string())?;
+        Self::new_with_tcp(true)
+    }
+    fn new_with_tcp(bind_tcp: bool) -> Result<Arc<Self>, String> {
+        let (listener, address) = if bind_tcp {
+            let listener =
+                TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).map_err(|e| e.to_string())?;
+            let address = listener.local_addr().map_err(|e| e.to_string())?;
+            (Some(listener), Some(address))
+        } else {
+            (None, None)
+        };
         let (jobs, receiver) = mpsc::sync_channel::<Job>(32);
         let receiver = Arc::new(Mutex::new(receiver));
         for index in 0..4 {
@@ -1083,7 +1124,7 @@ impl Broker {
                 .map_err(|e| e.to_string())?;
         }
         let broker = Arc::new(Self {
-            address: listener.local_addr().map_err(|e| e.to_string())?,
+            address,
             sessions: Default::default(),
             jars: Default::default(),
             cache: Default::default(),
@@ -1099,24 +1140,26 @@ impl Broker {
             jobs,
             client: LocalClient::new()?,
         });
-        let weak = Arc::downgrade(&broker);
-        std::thread::Builder::new()
-            .name("wega-broker-accept".into())
-            .spawn(move || {
-                for stream in listener.incoming() {
-                    let Some(broker) = weak.upgrade() else { break };
-                    if let Ok(stream) = stream {
-                        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-                        let _ = stream.set_write_timeout(Some(Duration::from_secs(20)));
-                        let mut stream = Connection::Tcp(stream);
-                        let result = broker.accept(&mut stream, None, None);
-                        if let Err(error) = result {
-                            let _ = write_packet(&mut stream, &Reply::Error(error), &[]);
+        if let Some(listener) = listener {
+            let weak = Arc::downgrade(&broker);
+            std::thread::Builder::new()
+                .name("wega-broker-accept".into())
+                .spawn(move || {
+                    for stream in listener.incoming() {
+                        let Some(broker) = weak.upgrade() else { break };
+                        if let Ok(stream) = stream {
+                            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                            let _ = stream.set_write_timeout(Some(Duration::from_secs(20)));
+                            let mut stream = Connection::Tcp(stream);
+                            let result = broker.accept(&mut stream, None, None);
+                            if let Err(error) = result {
+                                let _ = write_packet(&mut stream, &Reply::Error(error), &[]);
+                            }
                         }
                     }
-                }
-            })
-            .map_err(|e| e.to_string())?;
+                })
+                .map_err(|e| e.to_string())?;
+        }
         Ok(broker)
     }
     pub fn open_session(
@@ -1132,6 +1175,18 @@ impl Broker {
         policy: Policy,
     ) -> Result<SessionHandle, String> {
         self.open_session_kind(directory, policy, true)
+    }
+    pub fn clear_site_data(&self, root: &std::path::Path, origin: &str) -> Result<(), String> {
+        self.storage
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_origin(root, origin)
+    }
+    pub fn clear_all_data(&self, root: &std::path::Path) -> Result<(), String> {
+        self.storage
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_all(root)
     }
     fn open_session_kind(
         self: &Arc<Self>,

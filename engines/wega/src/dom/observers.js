@@ -255,6 +255,18 @@
       return !target.dispatchEvent(event);
     },
   });
+  Object.defineProperty(globalThis, "__wega_native_file_input", {
+    value: (id, fileNames) => {
+      const target = __wega_node(id);
+      if (!target) return;
+      const files = (fileNames || []).map(
+        (name) => new File([""], name, { type: "application/octet-stream" })
+      );
+      target._files = files;
+      target.dispatchEvent(new Event("input", { bubbles: true, cancelable: false }));
+      target.dispatchEvent(new Event("change", { bubbles: true, cancelable: false }));
+    },
+  });
   const raf = new Map(),
     resize = new Set(),
     intersection = new Set(),
@@ -503,6 +515,12 @@
     forward() {
       this.go(1);
     },
+  };
+  globalThis.__wega_clear_history = () => {
+    historyEntries.length = 1;
+    historyEntries[0] = { state: null, url: location.href };
+    historyIndex = 0;
+    reportHistory();
   };
   const withoutHash = (url) => url.split("#")[0];
   // Move within this document's session history: popstate, and hashchange

@@ -92,6 +92,11 @@ pub(crate) struct Snapshot {
     pub document_forward: bool,
     pub cursor: Option<String>,
     pub dialog: Option<Dialog>,
+    pub accessibility: Option<String>,
+    pub accessibility_enabled: bool,
+    pub pending_file_dialog: Option<(u64, bool, Vec<String>)>,
+    pub find_result: Option<(u32, u32, String)>,
+    pub frame_tree: Option<protocol::browsing::FrameTree>,
 }
 
 impl Snapshot {
@@ -162,6 +167,16 @@ impl Snapshot {
                 },
                 principal,
             );
+            if let Ok(parsed_url) = url::Url::parse(&self.url) {
+                let context_key = protocol::browsing::ContextKey {
+                    session: authority.session(),
+                    document: DocumentContext {
+                        document: self.requests.document(),
+                        revision,
+                    },
+                };
+                self.frame_tree = protocol::browsing::FrameTree::new(context_key, parsed_url).ok();
+            }
         }
         self.native.clear();
         self.evaluated = None;
@@ -248,6 +263,18 @@ impl Snapshot {
                         ContentEvent::ActivatedOpenWindow { url, activation },
                     );
                 }
+            }
+            ContentEvent::Accessibility(ref json) => {
+                self.accessibility = Some(json.clone());
+                self.queue_native(context, event);
+            }
+            ContentEvent::FileDialog {
+                id,
+                multiple,
+                ref accept,
+            } => {
+                self.pending_file_dialog = Some((id, multiple, accept.clone()));
+                self.queue_native(context, event);
             }
             event => {
                 self.queue_native(context, event);
@@ -466,7 +493,66 @@ fn accept_frame(
         state.frame = Some((width, height, bytes));
     }
 }
+pub(crate) fn evaluate_sync_parts(
+    requests: &mpsc::SyncSender<Request>,
+    state: &Arc<Mutex<Snapshot>>,
+    source: &str,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    let (request, context) = {
+        let mut s = state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !s.lifecycle.accepts_requests() {
+            return Err("Content worker is stopped".into());
+        }
+        let context = s
+            .requests
+            .begin(RequestKind::Evaluate, timeout)
+            .map_err(|e| e.message)?;
+        s.interacted = true;
+        s.evaluated = None;
+        (
+            Request::EvaluateDocument {
+                context,
+                source: source.to_string(),
+            },
+            context,
+        )
+    };
+    requests.send(request).map_err(|e| e.to_string())?;
+
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        {
+            let mut s = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(pos) = s.evaluations.iter().position(|(c, _)| *c == context) {
+                let (_, res) = s.evaluations.remove(pos).unwrap();
+                return res.map_err(|e| e.message);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    Err("Evaluation timed out".into())
+}
+
 impl Page {
+    pub fn eval_parts(&self) -> Option<(mpsc::SyncSender<Request>, Arc<Mutex<Snapshot>>)> {
+        self.requests
+            .as_ref()
+            .map(|r| (r.clone(), self.state.clone()))
+    }
+    #[allow(dead_code)]
+    pub fn evaluate_sync(
+        &self,
+        source: &str,
+        timeout: std::time::Duration,
+    ) -> Result<String, String> {
+        let requests = self.requests.as_ref().ok_or("No request channel")?;
+        evaluate_sync_parts(requests, &self.state, source, timeout)
+    }
     pub fn download_cookies(&self, url: &str) -> Result<String, String> {
         self.broker
             .download_cookies(&url::Url::parse(url).map_err(|error| error.to_string())?)
@@ -1020,13 +1106,109 @@ impl Page {
                         | Event::TraverseUnhandled(_)
                         | Event::Cursor(_)
                         | Event::Dialog { .. } => return Err("Unscoped content event".into()),
-                        // The frame coordinator is not connected to this supervisor yet.
-                        // Do not admit renderer-assigned frames or trust their origins.
-                        Event::FrameAttached { .. }
-                        | Event::FrameDetached { .. }
-                        | Event::FrameNavigated { .. }
-                        | Event::FramePostMessage { .. } => {
-                            return Err("Worker frame coordination is unavailable".into());
+                        // Connect FrameTree to browser supervisor and authority
+                        Event::FrameAttached {
+                            parent,
+                            frame,
+                            url: frame_url,
+                            name: _,
+                            sandbox,
+                        } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let doc_context = DocumentContext {
+                                document: state.requests.document(),
+                                revision: state.requests.revision(),
+                            };
+                            if let Some(tree) = &mut state.frame_tree {
+                                let sandbox_policy =
+                                    protocol::browsing::Sandbox::parse(sandbox.as_deref());
+                                let parent_key = protocol::browsing::ContextKey {
+                                    session: SessionIdentity {
+                                        frame: parent,
+                                        ..identity
+                                    },
+                                    document: doc_context,
+                                };
+                                let _ =
+                                    tree.attach(parent_key, frame.0, &frame_url, sandbox_policy);
+                            }
+                        }
+                        Event::FrameDetached { frame } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let doc_context = DocumentContext {
+                                document: state.requests.document(),
+                                revision: state.requests.revision(),
+                            };
+                            if let Some(tree) = &mut state.frame_tree {
+                                let parent_key = protocol::browsing::ContextKey {
+                                    session: identity,
+                                    document: doc_context,
+                                };
+                                let _ = tree.detach(parent_key, frame);
+                            }
+                        }
+                        Event::FrameNavigated {
+                            frame,
+                            url: nav_url,
+                            origin: _,
+                        } => {
+                            let mut state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let next_rev = state.requests.revision();
+                            if let Some(tree) = &mut state.frame_tree
+                                && let Ok(parsed) = url::Url::parse(&nav_url)
+                            {
+                                let child_key = protocol::browsing::ContextKey {
+                                    session: SessionIdentity { frame, ..identity },
+                                    document: DocumentContext {
+                                        document: protocol::DocumentId(frame.0),
+                                        revision: next_rev,
+                                    },
+                                };
+                                let _ = tree.commit(frame, parsed, child_key);
+                            }
+                        }
+                        Event::FramePostMessage {
+                            source,
+                            target,
+                            origin,
+                            target_origin,
+                            message,
+                        } => {
+                            let state = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if let Some(tree) = &state.frame_tree {
+                                let source_key = protocol::browsing::ContextKey {
+                                    session: SessionIdentity {
+                                        frame: source,
+                                        ..identity
+                                    },
+                                    document: DocumentContext {
+                                        document: state.requests.document(),
+                                        revision: state.requests.revision(),
+                                    },
+                                };
+                                if let Ok(msg) = tree.message(
+                                    source_key,
+                                    target,
+                                    target_origin.as_deref(),
+                                    message.as_bytes().to_vec(),
+                                ) && tree.accepts_message(&msg)
+                                {
+                                    let _ = acknowledgements.send(Request::FramePostMessage {
+                                        target,
+                                        origin,
+                                        target_origin,
+                                        message,
+                                    });
+                                }
+                            }
                         }
                         Event::Ready { .. } | Event::Session { .. } => {
                             return Err("Unexpected worker handshake/envelope".into());
@@ -1034,7 +1216,7 @@ impl Page {
                     }
                     let _ = proxy.send_event(Wake::Ui);
                 }
-                Err("Wega engine stopped. Reload this page or switch to Servo.".into())
+                Err("Wega engine stopped. Reload this page or restart the tab.".into())
             })();
             if let Err(error) = result {
                 reader_broker.revoke();
@@ -1072,6 +1254,14 @@ impl Page {
             storage_dir: None,
         })?;
         page.send(Request::Capabilities)?;
+        if !policy.user_script.trim().is_empty() {
+            let _ = page.send(Request::Policy {
+                offline: policy.offline,
+                blocked_hosts: policy.blocked_hosts.clone(),
+                allowed_hosts: policy.allowed_hosts.clone(),
+                user_script: policy.user_script.clone(),
+            });
+        }
         Ok(page)
     }
     pub fn cancel_queued(&self, contexts: Vec<RequestContext>) {
@@ -1192,6 +1382,7 @@ impl Page {
             offline,
             blocked_hosts,
             allowed_hosts,
+            ..
         } = &request
         {
             self.broker.set_policy(wega_network::Policy {
@@ -1207,7 +1398,7 @@ impl Page {
             .as_ref()
             .ok_or("Worker is closed")?
             .try_send(request)
-            .map_err(|_| "Wega engine is busy or stopped. Reload or switch to Servo.".to_string());
+            .map_err(|_| "Wega engine is busy or stopped. Reload the page.".to_string());
         if result.is_err()
             && activates
             && let Some(authority) = &mut self
@@ -1313,8 +1504,65 @@ impl Page {
     pub fn can_forward(&self) -> bool {
         self.index + 1 < self.history.len() || self.document_history().1
     }
+    pub fn history_target(&self, forward: bool) -> Option<&str> {
+        if forward {
+            if self.index + 1 < self.history.len() {
+                self.history.get(self.index + 1).map(String::as_str)
+            } else {
+                None
+            }
+        } else {
+            if self.index > 0 {
+                self.history.get(self.index - 1).map(String::as_str)
+            } else {
+                None
+            }
+        }
+    }
     /// Pointer input in viewport CSS pixels; see `Command::Pointer`.
     /// `buttons` is (DOM `button`, DOM `buttons`).
+    pub fn enable_accessibility(&self, enable: bool) {
+        if let Ok(mut state) = self.state.lock() {
+            state.accessibility_enabled = enable;
+        }
+        let _ = self.send(Request::EnableAccessibility(enable));
+    }
+    pub fn accessibility_action(&self, action: &str, target: u64, data: Option<&str>) {
+        let _ = self.send(Request::AccessibilityAction {
+            action: action.to_string(),
+            target,
+            data: data.map(str::to_string),
+        });
+    }
+    pub fn select_files(&self, id: u64, paths: Vec<String>) {
+        let _ = self.send(Request::FileSelected { id, paths });
+    }
+    #[allow(dead_code)]
+    pub fn copy(&self) {
+        let _ = self.send(Request::Copy);
+    }
+    #[allow(dead_code)]
+    pub fn cut(&self) {
+        let _ = self.send(Request::Cut);
+    }
+    #[allow(dead_code)]
+    pub fn paste(&self, text: String) {
+        let _ = self.send(Request::Paste(text));
+    }
+    #[allow(dead_code)]
+    pub fn select_all(&self) {
+        let _ = self.send(Request::SelectAll);
+    }
+    pub fn find_in_page(&self, query: String, backwards: bool, case_sensitive: bool) {
+        let _ = self.send(Request::FindInPage {
+            query,
+            backwards,
+            case_sensitive,
+        });
+    }
+    pub fn evaluate(&self, source: &str) {
+        let _ = self.send(Request::Evaluate(source.to_string()));
+    }
     pub fn pointer(
         &self,
         kind: &str,
@@ -1388,7 +1636,7 @@ impl Page {
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
-    fn request_load(&self, url: &url::Url) -> Result<(), String> {
+    fn request_load_opt(&self, url: &url::Url, bypass_cache: bool) -> Result<(), String> {
         let mut state = self
             .state
             .lock()
@@ -1403,6 +1651,7 @@ impl Page {
         self.send(Request::Load {
             url: url.to_string(),
             serial: document.0,
+            bypass_cache,
         })?;
         state.lifecycle.navigate();
         if let Some(authority) = &mut state.authority {
@@ -1434,6 +1683,24 @@ impl Page {
         state.fallback_reported = false;
         drop(state);
         Ok(())
+    }
+    fn request_load(&self, url: &url::Url) -> Result<(), String> {
+        self.request_load_opt(url, false)
+    }
+    pub fn reload_bypass_cache(&mut self) -> Result<(), String> {
+        if let Ok(url) = url::Url::parse(&self.url()) {
+            self.request_load_opt(&url, true)?;
+        }
+        Ok(())
+    }
+    pub fn clear_history(&mut self) {
+        let current = self.url();
+        self.history.clear();
+        if !current.is_empty() {
+            self.history.push(current);
+        }
+        self.index = 0;
+        let _ = self.send(Request::ClearHistory);
     }
     pub fn load_url(&mut self, url: url::Url) -> Result<(), String> {
         self.request_load(&url)?;
@@ -1481,6 +1748,12 @@ impl NavigationPort for Page {
         if let Ok(url) = url::Url::parse(&self.url()) {
             let _ = self.request_load(&url);
         }
+    }
+    fn reload_bypass_cache(&mut self) {
+        let _ = self.reload_bypass_cache();
+    }
+    fn clear_history(&mut self) {
+        self.clear_history();
     }
     fn traverse(&mut self, forward: bool) -> bool {
         // The page's own entries first; it reports TraverseUnhandled otherwise.

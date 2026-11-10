@@ -38,7 +38,7 @@ struct Handler {
     jobs: Sender<Job>,
     proxy: winit::event_loop::EventLoopProxy<Wake>,
 }
-fn error(status: ErrorStatus, message: impl Into<String>) -> WebDriverError {
+pub(crate) fn error(status: ErrorStatus, message: impl Into<String>) -> WebDriverError {
     WebDriverError::new(status, message.into())
 }
 fn value(value: Value) -> WebDriverResult<Response> {
@@ -119,26 +119,6 @@ impl Browser {
         command: Command<ResourcesCommand>,
         reply: Sender<WebDriverResult<Response>>,
     ) {
-        if self.is_wega()
-            && !matches!(
-                &command,
-                Command::Status
-                    | Command::NewSession(_)
-                    | Command::DeleteSession
-                    | Command::GetWindowHandle
-                    | Command::GetWindowHandles
-                    | Command::SwitchToWindow(_)
-                    | Command::GetCurrentUrl
-                    | Command::GetTitle
-                    | Command::Extension(_)
-            )
-        {
-            let _ = reply.send(Err(error(
-                ErrorStatus::UnsupportedOperation,
-                "This WebDriver page operation requires Servo. The Wega engine is experimental.",
-            )));
-            return;
-        }
         let result = match command {
             Command::Extension(_) => {
                 fn resources(tab: &Tab) -> Value {
@@ -148,6 +128,8 @@ impl Browser {
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
                         json!({"engine":"wega","pid":page.pid(),"workerRssBytes":page.resident_bytes(),"jsHeapBytes":state.js_heap,"frozen":state.lifecycle.frozen(),"loading":state.lifecycle.loading(),"phase":state.lifecycle.phase(),"compatibility":state.compatibility})
+                    } else if tab.engine == wega::engine_choice::EngineKind::Wega {
+                        json!({"engine":"wega","pid":null,"workerRssBytes":null,"jsHeapBytes":null,"frozen":false,"loading":false,"phase":"idle","compatibility":true})
                     } else {
                         json!({"engine":"servo","pid":std::process::id(),"workerRssBytes":null,"jsHeapBytes":null,"frozen":null,"loading":tab.loading()})
                     }
@@ -228,14 +210,14 @@ impl Browser {
             }
             Command::GetCurrentUrl => value(json!(self.tab().url())),
             Command::GetTitle => {
-                if self.is_wega() {
+                if self.is_wega() || self.tab().is_internal() {
                     let _ = reply.send(value(json!(self.tab().title())));
                     return;
                 }
                 // History restoration can switch the active document before the
                 // embedder's cached title notification arrives. Query the document.
-                self.view()
-                    .evaluate_javascript("document.title", move |result| {
+                if let Some(view) = self.tab().view().cloned() {
+                    view.evaluate_javascript("document.title", move |result| {
                         let result = result.map(js).map(value).unwrap_or_else(|error_value| {
                             Err(error(
                                 ErrorStatus::JavascriptError,
@@ -244,6 +226,9 @@ impl Browser {
                         });
                         let _ = reply.send(result);
                     });
+                    return;
+                }
+                let _ = reply.send(value(json!(self.tab().title())));
                 return;
             }
             Command::Get(params) => {
@@ -281,13 +266,31 @@ impl Browser {
                         "Navigation was superseded by another command",
                     )));
                 }
-                self.automation_navigation = Some(PendingNavigation::new(
-                    self.view().id(),
+                let is_wega = self.is_wega();
+                let is_internal = url.scheme() == "wega";
+                let initial_internal = self.tab().is_internal();
+                let owner = self.tab().id();
+                let tab_key = self.tab().key;
+                let mut pending = PendingNavigation::new(
+                    owner,
+                    tab_key,
                     Some(url.to_string()),
                     reply,
                     self.tab().url(),
-                ));
+                );
+                if is_wega || is_internal || initial_internal {
+                    pending.completion.started();
+                }
+                self.automation_navigation = Some(pending);
                 self.navigate(url.as_str());
+                let current_owner = self.tab().id();
+                if let Some(pending) = &mut self.automation_navigation
+                    && pending.owner.is_none()
+                {
+                    pending.owner = current_owner;
+                    pending.completion.started();
+                }
+                self.automation_poll();
                 return;
             }
             Command::GoBack | Command::GoForward | Command::Refresh => {
@@ -298,15 +301,15 @@ impl Browser {
                     )));
                     return;
                 }
-                if matches!(command, Command::GoBack) && !self.view().can_go_back()
-                    || matches!(command, Command::GoForward) && !self.view().can_go_forward()
+                if matches!(command, Command::GoBack) && !self.can_go_back()
+                    || matches!(command, Command::GoForward) && !self.can_go_forward()
                 {
                     let _ = reply.send(Ok(Response::Void));
                     return;
                 }
                 let expected = match command {
-                    Command::GoBack => self.tab().history.target(false).map(str::to_owned),
-                    Command::GoForward => self.tab().history.target(true).map(str::to_owned),
+                    Command::GoBack => self.history_target(false),
+                    Command::GoForward => self.history_target(true),
                     _ => None,
                 };
                 if let Some(pending) = self.automation_navigation.take() {
@@ -315,30 +318,39 @@ impl Browser {
                         "Navigation was superseded by another command",
                     )));
                 }
-                self.automation_navigation = Some(PendingNavigation::new(
-                    self.view().id(),
-                    expected,
-                    reply,
-                    self.tab().url(),
-                ));
+                let is_wega = self.is_wega();
+                let is_internal = self.tab().is_internal();
+                let owner = self.tab().id();
+                let tab_key = self.tab().key;
+                let mut pending =
+                    PendingNavigation::new(owner, tab_key, expected, reply, self.tab().url());
                 match command {
-                    Command::GoBack => self.traverse(false),
-                    Command::GoForward => self.traverse(true),
+                    Command::GoBack => {
+                        self.traverse(false);
+                        if is_wega || is_internal {
+                            pending.completion.traversed();
+                        }
+                    }
+                    Command::GoForward => {
+                        self.traverse(true);
+                        if is_wega || is_internal {
+                            pending.completion.traversed();
+                        }
+                    }
                     _ => {
                         // Unlike load(), reload() marks Started synchronously.
                         // Cached refreshes need not emit another Started callback.
                         self.reload();
-                        self.automation_navigation
-                            .as_mut()
-                            .unwrap()
-                            .completion
-                            .started();
+                        pending.completion.started();
                     }
                 };
-                if matches!(command, Command::GoBack | Command::GoForward) {
-                    self.automation_navigation.as_mut().unwrap().traversal =
-                        self.features.traversals.get(&self.view().id()).cloned();
+                if let Some(view_id) = owner
+                    && matches!(command, Command::GoBack | Command::GoForward)
+                {
+                    pending.traversal = self.features.traversals.get(&view_id).cloned();
                 }
+                self.automation_navigation = Some(pending);
+                self.automation_poll();
                 return;
             }
             Command::ExecuteScript(params) => {
@@ -354,7 +366,39 @@ impl Browser {
                 }
                 let args = serde_json::to_string(&params.args).unwrap_or("[]".into());
                 let source = format!("(function(){{ {} }}).apply(window,{args})", params.script);
-                self.view().evaluate_javascript(source, move |result| {
+                if self.is_wega() {
+                    let eval_parts = self.tab().wega.as_ref().and_then(|p| p.eval_parts());
+                    std::thread::spawn(move || {
+                        let result = match eval_parts {
+                            Some((requests, state)) => {
+                                match crate::wega_page::evaluate_sync_parts(
+                                    &requests,
+                                    &state,
+                                    &source,
+                                    Duration::from_secs(30),
+                                ) {
+                                    Ok(json_str) => {
+                                        let v =
+                                            serde_json::from_str(&json_str).unwrap_or(Value::Null);
+                                        value(v)
+                                    }
+                                    Err(e) => Err(error(ErrorStatus::JavascriptError, e)),
+                                }
+                            }
+                            None => Err(error(ErrorStatus::NoSuchWindow, "No Wega page available")),
+                        };
+                        let _ = reply.send(result);
+                    });
+                    return;
+                }
+                let Some(view) = self.tab().view().cloned() else {
+                    let _ = reply.send(Err(error(
+                        ErrorStatus::UnsupportedOperation,
+                        "Cannot execute script on internal page",
+                    )));
+                    return;
+                };
+                view.evaluate_javascript(source, move |result| {
                     let _ = reply.send(match result {
                         Ok(v) => value(js(v)),
                         Err(e) => Err(error(ErrorStatus::JavascriptError, format!("{e:?}"))),
@@ -363,6 +407,35 @@ impl Browser {
                 return;
             }
             Command::GetPageSource => {
+                if self.is_wega() {
+                    let eval_parts = self.tab().wega.as_ref().and_then(|p| p.eval_parts());
+                    std::thread::spawn(move || {
+                        let result = match eval_parts {
+                            Some((requests, state)) => match crate::wega_page::evaluate_sync_parts(
+                                &requests,
+                                &state,
+                                "document.documentElement ? document.documentElement.outerHTML : ''",
+                                Duration::from_secs(30),
+                            ) {
+                                Ok(json_str) => {
+                                    let html: String =
+                                        serde_json::from_str(&json_str).unwrap_or(json_str);
+                                    value(json!(html))
+                                }
+                                Err(e) => Err(error(ErrorStatus::UnknownError, e)),
+                            },
+                            None => Err(error(ErrorStatus::NoSuchWindow, "No Wega page available")),
+                        };
+                        let _ = reply.send(result);
+                    });
+                    return;
+                }
+                let Some(view) = self.tab().view().cloned() else {
+                    let _ = reply.send(value(json!(
+                        "<!DOCTYPE html><html><body>Internal</body></html>"
+                    )));
+                    return;
+                };
                 let Some((sender, receiver)) = servo_base::generic_channel::channel() else {
                     let _ = reply.send(Err(error(
                         ErrorStatus::UnknownError,
@@ -372,7 +445,7 @@ impl Browser {
                 };
                 self.servo.execute_webdriver_command(
                     servo::webdriver::WebDriverCommandMsg::ScriptCommand(
-                        self.view().id().into(),
+                        view.id().into(),
                         servo::webdriver::WebDriverScriptCommand::GetPageSource(sender),
                     ),
                 );
@@ -387,18 +460,68 @@ impl Browser {
                 return;
             }
             Command::TakeScreenshot => {
-                self.view().take_screenshot(None, move |result| {
+                if self.is_wega() {
+                    let state = self.tab().wega.as_ref().map(|p| p.state.clone());
+                    std::thread::spawn(move || {
+                        let result = (|| {
+                            let state = state.ok_or_else(|| {
+                                error(ErrorStatus::NoSuchWindow, "No Wega page available")
+                            })?;
+                            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                            let (w, h, bytes) = loop {
+                                {
+                                    let s = state
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                    if let Some(frame) = s.frame.clone() {
+                                        break frame;
+                                    }
+                                }
+                                if std::time::Instant::now() >= deadline {
+                                    return Err(error(
+                                        ErrorStatus::UnknownError,
+                                        "No frame rendered yet",
+                                    ));
+                                }
+                                std::thread::sleep(Duration::from_millis(20));
+                            };
+                            use base64::Engine;
+                            let image =
+                                image::RgbaImage::from_raw(w, h, bytes).ok_or_else(|| {
+                                    error(ErrorStatus::UnknownError, "Invalid frame buffer")
+                                })?;
+                            let mut cursor = std::io::Cursor::new(Vec::new());
+                            image::DynamicImage::ImageRgba8(image)
+                                .write_to(&mut cursor, image::ImageFormat::Png)
+                                .map_err(|e| error(ErrorStatus::UnknownError, e.to_string()))?;
+                            value(json!(
+                                base64::engine::general_purpose::STANDARD
+                                    .encode(cursor.into_inner())
+                            ))
+                        })();
+                        let _ = reply.send(result);
+                    });
+                    return;
+                }
+                let Some(view) = self.tab().view().cloned() else {
+                    let _ = reply.send(Err(error(
+                        ErrorStatus::UnsupportedOperation,
+                        "Cannot take screenshot of internal page",
+                    )));
+                    return;
+                };
+                view.take_screenshot(None, move |result| {
                     let result = result
                         .map_err(|e| error(ErrorStatus::UnknownError, format!("{e:?}")))
                         .and_then(|image| {
                             use base64::Engine;
-                            let mut bytes = std::io::Cursor::new(Vec::new());
+                            let mut cursor = std::io::Cursor::new(Vec::new());
                             image::DynamicImage::ImageRgba8(image)
-                                .write_to(&mut bytes, image::ImageFormat::Png)
+                                .write_to(&mut cursor, image::ImageFormat::Png)
                                 .map_err(|e| error(ErrorStatus::UnknownError, e.to_string()))?;
                             value(json!(
                                 base64::engine::general_purpose::STANDARD
-                                    .encode(bytes.into_inner())
+                                    .encode(cursor.into_inner())
                             ))
                         });
                     let _ = reply.send(result);
@@ -415,21 +538,24 @@ impl Browser {
 }
 
 pub struct PendingNavigation {
-    pub owner: servo::WebViewId,
+    pub owner: Option<servo::WebViewId>,
+    pub tab_key: u64,
     completion: wega::navigation::Completion,
     traversal: Option<servo::TraversalId>,
     pub(crate) deadline: std::time::Instant,
-    reply: Sender<WebDriverResult<Response>>,
+    pub(crate) reply: Sender<WebDriverResult<Response>>,
 }
 impl PendingNavigation {
     fn new(
-        owner: servo::WebViewId,
+        owner: Option<servo::WebViewId>,
+        tab_key: u64,
         expected: Option<String>,
         reply: Sender<WebDriverResult<Response>>,
         initial_url: String,
     ) -> Self {
         Self {
             owner,
+            tab_key,
             completion: wega::navigation::Completion::new(expected, initial_url),
             traversal: None,
             deadline: std::time::Instant::now() + Duration::from_secs(30),
@@ -439,16 +565,20 @@ impl PendingNavigation {
 }
 impl Browser {
     pub fn automation_load_status(&mut self, view: servo::WebViewId, status: servo::LoadStatus) {
-        if let Some(pending) = &mut self.automation_navigation
-            && pending.owner == view
-            && status == servo::LoadStatus::Started
-        {
-            pending.completion.started();
+        if let Some(pending) = &mut self.automation_navigation {
+            if (pending.owner == Some(view) || pending.owner.is_none())
+                && status == servo::LoadStatus::Started
+            {
+                pending.completion.started();
+            }
+            if pending.owner.is_none() {
+                pending.owner = Some(view);
+            }
         }
     }
     pub fn automation_traversal(&mut self, view: servo::WebViewId, id: &servo::TraversalId) {
         if let Some(pending) = &mut self.automation_navigation
-            && pending.owner == view
+            && pending.owner == Some(view)
             && pending.traversal.as_ref() == Some(id)
         {
             pending.completion.traversed();
@@ -458,23 +588,55 @@ impl Browser {
         if self
             .automation_navigation
             .as_ref()
-            .is_some_and(|p| p.owner == view)
+            .is_some_and(|p| p.owner == Some(view))
+        {
+            let pending = self.automation_navigation.take().unwrap();
+            let _ = pending.reply.send(Ok(Response::Void));
+        }
+    }
+    pub fn automation_finish_navigation_by_key(&mut self, tab_key: u64) {
+        if self
+            .automation_navigation
+            .as_ref()
+            .is_some_and(|p| p.tab_key == tab_key)
         {
             let pending = self.automation_navigation.take().unwrap();
             let _ = pending.reply.send(Ok(Response::Void));
         }
     }
     pub fn automation_poll(&mut self) {
-        let ready = self.automation_navigation.as_ref().and_then(|pending| {
-            self.session()
-                .tabs()
-                .iter()
-                .find(|tab| tab.id() == Some(pending.owner))
-                .filter(|tab| pending.completion.ready(&tab.url(), !tab.loading()))
-                .and_then(Tab::id)
+        let ready_view = self.automation_navigation.as_ref().and_then(|pending| {
+            if let Some(owner) = pending.owner {
+                self.session()
+                    .tabs()
+                    .iter()
+                    .find(|tab| tab.id() == Some(owner))
+                    .filter(|tab| pending.completion.ready(&tab.url(), !tab.loading()))
+                    .and_then(Tab::id)
+            } else {
+                None
+            }
         });
-        if let Some(view) = ready {
+        if let Some(view) = ready_view {
             self.automation_finish_navigation(view);
+            return;
+        }
+
+        let ready_key = self.automation_navigation.as_ref().and_then(|pending| {
+            if pending.owner.is_none() {
+                self.session()
+                    .tabs()
+                    .iter()
+                    .find(|tab| tab.key == pending.tab_key)
+                    .filter(|tab| pending.completion.ready(&tab.url(), !tab.loading()))
+                    .map(|tab| tab.key)
+            } else {
+                None
+            }
+        });
+        if let Some(key) = ready_key {
+            self.automation_finish_navigation_by_key(key);
+            return;
         }
 
         if self

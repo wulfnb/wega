@@ -43,7 +43,7 @@ chmod 755 "$dist_dir/bin/wega"
 cat > "$dist_dir/share/applications/wega.desktop" <<'EOF'
 [Desktop Entry]
 Name=Wega
-Comment=Wega Native Rust Browser powered by Servo
+Comment=Wega Native Rust Browser
 Exec=wega %U
 Icon=wega
 Terminal=false

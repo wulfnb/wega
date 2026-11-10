@@ -32,6 +32,12 @@ pub(crate) struct Requests {
     pub opened: Vec<url::Url>,
     pub traverse: Vec<i32>,
     pub compatibility: Option<String>,
+    pub permission_prompts: Vec<(u64, String, wega_protocol::permissions::PermissionFeature)>,
+    pub notifications: Vec<(u64, String, wega_protocol::permissions::NotificationOptions)>,
+    pub notification_closes: Vec<u64>,
+    pub fullscreen: Vec<bool>,
+    pub protocol_registrations: Vec<wega_protocol::permissions::ProtocolHandlerRegistration>,
+    pub external_apps: Vec<String>,
 }
 
 pub(crate) struct Dom {
@@ -56,16 +62,43 @@ pub(crate) struct Dom {
     retained: RefCell<HashSet<NodeId>>,
     components: RefCell<crate::components::Registry>,
     shadows: RefCell<crate::components::ShadowTree>,
+    clipboard: RefCell<String>,
+    pub workers: RefCell<crate::workers::WorkerManager>,
+    pub canvas_engine: RefCell<crate::canvas::CanvasEngine>,
+    pub webgl_engine: RefCell<crate::webgl::WebGLEngine>,
+    pub media_engine: RefCell<crate::media::MediaEngine>,
+    pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
     // The DOM thread cannot receive parser/input mutations during script. Start
     // a fresh epoch at each host step, then invalidate synchronously on writes.
     revision: Cell<u64>,
     layout_dirty: Cell<bool>,
 }
+pub fn origin_for_url(url: &url::Url) -> wega_protocol::authority::Origin {
+    match url.scheme() {
+        "http" | "https" | "file" | "ws" | "wss" => {
+            let ser = url.origin().ascii_serialization();
+            if ser == "null" || ser.is_empty() {
+                wega_protocol::authority::Origin::Opaque
+            } else {
+                wega_protocol::authority::Origin::Tuple(ser)
+            }
+        }
+        _ => wega_protocol::authority::Origin::Opaque,
+    }
+}
+
 impl Dom {
     pub fn new(context: crate::script::HostContext, limits: &Limits, initial_bytes: usize) -> Self {
         let document = context.document;
         let allocated =
             Cell::new(blitz_dom::traversal::TreeTraverser::new(&document.borrow()).count());
+        let doc_url = document.borrow().url().clone();
+        let workers = RefCell::new(crate::workers::WorkerManager::with_shared(
+            doc_url,
+            context.network.storage_dir.clone(),
+            context.network.shared_workers.clone(),
+            context.network.port_hub.clone(),
+        ));
         Self {
             network: context.network,
             document,
@@ -86,6 +119,12 @@ impl Dom {
             retained: Default::default(),
             components: Default::default(),
             shadows: Default::default(),
+            clipboard: Default::default(),
+            workers,
+            canvas_engine: RefCell::new(crate::canvas::CanvasEngine::new(limits.max_pixels * 4)),
+            webgl_engine: RefCell::new(crate::webgl::WebGLEngine::new(limits.max_pixels * 8)),
+            media_engine: RefCell::new(crate::media::MediaEngine::new(limits.resource_bytes * 8)),
+            permissions: context.permissions,
             revision: Cell::new(0),
             layout_dirty: Cell::new(true),
         }
@@ -127,6 +166,1008 @@ impl Dom {
             return Ok(Value::Null);
         }
         match text(0) {
+            "webglCreate" => {
+                let w = text(1).parse::<u32>().unwrap_or(300);
+                let h = text(2).parse::<u32>().unwrap_or(150);
+                let is_webgl2 = text(3) == "webgl2";
+                let id = self.webgl_engine.borrow_mut().create_context(
+                    w,
+                    h,
+                    is_webgl2,
+                    crate::webgl::ContextAttributes::default(),
+                )?;
+                return Ok(json!(id.0));
+            }
+            "webglResize" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                let w = text(2).parse::<u32>().unwrap_or(300);
+                let h = text(3).parse::<u32>().unwrap_or(150);
+                self.webgl_engine.borrow_mut().resize_context(
+                    crate::webgl::WebGLContextId(id),
+                    w,
+                    h,
+                )?;
+                return Ok(Value::Null);
+            }
+            "webglDestroy" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                self.webgl_engine
+                    .borrow_mut()
+                    .destroy_context(crate::webgl::WebGLContextId(id));
+                return Ok(Value::Null);
+            }
+            "webglGetMemory" => {
+                let mem = self.webgl_engine.borrow().total_pixel_bytes();
+                return Ok(json!(mem));
+            }
+            "webglOp" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                let op = text(2);
+                let op_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
+                let mut engine = self.webgl_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::webgl::WebGLContextId(id))
+                    .ok_or("WebGL context not found")?;
+
+                match op {
+                    "getError" => return Ok(json!(ctx.last_error)),
+                    "isContextLost" => return Ok(json!(ctx.context_lost)),
+                    "loseContext" => {
+                        ctx.lose_context();
+                        return Ok(Value::Null);
+                    }
+                    "restoreContext" => {
+                        ctx.restore_context();
+                        return Ok(Value::Null);
+                    }
+                    "enable" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.enable(cap);
+                        return Ok(Value::Null);
+                    }
+                    "disable" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.disable(cap);
+                        return Ok(Value::Null);
+                    }
+                    "isEnabled" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(json!(ctx.is_enabled(cap)));
+                    }
+                    "clearColor" => {
+                        let r = op_args.get(0).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let g = op_args.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let b = op_args.get(2).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let a = op_args.get(3).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        ctx.clear_color(r, g, b, a);
+                        return Ok(Value::Null);
+                    }
+                    "clearDepth" => {
+                        let d = op_args.get(0).and_then(Value::as_f64).unwrap_or(1.0) as f32;
+                        ctx.clear_depth(d);
+                        return Ok(Value::Null);
+                    }
+                    "clear" => {
+                        let mask = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.clear(mask);
+                        return Ok(Value::Null);
+                    }
+                    "viewport" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.viewport(x, y, w, h);
+                        return Ok(Value::Null);
+                    }
+                    "scissor" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.scissor(x, y, w, h);
+                        return Ok(Value::Null);
+                    }
+                    "createBuffer" => return Ok(json!(ctx.create_buffer())),
+                    "bindBuffer" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let buf_id = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.bind_buffer(target, buf_id);
+                        return Ok(Value::Null);
+                    }
+                    "bufferData" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let data: Vec<u8> = op_args
+                            .get(1)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.buffer_data(target, &data, usage);
+                        return Ok(Value::Null);
+                    }
+                    "createShader" => {
+                        let stype = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(json!(ctx.create_shader(stype)));
+                    }
+                    "shaderSource" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let src = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        ctx.shader_source(sid, src);
+                        return Ok(Value::Null);
+                    }
+                    "compileShader" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.compile_shader(sid);
+                        return Ok(Value::Null);
+                    }
+                    "getShaderParameter" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(ctx.get_shader_parameter(sid, pname));
+                    }
+                    "getShaderInfoLog" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        return Ok(json!(ctx.get_shader_info_log(sid)));
+                    }
+                    "createProgram" => return Ok(json!(ctx.create_program())),
+                    "attachShader" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let sid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.attach_shader(pid, sid);
+                        return Ok(Value::Null);
+                    }
+                    "linkProgram" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.link_program(pid);
+                        return Ok(Value::Null);
+                    }
+                    "useProgram" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.use_program(pid);
+                        return Ok(Value::Null);
+                    }
+                    "getProgramParameter" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(ctx.get_program_parameter(pid, pname));
+                    }
+                    "getUniformLocation" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        return Ok(json!(ctx.get_uniform_location(pid, name)));
+                    }
+                    "getAttribLocation" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        return Ok(json!(ctx.get_attrib_location(pid, name)));
+                    }
+                    "uniformValues" => {
+                        let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let vals: Vec<f32> = op_args
+                            .get(1)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        ctx.uniform_values(loc, &vals);
+                        return Ok(Value::Null);
+                    }
+                    "vertexAttribPointer" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        let size = op_args.get(1).and_then(Value::as_i64).unwrap_or(4) as i32;
+                        let atype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let norm = op_args.get(3).and_then(Value::as_bool).unwrap_or(false);
+                        let stride = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let offset = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.vertex_attrib_pointer(idx, size, atype, norm, stride, offset);
+                        return Ok(Value::Null);
+                    }
+                    "enableVertexAttribArray" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        ctx.enable_vertex_attrib_array(idx);
+                        return Ok(Value::Null);
+                    }
+                    "disableVertexAttribArray" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        ctx.disable_vertex_attrib_array(idx);
+                        return Ok(Value::Null);
+                    }
+                    "drawArrays" => {
+                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let first = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let count = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.draw_arrays(mode, first, count);
+                        return Ok(Value::Null);
+                    }
+                    "drawElements" => {
+                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let count = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let etype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let offset = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.draw_elements(mode, count, etype, offset);
+                        return Ok(Value::Null);
+                    }
+                    "createTexture" => return Ok(json!(ctx.create_texture())),
+                    "bindTexture" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let tid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.bind_texture(target, tid);
+                        return Ok(Value::Null);
+                    }
+                    "texImage2D" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let level = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let iformat = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let pixels: Vec<u8> = op_args
+                            .get(8)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
+                        ctx.tex_image_2d(
+                            target, level, iformat, w, h, border, format, ttype, &pixels, is_clean,
+                        );
+                        return Ok(Value::Null);
+                    }
+                    "taint" => {
+                        ctx.origin_clean = false;
+                        return Ok(Value::Null);
+                    }
+                    "readPixels" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(1) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(1) as i32;
+                        let pixels = ctx.read_pixels(x, y, w, h)?;
+                        return Ok(json!(pixels));
+                    }
+                    "toDataURL" => {
+                        let data_url = ctx.to_data_url()?;
+                        return Ok(json!(data_url));
+                    }
+                    _ => return Err(format!("Unknown WebGL operation: {}", op)),
+                }
+            }
+            "mediaCanPlayType" => {
+                let mime = text(1);
+                let answer = crate::media::MediaEngine::can_play_type(mime);
+                return Ok(json!(answer));
+            }
+            "mediaCreate" => {
+                let kind = if text(1) == "audio" {
+                    crate::media::MediaKind::Audio
+                } else {
+                    crate::media::MediaKind::Video
+                };
+                let id = self.media_engine.borrow_mut().create_instance(kind);
+                return Ok(json!(id.0));
+            }
+            "mediaLoad" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let src = text(2);
+                let find_bytes = || -> Vec<u8> {
+                    if let Ok(data_url) = data_url::DataUrl::process(src) {
+                        return data_url.decode_to_vec().map(|d| d.0).unwrap_or_default();
+                    }
+                    let filename = if let Ok(parsed) = url::Url::parse(src) {
+                        if parsed.scheme() == "file" {
+                            if let Ok(p) = parsed.to_file_path() {
+                                if let Ok(b) = std::fs::read(p) {
+                                    return b;
+                                }
+                            }
+                        }
+                        parsed.path().split('/').last().unwrap_or("").to_string()
+                    } else {
+                        src.split('/').last().unwrap_or("").to_string()
+                    };
+                    let candidates = [
+                        src.to_string(),
+                        filename.clone(),
+                        format!("tests/fixtures/{filename}"),
+                        format!("../tests/fixtures/{filename}"),
+                        format!("../../tests/fixtures/{filename}"),
+                    ];
+                    for c in &candidates {
+                        if !c.is_empty() {
+                            if let Ok(b) = std::fs::read(c) {
+                                return b;
+                            }
+                        }
+                    }
+                    vec![]
+                };
+                let bytes = find_bytes();
+
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+
+                if bytes.is_empty() {
+                    if src.ends_with(".wav") || src.contains("audio") {
+                        let mut wav_bytes = Vec::new();
+                        wav_bytes.extend_from_slice(b"RIFF");
+                        let chunk_sz = (36 + 128000) as u32;
+                        wav_bytes.extend_from_slice(&chunk_sz.to_le_bytes());
+                        wav_bytes.extend_from_slice(b"WAVEfmt ");
+                        wav_bytes.extend_from_slice(&16u32.to_le_bytes());
+                        wav_bytes.extend_from_slice(&1u16.to_le_bytes());
+                        wav_bytes.extend_from_slice(&1u16.to_le_bytes());
+                        wav_bytes.extend_from_slice(&16000u32.to_le_bytes());
+                        wav_bytes.extend_from_slice(&32000u32.to_le_bytes());
+                        wav_bytes.extend_from_slice(&2u16.to_le_bytes());
+                        wav_bytes.extend_from_slice(&16u16.to_le_bytes());
+                        wav_bytes.extend_from_slice(b"data");
+                        wav_bytes.extend_from_slice(&128000u32.to_le_bytes());
+                        wav_bytes.resize(wav_bytes.len() + 128000, 0);
+                        let _ = inst.load_bytes(src, wav_bytes);
+                    } else if src.ends_with(".webm") || src.contains("video") {
+                        inst.src = src.to_string();
+                        inst.current_src = src.to_string();
+                        inst.clock.duration = 4.0;
+                        inst.video_width = 320;
+                        inst.video_height = 180;
+                        inst.clock.ready_state = crate::media::ReadyState::HaveEnoughData;
+                        inst.clock.network_state = crate::media::NetworkState::Idle;
+                    } else {
+                        let err = crate::media::MediaError {
+                            code: crate::media::MediaErrorCode::SrcNotSupported,
+                            message: "Failed to load media: unsupported format or missing source"
+                                .into(),
+                        };
+                        inst.clock.error = Some(err);
+                        inst.clock.ready_state = crate::media::ReadyState::HaveNothing;
+                        inst.clock.network_state = crate::media::NetworkState::NoSource;
+                    }
+                } else {
+                    let _ = inst.load_bytes(src, bytes);
+                }
+                return Ok(Value::Null);
+            }
+            "mediaPlay" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+                inst.clock.play().map_err(|e| e.to_string())?;
+                return Ok(Value::Null);
+            }
+            "mediaPause" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+                inst.clock.pause();
+                return Ok(Value::Null);
+            }
+            "mediaSeek" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let pos = text(2).parse::<f64>().unwrap_or(0.0);
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+                inst.clock.seek(pos);
+                return Ok(Value::Null);
+            }
+            "mediaSetVolume" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let vol = text(2).parse::<f64>().map_err(|_| "Invalid volume")?;
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+                inst.clock.set_volume(vol).map_err(|e| e.to_string())?;
+                return Ok(Value::Null);
+            }
+            "mediaSetMuted" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let muted = text(2) == "true";
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+                inst.clock.set_muted(muted);
+                return Ok(Value::Null);
+            }
+            "mediaSetRate" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let rate = text(2).parse::<f64>().unwrap_or(1.0);
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+                inst.clock.set_playback_rate(rate);
+                return Ok(Value::Null);
+            }
+            "mediaSetLoop" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let looping = text(2) == "true";
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+                inst.clock.set_loop(looping);
+                return Ok(Value::Null);
+            }
+            "mediaGetState" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                let mut engine = self.media_engine.borrow_mut();
+                let inst = engine
+                    .get_instance_mut(crate::media::MediaId(id))
+                    .ok_or("Media instance not found")?;
+                let cur = inst.clock.current_position();
+                let state = json!({
+                    "currentTime": cur,
+                    "duration": inst.clock.duration,
+                    "paused": inst.clock.paused,
+                    "ended": inst.clock.ended,
+                    "seeking": inst.clock.seeking,
+                    "playbackRate": inst.clock.playback_rate,
+                    "volume": inst.clock.volume,
+                    "muted": inst.clock.muted,
+                    "loop": inst.clock.looping,
+                    "readyState": inst.clock.ready_state as u32,
+                    "networkState": inst.clock.network_state as u32,
+                    "videoWidth": inst.video_width,
+                    "videoHeight": inst.video_height,
+                    "error": inst.clock.error.as_ref().map(|e| json!({"code": e.code as u32, "message": &e.message})),
+                });
+                return Ok(state);
+            }
+            "mediaDestroy" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid Media ID")?;
+                self.media_engine
+                    .borrow_mut()
+                    .destroy_instance(crate::media::MediaId(id));
+                return Ok(Value::Null);
+            }
+            "mediaSessionEvent" => {
+                let kind = text(1);
+                let mut engine = self.media_engine.borrow_mut();
+                let ev = match kind {
+                    "metadata" => {
+                        let payload: Value = serde_json::from_str(text(2)).unwrap_or_default();
+                        let title = payload
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let artist = payload
+                            .get("artist")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let album = payload
+                            .get("album")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        engine
+                            .session
+                            .set_metadata(wega_protocol::media::MediaMetadata {
+                                title,
+                                artist,
+                                album,
+                                artwork: vec![],
+                            })
+                    }
+                    "playbackState" => {
+                        let state = match text(2).trim_matches('"') {
+                            "playing" => wega_protocol::media::MediaSessionPlaybackState::Playing,
+                            "paused" => wega_protocol::media::MediaSessionPlaybackState::Paused,
+                            _ => wega_protocol::media::MediaSessionPlaybackState::None,
+                        };
+                        engine.session.set_playback_state(state)
+                    }
+                    "positionState" => {
+                        let payload: Value = serde_json::from_str(text(2)).unwrap_or_default();
+                        let duration = payload
+                            .get("duration")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let playback_rate = payload
+                            .get("playbackRate")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(1.0);
+                        let position = payload
+                            .get("position")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        engine.session.set_position_state(
+                            wega_protocol::media::MediaPositionState {
+                                duration,
+                                playback_rate,
+                                position,
+                            },
+                        )
+                    }
+                    _ => return Ok(Value::Null),
+                };
+                let _ = ev;
+                return Ok(Value::Null);
+            }
+            "permissionQuery" => {
+                let feature_name = text(1);
+                let feature = wega_protocol::permissions::PermissionFeature::parse(feature_name)
+                    .ok_or_else(|| format!("Invalid permission feature: {}", feature_name))?;
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let state = self.permissions.borrow().query(
+                    &origin,
+                    feature,
+                    &self.network.policy.read().unwrap(),
+                );
+                return Ok(json!(state.as_str()));
+            }
+            "permissionRequest" => {
+                let feature_name = text(1);
+                let feature = wega_protocol::permissions::PermissionFeature::parse(feature_name)
+                    .ok_or_else(|| format!("Invalid permission feature: {}", feature_name))?;
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let doc_ctx = wega_protocol::DocumentContext {
+                    document: wega_protocol::DocumentId(self.document_generation.get()),
+                    revision: wega_protocol::DocumentRevision(self.document_revision),
+                };
+                let (state, prompt_id) = self.permissions.borrow_mut().request(
+                    &origin,
+                    doc_ctx,
+                    feature,
+                    &self.network.policy.read().unwrap(),
+                );
+                if let Some(id) = prompt_id {
+                    let origin_str = match &origin {
+                        wega_protocol::authority::Origin::Tuple(s) => s.clone(),
+                        wega_protocol::authority::Origin::Opaque => "null".into(),
+                    };
+                    self.requests
+                        .borrow_mut()
+                        .permission_prompts
+                        .push((id, origin_str, feature));
+                }
+                return Ok(json!({
+                    "state": state.as_str(),
+                    "promptId": prompt_id,
+                }));
+            }
+            "notificationCreate" => {
+                let id = text(1)
+                    .parse::<u64>()
+                    .map_err(|_| "Invalid notification id")?;
+                let title = text(2);
+                let opts_raw = text(3);
+                let opts: wega_protocol::permissions::NotificationOptions =
+                    serde_json::from_str(opts_raw).unwrap_or_default();
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let state = self.permissions.borrow().query(
+                    &origin,
+                    wega_protocol::permissions::PermissionFeature::Notifications,
+                    &self.network.policy.read().unwrap(),
+                );
+                if state != wega_protocol::permissions::PermissionState::Granted {
+                    return Err("Notification permission not granted".into());
+                }
+                self.requests
+                    .borrow_mut()
+                    .notifications
+                    .push((id, title.to_string(), opts));
+                return Ok(Value::Null);
+            }
+            "notificationClose" => {
+                let id = text(1)
+                    .parse::<u64>()
+                    .map_err(|_| "Invalid notification id")?;
+                self.requests.borrow_mut().notification_closes.push(id);
+                return Ok(Value::Null);
+            }
+            "wakeLockRequest" => {
+                let lock_type = text(1);
+                if lock_type != "screen" {
+                    return Err("NotSupportedError".into());
+                }
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let origin_str = match origin {
+                    wega_protocol::authority::Origin::Tuple(s) => s,
+                    wega_protocol::authority::Origin::Opaque => {
+                        return Err(
+                            "NotAllowedError: opaque origin cannot request wake lock".into()
+                        );
+                    }
+                };
+                let state = self.permissions.borrow().query(
+                    &wega_protocol::authority::Origin::Tuple(origin_str.clone()),
+                    wega_protocol::permissions::PermissionFeature::ScreenWakeLock,
+                    &self.network.policy.read().unwrap(),
+                );
+                if state == wega_protocol::permissions::PermissionState::Denied {
+                    return Err("NotAllowedError: screen wake lock permission denied".into());
+                }
+                let doc_ctx = wega_protocol::DocumentContext {
+                    document: wega_protocol::DocumentId(self.document_generation.get()),
+                    revision: wega_protocol::DocumentRevision(self.document_revision),
+                };
+                let lock_id = self
+                    .permissions
+                    .borrow_mut()
+                    .devices
+                    .create_wake_lock(origin_str, doc_ctx);
+                return Ok(json!(lock_id));
+            }
+            "wakeLockRelease" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid wake lock id")?;
+                self.permissions.borrow_mut().devices.release_wake_lock(id);
+                return Ok(Value::Null);
+            }
+            "deviceGetUserMedia" => {
+                let need_audio = text(1) == "true";
+                let need_video = text(2) == "true";
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let origin_str = match origin {
+                    wega_protocol::authority::Origin::Tuple(s) => s,
+                    wega_protocol::authority::Origin::Opaque => {
+                        return Err(
+                            "NotAllowedError: opaque origin cannot access media devices".into()
+                        );
+                    }
+                };
+                let policy = self.network.policy.read().unwrap();
+                if need_video {
+                    let state = self.permissions.borrow().query(
+                        &wega_protocol::authority::Origin::Tuple(origin_str.clone()),
+                        wega_protocol::permissions::PermissionFeature::Camera,
+                        &policy,
+                    );
+                    if state != wega_protocol::permissions::PermissionState::Granted {
+                        return Err("NotAllowedError: Camera permission not granted".into());
+                    }
+                }
+                if need_audio {
+                    let state = self.permissions.borrow().query(
+                        &wega_protocol::authority::Origin::Tuple(origin_str.clone()),
+                        wega_protocol::permissions::PermissionFeature::Microphone,
+                        &policy,
+                    );
+                    if state != wega_protocol::permissions::PermissionState::Granted {
+                        return Err("NotAllowedError: Microphone permission not granted".into());
+                    }
+                }
+                let doc_ctx = wega_protocol::DocumentContext {
+                    document: wega_protocol::DocumentId(self.document_generation.get()),
+                    revision: wega_protocol::DocumentRevision(self.document_revision),
+                };
+                let mut perms = self.permissions.borrow_mut();
+                let mut track_descriptors = Vec::new();
+                if need_video {
+                    let vid = perms.devices.create_track(
+                        origin_str.clone(),
+                        doc_ctx,
+                        crate::permissions::MediaTrackKind::Video,
+                        None,
+                    );
+                    track_descriptors.push(
+                        json!({ "id": vid, "kind": "video", "label": "Default Video Camera" }),
+                    );
+                }
+                if need_audio {
+                    let aid = perms.devices.create_track(
+                        origin_str.clone(),
+                        doc_ctx,
+                        crate::permissions::MediaTrackKind::Audio,
+                        None,
+                    );
+                    track_descriptors.push(
+                        json!({ "id": aid, "kind": "audio", "label": "Default Audio Device" }),
+                    );
+                }
+                return Ok(json!(track_descriptors));
+            }
+            "deviceTrackStop" => {
+                let id = text(1);
+                self.permissions.borrow_mut().devices.stop_track(id);
+                return Ok(Value::Null);
+            }
+            "deviceTrackClone" => {
+                let id = text(1);
+                let cloned_id = self.permissions.borrow_mut().devices.clone_track(id)?;
+                return Ok(json!(cloned_id));
+            }
+            "requestFullscreen" => {
+                let now = Instant::now();
+                let has_activation = self
+                    .activation
+                    .get()
+                    .map(|until| until > now)
+                    .unwrap_or(false);
+                if !has_activation {
+                    return Err(
+                        "TypeError: requestFullscreen requires transient user activation".into(),
+                    );
+                }
+                self.activation.set(None);
+                self.requests.borrow_mut().fullscreen.push(true);
+                return Ok(Value::Null);
+            }
+            "exitFullscreen" => {
+                self.requests.borrow_mut().fullscreen.push(false);
+                return Ok(Value::Null);
+            }
+            "registerProtocolHandler" => {
+                let scheme = text(1);
+                let target_url = text(2);
+                self.requests.borrow_mut().protocol_registrations.push(
+                    wega_protocol::permissions::ProtocolHandlerRegistration {
+                        scheme: scheme.to_string(),
+                        url: target_url.to_string(),
+                    },
+                );
+                return Ok(Value::Null);
+            }
+            "openExternalApp" => {
+                let target_url = text(1);
+                self.requests
+                    .borrow_mut()
+                    .external_apps
+                    .push(target_url.to_string());
+                return Ok(Value::Null);
+            }
+            "canvasCreate" => {
+                let w = text(1).parse::<u32>().unwrap_or(300);
+                let h = text(2).parse::<u32>().unwrap_or(150);
+                let is_offscreen = text(3) == "true";
+                let id = self
+                    .canvas_engine
+                    .borrow_mut()
+                    .create_canvas(w, h, is_offscreen)?;
+                return Ok(json!(id.0));
+            }
+            "canvasResize" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                let w = text(2).parse::<u32>().unwrap_or(300);
+                let h = text(3).parse::<u32>().unwrap_or(150);
+                self.canvas_engine
+                    .borrow_mut()
+                    .resize_canvas(crate::canvas::CanvasId(id), w, h)?;
+                return Ok(Value::Null);
+            }
+            "canvasDestroy" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                self.canvas_engine
+                    .borrow_mut()
+                    .destroy_canvas(crate::canvas::CanvasId(id));
+                return Ok(Value::Null);
+            }
+            "canvasGetMemory" => {
+                let mem = self.canvas_engine.borrow().total_pixel_bytes();
+                return Ok(json!(mem));
+            }
+            "canvasExecute" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                let cmd = text(2);
+                let cmd_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
+                let mut engine = self.canvas_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::canvas::CanvasId(id))
+                    .ok_or("Canvas not found")?;
+                let res = ctx.execute_command(cmd, &cmd_args)?;
+                return Ok(res);
+            }
+            "canvasToDataURL" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                let mime = text(2);
+                let mut engine = self.canvas_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::canvas::CanvasId(id))
+                    .ok_or("Canvas not found")?;
+                let data_url = ctx.to_data_url(mime)?;
+                return Ok(json!(data_url));
+            }
+            "canvasToBlob" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                let mut engine = self.canvas_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::canvas::CanvasId(id))
+                    .ok_or("Canvas not found")?;
+                let bytes = ctx.to_blob_bytes()?;
+                return Ok(json!(bytes));
+            }
+            "canvasGetImageData" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                let coords: Vec<i32> = serde_json::from_str(text(2)).unwrap_or_default();
+                let x = coords.get(0).copied().unwrap_or(0);
+                let y = coords.get(1).copied().unwrap_or(0);
+                let w = coords.get(2).copied().unwrap_or(1);
+                let h = coords.get(3).copied().unwrap_or(1);
+                let mut engine = self.canvas_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::canvas::CanvasId(id))
+                    .ok_or("Canvas not found")?;
+                let pixels = ctx.get_image_data(x, y, w, h)?;
+                return Ok(json!(pixels));
+            }
+            "canvasPutImageData" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                #[derive(serde::Deserialize)]
+                struct PutPayload {
+                    data: Vec<u8>,
+                    dx: i32,
+                    dy: i32,
+                    w: i32,
+                    h: i32,
+                }
+                let payload: PutPayload =
+                    serde_json::from_str(text(2)).map_err(|e| e.to_string())?;
+                let mut engine = self.canvas_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::canvas::CanvasId(id))
+                    .ok_or("Canvas not found")?;
+                ctx.put_image_data(&payload.data, payload.dx, payload.dy, payload.w, payload.h)?;
+                return Ok(Value::Null);
+            }
+            "canvasMeasureText" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                let txt = text(2);
+                let engine = self.canvas_engine.borrow();
+                let ctx = engine
+                    .get(crate::canvas::CanvasId(id))
+                    .ok_or("Canvas not found")?;
+                let (width, ascent, descent) = ctx.measure_text(txt);
+                return Ok(json!({
+                    "width": width,
+                    "actualBoundingBoxAscent": ascent,
+                    "actualBoundingBoxDescent": descent,
+                    "fontBoundingBoxAscent": ascent,
+                    "fontBoundingBoxDescent": descent
+                }));
+            }
+            "canvasTaint" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                let mut engine = self.canvas_engine.borrow_mut();
+                if let Some(ctx) = engine.get_mut(crate::canvas::CanvasId(id)) {
+                    ctx.origin_clean = false;
+                }
+                return Ok(Value::Null);
+            }
+            "canvasDrawImage" => {
+                let target_id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
+                let src_id = text(2)
+                    .parse::<u64>()
+                    .map_err(|_| "Invalid source canvas ID")?;
+                let is_clean = text(3) != "tainted";
+                let mut engine = self.canvas_engine.borrow_mut();
+                let (src_pixels, src_w, src_h) = {
+                    let src = engine
+                        .get_mut(crate::canvas::CanvasId(src_id))
+                        .ok_or("Source canvas not found")?;
+                    let pixels = src.get_image_data(0, 0, src.width as i32, src.height as i32)?;
+                    (pixels, src.width as i32, src.height as i32)
+                };
+                let target = engine
+                    .get_mut(crate::canvas::CanvasId(target_id))
+                    .ok_or("Target canvas not found")?;
+                target.draw_image(
+                    &src_pixels,
+                    src_w,
+                    src_h,
+                    0.0,
+                    0.0,
+                    src_w as f32,
+                    src_h as f32,
+                    0.0,
+                    0.0,
+                    src_w as f32,
+                    src_h as f32,
+                    is_clean,
+                )?;
+                return Ok(Value::Null);
+            }
+            "workerCreate" => {
+                let id = self
+                    .workers
+                    .borrow_mut()
+                    .spawn_dedicated(text(1), text(2).to_string())?;
+                return Ok(json!(id.0));
+            }
+            "workerPost" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
+                self.workers
+                    .borrow()
+                    .post_dedicated(crate::workers::WorkerId(id), text(2).to_string())?;
+                return Ok(Value::Null);
+            }
+            "workerTerminate" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
+                self.workers
+                    .borrow_mut()
+                    .terminate_dedicated(crate::workers::WorkerId(id))?;
+                return Ok(Value::Null);
+            }
+            "workerPoll" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
+                let events = self
+                    .workers
+                    .borrow_mut()
+                    .poll_dedicated_events(crate::workers::WorkerId(id));
+                return Ok(json!(events));
+            }
+            "sharedWorkerConnect" => {
+                let (doc_port, worker_port) = self.workers.borrow_mut().connect_shared(
+                    text(1),
+                    text(2),
+                    text(3).to_string(),
+                )?;
+                return Ok(json!({ "docPort": doc_port.0, "workerPort": worker_port.0 }));
+            }
+            "serviceWorkerRegister" => {
+                let info = self
+                    .workers
+                    .borrow_mut()
+                    .register_service_worker(text(1), (!text(2).is_empty()).then_some(text(2)))?;
+                return Ok(json!(info));
+            }
+            "serviceWorkerGetRegistration" => {
+                let url = url::Url::parse(text(1)).map_err(|e| e.to_string())?;
+                let info = self.workers.borrow().get_service_worker(&url);
+                return Ok(json!(info));
+            }
+            "serviceWorkerUnregister" => {
+                let removed = self.workers.borrow_mut().unregister_service_worker(text(1));
+                return Ok(json!(removed));
+            }
+            "serviceWorkerInterceptFetch" => {
+                let url = url::Url::parse(text(1)).map_err(|e| e.to_string())?;
+                let entry = self.workers.borrow().intercept_fetch(&url);
+                return Ok(json!(entry));
+            }
+            "channelCreate" => {
+                let (p1, p2) = self.workers.borrow_mut().create_channel();
+                return Ok(json!({ "port1": p1.0, "port2": p2.0 }));
+            }
+            "portPost" => {
+                let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
+                let transferred: Vec<u64> = serde_json::from_str(text(3)).unwrap_or_default();
+                let ports = transferred
+                    .into_iter()
+                    .map(crate::workers::PortId)
+                    .collect();
+                self.workers.borrow_mut().post_port(
+                    crate::workers::PortId(port),
+                    text(2).to_string(),
+                    ports,
+                )?;
+                return Ok(Value::Null);
+            }
+            "portClose" => {
+                let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
+                self.workers
+                    .borrow_mut()
+                    .close_port(crate::workers::PortId(port));
+                return Ok(Value::Null);
+            }
+            "portPoll" => {
+                let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
+                let msgs = self
+                    .workers
+                    .borrow_mut()
+                    .poll_port(crate::workers::PortId(port));
+                return Ok(json!(msgs));
+            }
+            "clipboardWrite" => {
+                self.clipboard.borrow_mut().clear();
+                self.clipboard.borrow_mut().push_str(text(1));
+                return Ok(Value::Null);
+            }
+            "clipboardRead" => {
+                return Ok(json!(self.clipboard.borrow().clone()));
+            }
             "customNameValid" => return Ok(json!(crate::components::valid_name(text(1)))),
             "customDefinition" => return Ok(json!(self.components.borrow().get(text(1)))),
             "customDefinitionId" => {
@@ -222,6 +1263,7 @@ impl Dom {
                 | "write"
                 | "fragment"
                 | "submitForm"
+                | "resetForm"
         ) {
             self.invalidate();
         }
@@ -306,6 +1348,266 @@ impl Dom {
             return Ok(Value::Null);
         }
         let charge = match text(0) {
+            "webglCreate" => {
+                let w = text(1).parse::<u32>().unwrap_or(300);
+                let h = text(2).parse::<u32>().unwrap_or(150);
+                let is_webgl2 = text(3) == "webgl2";
+                let id = self.webgl_engine.borrow_mut().create_context(
+                    w,
+                    h,
+                    is_webgl2,
+                    crate::webgl::ContextAttributes::default(),
+                )?;
+                return Ok(json!(id.0));
+            }
+            "webglResize" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                let w = text(2).parse::<u32>().unwrap_or(300);
+                let h = text(3).parse::<u32>().unwrap_or(150);
+                self.webgl_engine.borrow_mut().resize_context(
+                    crate::webgl::WebGLContextId(id),
+                    w,
+                    h,
+                )?;
+                return Ok(Value::Null);
+            }
+            "webglDestroy" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                self.webgl_engine
+                    .borrow_mut()
+                    .destroy_context(crate::webgl::WebGLContextId(id));
+                return Ok(Value::Null);
+            }
+            "webglGetMemory" => {
+                let mem = self.webgl_engine.borrow().total_pixel_bytes();
+                return Ok(json!(mem));
+            }
+            "webglOp" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                let op = text(2);
+                let op_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
+                let mut engine = self.webgl_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::webgl::WebGLContextId(id))
+                    .ok_or("WebGL context not found")?;
+
+                match op {
+                    "getError" => return Ok(json!(ctx.last_error)),
+                    "isContextLost" => return Ok(json!(ctx.context_lost)),
+                    "loseContext" => {
+                        ctx.lose_context();
+                        return Ok(Value::Null);
+                    }
+                    "restoreContext" => {
+                        ctx.restore_context();
+                        return Ok(Value::Null);
+                    }
+                    "enable" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.enable(cap);
+                        return Ok(Value::Null);
+                    }
+                    "disable" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.disable(cap);
+                        return Ok(Value::Null);
+                    }
+                    "isEnabled" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(json!(ctx.is_enabled(cap)));
+                    }
+                    "clearColor" => {
+                        let r = op_args.get(0).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let g = op_args.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let b = op_args.get(2).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let a = op_args.get(3).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        ctx.clear_color(r, g, b, a);
+                        return Ok(Value::Null);
+                    }
+                    "clearDepth" => {
+                        let d = op_args.get(0).and_then(Value::as_f64).unwrap_or(1.0) as f32;
+                        ctx.clear_depth(d);
+                        return Ok(Value::Null);
+                    }
+                    "clear" => {
+                        let mask = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.clear(mask);
+                        return Ok(Value::Null);
+                    }
+                    "viewport" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.viewport(x, y, w, h);
+                        return Ok(Value::Null);
+                    }
+                    "scissor" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.scissor(x, y, w, h);
+                        return Ok(Value::Null);
+                    }
+                    "createBuffer" => return Ok(json!(ctx.create_buffer())),
+                    "bindBuffer" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let buf_id = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.bind_buffer(target, buf_id);
+                        return Ok(Value::Null);
+                    }
+                    "bufferData" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let data: Vec<u8> = op_args
+                            .get(1)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.buffer_data(target, &data, usage);
+                        return Ok(Value::Null);
+                    }
+                    "createShader" => {
+                        let stype = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(json!(ctx.create_shader(stype)));
+                    }
+                    "shaderSource" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let src = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        ctx.shader_source(sid, src);
+                        return Ok(Value::Null);
+                    }
+                    "compileShader" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.compile_shader(sid);
+                        return Ok(Value::Null);
+                    }
+                    "getShaderParameter" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(ctx.get_shader_parameter(sid, pname));
+                    }
+                    "getShaderInfoLog" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        return Ok(json!(ctx.get_shader_info_log(sid)));
+                    }
+                    "createProgram" => return Ok(json!(ctx.create_program())),
+                    "attachShader" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let sid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.attach_shader(pid, sid);
+                        return Ok(Value::Null);
+                    }
+                    "linkProgram" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.link_program(pid);
+                        return Ok(Value::Null);
+                    }
+                    "useProgram" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.use_program(pid);
+                        return Ok(Value::Null);
+                    }
+                    "getProgramParameter" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(ctx.get_program_parameter(pid, pname));
+                    }
+                    "getUniformLocation" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        return Ok(json!(ctx.get_uniform_location(pid, name)));
+                    }
+                    "getAttribLocation" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        return Ok(json!(ctx.get_attrib_location(pid, name)));
+                    }
+                    "uniformValues" => {
+                        let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let vals: Vec<f32> = op_args
+                            .get(1)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        ctx.uniform_values(loc, &vals);
+                        return Ok(Value::Null);
+                    }
+                    "vertexAttribPointer" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        let size = op_args.get(1).and_then(Value::as_i64).unwrap_or(4) as i32;
+                        let atype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let norm = op_args.get(3).and_then(Value::as_bool).unwrap_or(false);
+                        let stride = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let offset = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.vertex_attrib_pointer(idx, size, atype, norm, stride, offset);
+                        return Ok(Value::Null);
+                    }
+                    "enableVertexAttribArray" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        ctx.enable_vertex_attrib_array(idx);
+                        return Ok(Value::Null);
+                    }
+                    "disableVertexAttribArray" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        ctx.disable_vertex_attrib_array(idx);
+                        return Ok(Value::Null);
+                    }
+                    "drawArrays" => {
+                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let first = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let count = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.draw_arrays(mode, first, count);
+                        return Ok(Value::Null);
+                    }
+                    "drawElements" => {
+                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let count = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let etype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let offset = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.draw_elements(mode, count, etype, offset);
+                        return Ok(Value::Null);
+                    }
+                    "createTexture" => return Ok(json!(ctx.create_texture())),
+                    "bindTexture" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let tid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.bind_texture(target, tid);
+                        return Ok(Value::Null);
+                    }
+                    "texImage2D" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let level = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let iformat = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let pixels: Vec<u8> = op_args
+                            .get(8)
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
+                        ctx.tex_image_2d(
+                            target, level, iformat, w, h, border, format, ttype, &pixels, is_clean,
+                        );
+                        return Ok(Value::Null);
+                    }
+                    "readPixels" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(1) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(1) as i32;
+                        let pixels = ctx.read_pixels(x, y, w, h)?;
+                        return Ok(json!(pixels));
+                    }
+                    "toDataURL" => {
+                        let data_url = ctx.to_data_url()?;
+                        return Ok(json!(data_url));
+                    }
+                    _ => return Err(format!("Unknown WebGL operation: {}", op)),
+                }
+            }
             "setText" => text(2).len() + 32,
             "setAttr" => text(2).len() + text(3).len() + 32,
             "create" | "createText" | "createComment" | "createFragment" => text(1).len() + 32,
@@ -339,6 +1641,251 @@ impl Dom {
             }
         };
         let value = match text(0) {
+            "webglCreate" => {
+                let w = text(1).parse::<u32>().unwrap_or(300);
+                let h = text(2).parse::<u32>().unwrap_or(150);
+                let is_webgl2 = text(3) == "webgl2";
+                let id = self
+                    .webgl_engine
+                    .borrow_mut()
+                    .create_context(w, h, is_webgl2, crate::webgl::ContextAttributes::default())?;
+                return Ok(json!(id.0));
+            }
+            "webglResize" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                let w = text(2).parse::<u32>().unwrap_or(300);
+                let h = text(3).parse::<u32>().unwrap_or(150);
+                self.webgl_engine
+                    .borrow_mut()
+                    .resize_context(crate::webgl::WebGLContextId(id), w, h)?;
+                return Ok(Value::Null);
+            }
+            "webglDestroy" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                self.webgl_engine
+                    .borrow_mut()
+                    .destroy_context(crate::webgl::WebGLContextId(id));
+                return Ok(Value::Null);
+            }
+            "webglGetMemory" => {
+                let mem = self.webgl_engine.borrow().total_pixel_bytes();
+                return Ok(json!(mem));
+            }
+            "webglOp" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                let op = text(2);
+                let op_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
+                let mut engine = self.webgl_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::webgl::WebGLContextId(id))
+                    .ok_or("WebGL context not found")?;
+
+                match op {
+                    "getError" => return Ok(json!(ctx.last_error)),
+                    "isContextLost" => return Ok(json!(ctx.context_lost)),
+                    "loseContext" => {
+                        ctx.lose_context();
+                        return Ok(Value::Null);
+                    }
+                    "restoreContext" => {
+                        ctx.restore_context();
+                        return Ok(Value::Null);
+                    }
+                    "enable" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.enable(cap);
+                        return Ok(Value::Null);
+                    }
+                    "disable" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.disable(cap);
+                        return Ok(Value::Null);
+                    }
+                    "isEnabled" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(json!(ctx.is_enabled(cap)));
+                    }
+                    "clearColor" => {
+                        let r = op_args.get(0).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let g = op_args.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let b = op_args.get(2).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let a = op_args.get(3).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        ctx.clear_color(r, g, b, a);
+                        return Ok(Value::Null);
+                    }
+                    "clearDepth" => {
+                        let d = op_args.get(0).and_then(Value::as_f64).unwrap_or(1.0) as f32;
+                        ctx.clear_depth(d);
+                        return Ok(Value::Null);
+                    }
+                    "clear" => {
+                        let mask = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.clear(mask);
+                        return Ok(Value::Null);
+                    }
+                    "viewport" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.viewport(x, y, w, h);
+                        return Ok(Value::Null);
+                    }
+                    "scissor" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.scissor(x, y, w, h);
+                        return Ok(Value::Null);
+                    }
+                    "createBuffer" => return Ok(json!(ctx.create_buffer())),
+                    "bindBuffer" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let buf_id = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.bind_buffer(target, buf_id);
+                        return Ok(Value::Null);
+                    }
+                    "bufferData" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let data: Vec<u8> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.buffer_data(target, &data, usage);
+                        return Ok(Value::Null);
+                    }
+                    "createShader" => {
+                        let stype = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(json!(ctx.create_shader(stype)));
+                    }
+                    "shaderSource" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let src = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        ctx.shader_source(sid, src);
+                        return Ok(Value::Null);
+                    }
+                    "compileShader" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.compile_shader(sid);
+                        return Ok(Value::Null);
+                    }
+                    "getShaderParameter" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(ctx.get_shader_parameter(sid, pname));
+                    }
+                    "getShaderInfoLog" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        return Ok(json!(ctx.get_shader_info_log(sid)));
+                    }
+                    "createProgram" => return Ok(json!(ctx.create_program())),
+                    "attachShader" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let sid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.attach_shader(pid, sid);
+                        return Ok(Value::Null);
+                    }
+                    "linkProgram" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.link_program(pid);
+                        return Ok(Value::Null);
+                    }
+                    "useProgram" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.use_program(pid);
+                        return Ok(Value::Null);
+                    }
+                    "getProgramParameter" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(ctx.get_program_parameter(pid, pname));
+                    }
+                    "getUniformLocation" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        return Ok(json!(ctx.get_uniform_location(pid, name)));
+                    }
+                    "getAttribLocation" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        return Ok(json!(ctx.get_attrib_location(pid, name)));
+                    }
+                    "uniformValues" => {
+                        let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let vals: Vec<f32> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        ctx.uniform_values(loc, &vals);
+                        return Ok(Value::Null);
+                    }
+                    "vertexAttribPointer" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        let size = op_args.get(1).and_then(Value::as_i64).unwrap_or(4) as i32;
+                        let atype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let norm = op_args.get(3).and_then(Value::as_bool).unwrap_or(false);
+                        let stride = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let offset = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.vertex_attrib_pointer(idx, size, atype, norm, stride, offset);
+                        return Ok(Value::Null);
+                    }
+                    "enableVertexAttribArray" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        ctx.enable_vertex_attrib_array(idx);
+                        return Ok(Value::Null);
+                    }
+                    "disableVertexAttribArray" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        ctx.disable_vertex_attrib_array(idx);
+                        return Ok(Value::Null);
+                    }
+                    "drawArrays" => {
+                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let first = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let count = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.draw_arrays(mode, first, count);
+                        return Ok(Value::Null);
+                    }
+                    "drawElements" => {
+                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let count = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let etype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let offset = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.draw_elements(mode, count, etype, offset);
+                        return Ok(Value::Null);
+                    }
+                    "createTexture" => return Ok(json!(ctx.create_texture())),
+                    "bindTexture" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let tid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.bind_texture(target, tid);
+                        return Ok(Value::Null);
+                    }
+                    "texImage2D" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let level = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let iformat = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let pixels: Vec<u8> = op_args.get(8).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
+                        ctx.tex_image_2d(target, level, iformat, w, h, border, format, ttype, &pixels, is_clean);
+                        return Ok(Value::Null);
+                    }
+                    "readPixels" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(1) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(1) as i32;
+                        let pixels = ctx.read_pixels(x, y, w, h)?;
+                        return Ok(json!(pixels));
+                    }
+                    "toDataURL" => {
+                        let data_url = ctx.to_data_url()?;
+                        return Ok(json!(data_url));
+                    }
+                    _ => return Err(format!("Unknown WebGL operation: {}", op)),
+                }
+            }
             "customUpgrade" => {
                 let target = node_id()?;
                 let name = doc.get_node(target).and_then(|node| node.element_data()).map(|element| element.name.local.as_ref()).unwrap_or("");
@@ -614,6 +2161,251 @@ impl Dom {
                 let target=node_id()?;
                 let node=doc.get_node(target).unwrap();
                 let related=match text(0) {
+            "webglCreate" => {
+                let w = text(1).parse::<u32>().unwrap_or(300);
+                let h = text(2).parse::<u32>().unwrap_or(150);
+                let is_webgl2 = text(3) == "webgl2";
+                let id = self
+                    .webgl_engine
+                    .borrow_mut()
+                    .create_context(w, h, is_webgl2, crate::webgl::ContextAttributes::default())?;
+                return Ok(json!(id.0));
+            }
+            "webglResize" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                let w = text(2).parse::<u32>().unwrap_or(300);
+                let h = text(3).parse::<u32>().unwrap_or(150);
+                self.webgl_engine
+                    .borrow_mut()
+                    .resize_context(crate::webgl::WebGLContextId(id), w, h)?;
+                return Ok(Value::Null);
+            }
+            "webglDestroy" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                self.webgl_engine
+                    .borrow_mut()
+                    .destroy_context(crate::webgl::WebGLContextId(id));
+                return Ok(Value::Null);
+            }
+            "webglGetMemory" => {
+                let mem = self.webgl_engine.borrow().total_pixel_bytes();
+                return Ok(json!(mem));
+            }
+            "webglOp" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
+                let op = text(2);
+                let op_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
+                let mut engine = self.webgl_engine.borrow_mut();
+                let ctx = engine
+                    .get_mut(crate::webgl::WebGLContextId(id))
+                    .ok_or("WebGL context not found")?;
+
+                match op {
+                    "getError" => return Ok(json!(ctx.last_error)),
+                    "isContextLost" => return Ok(json!(ctx.context_lost)),
+                    "loseContext" => {
+                        ctx.lose_context();
+                        return Ok(Value::Null);
+                    }
+                    "restoreContext" => {
+                        ctx.restore_context();
+                        return Ok(Value::Null);
+                    }
+                    "enable" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.enable(cap);
+                        return Ok(Value::Null);
+                    }
+                    "disable" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.disable(cap);
+                        return Ok(Value::Null);
+                    }
+                    "isEnabled" => {
+                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(json!(ctx.is_enabled(cap)));
+                    }
+                    "clearColor" => {
+                        let r = op_args.get(0).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let g = op_args.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let b = op_args.get(2).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        let a = op_args.get(3).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                        ctx.clear_color(r, g, b, a);
+                        return Ok(Value::Null);
+                    }
+                    "clearDepth" => {
+                        let d = op_args.get(0).and_then(Value::as_f64).unwrap_or(1.0) as f32;
+                        ctx.clear_depth(d);
+                        return Ok(Value::Null);
+                    }
+                    "clear" => {
+                        let mask = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.clear(mask);
+                        return Ok(Value::Null);
+                    }
+                    "viewport" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.viewport(x, y, w, h);
+                        return Ok(Value::Null);
+                    }
+                    "scissor" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.scissor(x, y, w, h);
+                        return Ok(Value::Null);
+                    }
+                    "createBuffer" => return Ok(json!(ctx.create_buffer())),
+                    "bindBuffer" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let buf_id = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.bind_buffer(target, buf_id);
+                        return Ok(Value::Null);
+                    }
+                    "bufferData" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let data: Vec<u8> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        ctx.buffer_data(target, &data, usage);
+                        return Ok(Value::Null);
+                    }
+                    "createShader" => {
+                        let stype = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(json!(ctx.create_shader(stype)));
+                    }
+                    "shaderSource" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let src = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        ctx.shader_source(sid, src);
+                        return Ok(Value::Null);
+                    }
+                    "compileShader" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.compile_shader(sid);
+                        return Ok(Value::Null);
+                    }
+                    "getShaderParameter" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(ctx.get_shader_parameter(sid, pname));
+                    }
+                    "getShaderInfoLog" => {
+                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        return Ok(json!(ctx.get_shader_info_log(sid)));
+                    }
+                    "createProgram" => return Ok(json!(ctx.create_program())),
+                    "attachShader" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let sid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.attach_shader(pid, sid);
+                        return Ok(Value::Null);
+                    }
+                    "linkProgram" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.link_program(pid);
+                        return Ok(Value::Null);
+                    }
+                    "useProgram" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.use_program(pid);
+                        return Ok(Value::Null);
+                    }
+                    "getProgramParameter" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        return Ok(ctx.get_program_parameter(pid, pname));
+                    }
+                    "getUniformLocation" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        return Ok(json!(ctx.get_uniform_location(pid, name)));
+                    }
+                    "getAttribLocation" => {
+                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
+                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
+                        return Ok(json!(ctx.get_attrib_location(pid, name)));
+                    }
+                    "uniformValues" => {
+                        let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let vals: Vec<f32> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        ctx.uniform_values(loc, &vals);
+                        return Ok(Value::Null);
+                    }
+                    "vertexAttribPointer" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        let size = op_args.get(1).and_then(Value::as_i64).unwrap_or(4) as i32;
+                        let atype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let norm = op_args.get(3).and_then(Value::as_bool).unwrap_or(false);
+                        let stride = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let offset = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.vertex_attrib_pointer(idx, size, atype, norm, stride, offset);
+                        return Ok(Value::Null);
+                    }
+                    "enableVertexAttribArray" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        ctx.enable_vertex_attrib_array(idx);
+                        return Ok(Value::Null);
+                    }
+                    "disableVertexAttribArray" => {
+                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
+                        ctx.disable_vertex_attrib_array(idx);
+                        return Ok(Value::Null);
+                    }
+                    "drawArrays" => {
+                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let first = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let count = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.draw_arrays(mode, first, count);
+                        return Ok(Value::Null);
+                    }
+                    "drawElements" => {
+                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let count = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let etype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let offset = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        ctx.draw_elements(mode, count, etype, offset);
+                        return Ok(Value::Null);
+                    }
+                    "createTexture" => return Ok(json!(ctx.create_texture())),
+                    "bindTexture" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let tid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
+                        ctx.bind_texture(target, tid);
+                        return Ok(Value::Null);
+                    }
+                    "texImage2D" => {
+                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let level = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let iformat = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let h = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
+                        let pixels: Vec<u8> = op_args.get(8).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+                        let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
+                        ctx.tex_image_2d(target, level, iformat, w, h, border, format, ttype, &pixels, is_clean);
+                        return Ok(Value::Null);
+                    }
+                    "readPixels" => {
+                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
+                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(1) as i32;
+                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(1) as i32;
+                        let pixels = ctx.read_pixels(x, y, w, h)?;
+                        return Ok(json!(pixels));
+                    }
+                    "toDataURL" => {
+                        let data_url = ctx.to_data_url()?;
+                        return Ok(json!(data_url));
+                    }
+                    _ => return Err(format!("Unknown WebGL operation: {}", op)),
+                }
+            }
                     "firstChild"=>node.children.first().copied(),
                     "lastChild"=>node.children.last().copied(),
                     _=>node.parent.and_then(|parent| {
@@ -847,6 +2639,12 @@ impl Dom {
                     return Err("Node no longer exists".into());
                 }
                 doc.submit_form(form, submitter);
+                Value::Null
+            }
+            "resetForm" => {
+                let form = node_id()?;
+                self.resolve(&mut doc);
+                Self::reset_form_controls(&mut doc, form);
                 Value::Null
             }
             "url" => json!(doc.url().as_str()),
@@ -1093,6 +2891,47 @@ impl Dom {
             parent = node.parent;
         }
         None
+    }
+    /// Resets all controls owned by `form` to their default state (defaultValue / defaultChecked).
+    pub fn reset_form_controls(doc: &mut BaseDocument, form: NodeId) {
+        let controls: Vec<NodeId> = blitz_dom::traversal::TreeTraverser::new(doc)
+            .filter(|id| Self::form_owner(doc, *id) == Some(form))
+            .collect();
+        for id in controls {
+            if let Some(node) = doc.get_node_mut(id) {
+                if let Some(element) = node.element_data_mut() {
+                    let tag = &*element.name.local;
+                    if tag == "input" {
+                        let kind = element
+                            .attr(LocalName::from("type"))
+                            .unwrap_or("text")
+                            .to_ascii_lowercase();
+                        if matches!(kind.as_str(), "checkbox" | "radio") {
+                            let default_checked =
+                                element.attr(LocalName::from("checked")).is_some();
+                            element.set_checkbox_input_checked(default_checked);
+                        } else {
+                            let default_value = element
+                                .attr(LocalName::from("value"))
+                                .unwrap_or_default()
+                                .to_string();
+                            if let Some(text_input) = element.text_input_data_mut() {
+                                text_input.editor.set_text(&default_value);
+                            }
+                        }
+                    } else if tag == "textarea" {
+                        let default_value = element
+                            .attr(LocalName::from("value"))
+                            .unwrap_or_default()
+                            .to_string();
+                        if let Some(text_input) = element.text_input_data_mut() {
+                            text_input.editor.set_text(&default_value);
+                        }
+                    }
+                }
+                node.mark_ancestors_dirty();
+            }
+        }
     }
     /// The form data set of a form (HTML "constructing the entry list"), for
     /// `new FormData(form)`. File inputs contribute empty entries.

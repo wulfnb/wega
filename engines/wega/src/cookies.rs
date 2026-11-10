@@ -1,7 +1,7 @@
 //! Profile cookie access is local for library users and brokered in tab workers.
 use std::sync::Arc;
 use url::Url;
-pub(crate) use wega_network::SiteContext;
+pub(crate) use wega_network::{CookieEntry, SiteContext};
 pub(crate) enum Cookies {
     Local(Arc<wega_network::Cookies>),
     Remote(wega_network::Remote),
@@ -37,6 +37,26 @@ impl Cookies {
             Self::Remote(remote) => {
                 let _ = remote.cookie_write(url, value, script, context);
             }
+        }
+    }
+    #[allow(dead_code)]
+    pub fn inventory(&self, url: &Url) -> Vec<CookieEntry> {
+        match self {
+            Self::Local(jar) => jar.inventory(url),
+            Self::Remote(_) => Vec::new(),
+        }
+    }
+    #[allow(dead_code)]
+    pub fn clear_site(&self, url: &Url) -> usize {
+        match self {
+            Self::Local(jar) => jar.clear_site(url),
+            Self::Remote(_) => 0,
+        }
+    }
+    #[allow(dead_code)]
+    pub fn clear(&self) {
+        if let Self::Local(jar) = self {
+            jar.clear();
         }
     }
 }

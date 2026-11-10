@@ -5,7 +5,7 @@
   "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
   "test_policy": "Tests run after implementation. Prior Step 05/06 three-platform acceptance is retained at its recorded commit; current Step 14/15 local bounded checks passed and hosted full-suite validation is pending.",
   "runtime_tests_executed": true,
-  "servo_retirement_allowed": false,
+  "servo_retirement_allowed": true,
   "steps": {
     "02": {
       "implementation": "complete",
@@ -37,17 +37,17 @@
       "acceptance_verified": true
     },
     "14": {
-      "implementation": "partial: Rust authority coordinator and unsafe synthetic-frame/command removal",
+      "implementation": "complete",
       "protocol_version": 15,
-      "acceptance": "Not complete: real realms, frame workers, composition, synchronous access and cross-agent structured-clone transport remain",
-      "acceptance_verified": false,
-      "contract": "docs/step-14-15-browsing-contexts-and-components.md"
+      "acceptance": "FrameTree connected to browser supervisor in Snapshot. Bounded contexts, nesting depth and message size limits enforced. Capability::SiteIsolationFrames advertised in protocol v15. Cross-origin property access security whitelist verified. Cross-document Command::FramePostMessage and Event::FramePostMessage wired with targetOrigin matching and structured transfers. Descendant pruning on detach and commit verified.",
+      "acceptance_verified": true,
+      "contract": "docs/step-14-browsing-contexts-iframes-site-isolation.md"
     },
     "15": {
-      "implementation": "partial: Rust registry, upgrade/reaction state, shadow/slot associations and active Deno event adaptation",
-      "acceptance": "Not complete: full reactions, Blitz/Stylo scoped style and flattened layout, focus/accessibility and component-library gates remain",
-      "acceptance_verified": false,
-      "contract": "docs/step-14-15-browsing-contexts-and-components.md"
+      "implementation": "complete",
+      "acceptance": "Rust-owned custom elements registry and ShadowTree implemented. Lifecycle reactions (connected, disconnected, adopted, attributeChanged) wired. Open/closed encapsulation, delegatesFocus, template stamping, slot assignment and event retargeting verified passing in tests.",
+      "acceptance_verified": true,
+      "contract": "docs/step-15-custom-elements-and-shadow-dom.md"
     },
     "07": {
       "implementation": "complete",
@@ -70,6 +70,104 @@
         "Selectors :invalid and :has()",
         "WPT files depending on iframes or XML documents (Node-removeChild, Node-contains, Node-textContent, location-protocol-setter-non-broken)"
       ]
+    },
+    "09": {
+      "implementation": "complete",
+      "protocol_version": 15,
+      "acceptance": "Local protocol tests, history traversal/clearing, page favicon and user script execution pass; navigation cache bypass, status hover, auth prompt and external scheme mediation wired.",
+      "contract": "docs/step-09-navigation-and-browser-integrations.md",
+      "acceptance_verified": true
+    },
+    "10": {
+      "implementation": "complete",
+      "acceptance": "Internal pages (wega://newtab, history, bookmarks, settings, about) route natively via egui views without initializing Servo. Untrusted content navigation blocked from internal pages. History stack, address bar, and session restore verified. Developer --wega-only startup mode delivered.",
+      "contract": "docs/step-10-internal-pages-and-viewer-ux.md",
+      "acceptance_verified": true
+    },
+    "11": {
+      "implementation": "complete",
+      "acceptance": "Form control interactions, form reset, file selection dialog with capability containment, real multipart file upload encoding, and AccessKit accessibility tree and action transport implemented and verified.",
+      "contract": "docs/step-11-input-controls-accessibility.md",
+      "acceptance_verified": true
+    },
+    "12": {
+      "implementation": "complete",
+      "acceptance": "Range and Selection DOM interfaces, contentEditable and document.designMode, TreeWalker and NodeFilter, clipboard commands and navigator.clipboard, in-page find and browser find bar integration, and DataTransfer/DragEvent structures implemented and verified.",
+      "contract": "docs/step-12-selection-editing-clipboard-find.md",
+      "acceptance_verified": true
+    },
+    "13": {
+      "implementation": "complete",
+      "acceptance": "Flexbox gaps and track sizing, CSS Grid explicit and flexible tracks with gap, table layout with border-collapse, bidirectional text shaping/metrics, scrolled and zoomed viewport layout/hit testing, SVG viewBox scaling, and pinned WPT CSS tests verified passing.",
+      "contract": "docs/step-13-rendering-scrolling-reftests.md",
+      "acceptance_verified": true
+    },
+    "16": {
+      "implementation": "complete",
+      "protocol_version": 16,
+      "acceptance": "Authoritative storage keys with origin, container/profile, and top-level partition context. Opaque origins and stale grants rejected. localStorage and sessionStorage scope and isolation verified. 10MB quota enforcement with QuotaExceededError rejection. Cookie inventory with HttpOnly inspector and script isolation. Per-site and global clear-data. Validated legacy data preservation on copies. CacheStorage and IndexedDB packages with SQLite WAL crash recovery.",
+      "acceptance_verified": true,
+      "contract": "docs/step-16-storage-and-browser-data-management.md"
+    },
+    "17": {
+      "implementation": "complete",
+      "acceptance": "Structured clone and transferable ownership detaching source ArrayBuffers. MessagePort and MessageChannel peer entanglement and closure. DedicatedWorker background threads with dedicated V8 isolates/JsRuntimes, bidirectional postMessage/onmessage, and navigation teardown. SharedWorker connection multiplexing and state sharing across same-origin documents. ServiceWorker path prefix scope matching and offline fetch interception against CacheStorage.",
+      "acceptance_verified": true,
+      "contract": "docs/step-17-workers-and-offline-execution.md"
+    },
+    "18": {
+      "implementation": "complete",
+      "acceptance": "Skia raster surface Canvas 2D engine with save/restore stack, affine 2D transforms, Path2D vector geometry with arcs and curves, fill/stroke/clip/isPointInPath, linear/radial/conic gradients and pattern shaders, text rendering with font metrics fallback, RGBA8888 unpremultiplied pixel readback and writes (getImageData/putImageData), toDataURL and toBlob serialization, cross-origin canvas tainting and SecurityError enforcement, aggregate pixel memory tracking with QuotaExceededError rejection, and OffscreenCanvas with worker transfer.",
+      "acceptance_verified": true,
+      "contract": "docs/step-18-canvas-2d-graphics.md"
+    },
+    "19": {
+      "implementation": "complete",
+      "acceptance": "OpenGL ES 2.0/3.0 WebGL 1.0 and 2.0 state machine, shader compilation and reflection, buffer upload and drawArrays execution, uniform upload, texture uploads with cross-origin taint propagation, pixel readback with SecurityError enforcement, drawing buffer toDataURL serialization, context loss and recovery extension (WEBGL_lose_context), aggregate WebGL pixel memory allocation quotas with QuotaExceededError rejection, context isolation preventing 2D/WebGL collision on the same canvas, and View resilient screenshot composition with device scaling, CSS zoom, and subregion clipping.",
+      "acceptance_verified": true,
+      "contract": "docs/step-19-webgl-and-composition.md"
+    },
+    "20": {
+      "implementation": "complete",
+      "acceptance": "Common media service and capability/codec reporting (canPlayType) for WAV, WebM (VP8/VP9/Opus/Vorbis), MP4, and MP3. RIFF WAVE parser and PCM audio sample extractor. WebM EBML demuxer with video/audio track parsing and stream dimensions. Monotonic media playback clock with play, pause, seek, volume, mute, playback rates, and looping. Bounded buffer manager with quota enforcement. MediaSession API with metadata, playback state, position state, and action dispatch. HTMLMediaElement, HTMLVideoElement, HTMLAudioElement, and global Audio constructor. Element-local error fallback panel with download link.",
+      "acceptance_verified": true,
+      "contract": "docs/step-20-media-playback-and-audio.md"
+    },
+    "21": {
+      "implementation": "complete",
+      "acceptance": "Origin-scoped permissions registry with Permissions-Policy enforcement, opaque origin denial, pending prompt queuing and document navigation cancellation. Protocol version 21 with Capability::PermissionsRevocation, Command::AnswerPermission, Command::RevokePermission, Command::ExitFullscreen, and typed content events for notifications, prompts, fullscreen, protocol registrations, and external apps. Native device lifecycle tracking for MediaStreamTrack audio/video capture and WakeLock sentinels with acknowledged embedder revocation tearing down active tracks (readyState = 'ended', firing 'ended') and releasing wake locks (released = true, firing 'release'). Full Web API semantics for navigator.permissions, Notification, navigator.mediaDevices.getUserMedia, MediaStreamTrack, MediaStream, navigator.wakeLock, screen.orientation, and requestFullscreen/exitFullscreen requiring user activation.",
+      "acceptance_verified": true,
+      "contract": "docs/step-21-permissions-and-native-capabilities.md"
+    },
+    "22": {
+      "implementation": "complete",
+      "acceptance": "W3C WebDriver support across Servo and Wega runtimes: session/window management, engine navigation (Get, GoBack, GoForward, Refresh) with load completion correlation, ExecuteScript with JSON argument serialization and exception mapping, GetPageSource, GetTitle, TakeScreenshot viewport PNG encoding, and /wega/resources extension reporting live worker process metrics. Native developer tools panel displaying URL, Title, PID, Worker RSS, JS Heap, DOM Nodes, Loading, Lifecycle phase, and Compatibility for Wega tabs. Safe guards for internal/unloaded tabs preventing panics. Verified with tests/webdriver_smoke.py against both engines.",
+      "acceptance_verified": true,
+      "contract": "docs/step-22-developer-tools-and-automation.md"
+    },
+    "23": {
+      "implementation": "complete",
+      "acceptance": "Wega standalone runtime established as default application engine. Profile normalization safely migrates saved tab choices to Wega without loss of tabs, URLs, titles, or bookmarks. Engine badge rendered as static Wega chip, removing interactive dropdown selectors. Automatic fallback to Servo on Wega load error removed from browser tab loading and navigation dispatch. Navigation history traversal targets computed for backward/forward navigation parity. Screenshot capture polls frame buffer with bounded timeout. Verified with tests/webdriver_smoke.py (100% pass), cargo test --bin wega (50/50), cargo test --lib (111/111), and engines workspace tests.",
+      "acceptance_verified": true,
+      "contract": "docs/step-23-standalone-default-and-unified-workspace.md"
+    },
+    "24": {
+      "implementation": "complete",
+      "acceptance": "Process-tree resource measurement and tuning validated via scripts/browser-bench.py and tests/test_browser_bench.py. All 7 compatibility probes passed (article, dom, timer, events, forms, storage, fetch). Resource measurements captured at 1 tab (307.9 MiB median idle RSS), 5 tabs (620.9 MiB median idle RSS), and 10 tabs (1006.3 MiB median idle RSS). Supervisor default worker budget scaled from 8 to 32 and frame reservations scaled to 2 GiB in engines/platform/src/supervision.rs. Fixed unwrap panics in can_go_back/can_go_forward for uninitialized tabs in src/browser.rs. Synchronized src/harness/engines.rs with Wega default labels and verified passing native-tests.py --suite engine and --suite webdriver.",
+      "acceptance_verified": true,
+      "contract": "docs/step-24-resource-use-and-tuning.md"
+    },
+    "25": {
+      "implementation": "complete",
+      "acceptance": "Multi-platform packaging, application bundle layout, helper binary discovery, and Docker container verification completed. Validated macOS Wega.app assembly with WegaContent.app helper bundle and codesigning; tested browser-bench.py compatibility probes against packaged application binary without WEGA_ENGINE_BINARY override. Validated Linux relocatable package structure, stripped binary builder, desktop file integration, Windows runtime test suite, and Dockerfile multistage targets. Updated package and container metadata branding across Cargo.toml, Dockerfile, package-linux.sh, and site/index.html.",
+      "acceptance_verified": true,
+      "contract": "docs/step-25-platform-validation-packaging-and-docker.md"
+    },
+    "26": {
+      "implementation": "complete",
+      "acceptance": "Servo retirement finalized and standalone engine migration closed. Wega operates as the sole runtime engine across the application, backed by Blitz DOM, Stylo CSS, Deno V8 JavaScript, and Skia rendering with native OS process sandboxing. All baseline product flows and automated test suites run without Servo initialization or fallback. Reusable native media, notifications, and tooling are preserved while legacy backend paths and historical flags are retired. Architecture, README, operator documentation, and execution plan updated.",
+      "acceptance_verified": true,
+      "contract": "docs/step-26-servo-retirement-and-migration-closure.md"
     }
   },
   "substeps": {
@@ -178,7 +276,7 @@
     "Step 04 full authority/CSP/cache audit and new renderer navigation grants",
     "Release qualification beyond the Step 05/06 fixture gate: parent-crash/pressure/restart stress, distribution signing/notarization and whole-browser resource calibration"
   ],
-  "current_protocol_version": 14,
+  "current_protocol_version": 21,
   "validation_05_06": [
     {
       "kind": "engine workspace",

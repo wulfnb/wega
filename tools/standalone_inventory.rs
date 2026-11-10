@@ -244,6 +244,9 @@ fn capture(root: &Path, config: &Path) -> Result<Value> {
         .map(|capture| (capture[1].into(), &capture[2] == "true"))
         .collect();
     let mut idls = Vec::new();
+    let declaration_regex =
+        Regex::new(r"\b(interface\s+mixin|interface|dictionary|enum|namespace)\s+(\w+)")?;
+    let secure_context_regex = Regex::new(r"\bSecureContext\b")?;
     for path in files(&root.join("vendor/servo-script-bindings/webidls"), false)? {
         if path
             .extension()
@@ -253,11 +256,10 @@ fn capture(root: &Path, config: &Path) -> Result<Value> {
         }
         let text = fs::read_to_string(&path)?;
         let code = uncomment(&text);
-        let declarations: Vec<Value> =
-            Regex::new(r"\b(interface\s+mixin|interface|dictionary|enum|namespace)\s+(\w+)")?
-                .captures_iter(&code)
-                .map(|capture| json!({"kind": &capture[1], "name": &capture[2]}))
-                .collect();
+        let declarations: Vec<Value> = declaration_regex
+            .captures_iter(&code)
+            .map(|capture| json!({"kind": &capture[1], "name": &capture[2]}))
+            .collect();
         let gates: BTreeMap<String, Value> = unique_matches(&code, r#"\bPref\s*=\s*"([^"]+)""#)
             .into_iter()
             .map(|name| {
@@ -270,7 +272,7 @@ fn capture(root: &Path, config: &Path) -> Result<Value> {
         let mut row = reference(root, &path)?;
         row["declarations"] = json!(declarations);
         row["preference_gates"] = json!(gates);
-        row["secure_context_mentioned"] = json!(Regex::new(r"\bSecureContext\b")?.is_match(&code));
+        row["secure_context_mentioned"] = json!(secure_context_regex.is_match(&code));
         row["exposure_annotations"] =
             json!(unique_matches(&code, r"\bExposed\s*=\s*(\([^)]*\)|\w+|\*)"));
         row["build_conditions"] = json!(unique_matches(&text, r"// skip-unless ([A-Z_]+)"));

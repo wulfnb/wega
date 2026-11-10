@@ -118,6 +118,7 @@ fn text_images_and_error_statuses_are_shown_and_files_are_downloads() {
         "Not here"
     );
     let mut view = open(&engine, &server.url("127.0.0.1", "/"));
+    view.events.clear();
     for path in ["/report.pdf", "/attachment"] {
         view.load(server.url("127.0.0.1", path).parse().unwrap())
             .unwrap();

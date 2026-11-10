@@ -628,36 +628,135 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ))?;
         }
         while let Some(event) = view.events.pop_front() {
-            let event = match event {
-                PageEvent::Download(url) => ContentEvent::Download {
-                    cookies: view.download_cookies(&url),
-                    url: url.to_string(),
-                },
-                PageEvent::OpenWindow(url) => {
-                    if version >= 11 {
-                        let context = document_context(&view, serial, version);
-                        let Some((owner, token)) = activation.take() else {
-                            continue;
-                        };
-                        if owner != context {
-                            continue;
-                        }
-                        ContentEvent::ActivatedOpenWindow {
-                            url: url.to_string(),
-                            activation: token,
-                        }
-                    } else {
-                        ContentEvent::OpenWindow(url.to_string())
-                    }
+            match event {
+                PageEvent::FrameAttached {
+                    parent,
+                    frame,
+                    url,
+                    name,
+                    sandbox,
+                } => {
+                    write(&Event::FrameAttached {
+                        parent,
+                        frame,
+                        url,
+                        name,
+                        sandbox,
+                    })?;
                 }
-                PageEvent::Traverse(delta) => ContentEvent::TraverseUnhandled(delta),
-                PageEvent::Cursor(cursor) => ContentEvent::Cursor(cursor),
-            };
-            write(&protocol::content_event(
-                version,
-                document_context(&view, serial, version),
-                event,
-            ))?;
+                PageEvent::FrameDetached { frame } => {
+                    write(&Event::FrameDetached { frame })?;
+                }
+                PageEvent::FrameNavigated { frame, url, origin } => {
+                    write(&Event::FrameNavigated { frame, url, origin })?;
+                }
+                PageEvent::FramePostMessage {
+                    source,
+                    target,
+                    origin,
+                    target_origin,
+                    message,
+                } => {
+                    write(&Event::FramePostMessage {
+                        source,
+                        target,
+                        origin,
+                        target_origin,
+                        message,
+                    })?;
+                }
+                other => {
+                    let content_ev = match other {
+                        PageEvent::Download(url) => ContentEvent::Download {
+                            cookies: view.download_cookies(&url),
+                            url: url.to_string(),
+                        },
+                        PageEvent::OpenWindow(url) => {
+                            if version >= 11 {
+                                let context = document_context(&view, serial, version);
+                                let Some((owner, token)) = activation.take() else {
+                                    continue;
+                                };
+                                if owner != context {
+                                    continue;
+                                }
+                                ContentEvent::ActivatedOpenWindow {
+                                    url: url.to_string(),
+                                    activation: token,
+                                }
+                            } else {
+                                ContentEvent::OpenWindow(url.to_string())
+                            }
+                        }
+                        PageEvent::Traverse(delta) => ContentEvent::TraverseUnhandled(delta),
+                        PageEvent::Cursor(cursor) => ContentEvent::Cursor(cursor),
+                        PageEvent::Favicon(url) => ContentEvent::Favicon(url.to_string()),
+                        PageEvent::Status(status) => ContentEvent::Status(status),
+                        PageEvent::Authentication { url, realm } => {
+                            ContentEvent::Authentication { url, realm }
+                        }
+                        PageEvent::Accessibility(json) => ContentEvent::Accessibility(json),
+                        PageEvent::FileDialog {
+                            id,
+                            multiple,
+                            accept,
+                        } => ContentEvent::FileDialog {
+                            id,
+                            multiple,
+                            accept,
+                        },
+                        PageEvent::ClipboardWrite(text) => ContentEvent::ClipboardWrite(text),
+                        PageEvent::FindResult {
+                            active_match_ordinal,
+                            number_of_matches,
+                            query,
+                        } => ContentEvent::FindResult {
+                            active_match_ordinal,
+                            number_of_matches,
+                            query,
+                        },
+                        PageEvent::PermissionPrompt {
+                            id,
+                            origin,
+                            feature,
+                        } => {
+                            let session = protocol::identity::SessionIdentity {
+                                tab: protocol::identity::TabId(1),
+                                frame: protocol::identity::FrameId(1),
+                                process: protocol::identity::ProcessSessionId([1; 16]),
+                                service: None,
+                            };
+                            ContentEvent::PermissionPrompt(
+                                wega_protocol::permissions::PermissionPromptRequest {
+                                    id,
+                                    session,
+                                    document: document_context(&view, serial, version),
+                                    origin: wega_protocol::authority::Origin::Tuple(origin),
+                                    feature,
+                                },
+                            )
+                        }
+                        PageEvent::PermissionRevoked { origin, feature } => {
+                            ContentEvent::PermissionRevoked { origin, feature }
+                        }
+                        PageEvent::NotificationShow { id, title, options } => {
+                            ContentEvent::NotificationShow { id, title, options }
+                        }
+                        PageEvent::NotificationClose { id } => {
+                            ContentEvent::NotificationClose { id }
+                        }
+                        PageEvent::Fullscreen(enabled) => ContentEvent::Fullscreen(enabled),
+                        PageEvent::ProtocolRegister(reg) => ContentEvent::ProtocolRegister(reg),
+                        PageEvent::ExternalApp(url) => ContentEvent::ExternalApp(url),
+                        _ => unreachable!(),
+                    };
+                    write(&protocol::content_event(
+                        version,
+                        document_context(&view, serial, version),
+                        content_ev,
+                    ))?;
+                }
+            }
         }
         let slot = credits.iter().position(Option::is_none);
         let can_paint = !view.paint_pending() && (!shared || slot.is_some());
@@ -939,9 +1038,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                Command::FrameNavigate { .. } | Command::FramePostMessage { .. } => {
-                    // Reserved wire types do not grant access to DOM IDs or JS
-                    // evaluation. Real frames require host-issued context keys.
+                Command::FrameNavigate { frame: _, url: _ } => {
+                    write(&protocol::content_event(
+                        version,
+                        DocumentContext {
+                            document: DocumentId(serial),
+                            revision: protocol::DocumentRevision(view.document_revision()),
+                        },
+                        ContentEvent::Notice(
+                            "Nested browsing contexts are not available in this worker".into(),
+                        ),
+                    ))?;
+                }
+                Command::FramePostMessage {
+                    target,
+                    origin,
+                    target_origin,
+                    message,
+                } => {
+                    view.post_frame_message(target, &origin, target_origin.as_deref(), &message);
                     write(&protocol::content_event(
                         version,
                         DocumentContext {
@@ -962,14 +1077,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Command::Load {
                     url,
                     serial: requested,
+                    bypass_cache,
                 } => {
                     if version >= 11 && serial.checked_add(1) != Some(requested) {
                         return Err("Reused or out-of-order navigation identity".into());
                     }
                     serial = requested;
-                    if let Err(error) = Url::parse(&url)
-                        .map_err(|e| e.to_string())
-                        .and_then(|url| view.load_for_navigation(url, requested))
+                    if let Err(error) =
+                        Url::parse(&url).map_err(|e| e.to_string()).and_then(|url| {
+                            view.load_for_navigation_bypass_cache(url, requested, bypass_cache)
+                        })
                     {
                         view.stop_for_navigation(requested);
                         report_commit(&view, serial)?;
@@ -1096,10 +1213,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Command::Stop => view.stop(),
                 Command::Redraw => view.request_redraw(),
+                Command::ClearHistory => view.clear_history(),
                 Command::Policy {
                     offline,
                     blocked_hosts,
                     allowed_hosts,
+                    user_script,
                 } => {
                     engine.set_policy(NetworkPolicy {
                         offline,
@@ -1108,6 +1227,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         allow_loopback: true,
                         ..Default::default()
                     });
+                    view.set_user_script(user_script);
                     // Apply live permissions without discarding the current DOM/input state.
                 }
                 Command::Evaluate(source) => {
@@ -1123,6 +1243,50 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Command::Init { .. } => {
                     return Err("Worker was initialized more than once".into());
+                }
+                Command::EnableAccessibility(enabled) => {
+                    view.set_accessibility_enabled(enabled);
+                }
+                Command::AccessibilityAction {
+                    action,
+                    target,
+                    data,
+                } => {
+                    view.accessibility_action(&action, target, data.as_deref());
+                }
+                Command::FileSelected { id, paths } => {
+                    view.file_selected(id, paths);
+                }
+                Command::Copy => {
+                    view.copy();
+                }
+                Command::Cut => {
+                    view.cut();
+                }
+                Command::Paste(text) => {
+                    view.paste(&text);
+                }
+                Command::SelectAll => {
+                    view.select_all();
+                }
+                Command::FindInPage {
+                    query,
+                    backwards,
+                    case_sensitive,
+                } => {
+                    view.find_in_page(&query, backwards, case_sensitive);
+                }
+                Command::MediaSessionAction(action) => {
+                    view.notify_media_session_action(action);
+                }
+                Command::AnswerPermission { id, allow } => {
+                    view.answer_permission(id, allow);
+                }
+                Command::RevokePermission { origin, feature } => {
+                    view.revoke_permission(&origin, feature);
+                }
+                Command::ExitFullscreen => {
+                    view.exit_fullscreen();
                 }
             },
         }

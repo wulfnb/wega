@@ -18,7 +18,7 @@ use blitz_traits::{
     shell::{ColorScheme, Viewport},
 };
 use encoding_rs::Encoding;
-use html5ever::LocalName;
+use html5ever::{LocalName, QualName, ns};
 use keyboard_types::Modifiers;
 use std::{
     cell::{Cell, RefCell},
@@ -32,6 +32,7 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+use wega_protocol::identity::FrameId;
 
 pub struct Frame {
     pub width: u32,
@@ -51,6 +52,71 @@ pub enum PageEvent {
     Traverse(i32),
     /// The CSS cursor over the hovered element changed.
     Cursor(String),
+    /// A discovered or updated favicon URL.
+    Favicon(Url),
+    /// The link URL hovered by the pointer, or None if no link is hovered.
+    Status(Option<String>),
+    /// HTTP 401 basic/digest authentication request from the origin.
+    Authentication {
+        url: String,
+        realm: Option<String>,
+    },
+    /// Accessibility tree update
+    Accessibility(String),
+    /// Native file chooser dialog request
+    FileDialog {
+        id: u64,
+        multiple: bool,
+        accept: Vec<String>,
+    },
+    ClipboardWrite(String),
+    FindResult {
+        active_match_ordinal: u32,
+        number_of_matches: u32,
+        query: String,
+    },
+    FrameAttached {
+        parent: FrameId,
+        frame: FrameId,
+        url: String,
+        name: Option<String>,
+        sandbox: Option<String>,
+    },
+    FrameDetached {
+        frame: FrameId,
+    },
+    FrameNavigated {
+        frame: FrameId,
+        url: String,
+        origin: String,
+    },
+    FramePostMessage {
+        source: FrameId,
+        target: FrameId,
+        origin: String,
+        target_origin: Option<String>,
+        message: String,
+    },
+    PermissionPrompt {
+        id: u64,
+        origin: String,
+        feature: wega_protocol::permissions::PermissionFeature,
+    },
+    PermissionRevoked {
+        origin: String,
+        feature: wega_protocol::permissions::PermissionFeature,
+    },
+    NotificationShow {
+        id: u64,
+        title: String,
+        options: wega_protocol::permissions::NotificationOptions,
+    },
+    NotificationClose {
+        id: u64,
+    },
+    Fullscreen(bool),
+    ProtocolRegister(wega_protocol::permissions::ProtocolHandlerRegistration),
+    ExternalApp(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -269,10 +335,19 @@ pub struct View {
     composing: bool,
     showing_error: bool,
     cursor: String,
+    pub status: Option<String>,
+    pub last_favicon: Option<Url>,
+    pub user_script: String,
     pub url: Url,
     pub loading: bool,
     pub notices: VecDeque<String>,
     pub events: VecDeque<PageEvent>,
+    pub accessibility_enabled: bool,
+    pub next_dialog_id: u64,
+    pub pending_file_dialog: Option<(u64, NodeId)>,
+    pub selected_files: std::collections::HashMap<NodeId, Vec<String>>,
+    pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
+    pub fullscreen: bool,
 }
 impl View {
     pub(crate) fn new(url: Url, network: Network, limits: Limits) -> Result<Self, String> {
@@ -323,10 +398,19 @@ impl View {
             composing: false,
             showing_error: false,
             cursor: String::new(),
+            status: None,
+            last_favicon: None,
+            user_script: String::new(),
             url: url.clone(),
             loading: false,
             notices: VecDeque::new(),
             events: VecDeque::new(),
+            accessibility_enabled: false,
+            next_dialog_id: 1,
+            pending_file_dialog: None,
+            selected_files: std::collections::HashMap::new(),
+            permissions: Rc::new(RefCell::new(crate::permissions::PermissionRegistry::new())),
+            fullscreen: false,
         };
         view.load(url)?;
         Ok(view)
@@ -384,16 +468,27 @@ impl View {
         self.document_generation.get()
     }
     pub fn load_for_navigation(&mut self, url: Url, generation: u64) -> Result<(), String> {
+        self.load_for_navigation_bypass_cache(url, generation, false)
+    }
+    pub fn load_for_navigation_bypass_cache(
+        &mut self,
+        url: Url,
+        generation: u64,
+        bypass_cache: bool,
+    ) -> Result<(), String> {
         self.events.clear();
         self.navigate.borrow_mut().clear();
         self.navigation_generation = generation;
-        self.load(url)
+        self.load_bypass_cache(url, bypass_cache)
     }
     pub fn stop_for_navigation(&mut self, generation: u64) {
         self.navigation_generation = generation;
         self.stop();
     }
     pub fn load(&mut self, url: Url) -> Result<(), String> {
+        self.load_bypass_cache(url, false)
+    }
+    pub fn load_bypass_cache(&mut self, url: Url, bypass_cache: bool) -> Result<(), String> {
         if self.same_document(&url) {
             self.document_generation.set(self.navigation_generation);
             self.navigate_fragment(&url);
@@ -401,11 +496,17 @@ impl View {
         }
         let context = FetchContext {
             destination: Destination::Document,
+            bypass_cache,
             ..Default::default()
         };
         self.load_request(url, context)
     }
     fn load_request(&mut self, url: Url, context: FetchContext) -> Result<(), String> {
+        let doc_ctx = wega_protocol::DocumentContext {
+            document: wega_protocol::DocumentId(self.document_generation.get()),
+            revision: wega_protocol::DocumentRevision(self.document_revision),
+        };
+        self.permissions.borrow_mut().cancel_document(doc_ctx);
         self.stop_pending();
         self.scheduler.suspend();
         if let Some(script) = &mut self.script {
@@ -546,6 +647,7 @@ impl View {
                 document_revision: self.document_revision,
                 activation: self.activation.clone(),
                 started_scripts: self.host.started_scripts.clone(),
+                permissions: self.permissions.clone(),
             },
             &self.limits,
             html.len(),
@@ -557,6 +659,10 @@ impl View {
         )
         .map_err(|e| e.to_string())?;
         self.script = Some(host);
+        if !self.user_script.trim().is_empty() {
+            let script = self.user_script.clone();
+            let _ = self.run(&script, "wega:userscript");
+        }
         if xml {
             // XML documents are parsed in one pass; their scripts run in order afterwards.
             let scripts = self
@@ -583,6 +689,7 @@ impl View {
         self.loading = true;
         // Parse (and run inline scripts) as far as possible before returning.
         self.advance();
+        self.check_favicon();
         Ok(())
     }
     fn csp(&self) -> std::sync::RwLockReadGuard<'_, Csp> {
@@ -685,6 +792,26 @@ impl View {
     /// Show a navigation response according to its type.
     fn commit(&mut self, response: Response) {
         self.url = response.url.clone();
+        if response.status == 401 {
+            let realm = response.header("www-authenticate").and_then(|h| {
+                let lower = h.to_ascii_lowercase();
+                if let Some(pos) = lower.find("realm=") {
+                    let rem = &h[pos + 6..];
+                    let trimmed = rem.trim_matches(|c| c == '"' || c == '\'');
+                    let end = trimmed
+                        .find('"')
+                        .or_else(|| trimmed.find(','))
+                        .unwrap_or(trimmed.len());
+                    Some(trimmed[..end].to_string())
+                } else {
+                    None
+                }
+            });
+            self.events.push_back(PageEvent::Authentication {
+                url: response.url.to_string(),
+                realm,
+            });
+        }
         if response.status >= 400 {
             self.notice(format!("HTTP {} for {}", response.status, response.url));
         }
@@ -775,6 +902,7 @@ impl View {
             initiator: Some(self.document.borrow().url().clone()),
             referrer_policy: self.referrer_policy.clone(),
             destination: Destination::Document,
+            bypass_cache: false,
         };
         if let Err(error) = self.load_request(options.url, context) {
             self.notice(error);
@@ -890,6 +1018,324 @@ impl View {
         self.drain_requests();
         result.map_err(|e| e.to_string())
     }
+
+    pub fn answer_permission(&mut self, id: u64, allow: bool) {
+        let answer = self.permissions.borrow_mut().answer_prompt(id, allow);
+        if let Some((_origin, _feature, allowed)) = answer {
+            let state = if allowed { "granted" } else { "denied" };
+            let _ = self.run(
+                &format!("if (typeof __wega_permission_answered === 'function') __wega_permission_answered({}, {:?});", id, state),
+                "wega:permissions",
+            );
+        }
+    }
+
+    pub fn revoke_permission(
+        &mut self,
+        origin: &str,
+        feature: wega_protocol::permissions::PermissionFeature,
+    ) {
+        let res = self.permissions.borrow_mut().revoke(origin, feature);
+        self.events.push_back(PageEvent::PermissionRevoked {
+            origin: origin.to_string(),
+            feature,
+        });
+        let tracks_json =
+            serde_json::to_string(&res.stopped_tracks).unwrap_or_else(|_| "[]".into());
+        let locks_json = serde_json::to_string(&res.released_locks).unwrap_or_else(|_| "[]".into());
+        let _ = self.run(
+            &format!(
+                "if (typeof __wega_revoke_permission === 'function') __wega_revoke_permission({:?}, {:?}, {}, {});",
+                origin,
+                feature.as_str(),
+                tracks_json,
+                locks_json,
+            ),
+            "wega:permissions",
+        );
+    }
+
+    pub fn exit_fullscreen(&mut self) {
+        if self.fullscreen {
+            self.fullscreen = false;
+            self.events.push_back(PageEvent::Fullscreen(false));
+            let _ = self.run(
+                "if (typeof __wega_fullscreen_changed === 'function') __wega_fullscreen_changed(false);",
+                "wega:fullscreen",
+            );
+        }
+    }
+
+    pub fn clear_history(&mut self) {
+        self.run(
+            "if (typeof __wega_clear_history === 'function') __wega_clear_history();",
+            "wega:history",
+        );
+    }
+    pub fn set_user_script(&mut self, script: String) {
+        self.user_script = script;
+    }
+    pub fn set_accessibility_enabled(&mut self, enabled: bool) {
+        self.accessibility_enabled = enabled;
+        if enabled {
+            if let Some(json) = self.accessibility_tree() {
+                self.events.push_back(PageEvent::Accessibility(json));
+            }
+        }
+    }
+    pub fn accessibility_tree(&self) -> Option<String> {
+        self.document
+            .borrow_mut()
+            .resolve(self.started.elapsed().as_secs_f64());
+        let doc = self.document.borrow();
+        let update = doc.build_accessibility_tree();
+        serde_json::to_string(&update).ok()
+    }
+    pub fn accessibility_action(&mut self, action: &str, target: u64, data: Option<&str>) {
+        let target_node = NodeId::from_u64(target);
+        match action.to_ascii_lowercase().as_str() {
+            "focus" => {
+                let mut doc = self.document.borrow_mut();
+                doc.set_focus_to(target_node);
+                self.dirty = true;
+            }
+            "default" | "click" => {
+                self.activate();
+                let event = self
+                    .document
+                    .borrow()
+                    .get_node(target_node)
+                    .map(|n| n.synthetic_click_event_data(Modifiers::empty()));
+                if let Some(event) = event {
+                    self.click_event(target_node, event, None);
+                }
+            }
+            "set_value" | "setvalue" => {
+                if let Some(val) = data {
+                    let mut doc = self.document.borrow_mut();
+                    if let Some(node) = doc.get_node_mut(target_node) {
+                        if let Some(elem) = node.element_data_mut() {
+                            if let Some(text_input) = elem.text_input_data_mut() {
+                                text_input.editor.set_text(val);
+                            }
+                        }
+                        node.mark_ancestors_dirty();
+                    }
+                    doc.mutate().set_attribute(
+                        target_node,
+                        QualName::new(None, ns!(), LocalName::from("value")),
+                        val,
+                    );
+                    drop(doc);
+                    let source = format!(
+                        "__wega_native_event('input', {}, {{data:{}}}); __wega_native_event('change', {}, {{data:{}}});",
+                        serde_json::json!(target_node.as_u64().to_string()),
+                        serde_json::json!(val),
+                        serde_json::json!(target_node.as_u64().to_string()),
+                        serde_json::json!(val)
+                    );
+                    self.run(&source, "wega:accessibility-action");
+                    self.dirty = true;
+                }
+            }
+            _ => {}
+        }
+        if self.accessibility_enabled {
+            if let Some(json) = self.accessibility_tree() {
+                self.events.push_back(PageEvent::Accessibility(json));
+            }
+        }
+    }
+    pub fn file_selected(&mut self, dialog_id: u64, paths: Vec<String>) {
+        if let Some((pending_id, target)) = self.pending_file_dialog.take() {
+            if pending_id == dialog_id && !paths.is_empty() {
+                self.selected_files.insert(target, paths.clone());
+                let path_bufs: Vec<std::path::PathBuf> =
+                    paths.iter().map(std::path::PathBuf::from).collect();
+                let file_names: Vec<String> = paths
+                    .iter()
+                    .filter_map(|p| {
+                        std::path::Path::new(p)
+                            .file_name()
+                            .map(|f| f.to_string_lossy().to_string())
+                    })
+                    .collect();
+                let display_val = file_names.first().cloned().unwrap_or_default();
+                {
+                    let mut doc = self.document.borrow_mut();
+                    if let Some(node) = doc.get_node_mut(target) {
+                        if let Some(el) = node.element_data_mut() {
+                            el.special_data =
+                                blitz_dom::node::SpecialElementData::FileInput(path_bufs.into());
+                        }
+                        node.mark_ancestors_dirty();
+                    }
+                    let val = format!("C:\\fakepath\\{display_val}");
+                    doc.mutate().set_attribute(
+                        target,
+                        QualName::new(None, ns!(), LocalName::from("value")),
+                        &val,
+                    );
+                }
+                let files_json = serde_json::to_string(&file_names).unwrap_or_else(|_| "[]".into());
+                let source = format!(
+                    "__wega_native_file_input({}, {});",
+                    serde_json::json!(target.as_u64().to_string()),
+                    files_json
+                );
+                self.run(&source, "wega:file-input");
+                self.dirty = true;
+            }
+        }
+    }
+    pub fn reset_form(&mut self, form: NodeId) {
+        let mut doc = self.document.borrow_mut();
+        crate::dom::Dom::reset_form_controls(&mut doc, form);
+        self.dirty = true;
+    }
+    pub fn copy(&mut self) -> Option<String> {
+        let text = self
+            .evaluate_json("window.getSelection()?.toString() || ''")
+            .ok();
+        let text = text.filter(|s| !s.is_empty());
+        if let Some(ref text) = text {
+            self.events
+                .push_back(PageEvent::ClipboardWrite(text.clone()));
+        }
+        let _ = self.evaluate_json("document.execCommand('copy')");
+        text
+    }
+    pub fn cut(&mut self) -> Option<String> {
+        let text = self
+            .evaluate_json("window.getSelection()?.toString() || ''")
+            .ok();
+        let text = text.filter(|s| !s.is_empty());
+        if let Some(ref text) = text {
+            self.events
+                .push_back(PageEvent::ClipboardWrite(text.clone()));
+        }
+        let _ = self.evaluate_json("document.execCommand('cut')");
+        self.dirty = true;
+        text
+    }
+    pub fn paste(&mut self, text: &str) {
+        let text_json = serde_json::to_string(text).unwrap_or_default();
+        let _ = self.evaluate_json(&format!(
+            "document.execCommand('paste', false, {text_json})"
+        ));
+        self.dirty = true;
+    }
+    pub fn select_all(&mut self) {
+        let _ = self.evaluate_json("document.execCommand('selectAll')");
+        self.dirty = true;
+    }
+    pub fn find_in_page(
+        &mut self,
+        query: &str,
+        backwards: bool,
+        case_sensitive: bool,
+    ) -> (u32, u32) {
+        let query_json = serde_json::to_string(query).unwrap_or_default();
+        let js = format!(
+            "window.find({query_json}, {}, {}, true); (window.__wegaBrowserFind || {{}})",
+            if case_sensitive { "true" } else { "false" },
+            if backwards { "true" } else { "false" }
+        );
+        let mut active = 0u32;
+        let mut total = 0u32;
+        if let Ok(result_str) = self.evaluate_json(&js) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&result_str) {
+                if let Some(idx) = val.get("index").and_then(|v| v.as_u64()) {
+                    active = (idx as u32) + 1;
+                }
+                if let Some(tot) = val.get("total").and_then(|v| v.as_u64()) {
+                    total = tot as u32;
+                }
+            }
+        }
+        self.events.push_back(PageEvent::FindResult {
+            active_match_ordinal: active,
+            number_of_matches: total,
+            query: query.to_string(),
+        });
+        self.dirty = true;
+        (active, total)
+    }
+    pub fn notify_media_session_action(
+        &mut self,
+        action: wega_protocol::media::MediaSessionAction,
+    ) {
+        let action_str = match action {
+            wega_protocol::media::MediaSessionAction::Play => "play",
+            wega_protocol::media::MediaSessionAction::Pause => "pause",
+            wega_protocol::media::MediaSessionAction::Stop => "stop",
+            wega_protocol::media::MediaSessionAction::SeekBackward => "seekbackward",
+            wega_protocol::media::MediaSessionAction::SeekForward => "seekforward",
+            wega_protocol::media::MediaSessionAction::PreviousTrack => "previoustrack",
+            wega_protocol::media::MediaSessionAction::NextTrack => "nexttrack",
+            wega_protocol::media::MediaSessionAction::SkipAd => "skipad",
+            wega_protocol::media::MediaSessionAction::SeekTo { .. } => "seekto",
+        };
+        let js = format!(
+            "(function() {{                 if (typeof navigator !== \"undefined\" && navigator.mediaSession && navigator.mediaSession._handlers) {{                     const h = navigator.mediaSession._handlers[\"{}\"];                     if (typeof h === \"function\") {{ h({{ action: \"{}\" }}); }}                 }}             }})()",
+            action_str, action_str
+        );
+        let _ = self.evaluate_json(&js);
+    }
+    pub fn post_frame_message(
+        &mut self,
+        _target: FrameId,
+        origin: &str,
+        target_origin: Option<&str>,
+        message: &str,
+    ) {
+        let origin_json = serde_json::to_string(origin).unwrap_or_default();
+        let target_origin_json = match target_origin {
+            Some(to) => serde_json::to_string(to).unwrap_or_else(|_| "null".to_string()),
+            None => "null".to_string(),
+        };
+        let message_json = serde_json::to_string(message).unwrap_or_default();
+        let code = format!(
+            "(() => {{ try {{ const origin = {origin_json}; const targetOrigin = {target_origin_json}; const currentOrigin = (window.location && window.location.origin) || ''; if (targetOrigin && targetOrigin !== '*' && targetOrigin !== '/' && targetOrigin !== currentOrigin) {{ return; }} let parsed; try {{ parsed = JSON.parse({message_json}); }} catch(_) {{ parsed = {message_json}; }} const MsgEvent = globalThis.MessageEvent || window.MessageEvent || Event; const event = new MsgEvent('message', {{ data: parsed, origin: origin, source: null }}); window.dispatchEvent(event); }} catch(e) {{ console.error('Frame postMessage dispatch error:', e); }} }})()"
+        );
+        let _ = self.evaluate_json(&code);
+        self.dirty = true;
+    }
+    pub fn favicon_url(&self) -> Option<Url> {
+        let doc = self.document.borrow();
+        for selector in &[
+            "link[rel~='icon']",
+            "link[rel='shortcut icon']",
+            "link[rel='icon']",
+        ] {
+            if let Ok(Some(id)) = doc.query_selector(selector) {
+                if let Some(node) = doc.get_node(id) {
+                    if let Some(elem) = node.element_data() {
+                        if let Some(href) = elem.attr(LocalName::from("href")) {
+                            if let Ok(url) = self.url.join(href) {
+                                return Some(url);
+                            } else if let Ok(url) = Url::parse(href) {
+                                return Some(url);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if matches!(self.url.scheme(), "http" | "https") {
+            self.url.join("/favicon.ico").ok()
+        } else {
+            None
+        }
+    }
+    pub(crate) fn check_favicon(&mut self) {
+        if let Some(favicon) = self.favicon_url() {
+            if self.last_favicon.as_ref() != Some(&favicon) {
+                self.last_favicon = Some(favicon.clone());
+                self.events.push_back(PageEvent::Favicon(favicon));
+            }
+        }
+    }
     pub fn take_script_failure(&mut self) -> Option<String> {
         self.script_failure.take()
     }
@@ -996,8 +1442,9 @@ impl View {
             self.dirty = true;
         }
     }
-    fn activate(&mut self) {
-        self.activation.set(Some(Instant::now()));
+    pub fn activate(&mut self) {
+        self.activation
+            .set(Some(Instant::now() + Duration::from_secs(5)));
     }
     fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
         let scroll = self.document.borrow().viewport_scroll();
@@ -1170,6 +1617,23 @@ impl View {
                 self.dispatch_pointer("mouseenter", *node, pointer, previous);
             }
         }
+        let link_status = {
+            let doc = self.document.borrow();
+            new_chain.iter().find_map(|node_id| {
+                let node = doc.get_node(*node_id)?;
+                let elem = node.element_data()?;
+                if elem.name.local == LocalName::from("a") {
+                    let href = elem.attr(LocalName::from("href"))?;
+                    self.url.join(href).ok().map(|u| u.to_string())
+                } else {
+                    None
+                }
+            })
+        };
+        if link_status != self.status {
+            self.status = link_status.clone();
+            self.events.push_back(PageEvent::Status(link_status));
+        }
     }
     /// Run Blitz's default action for a pointer event and handle what it generates.
     fn blitz_pointer(
@@ -1215,6 +1679,28 @@ impl View {
             event.coords.client_y,
         );
         let pointer = *pointer.unwrap_or(&fallback);
+        let disabled = {
+            let doc = self.document.borrow();
+            let mut cur = Some(target);
+            let mut dis = false;
+            while let Some(id) = cur {
+                if let Some(node) = doc.get_node(id) {
+                    if let Some(el) = node.element_data() {
+                        if el.attr(LocalName::from("disabled")).is_some() {
+                            dis = true;
+                            break;
+                        }
+                    }
+                    cur = node.parent;
+                } else {
+                    break;
+                }
+            }
+            dis
+        };
+        if disabled {
+            return;
+        }
         self.activate();
         if self.dispatch_pointer("click", target, &pointer, None) {
             return;
@@ -1235,6 +1721,8 @@ impl View {
     fn default_click(&mut self, target: NodeId) -> bool {
         enum Action {
             Submit(NodeId, NodeId),
+            Reset(NodeId),
+            FileDialog(NodeId, bool, Vec<String>),
             NewWindow(Url),
             Fragment(Url),
         }
@@ -1246,10 +1734,30 @@ impl View {
                 let Some(node) = doc.get_node(id) else { break };
                 if let Some(element) = node.element_data() {
                     if element.attr(LocalName::from("disabled")).is_some() {
-                        break;
+                        return true;
                     }
                     let tag = &*element.name.local;
                     let kind = element.attr(LocalName::from("type")).unwrap_or_default();
+                    if matches!(tag, "input" | "button") && kind.eq_ignore_ascii_case("reset") {
+                        if let Some(form) = crate::dom::Dom::form_owner(&doc, id) {
+                            action = Some(Action::Reset(form));
+                            break;
+                        }
+                    }
+                    if tag == "input" && kind.eq_ignore_ascii_case("file") {
+                        let multiple = element.attr(LocalName::from("multiple")).is_some();
+                        let accept = element
+                            .attr(LocalName::from("accept"))
+                            .map(|a| {
+                                a.split(",")
+                                    .map(|s| s.trim().to_string())
+                                    .filter(|s| !s.is_empty())
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        action = Some(Action::FileDialog(id, multiple, accept));
+                        break;
+                    }
                     if matches!(tag, "input" | "button")
                         && (element.is_submit_button()
                             || kind.eq_ignore_ascii_case("submit")
@@ -1283,6 +1791,30 @@ impl View {
         };
         match action {
             None => false,
+            Some(Action::Reset(form)) => {
+                let cancelled = self
+                    .evaluate_json(&format!(
+                        "__wega_native_event('reset', {}, {{}})",
+                        serde_json::json!(form.as_u64().to_string())
+                    ))
+                    .as_deref()
+                    == Ok("true");
+                if !cancelled {
+                    self.reset_form(form);
+                }
+                true
+            }
+            Some(Action::FileDialog(target_id, multiple, accept)) => {
+                let dialog_id = self.next_dialog_id;
+                self.next_dialog_id += 1;
+                self.pending_file_dialog = Some((dialog_id, target_id));
+                self.events.push_back(PageEvent::FileDialog {
+                    id: dialog_id,
+                    multiple,
+                    accept,
+                });
+                true
+            }
             Some(Action::Submit(form, submitter)) => {
                 let cancelled = self
                     .evaluate_json(&format!(
@@ -1349,6 +1881,31 @@ impl View {
                 }
             );
             self.run(&source, "wega:native-event");
+            if event_type == "input" {
+                let is_checkable = {
+                    let doc = self.document.borrow();
+                    doc.get_node(target)
+                        .and_then(|n| n.element_data())
+                        .is_some_and(|el| {
+                            el.name.local == LocalName::from("input")
+                                && matches!(
+                                    el.attr(LocalName::from("type"))
+                                        .unwrap_or_default()
+                                        .to_ascii_lowercase()
+                                        .as_str(),
+                                    "checkbox" | "radio"
+                                )
+                        })
+                };
+                if is_checkable {
+                    let source = format!(
+                        "__wega_native_event('change', {}, {})",
+                        serde_json::json!(target.as_u64().to_string()),
+                        input_options
+                    );
+                    self.run(&source, "wega:native-event");
+                }
+            }
         }
     }
     /// Native editing goes through Blitz/Parley after cancelable DOM events.
@@ -1361,6 +1918,15 @@ impl View {
             .borrow()
             .get_focussed_node_id()
             .unwrap_or(self.document.borrow().root_node().id);
+        let disabled = self
+            .document
+            .borrow()
+            .get_node(target)
+            .and_then(|n| n.element_data())
+            .is_some_and(|el| el.attr(LocalName::from("disabled")).is_some());
+        if disabled {
+            return;
+        }
         let pressed = event.state.is_pressed();
         if pressed {
             self.activate();
@@ -1377,9 +1943,89 @@ impl View {
         }
         if pressed {
             let key = event.key.to_string();
+            let is_ctrl_or_meta = event.modifiers.contains(Modifiers::CONTROL)
+                || event.modifiers.contains(Modifiers::META);
+            if is_ctrl_or_meta {
+                if key.eq_ignore_ascii_case("c") {
+                    self.copy();
+                    return;
+                }
+                if key.eq_ignore_ascii_case("x") {
+                    self.cut();
+                    return;
+                }
+                if key.eq_ignore_ascii_case("a") {
+                    self.select_all();
+                    return;
+                }
+                if key.eq_ignore_ascii_case("v") {
+                    self.paste("");
+                    return;
+                }
+            }
             if key == "Enter" && self.implicit_submission(target) {
                 self.dirty = true;
                 return;
+            }
+            if key == " " || key == "Space" {
+                let toggled = {
+                    let mut doc = self.document.borrow_mut();
+                    if let Some(node) = doc.get_node_mut(target) {
+                        if let Some(el) = node.element_data_mut() {
+                            if el.name.local == LocalName::from("input") {
+                                let kind = el
+                                    .attr(LocalName::from("type"))
+                                    .unwrap_or_default()
+                                    .to_ascii_lowercase();
+                                if kind == "checkbox" {
+                                    let is_checked = el.checkbox_input_checked().unwrap_or(false);
+                                    el.set_checkbox_input_checked(!is_checked);
+                                    node.mark_ancestors_dirty();
+                                    Some(true)
+                                } else if kind == "radio" {
+                                    let is_checked = el.checkbox_input_checked().unwrap_or(false);
+                                    if !is_checked {
+                                        el.set_checkbox_input_checked(true);
+                                        node.mark_ancestors_dirty();
+                                        Some(false)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                };
+                if let Some(is_cb) = toggled {
+                    if !is_cb {
+                        let name = self
+                            .document
+                            .borrow()
+                            .get_node(target)
+                            .and_then(|n| n.element_data())
+                            .and_then(|el| el.attr(LocalName::from("name")).map(str::to_string));
+                        if let Some(name) = name {
+                            let mut doc = self.document.borrow_mut();
+                            blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
+                        }
+                    }
+                    let source = format!(
+                        "__wega_native_event('input', {}, {{}}); __wega_native_event('change', {}, {{}});",
+                        serde_json::json!(target.as_u64().to_string()),
+                        serde_json::json!(target.as_u64().to_string())
+                    );
+                    self.run(&source, "wega:native-toggle");
+                    self.dirty = true;
+                    return;
+                }
             }
             let input_type = match key.as_str() {
                 "Backspace" => "deleteContentBackward",
@@ -1779,6 +2425,34 @@ impl View {
             Err("Unexpected shared raster result".into())
         }
     }
+    /// Capture a screenshot of the rendered view as RGBA pixels.
+    pub fn screenshot(
+        &mut self,
+        width: u32,
+        height: u32,
+        scale: f32,
+        zoom: f32,
+        rect: Option<(u32, u32, u32, u32)>,
+    ) -> Result<Vec<u8>, String> {
+        let frame = self.paint(width, height, scale, zoom, false)?;
+        if let Some((rx, ry, rw, rh)) = rect {
+            let rx = rx.min(width);
+            let ry = ry.min(height);
+            let rw = rw.min(width - rx);
+            let rh = rh.min(height - ry);
+            let mut sub = Vec::with_capacity((rw * rh * 4) as usize);
+            for y in ry..(ry + rh) {
+                let start = ((y * width + rx) * 4) as usize;
+                let end = start + (rw * 4) as usize;
+                if end <= frame.rgba.len() {
+                    sub.extend_from_slice(&frame.rgba[start..end]);
+                }
+            }
+            Ok(sub)
+        } else {
+            Ok(frame.rgba)
+        }
+    }
     pub fn text(&self, selector: &str) -> Option<String> {
         let doc = self.document.borrow();
         doc.query_selector(selector)
@@ -1836,12 +2510,45 @@ fn encode_body(body: &Body, content_type: Option<&str>) -> (Vec<u8>, String) {
                     .map_or(0, |d| d.as_nanos() as u64)
             );
             let mut out = Vec::new();
-            for (name, value) in entries {
-                let name = name.replace('"', "%22").replace(['\r', '\n'], " ");
-                out.extend_from_slice(
-                    format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
-                        .as_bytes(),
-                );
+            if let Body::Form(form) = body {
+                for entry in &form.0 {
+                    let name = entry.name.replace('"', "%22").replace(['\r', '\n'], " ");
+                    match &entry.value {
+                        blitz_traits::net::EntryValue::String(text) => {
+                            out.extend_from_slice(
+                                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{text}\r\n")
+                                    .as_bytes(),
+                            );
+                        }
+                        blitz_traits::net::EntryValue::File(path) => {
+                            let filename = path
+                                .file_name()
+                                .map(|f| f.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            let data = std::fs::read(path).unwrap_or_default();
+                            out.extend_from_slice(
+                                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n")
+                                    .as_bytes(),
+                            );
+                            out.extend_from_slice(&data);
+                            out.extend_from_slice(b"\r\n");
+                        }
+                        blitz_traits::net::EntryValue::EmptyFile => {
+                            out.extend_from_slice(
+                                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n")
+                                    .as_bytes(),
+                            );
+                        }
+                    }
+                }
+            } else {
+                for (name, value) in entries {
+                    let name = name.replace('"', "%22").replace(['\r', '\n'], " ");
+                    out.extend_from_slice(
+                        format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
+                            .as_bytes(),
+                    );
+                }
             }
             out.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
             (out, format!("multipart/form-data; boundary={boundary}"))
@@ -1903,5 +2610,160 @@ mod tests {
             "--{boundary}\r\nContent-Disposition: form-data; name=\"q\"\r\n\r\na b&c\r\n"
         )));
         assert!(text.ends_with(&format!("--{boundary}--\r\n")));
+    }
+    #[test]
+    fn form_bodies_support_file_entries_multipart() {
+        use blitz_traits::net::{Entry, EntryValue, FormData};
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("upload.txt");
+        std::fs::write(&file_path, b"Hello file content!").unwrap();
+
+        let form = Body::Form(FormData(vec![
+            Entry {
+                name: "file".into(),
+                value: EntryValue::File(file_path),
+            },
+            Entry {
+                name: "empty".into(),
+                value: EntryValue::EmptyFile,
+            },
+        ]));
+        let (body, kind) = encode_body(&form, Some("multipart/form-data"));
+        let boundary = kind.split("boundary=").nth(1).unwrap();
+        let text = String::from_utf8(body).unwrap();
+        assert!(text.contains(&format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"upload.txt\"\r\nContent-Type: application/octet-stream\r\n\r\nHello file content!\r\n")));
+        assert!(text.contains(&format!("--{boundary}\r\nContent-Disposition: form-data; name=\"empty\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n")));
+        assert!(text.ends_with(&format!("--{boundary}--\r\n")));
+    }
+    #[test]
+    fn accessibility_tree_generates_valid_json() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(
+            Url::parse("data:text/html,<button>Click me</button>").unwrap(),
+            network,
+            limits,
+        )
+        .unwrap();
+        view.set_accessibility_enabled(true);
+        let tree_json = view.accessibility_tree();
+        assert!(tree_json.is_some());
+        let json_str = tree_json.unwrap();
+        assert!(json_str.contains("nodes"));
+        let update: accesskit::TreeUpdate = serde_json::from_str(&json_str).unwrap();
+        assert!(!update.nodes.is_empty());
+    }
+    #[test]
+    fn file_dialog_canceling_leaks_no_grant() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(
+            Url::parse("data:text/html,<input type='file' id='f'>").unwrap(),
+            network,
+            limits,
+        )
+        .unwrap();
+        view.pending_file_dialog = Some((42, NodeId::from_u64(1)));
+        view.file_selected(42, vec![]);
+        assert!(view.selected_files.is_empty());
+        assert!(view.pending_file_dialog.is_none());
+    }
+    #[test]
+    fn range_and_selection_dom_apis() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        view.set_html("<!doctype html><div id='test'>Hello <b>beautiful</b> world</div>")
+            .unwrap();
+        let js = r#"
+            const div = document.getElementById('test');
+            const range = document.createRange();
+            range.selectNodeContents(div);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            const text = sel.toString();
+            const count = sel.rangeCount;
+            const collapsed = sel.isCollapsed;
+            ({ text, count, collapsed });
+        "#;
+        let res = view.evaluate_json(js).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert_eq!(val["count"], 1);
+        assert_eq!(val["collapsed"], false);
+        assert!(val["text"].as_str().unwrap().contains("Hello"));
+    }
+    #[test]
+    fn content_editable_and_exec_command() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        view.set_html("<!doctype html><div id='ed' contenteditable='true'>Initial text</div>")
+            .unwrap();
+        let js = r#"
+            const el = document.getElementById('ed');
+            el.focus();
+            const ce = el.contentEditable;
+            const isCe = el.isContentEditable;
+            const supported = document.queryCommandSupported('insertText');
+            document.execCommand('selectAll');
+            document.execCommand('insertText', false, 'Replacement text');
+            ({ ce, isCe, supported, text: el.textContent });
+        "#;
+        let res = view.evaluate_json(js).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert_eq!(val["ce"], "true");
+        assert_eq!(val["isCe"], true);
+        assert_eq!(val["supported"], true);
+        assert_eq!(val["text"], "Replacement text");
+    }
+    #[test]
+    fn find_in_page_and_tree_walker() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        view.set_html(
+            "<!doctype html><p>The quick brown fox jumps over the lazy dog. The fox was quick.</p>",
+        )
+        .unwrap();
+        let (active1, total1) = view.find_in_page("fox", false, false);
+        assert_eq!(active1, 1);
+        assert_eq!(total1, 2);
+
+        let (active2, total2) = view.find_in_page("fox", false, false);
+        assert_eq!(active2, 2);
+        assert_eq!(total2, 2);
+
+        // Check TreeWalker directly
+        let js = r#"
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            const textNodes = [];
+            let n;
+            while (n = walker.nextNode()) textNodes.push(n.data);
+            ({ count: textNodes.length, sample: textNodes[0] || '' });
+        "#;
+        let res = view.evaluate_json(js).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert!(val["count"].as_u64().unwrap() >= 1);
+        assert!(val["sample"].as_str().unwrap().contains("quick"));
+    }
+    #[test]
+    fn clipboard_and_datatransfer_apis() {
+        let limits = Limits::default();
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        view.set_html("<!doctype html><div>Test</div>").unwrap();
+        let js = r#"
+            navigator.clipboard.writeText('clipboard test payload');
+            const dt = new DataTransfer();
+            dt.setData('text/plain', 'drag payload');
+            const dtRead = dt.getData('text/plain');
+            const evt = new DragEvent('dragstart', { dataTransfer: dt });
+            ({ dtRead, evtType: evt.type });
+        "#;
+        let res = view.evaluate_json(js).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert_eq!(val["dtRead"], "drag payload");
+        assert_eq!(val["evtType"], "dragstart");
     }
 }

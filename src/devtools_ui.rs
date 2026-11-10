@@ -83,8 +83,45 @@ impl Browser {
         self.tools.panel_rect = shown.response.rect.shrink(8.0);
     }
     pub fn devtools_contents(&mut self, ui: &mut Ui) {
+        if self.is_wega() {
+            let _colors = crate::theme::palette(ui.ctx());
+            panel_style(ui);
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if icon(ui, "×", "Close developer tools (F12)").clicked() {
+                        self.close_developer_tools();
+                    }
+                });
+                ui.heading("Wega Developer Tools");
+            });
+            ui.separator();
+            if let Some(page) = self.tab().wega.as_ref() {
+                let state = page
+                    .state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                ui.monospace(format!("URL: {}", self.tab().url()));
+                ui.monospace(format!("Title: {}", self.tab().title()));
+                ui.monospace(format!("PID: {}", page.pid()));
+                ui.monospace(format!(
+                    "Worker RSS: {} KB",
+                    page.resident_bytes().unwrap_or(0) / 1024
+                ));
+                ui.monospace(format!("JS Heap: {} KB", state.js_heap / 1024));
+                ui.monospace(format!("DOM Nodes: {}", state.nodes));
+                ui.monospace(format!("Loading: {}", state.lifecycle.loading()));
+                ui.monospace(format!("Phase: {:?}", state.lifecycle.phase()));
+                ui.monospace(format!("Compatibility: {:?}", state.compatibility));
+            } else {
+                ui.label("Wega engine tab is not initialized.");
+            }
+            return;
+        }
         let colors = crate::theme::palette(ui.ctx());
-        let view = self.view().clone();
+        let Some(view) = self.tab().view().cloned() else {
+            ui.label("Web page is not initialized.");
+            return;
+        };
         let owner = network::owner(view.id());
         self.tools.page(&view);
         let split = self.tools.split_console && self.tools.active != Tool::Console;

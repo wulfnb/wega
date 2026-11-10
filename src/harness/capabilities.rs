@@ -101,10 +101,19 @@ impl Browser {
             );
             return;
         }
+        if stage == 11 && self.view().page_title().as_deref() != Some("History") {
+            assert!(
+                test.since.elapsed() < Duration::from_secs(10),
+                "History navigation never reached its document: URL={}, title={:?}",
+                self.tab().url(),
+                self.view().page_title()
+            );
+            return;
+        }
         if test.pending {
             let result = test.result.borrow_mut().take();
             let Some(result) = result else { return };
-            if stage == 9
+            if (stage == 9 || stage == 11)
                 && matches!(result, Ok(servo::JSValue::Boolean(false)))
                 && test.since.elapsed() < Duration::from_secs(10)
             {
@@ -137,7 +146,7 @@ impl Browser {
             10=>{let mut policy=self.profile().policy.clone();policy.offline=false;self.apply(wega::application::Command::Policy(policy));self.navigate("wega://history");self.feature_stage(11);return;}
             11=>"document.title==='History' && document.querySelector('h1').textContent==='History'".to_owned(),
             12=>{self.screenshot_page();self.feature_stage(13);return;}
-            13=>{if !self.profile_dir.join("screenshots").read_dir().unwrap().any(|e|e.unwrap().path().extension().is_some_and(|e|e=="png")){return;} self.view().adjust_pinch_zoom(1.5,servo::DevicePoint::new(100.0,100.0));self.feature_stage(14);return;}
+            13=>{let s=self.profile_dir.join("screenshots"); if !s.is_dir() || !s.read_dir().ok().into_iter().flatten().filter_map(Result::ok).any(|e|e.path().extension().is_some_and(|e|e=="png")){return;} self.view().adjust_pinch_zoom(1.5,servo::DevicePoint::new(100.0,100.0));self.feature_stage(14);return;}
             14=>{assert!(self.view().pinch_zoom()>1.0,"Engine pinch zoom");self.view().clear_session_history();self.save();self.features.settings=true;self.feature_stage(15);self.harness.capabilities_test.as_mut().unwrap().frame_output=Some(self.profile_dir.join("capabilities-settings.png"));return;}
             15=>{if !test.frame_checked{return;}self.features.settings=false;self.refresh_site_data();self.features.site_info=true;self.feature_stage(16);let test=self.harness.capabilities_test.as_mut().unwrap();test.frame_checked=false;test.frame_output=Some(self.profile_dir.join("capabilities-site-info.png"));return;}
             16=>{if !test.frame_checked{return;}self.features.site_info=false;let fixture=test.fixture.clone();self.navigate(&fixture);self.feature_stage(17);return;}

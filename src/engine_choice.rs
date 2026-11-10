@@ -3,21 +3,21 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EngineKind {
     #[default]
-    Servo,
     Wega,
+    Servo,
 }
 impl EngineKind {
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Servo => "Servo",
-            Self::Wega => "Wega (experimental)",
+            Self::Wega => "Wega",
+            Self::Servo => "Servo (legacy)",
         }
     }
     pub fn parse(value: &str) -> Result<Self, String> {
         match value {
-            "servo" => Ok(Self::Servo),
             "wega" => Ok(Self::Wega),
-            _ => Err("Engine must be servo or wega".into()),
+            "servo" => Ok(Self::Servo),
+            _ => Err("Engine must be wega or servo".into()),
         }
     }
 }
@@ -42,19 +42,16 @@ pub fn choose(
     explicit: Option<EngineKind>,
     available: bool,
 ) -> EngineKind {
+    if policy.wega_only {
+        return EngineKind::Wega;
+    }
     if url.scheme() == "wega" {
-        return EngineKind::Servo;
+        return explicit.or(saved).unwrap_or(EngineKind::Wega);
     }
     let choice = explicit
         .or_else(|| site_key(url).and_then(|key| policy.site_engines.get(&key).copied()))
         .or(saved)
-        .unwrap_or_else(|| {
-            if policy.wega_rollout && rollout_site(url) {
-                EngineKind::Wega
-            } else {
-                EngineKind::Servo
-            }
-        });
+        .unwrap_or(EngineKind::Wega);
     if choice == EngineKind::Wega && !available {
         EngineKind::Servo
     } else {
@@ -70,7 +67,7 @@ mod tests {
         let url = url::Url::parse("https://EXAMPLE.test:443/a").unwrap();
         let key = site_key(&url).unwrap();
         assert_eq!(key, "https://example.test");
-        policy.site_engines.insert(key, EngineKind::Wega);
+        policy.site_engines.insert(key, EngineKind::Servo);
         for address in ["https://example.test/b", "https://user:pass@example.test/"] {
             assert_eq!(
                 choose(
@@ -80,7 +77,7 @@ mod tests {
                     None,
                     true
                 ),
-                EngineKind::Wega
+                EngineKind::Servo
             );
         }
         for address in [
@@ -98,17 +95,17 @@ mod tests {
                     None,
                     true
                 ),
-                EngineKind::Servo
+                EngineKind::Wega
             );
         }
         assert_eq!(
-            choose(&policy, &url, None, Some(EngineKind::Servo), true),
-            EngineKind::Servo
+            choose(&policy, &url, None, Some(EngineKind::Wega), true),
+            EngineKind::Wega
         );
         assert_eq!(choose(&policy, &url, None, None, false), EngineKind::Servo);
     }
     #[test]
-    fn rollout_is_narrow_optional_and_subordinate_to_preferences_and_saved_tabs() {
+    fn default_engine_is_wega_and_subordinate_to_preferences_and_saved_tabs() {
         let mut policy = crate::model::Policy::default();
         let url = url::Url::parse("https://example.com/").unwrap();
         assert_eq!(choose(&policy, &url, None, None, true), EngineKind::Wega);
@@ -125,14 +122,12 @@ mod tests {
         ] {
             assert!(!rollout_site(&url::Url::parse(address).unwrap()));
         }
-        policy.wega_rollout = false;
-        assert_eq!(choose(&policy, &url, None, None, true), EngineKind::Servo);
         policy
             .site_engines
-            .insert(site_key(&url).unwrap(), EngineKind::Wega);
+            .insert(site_key(&url).unwrap(), EngineKind::Servo);
         let restored: crate::model::Policy =
             serde_json::from_str(&serde_json::to_string(&policy).unwrap()).unwrap();
-        assert_eq!(choose(&restored, &url, None, None, true), EngineKind::Wega);
+        assert_eq!(choose(&restored, &url, None, None, true), EngineKind::Servo);
         assert_eq!(
             choose(
                 &policy,
@@ -141,7 +136,25 @@ mod tests {
                 Some(EngineKind::Wega),
                 true
             ),
-            EngineKind::Servo
+            EngineKind::Wega
         );
+        let mut wega_only_policy = policy.clone();
+        wega_only_policy.wega_only = true;
+        assert_eq!(
+            choose(
+                &wega_only_policy,
+                &url::Url::parse("https://example.com").unwrap(),
+                None,
+                None,
+                true
+            ),
+            EngineKind::Wega
+        );
+        assert_eq!(EngineKind::Wega.name(), "Wega");
+        assert_eq!(EngineKind::Servo.name(), "Servo (legacy)");
+        assert_eq!(EngineKind::parse("wega"), Ok(EngineKind::Wega));
+        assert_eq!(EngineKind::parse("servo"), Ok(EngineKind::Servo));
+        assert!(EngineKind::parse("invalid").is_err());
+        assert_eq!(choose(&policy, &url, None, None, false), EngineKind::Servo);
     }
 }

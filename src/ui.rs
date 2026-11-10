@@ -826,8 +826,15 @@ impl Browser {
                         }
                     });
                 });
-                if ui.add_enabled(!self.is_wega(), egui::Button::new("Reader view")).clicked() {
-                    self.view().evaluate_javascript(include_str!("reader.js"), |_| {});
+                if ui.button("Reader view").clicked() {
+                    let script = include_str!("reader.js");
+                    if self.is_wega() {
+                        if let Some(tab) = self.tab_mut().wega.as_mut() {
+                            let _ = tab.send(wega::engine_protocol::Command::Evaluate(script.to_string()));
+                        }
+                    } else if let Some(view) = self.tab().view() {
+                        view.evaluate_javascript(script, |_| {});
+                    }
                     ui.close();
                 }
                 if ui.button("Site information").clicked() {
@@ -867,7 +874,17 @@ impl Browser {
                         self.reload_without_cache();
                         ui.close();
                     }
-                    if ui.add_enabled(!self.is_wega(),egui::Button::new("Toggle page dark style")).clicked() {self.view().evaluate_javascript("(()=>{let s=document.getElementById('__wega_dark');if(s){s.remove();return} s=document.createElement('style');s.id='__wega_dark';s.textContent='html{color-scheme:dark!important;background:#171717!important;color:#eee!important}body,main,article,section,header,footer,nav{background-color:#171717!important;color:#eee!important}a{color:#a9caff!important}';document.head.appendChild(s)})()", |_|{});ui.close();}
+                    if ui.button("Toggle page dark style").clicked() {
+                        let script = "(()=>{let s=document.getElementById('__wega_dark');if(s){s.remove();return} s=document.createElement('style');s.id='__wega_dark';s.textContent='html{color-scheme:dark!important;background:#171717!important;color:#eee!important}body,main,article,section,header,footer,nav{background-color:#171717!important;color:#eee!important}a{color:#a9caff!important}';document.head.appendChild(s)})()";
+                        if self.is_wega() {
+                            if let Some(tab) = self.tab_mut().wega.as_mut() {
+                                let _ = tab.send(wega::engine_protocol::Command::Evaluate(script.to_string()));
+                            }
+                        } else if let Some(view) = self.tab().view() {
+                            view.evaluate_javascript(script, |_| {});
+                        }
+                        ui.close();
+                    }
                     if ui.button("Download current URL…").clicked(){let url=self.tab().url();self.offer_download(&url,"");ui.close();}
                     if ui.button("Open browser logs").clicked() {if let Err(error)=crate::ux::open_path(&self.profile_dir.join("logs"),false) {self.status=Some(error);}ui.close();}
                     if ui.button("Home").clicked() {

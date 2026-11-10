@@ -19,6 +19,7 @@ pub struct Options {
     pub remote_devtools: Option<u16>,
     pub webdriver_port: Option<u16>,
     pub multiprocess: bool,
+    pub wega_only: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -77,6 +78,10 @@ impl Options {
                         return Err("Rebuild with --features multiprocess first".into());
                     }
                     result.multiprocess = true;
+                }
+                "--wega-only" => {
+                    result.wega_only = true;
+                    result.engine = Some(crate::engine_choice::EngineKind::Wega);
                 }
                 "--engine" => {
                     result.engine = Some(crate::engine_choice::EngineKind::parse(
@@ -171,6 +176,9 @@ impl Options {
                 || (result.test_mode() && !result.engine_test))
         {
             return Err("These engine diagnostics require Servo; omit --engine wega".into());
+        }
+        if result.test_mode() && !result.engine_test && result.engine.is_none() {
+            result.engine = Some(crate::engine_choice::EngineKind::Servo);
         }
         Ok(result)
     }

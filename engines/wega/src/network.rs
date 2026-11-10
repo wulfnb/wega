@@ -54,6 +54,7 @@ pub(crate) struct FetchContext {
     pub initiator: Option<Url>,
     pub referrer_policy: Option<String>,
     pub destination: Destination,
+    pub bypass_cache: bool,
 }
 impl Default for FetchContext {
     fn default() -> Self {
@@ -64,6 +65,7 @@ impl Default for FetchContext {
             initiator: None,
             referrer_policy: None,
             destination: Destination::Other,
+            bypass_cache: false,
         }
     }
 }
@@ -162,6 +164,8 @@ pub(crate) struct Network {
     pub storage_dir: Option<std::path::PathBuf>,
     pub remote: Option<wega_network::Remote>,
     pub fonts: Option<Arc<Vec<Vec<u8>>>>,
+    pub shared_workers: Arc<Mutex<crate::workers::SharedWorkerHub>>,
+    pub port_hub: crate::workers::SharedPortHub,
 }
 impl Network {
     pub fn new(policy: NetworkPolicy, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
@@ -182,6 +186,8 @@ impl Network {
         let policy = Arc::new(std::sync::RwLock::new(policy));
         let brokered = remote.is_some();
         let broker = remote.clone();
+        let shared_workers = Arc::new(Mutex::new(crate::workers::SharedWorkerHub::new()));
+        let port_hub = Arc::new(Mutex::new(crate::workers::MessagePortHub::new()));
         let fonts = remote
             .as_ref()
             .filter(|remote| remote.is_bound())
@@ -251,6 +257,8 @@ impl Network {
             remote: broker,
             fonts,
             cookies,
+            shared_workers,
+            port_hub,
         })
     }
     pub fn spawn(&self, task: impl FnOnce(&Client) + Send + 'static) -> Result<(), String> {
@@ -388,6 +396,13 @@ impl Network {
             }
             if let Some(kind) = &content_type {
                 request.headers.push(("content-type".into(), kind.clone()));
+            }
+            if context.bypass_cache {
+                request.cache = "reload".into();
+                request
+                    .headers
+                    .push(("cache-control".into(), "no-cache".into()));
+                request.headers.push(("pragma".into(), "no-cache".into()));
             }
             let response = client.response(&request)?;
             let status =

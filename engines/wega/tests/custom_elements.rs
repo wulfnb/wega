@@ -487,3 +487,182 @@ fn invalid_registration_does_not_read_user_callbacks_and_closed_paths_hide_inter
         return {invalid, reads, inner, outer, escaped, cycles, hidden: host.shadowRoot === null && host._shadowRoot === undefined};
     })()"#).unwrap(), r#"{"cycles":true,"escaped":false,"hidden":true,"inner":true,"invalid":true,"outer":true,"reads":0}"#);
 }
+
+#[test]
+fn component_library_template_cloning_and_nested_shadow_dom() {
+    let mut view = page(Limits::default());
+    view.set_html(
+        r#"<template id="card-tmpl">
+            <style>:host { display: block; border: 1px solid black; }</style>
+            <div class="card-header"><slot name="header">Default Header</slot></div>
+            <div class="card-body"><slot>Default Body</slot></div>
+        </template>
+        <ui-card id="c1">
+            <h2 slot="header">Card Title</h2>
+            <p>Main content paragraph</p>
+        </ui-card>"#,
+    )
+    .unwrap();
+
+    let result = view
+        .evaluate_json(
+            r#"(() => {
+        class UiCard extends HTMLElement {
+            constructor() {
+                super();
+                const tmpl = document.getElementById('card-tmpl');
+                const root = this.attachShadow({ mode: 'open' });
+                root.append(tmpl.content.cloneNode(true));
+            }
+        }
+        customElements.define('ui-card', UiCard);
+
+        const card = document.getElementById('c1');
+        const headerSlot = card.shadowRoot.querySelector('slot[name="header"]');
+        const defaultSlot = card.shadowRoot.querySelector('slot:not([name])');
+
+        const headerAssigned = headerSlot.assignedElements();
+        const bodyAssigned = defaultSlot.assignedElements();
+
+        return {
+            isCustom: card instanceof UiCard,
+            hasShadow: card.shadowRoot !== null,
+            headerCount: headerAssigned.length,
+            headerTag: headerAssigned[0]?.tagName,
+            bodyCount: bodyAssigned.length,
+            bodyTag: bodyAssigned[0]?.tagName,
+        };
+    })()"#,
+        )
+        .unwrap();
+
+    assert_json_eq!(
+        result,
+        r#"{
+        "isCustom": true,
+        "hasShadow": true,
+        "headerCount": 1,
+        "headerTag": "H2",
+        "bodyCount": 1,
+        "bodyTag": "P"
+    }"#
+    );
+}
+
+#[test]
+fn custom_element_observed_attributes_and_property_reflection() {
+    let mut view = page(Limits::default());
+    view.set_html("<div id=container></div>").unwrap();
+
+    let result = view
+        .evaluate_json(
+            r#"(() => {
+        const events = [];
+        class UserBadge extends HTMLElement {
+            static get observedAttributes() {
+                return ['name', 'role', 'score'];
+            }
+            attributeChangedCallback(name, oldValue, newValue) {
+                events.push({ type: 'attr', name, oldValue, newValue });
+            }
+            connectedCallback() {
+                events.push({ type: 'connected' });
+            }
+            disconnectedCallback() {
+                events.push({ type: 'disconnected' });
+            }
+        }
+        customElements.define('user-badge', UserBadge);
+
+        const badge = document.createElement('user-badge');
+        badge.setAttribute('name', 'Alice');
+        badge.setAttribute('role', 'Admin');
+        badge.setAttribute('score', '100');
+
+        document.getElementById('container').append(badge);
+
+        badge.setAttribute('score', '105');
+        badge.removeAttribute('role');
+
+        badge.remove();
+
+        return {
+            eventCount: events.length,
+            events: events
+        };
+    })()"#,
+        )
+        .unwrap();
+
+    let val: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(val["eventCount"], 7);
+    assert_eq!(val["events"][0]["type"], "attr");
+    assert_eq!(val["events"][0]["name"], "name");
+    assert_eq!(val["events"][0]["newValue"], "Alice");
+    assert_eq!(val["events"][3]["type"], "connected");
+    assert_eq!(val["events"][4]["name"], "score");
+    assert_eq!(val["events"][4]["oldValue"], "100");
+    assert_eq!(val["events"][4]["newValue"], "105");
+    assert_eq!(val["events"][5]["name"], "role");
+    assert_eq!(val["events"][5]["newValue"], serde_json::Value::Null);
+    assert_eq!(val["events"][6]["type"], "disconnected");
+}
+
+#[test]
+fn delegates_focus_and_event_composed_path_retargeting() {
+    let mut view = page(Limits::default());
+    view.set_html("<div id=host></div>").unwrap();
+
+    let result = view
+        .evaluate_json(
+            r#"(() => {
+        const host = document.getElementById('host');
+        const root = host.attachShadow({ mode: 'open', delegatesFocus: true });
+        root.innerHTML = '<input id="inner-input" type="text"><span id="inner-span">Text</span>';
+
+        const span = root.getElementById('inner-span');
+        let hostTarget = null;
+        let hostComposedPathLength = 0;
+        let innerTarget = null;
+
+        span.addEventListener('custom-click', e => {
+            innerTarget = e.target.id;
+        });
+
+        host.addEventListener('custom-click', e => {
+            hostTarget = e.target.id;
+            hostComposedPathLength = e.composedPath().length;
+        });
+
+        // 1. Dispatch composed event
+        const composedEvent = new Event('custom-click', { bubbles: true, composed: true });
+        span.dispatchEvent(composedEvent);
+
+        // 2. Dispatch non-composed event
+        let nonComposedReachedHost = false;
+        host.addEventListener('private-click', () => { nonComposedReachedHost = true; });
+        const nonComposedEvent = new Event('private-click', { bubbles: true, composed: false });
+        span.dispatchEvent(nonComposedEvent);
+
+        return {
+            delegatesFocus: root.delegatesFocus,
+            innerTarget,
+            hostTarget,
+            hasComposedPath: hostComposedPathLength > 0,
+            nonComposedReachedHost
+        };
+    })()"#,
+        )
+        .unwrap();
+
+    assert_json_eq!(
+        result,
+        r#"{
+        "delegatesFocus": true,
+        "innerTarget": "inner-span",
+        "hostTarget": "host",
+        "hasComposedPath": true,
+        "nonComposedReachedHost": false
+    }"#
+    );
+}

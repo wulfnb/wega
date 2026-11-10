@@ -120,6 +120,7 @@ fn modern_sessions_cannot_bypass_scope_or_reuse_navigation_identity() {
         Command::Load {
             url: "about:blank".into(),
             serial: 0,
+            bypass_cache: false,
         },
     ] {
         let store = wega_platform::FrameStore::create(protocol::MAX_PIXELS * 4).unwrap();
@@ -221,6 +222,7 @@ fn scoped_requests_cannot_read_or_execute_in_a_replacement_document() {
     worker.send(Command::Load {
         url: "about:blank".into(),
         serial: 1,
+        bypass_cache: false,
     });
     let revision =
         match worker.until(|event| matches!(event, Event::DocumentCommitted { serial: 1, .. })) {
@@ -440,6 +442,7 @@ fn navigation_unblocks_a_dialog_without_applying_its_reply_to_the_replacement_pa
     worker.send(Command::Load {
         url: "about:blank".into(),
         serial: 1,
+        bypass_cache: false,
     });
     worker.until(|event| matches!(event, Event::DocumentCommitted { serial: 1, .. }));
     worker.until(|event| {
@@ -487,6 +490,7 @@ fn page_state_requests_are_identified_and_reset_on_navigation() {
     worker.send(Command::Load {
         url: "about:blank".into(),
         serial: 1,
+        bypass_cache: false,
     });
     worker.send(Command::CheckPageState(13));
     assert!(matches!(
@@ -789,6 +793,7 @@ fn shared_frames_wait_for_exact_credits_and_resize_cannot_unfreeze_a_tab() {
     worker.send(Command::Load {
         url: "about:blank".into(),
         serial: 1,
+        bypass_cache: false,
     });
     worker
         .until(|event| matches!(event,Event::State{serial:1,rss_bytes:Some(bytes),..} if *bytes>0));
@@ -821,10 +826,12 @@ fn css_html_and_javascript_errors_are_structured_with_urls_before_ui_queue_limit
         offline: false,
         blocked_hosts: String::new(),
         allowed_hosts: "127.0.0.1".into(),
+        user_script: String::new(),
     });
     worker.send(Command::Load {
         url: server.url("127.0.0.1", "/"),
         serial: 1,
+        bypass_cache: false,
     });
     worker.until(|e| matches!(e,Event::Content { event: protocol::ContentEvent::Notice(s), .. } if s.contains("post-js")));
     worker.until(|e| {

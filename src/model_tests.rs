@@ -105,3 +105,8 @@ fn address_emphasis_never_highlights_userinfo_or_path_as_host() {
         assert!(address_host_range(address).is_none());
     }
 }
+
+#[test]
+fn policy_defaults_include_wega_only() {
+    assert!(!Policy::default().wega_only);
+}

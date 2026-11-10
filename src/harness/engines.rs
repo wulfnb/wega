@@ -72,7 +72,7 @@ impl Browser {
             self.gui = Some(gui);
             assert_eq!(self.session().tabs().len(), count + 1);
             assert_eq!(self.tab().url(), "wega://newtab");
-            assert!(!self.is_wega());
+            assert!(self.is_wega());
             self.handle_event(winit::event::WindowEvent::RedrawRequested);
             assert!(!self.chrome.clear_address_focus);
             assert!(self.chrome.page_focused);
@@ -83,7 +83,7 @@ impl Browser {
         }
         self.apply(wega::application::Command::Layout(layout));
         println!(
-            "NEW TAB RENDER TEST PASSED: sidebar/top click during GUI ownership, lazy Servo and preserved Wega worker"
+            "NEW TAB RENDER TEST PASSED: sidebar/top click during GUI ownership, standalone Wega default and preserved worker"
         );
     }
     pub fn check_engine_test(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
@@ -218,7 +218,7 @@ impl Browser {
                 assert_eq!(self.tab().url(), address);
                 assert_eq!(self.chrome.address, address);
                 assert_eq!(self.tab().title(), "Counter clicked: 1");
-                self.coverage_click(&["Engine: Wega (experimental)", "Servo"], |b, ui| b.ui(ui));
+                self.coverage_click(&["Engine: Wega", "Servo (legacy)"], |b, ui| b.ui(ui));
                 assert!(self.is_wega(), "Switch waits for explicit consent");
                 self.coverage_click(&["Keep working"], |b, ui| b.ui(ui));
                 assert!(self.is_wega());
@@ -270,7 +270,7 @@ impl Browser {
                 if self.tab().loading() || self.tab().title() != "Wega engine ready" {
                     return;
                 }
-                self.coverage_click(&["Engine: Servo", "Wega (experimental)"], |b, ui| b.ui(ui));
+                self.coverage_click(&["Engine: Servo (legacy)", "Wega"], |b, ui| b.ui(ui));
                 self.settle_page_check();
                 assert!(
                     self.destructive_action.is_none(),
@@ -332,9 +332,9 @@ impl Browser {
                 assert!(!self.quit_requested);
                 self.close_tab(0);
                 self.coverage_click(&["Close tab"], |b, ui| b.ui(ui));
-                assert_eq!(self.tab().engine, EngineKind::Servo);
+                assert_eq!(self.tab().engine, EngineKind::Wega);
                 self.save();
-                assert_eq!(self.profile().engines, vec![EngineKind::Servo]);
+                assert_eq!(self.profile().engines, vec![EngineKind::Wega]);
                 let url = url::Url::parse(&self.harness.engine_test.as_ref().unwrap().fixture_url)
                     .unwrap()
                     .join("wega-fallback.html")

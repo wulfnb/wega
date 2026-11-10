@@ -336,6 +336,7 @@ impl WorkerHarness {
         self.send(Command::Load {
             url: url.into(),
             serial,
+            bypass_cache: false,
         })?;
 
         // Wait for committed and ready state

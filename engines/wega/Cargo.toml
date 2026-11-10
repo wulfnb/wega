@@ -14,10 +14,11 @@ wega-network = {path="../network"}
 wega-platform = {path="../platform"}
 deno_error = "=0.7.1"
 tokio = {version="1",features=["rt","time","net","sync"]}
-blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars", "floats", "error-diagnostics"] }
+blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars", "floats", "error-diagnostics", "accessibility", "file-input"] }
 blitz-html = "=0.3.0-beta.4"
 blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
 blitz-traits = "=0.3.0-beta.4"
+accesskit = { version = "=0.25.2", features = ["serde"] }
 anyrender = "=0.14.0"
 anyrender_skia = "=0.12.0"
 skia-safe = "=0.153.3"

@@ -47,6 +47,9 @@ impl Browser {
                     view.set_accessibility_active(false);
                     view.set_accessibility_active(true);
                 }
+                if let Some(wega) = self.tab().wega.as_ref() {
+                    wega.enable_accessibility(true);
+                }
             }
             WindowEvent::ActionRequested(request) => {
                 if request.target_tree == accesskit::TreeId::ROOT {
@@ -60,7 +63,18 @@ impl Browser {
                         .unwrap()
                         .egui_winit
                         .on_accesskit_action_request(request.clone());
-                } else if !self.is_wega() {
+                } else if self.is_wega() {
+                    self.chrome.page_focused = true;
+                    if let Some(wega) = self.tab().wega.as_ref() {
+                        let action = format!("{:?}", request.action);
+                        let target = request.target_node.0;
+                        let data = match &request.data {
+                            Some(accesskit::ActionData::Value(val)) => Some(val.to_string()),
+                            _ => None,
+                        };
+                        wega.accessibility_action(&action, target, data.as_deref());
+                    }
+                } else {
                     match serde_json::to_value(request).and_then(serde_json::from_value) {
                         Ok(request) => {
                             self.chrome.page_focused = true;
@@ -92,10 +106,42 @@ impl Browser {
         if !self.accessibility.active {
             return;
         }
-        let view = self.view().clone();
+        if self.is_wega() {
+            if let Some(wega) = self.tab().wega.as_ref() {
+                wega.enable_accessibility(true);
+            }
+            let response = ui.interact(
+                rect,
+                egui::Id::unique("web-page-accessibility"),
+                egui::Sense::focusable_noninteractive(),
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::GenericContainer, true, "Web page")
+            });
+            let scale = ui.ctx().pixels_per_point() as f64;
+            ui.ctx().accesskit_node_builder(response.id, |node| {
+                node.set_role(accesskit::Role::GenericContainer);
+                node.set_bounds(accesskit::Rect::new(
+                    0.0,
+                    0.0,
+                    rect.width() as f64 * scale,
+                    rect.height() as f64 * scale,
+                ));
+                node.set_transform(accesskit::Affine::translate((
+                    rect.min.x as f64 * scale,
+                    rect.min.y as f64 * scale,
+                )));
+                node.set_label("Web page");
+            });
+            if self.chrome.page_focused {
+                response.request_focus();
+            }
+            return;
+        }
+        let Some(view) = self.tab().view().cloned() else {
+            return;
+        };
         if self.accessibility.grafted != Some(view.id()) {
-            // Removing a native graft removes its subtree. Revisiting a tab
-            // therefore needs a fresh full tree, not incremental stale nodes.
             self.accessibility.pending.clear();
             self.accessibility.trees.clear();
             self.accessibility.document = None;

@@ -22,6 +22,18 @@ impl crate::native_ops::NativeHost for Dom {
         mut request: wega_network::Request,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<wega_network::Response, String>>>>
     {
+        if let Ok(parsed_url) = url::Url::parse(&request.url) {
+            if let Some(entry) = self.workers.borrow().intercept_fetch(&parsed_url) {
+                let resp = wega_network::Response {
+                    url: parsed_url.to_string(),
+                    status: entry.status,
+                    headers: entry.headers,
+                    body: entry.body,
+                    redirected: false,
+                };
+                return Box::pin(std::future::ready(Ok(resp)));
+            }
+        }
         let blocked = self.connect_check(&request.url);
         if !blocked.is_empty() {
             return Box::pin(std::future::ready(Err(blocked)));
@@ -94,6 +106,9 @@ impl crate::native_ops::NativeHost for Dom {
         let Ok(url) = url::Url::parse(address) else {
             return "Invalid URL".into();
         };
+        if self.workers.borrow().intercept_fetch(&url).is_some() {
+            return String::new();
+        }
         let mut policy_url = url.clone();
         if url.scheme() == "ws" {
             let _ = policy_url.set_scheme("http");
@@ -145,7 +160,30 @@ fn heap_bytes(runtime: &mut JsRuntime) -> usize {
         .used_heap_size()
         .saturating_add(stats.external_memory())
 }
+#[allow(unsafe_code)]
+struct RawIsolateGuard(*mut deno_core::v8::Isolate);
+
+#[allow(unsafe_code)]
+impl RawIsolateGuard {
+    fn new(isolate: &mut deno_core::v8::Isolate) -> Self {
+        unsafe {
+            isolate.enter();
+        }
+        Self(isolate as *mut _)
+    }
+}
+
+#[allow(unsafe_code)]
+impl Drop for RawIsolateGuard {
+    fn drop(&mut self) {
+        unsafe {
+            (*self.0).exit();
+        }
+    }
+}
+
 fn collect_garbage(runtime: &mut JsRuntime, critical: bool) {
+    let _guard = RawIsolateGuard::new(runtime.v8_isolate());
     // GC can invoke native/weak callbacks that allocate V8 handles.
     deno_core::scope!(scope, runtime);
     if critical {
@@ -396,7 +434,12 @@ impl V8Host {
         self.dom.begin_task();
         let started = Instant::now();
         self.watchdog.arm(self.budget);
+        let _guard = self
+            .runtime
+            .as_mut()
+            .map(|rt| RawIsolateGuard::new(rt.v8_isolate()));
         let result = run(self);
+        drop(_guard);
         let fired = self.watchdog.disarm();
         let elapsed = started.elapsed();
         if !fired && elapsed > self.slow {
@@ -764,6 +807,7 @@ impl ScriptHost for V8Host {
     }
     fn allow_eval(&mut self, allowed: bool) {
         if let Some(runtime) = &mut self.runtime {
+            let _guard = RawIsolateGuard::new(runtime.v8_isolate());
             deno_core::scope!(scope, runtime);
             scope
                 .get_current_context()
@@ -783,6 +827,7 @@ impl ScriptHost for V8Host {
         self.frozen = frozen;
         if frozen && let Some(runtime) = &mut self.runtime {
             let _entered = self.executor.enter();
+            let _guard = RawIsolateGuard::new(runtime.v8_isolate());
             collect_garbage(runtime, true);
             self.heap = heap_bytes(runtime);
         }

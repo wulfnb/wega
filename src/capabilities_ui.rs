@@ -121,7 +121,15 @@ impl Browser {
         docs.insert("settings".into(),document("Settings","<p>Settings open in their own panel: appearance, browsing, privacy, downloads and advanced options.</p><p>If the panel is closed, open it from the <b>⋯</b> menu → <b>Browser settings</b>.</p>"));
     }
     pub fn screenshot_page(&mut self) {
-        if self.is_wega() {
+        if self.profile().policy.wega_only {
+            self.notify(
+                crate::ux::Severity::Warning,
+                "This page action requires Servo, which is disabled in --wega-only mode.",
+                None,
+            );
+            return;
+        }
+        if self.is_wega() || self.tab().view().is_none() {
             self.notify(
                 crate::ux::Severity::Info,
                 "This page action requires Servo in this version. Use the engine selector below.",
@@ -142,8 +150,8 @@ impl Browser {
                 .as_nanos()
         ));
         let events = self.delegate.clone();
-        self.view()
-            .take_screenshot(None, move |result| match result {
+        if let Some(view) = self.tab().view() {
+            view.take_screenshot(None, move |result| match result {
                 Ok(image) => match image.save(&path) {
                     Ok(()) => events.notice(
                         crate::ux::Severity::Success,
@@ -160,33 +168,33 @@ impl Browser {
                     None,
                 ),
             });
-        self.notify(
-            crate::ux::Severity::Info,
-            "Waiting for the page screenshot…",
-            None,
-        );
+            self.notify(
+                crate::ux::Severity::Info,
+                "Waiting for the page screenshot…",
+                None,
+            );
+        }
     }
     pub fn reload_without_cache(&mut self) {
         if self.is_wega() {
-            self.notify(
-                crate::ux::Severity::Info,
-                "This page action requires Servo in this version. Use the engine selector below.",
-                None,
-            );
+            if let Some(tab) = self.tab_mut().wega.as_mut() {
+                let _ = tab.reload_bypass_cache();
+            }
             return;
         }
-        if let Some(url) = self.view().url() {
-            let mut headers = http::HeaderMap::new();
-            headers.insert(
-                http::header::CACHE_CONTROL,
-                http::HeaderValue::from_static("no-cache"),
-            );
-            headers.insert(
-                http::header::PRAGMA,
-                http::HeaderValue::from_static("no-cache"),
-            );
-            self.view()
-                .load_request(servo::UrlRequest::new(url).headers(headers));
+        if let Some(view) = self.tab().view() {
+            if let Some(url) = view.url() {
+                let mut headers = http::HeaderMap::new();
+                headers.insert(
+                    http::header::CACHE_CONTROL,
+                    http::HeaderValue::from_static("no-cache"),
+                );
+                headers.insert(
+                    http::header::PRAGMA,
+                    http::HeaderValue::from_static("no-cache"),
+                );
+                view.load_request(servo::UrlRequest::new(url).headers(headers));
+            }
         }
     }
     pub fn refresh_site_data(&mut self) {
@@ -218,8 +226,9 @@ impl Browser {
             .collect();
         self.features.sites.sort_by(|a, b| a.0.cmp(&b.0));
         self.features.cookies = self
+            .tab()
             .view()
-            .url()
+            .and_then(|v| v.url())
             .map(|url| {
                 self.servo
                     .site_data_manager()
@@ -376,24 +385,16 @@ impl Browser {
         if self.is_wega() {
             // Settings do not depend on the page engine; only the page tools do.
             self.settings_sheet(ctx);
-            if self.features.site_info || self.features.find_open || self.features.diagnostics {
+            if self.features.site_info || self.features.diagnostics {
                 let mut open = true;
-                let mut servo = false;
-                egui::Window::new("Wega experimental engine").open(&mut open).show(ctx,|ui|{
-                    ui.label("This engine currently supports article rendering and basic JavaScript. Site-data inspection, page find, forms, media, accessibility content and page tools require Servo.");
-                    servo=ui.button("Reload this page in Servo").clicked();
-                    ui.label("Website cookies and sign-in state are separate. Engine selection is remembered per open tab.");
+                egui::Window::new("Wega Engine Info").open(&mut open).show(ctx,|ui|{
+                    ui.label("Wega standalone engine is active (powered by Blitz DOM, Stylo CSS, Deno V8 JavaScript, and Skia rendering).");
                 });
                 if !open {
                     self.features.site_info = false;
-                    self.features.find_open = false;
                     self.features.diagnostics = false;
                 }
-                if servo {
-                    self.switch_engine(wega::engine_choice::EngineKind::Servo);
-                }
             }
-            return;
         }
 
         if !self.dialogs.prompts.is_empty() {
@@ -521,20 +522,26 @@ impl Browser {
                             ),
                         ] {
                             if ui.button(name).clicked() {
-                                self.view().toggle_webrender_debugging(option);
+                                if let Some(view) = self.tab().view() {
+                                    view.toggle_webrender_debugging(option);
+                                }
                             }
                         }
                     });
                     if ui.button("Capture WebRender state").clicked() {
-                        self.view().capture_webrender();
-                        self.notify(
-                            crate::ux::Severity::Info,
-                            "WebRender capture requested; see engine log for output location.",
-                            None,
-                        );
+                        if let Some(view) = self.tab().view() {
+                            view.capture_webrender();
+                            self.notify(
+                                crate::ux::Severity::Info,
+                                "WebRender capture requested; see engine log for output location.",
+                                None,
+                            );
+                        }
                     }
                     if ui.button("Clear this tab’s back/forward history").clicked() {
-                        self.view().clear_session_history();
+                        if let Some(view) = self.tab().view() {
+                            view.clear_session_history();
+                        }
                     }
                 });
             self.features.diagnostics = open;
@@ -568,7 +575,7 @@ impl Browser {
                 .show(ctx, |ui| {
                     egui::ScrollArea::vertical().id_salt("site-panel-content").max_height((ctx.content_rect().height()-anchor.y-100.0).max(120.0)).show(ui,|ui| {
                     ui.label(self.tab().url());
-                    let current = self.view().url();
+                    let current = self.tab().view().and_then(|v| v.url());
                     ui.label(match current.as_ref().map(|url| url.scheme()) {
                         Some("https") => {
                             "Encrypted connection. The certificate is validated by the browser."
@@ -756,21 +763,34 @@ if button.clicked() || cancel {self.features.clear_data=false;}
                 open = false;
             }
             if let Some(backward) = search {
-                let text = serde_json::to_string(&self.features.find).unwrap();
-                let source = include_str!("page_actions.js")
-                    .replace("BACKWARDS", if backward { "true" } else { "false" })
-                    .replace("QUERY", &text);
-                let status = self.features.find_status.clone();
-                self.view().evaluate_javascript(source, move |result| {
-                    if let Ok(servo::JSValue::String(text)) = result {
-                        *status.borrow_mut() = text;
+                if self.is_wega() {
+                    if let Some(ref page) = self.tab().wega {
+                        page.find_in_page(self.features.find.clone(), backward, false);
                     }
-                });
+                } else {
+                    let text = serde_json::to_string(&self.features.find).unwrap();
+                    let source = include_str!("page_actions.js")
+                        .replace("BACKWARDS", if backward { "true" } else { "false" })
+                        .replace("QUERY", &text);
+                    let status = self.features.find_status.clone();
+                    if let Some(view) = self.tab().view() {
+                        view.evaluate_javascript(source, move |result| {
+                            if let Ok(servo::JSValue::String(text)) = result {
+                                *status.borrow_mut() = text;
+                            }
+                        });
+                    }
+                }
             }
             if !open {
                 // Clear the highlighted match along with the bar.
-                self.view()
-                    .evaluate_javascript("window.getSelection().removeAllRanges()", |_| {});
+                if self.is_wega() {
+                    if let Some(ref page) = self.tab().wega {
+                        page.evaluate("window.getSelection()?.removeAllRanges()");
+                    }
+                } else if let Some(view) = self.tab().view() {
+                    view.evaluate_javascript("window.getSelection().removeAllRanges()", |_| {});
+                }
                 self.features.find_status.borrow_mut().clear();
                 self.features.find_focused = false;
             }
