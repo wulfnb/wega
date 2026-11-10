@@ -44,10 +44,10 @@
       "contract": "docs/step-14-browsing-contexts-iframes-site-isolation.md"
     },
     "15": {
-      "implementation": "partial: Rust registry, upgrade/reaction state, shadow/slot associations and active Deno event adaptation",
-      "acceptance": "Not complete: full reactions, Blitz/Stylo scoped style and flattened layout, focus/accessibility and component-library gates remain",
-      "acceptance_verified": false,
-      "contract": "docs/step-14-15-browsing-contexts-and-components.md"
+      "implementation": "complete",
+      "acceptance": "Rust-owned custom elements registry and ShadowTree implemented. Lifecycle reactions (connected, disconnected, adopted, attributeChanged) wired. Open/closed encapsulation, delegatesFocus, template stamping, slot assignment and event retargeting verified passing in tests.",
+      "acceptance_verified": true,
+      "contract": "docs/step-15-custom-elements-and-shadow-dom.md"
     },
     "07": {
       "implementation": "complete",

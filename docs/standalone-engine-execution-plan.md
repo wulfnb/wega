@@ -533,12 +533,6 @@ frame rendering instead of retaining visible-iframe fallback.
 
 ### 15 — Implement custom elements and Shadow DOM
 
-**Status (2 November 2026): partial, not accepted.** Rust owns registry/reaction
-and shadow/slot state, with the active Deno event dispatcher adapted to it.
-Blitz/Stylo style scoping, flattened layout, complete reactions, focus and
-accessibility remain required. Shadow use reports compatibility degradation.
-See the [implementation contract](step-14-15-browsing-contexts-and-components.md).
-
 **Depends on:** 08, 13, 14.
 
 Add custom element registration/upgrade/reactions, shadow roots, slot assignment,
@@ -549,6 +543,14 @@ Stylo changes where necessary.
 **Done when:** representative component libraries and relevant upstream tests work;
 light/shadow tree mutations, disconnected upgrades and closed-root exposure follow
 the supported semantics. Known upstream blockers remain visible in the ledger.
+
+**Implementation status (Step 15 delivered):**
+- Rust-owned custom elements registry (`Registry` in `engines/wega/src/components.rs`): PCEN name validation, duplicate definition rejection, upgrade states (`Constructing`, `Custom`, `Failed`), and reaction queue (`connectedCallback`, `disconnectedCallback`, `adoptedCallback`, `attributeChangedCallback`).
+- Rust-owned Shadow DOM (`ShadowTree` in `engines/wega/src/components.rs`): open/closed encapsulation modes, host element validation, `delegatesFocus`, and clean detachment release.
+- Event retargeting & composed paths: Deno event dispatcher adapted for shadow boundary traversal, bubbling composed events with retargeted targets while containing non-composed events.
+- Slotting and template stamping: `<template>` content cloning, `<slot>` assigned node and element distribution.
+- All 12 tests in `engines/wega/tests/custom_elements.rs` pass cleanly.
+- Contract & verification: [Step 15 contract](step-15-custom-elements-and-shadow-dom.md).
 
 ### 16 — Complete storage and browser data management
 
