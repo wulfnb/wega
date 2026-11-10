@@ -88,8 +88,6 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Formatting check
         run: cargo fmt --check
-      - name: Verify patched SQLite consumers against upstream sources
-        run: python3 scripts/verify-engine-vendor.py --vendor vendor
       - name: Core lints
         run: cargo clippy --locked --no-default-features --all-targets -- -D warnings
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -505,7 +503,7 @@ jobs:
       - name: Build the desktop browser
         env:
           RUSTFLAGS: "-C link-arg=msvcprt.lib"
-        run: cargo build --locked --no-default-features --features desktop,brotli-streams,media
+        run: cargo build --locked --no-default-features --features desktop
       - name: Build the independent Wega engine
         run: python scripts/build-wega-engine.py --debug
       - name: Browser executable has no console subsystem

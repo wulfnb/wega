@@ -553,6 +553,12 @@ impl Page {
         let requests = self.requests.as_ref().ok_or("No request channel")?;
         evaluate_sync_parts(requests, &self.state, source, timeout)
     }
+    pub fn cookies(&self) -> Vec<wega_network::CookieEntry> {
+        url::Url::parse(&self.url())
+            .ok()
+            .map(|url| self.broker.cookie_jar().inventory(&url))
+            .unwrap_or_default()
+    }
     pub fn download_cookies(&self, url: &str) -> Result<String, String> {
         self.broker
             .download_cookies(&url::Url::parse(url).map_err(|error| error.to_string())?)
@@ -652,9 +658,7 @@ impl Page {
             Some(frame_path)
         };
         // Workers are private to a view, so process-wide V8 flags stay per-view.
-        if std::env::var_os("WEGA_ENGINE_LITE").is_some_and(|value| value == "1")
-            || wega::engine_choice::rollout_site(url)
-        {
+        if std::env::var_os("WEGA_ENGINE_LITE").is_some_and(|value| value == "1") {
             command.arg("--lite");
         }
         command

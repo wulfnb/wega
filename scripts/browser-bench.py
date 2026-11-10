@@ -32,7 +32,7 @@ PROBES = {
     "fetch": "fetch('/payload').then(function(r){return r.text();}).then(function(t){check(t==='network ok');}).catch(function(){check(false);});",
 }
 # These are bounded API probes, not claims of whole-site compatibility.
-REQUIRED = {"servo": set(PROBES), "wega": set(PROBES)}
+REQUIRED = {"wega": set(PROBES)}
 LIVE_SITES = ["https://example.com/", "https://example.org/", "https://example.net/",
               "https://en.wikipedia.org/wiki/Rust_(programming_language)",
               "https://developer.mozilla.org/en-US/", "https://github.com/",
@@ -285,7 +285,7 @@ def compatibility_run(binary, engine, name, url, folder, required):
             report = json.loads(image.with_suffix('.json').read_text())
             valid_png = image.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
             result.update(exit_code=status, report=report, capture_elapsed_seconds=time.monotonic() - started)
-            if report.get('engine', 'servo') != engine:
+            if report.get('engine') != engine:
                 result['status'] = 'engine_fallback'
             elif status == 0 and valid_png:
                 result['status'] = ('captured_unverified' if name == 'live' else
@@ -332,7 +332,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, default=ROOT / 'target/debug/wega')
     parser.add_argument('--output', type=Path, default=ROOT / 'target/browser-bench')
-    parser.add_argument('--engine', nargs='+', choices=['servo', 'wega'], default=['servo', 'wega'])
+    parser.add_argument('--engine', nargs='+', choices=['wega'], default=['wega'])
     parser.add_argument('--mode', choices=['all', 'compatibility', 'resources'], default='all')
     parser.add_argument('--label', default='unspecified build', help='Build provenance, for example published optimized release or local debug')
     parser.add_argument('--tabs', nargs='+', type=int, default=[1, 5, 10])

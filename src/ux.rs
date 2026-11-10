@@ -184,15 +184,11 @@ impl crate::browser::Browser {
         true
     }
     pub(crate) fn finish_dialog(&mut self, ctx: &egui::Context) {
-        self.chrome.file_handoff = None;
         if self.chrome.dialog_key.take().is_some() {
             if let Some(id) = self.chrome.dialog_previous_focus.take() {
                 ctx.memory_mut(|m| m.request_focus(id));
             } else {
                 self.chrome.page_focused = true;
-                if let Some(view) = self.tab().view() {
-                    view.set_focused(true);
-                }
             }
         }
     }

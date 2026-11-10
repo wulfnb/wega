@@ -36,11 +36,11 @@ fn application(fail_load: bool, fail_save: bool) -> (Application, Writes, Option
 }
 #[test]
 fn engine_selection_stays_aligned_through_filtering_and_failed_saves() {
-    use crate::engine_choice::EngineKind::{Servo, Wega};
+    use crate::engine_choice::EngineKind::Wega;
     let (mut app, _, _) = application(false, false);
     app.save_engine_tabs(
         vec![
-            ("data:text/html,temp".into(), "Temporary".into(), Servo),
+            ("data:text/html,temp".into(), "Temporary".into(), Wega),
             ("https://example.test/".into(), "Article".into(), Wega),
         ],
         1,
@@ -58,10 +58,7 @@ fn engine_selection_stays_aligned_through_filtering_and_failed_saves() {
         .is_err()
     );
     assert!(app.profile().engines.is_empty());
-    assert_eq!(
-        crate::engine_choice::EngineKind::parse("servo").unwrap(),
-        Servo
-    );
+    assert!(crate::engine_choice::EngineKind::parse("servo").is_err());
     assert!(crate::engine_choice::EngineKind::parse("unknown").is_err());
 }
 #[test]

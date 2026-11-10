@@ -80,41 +80,13 @@ impl Browser {
     pub fn begin_download(&mut self) {
         let result = (|| {
             let url = downloads::validate_url(&self.download_ui.url)?;
-            let host = url
-                .host_str()
-                .ok_or("Download URL has no host.")?
-                .to_owned();
-            let mut cookies = String::from("# Netscape HTTP Cookie File\n");
-            let site_cookies = if self.is_wega() {
-                Vec::new()
-            } else {
-                self.servo
-                    .site_data_manager()
-                    .cookies_for_url(url.clone(), servo::CookieSource::HTTP)
-            };
-            for cookie in site_cookies {
-                let name = cookie.name();
-                let value = cookie.value();
-                let path = cookie.path().unwrap_or("/");
-                if [name, value, path]
-                    .iter()
-                    .any(|s| s.chars().any(char::is_control))
-                {
-                    continue;
-                }
-                cookies.push_str(&format!(
-                    "{}\tFALSE\t{}\t{}\t0\t{}\t{}\n",
-                    host,
-                    path,
-                    if cookie.secure().unwrap_or(false) {
-                        "TRUE"
-                    } else {
-                        "FALSE"
-                    },
-                    name,
-                    value
-                ));
-            }
+            let cookies = self
+                .tab()
+                .wega
+                .as_ref()
+                .map(|page| page.download_cookies(url.as_str()))
+                .transpose()?
+                .unwrap_or_else(|| "# Netscape HTTP Cookie File\n".into());
             self.start_download(
                 url.as_str(),
                 &self.download_ui.filename.clone(),

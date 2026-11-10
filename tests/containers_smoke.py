@@ -71,7 +71,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default='target/debug/wega')
     parser.add_argument('--output', default='target/containers-validation')
-    parser.add_argument('--engines', nargs='+', choices=['servo', 'wega'], default=['servo', 'wega'])
+    parser.add_argument('--engines', nargs='+', choices=['wega'], default=['wega'])
     args = parser.parse_args()
     binary = str(Path(args.binary).resolve())
     output = Path(args.output).resolve()
@@ -138,7 +138,7 @@ def main():
                 for identity in ['personal', 'work']:
                     base = f'http://127.0.0.1:{port()}'
                     log = (run / f'live-{identity}.log').open('w')
-                    process = subprocess.Popen([binary, '--profile-dir', str(root), '--container', identity, '--engine', 'servo', '--webdriver-port', base.rsplit(':', 1)[1], origin], stdout=log, stderr=log)
+                    process = subprocess.Popen([binary, '--profile-dir', str(root), '--container', identity, '--engine', 'wega', '--webdriver-port', base.rsplit(':', 1)[1], origin], stdout=log, stderr=log)
                     log.close()
                     processes.append(process)
                     wait(lambda: request(base, 'GET', '/status')['ready'], process)

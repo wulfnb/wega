@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn normalization_keeps_engine_and_title_with_each_valid_address() {
-    use crate::engine_choice::EngineKind::{Servo, Wega};
+    use crate::engine_choice::EngineKind::Wega;
     let mut profile = Profile {
         urls: vec!["https://".into(), "https://article.test/".into()],
         titles: vec!["Invalid".into(), "Article".into()],
-        engines: vec![Servo, Wega],
+        engines: vec![Wega, Wega],
         ..Default::default()
     };
     profile.normalize();

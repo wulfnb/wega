@@ -16,15 +16,11 @@ pub struct Options {
     pub theme_test: bool,
     pub capabilities_test: bool,
     pub capture: Option<PathBuf>,
-    pub remote_devtools: Option<u16>,
     pub webdriver_port: Option<u16>,
-    pub multiprocess: bool,
-    pub wega_only: bool,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct BuildFeatures {
-    pub multiprocess: bool,
     pub test_harness: bool,
 }
 
@@ -42,7 +38,6 @@ impl Options {
         Self::parse_with(
             args,
             BuildFeatures {
-                multiprocess: cfg!(feature = "multiprocess"),
                 test_harness: cfg!(feature = "test-harness"),
             },
         )
@@ -73,19 +68,12 @@ impl Options {
                     result.profile_dir =
                         Some(args.next().ok_or("--profile-dir requires a path")?.into())
                 }
-                "--multiprocess" => {
-                    if !features.multiprocess {
-                        return Err("Rebuild with --features multiprocess first".into());
-                    }
-                    result.multiprocess = true;
-                }
                 "--wega-only" => {
-                    result.wega_only = true;
                     result.engine = Some(crate::engine_choice::EngineKind::Wega);
                 }
                 "--engine" => {
                     result.engine = Some(crate::engine_choice::EngineKind::parse(
-                        &args.next().ok_or("--engine requires servo or wega")?,
+                        &args.next().ok_or("--engine requires wega")?,
                     )?);
                 }
                 "--webdriver-port" => {
@@ -94,14 +82,6 @@ impl Options {
                             .ok_or("--webdriver-port requires a port")?
                             .parse()
                             .map_err(|_| "Invalid WebDriver port")?,
-                    );
-                }
-                "--remote-devtools" => {
-                    result.remote_devtools = Some(
-                        args.next()
-                            .ok_or("--remote-devtools requires a loopback port")?
-                            .parse()
-                            .map_err(|_| "Invalid DevTools port")?,
                     );
                 }
                 "--smoke-test" => result.smoke_test = true,
@@ -170,20 +150,20 @@ impl Options {
         {
             return Err("Choose only one native test mode".into());
         }
-        if result.engine == Some(crate::engine_choice::EngineKind::Wega)
-            && (result.remote_devtools.is_some()
-                || result.multiprocess
-                || (result.test_mode() && !result.engine_test))
+        if result.download_test
+            || result.toolbox_test
+            || result.theme_test
+            || result.capabilities_test
         {
-            return Err("These engine diagnostics require Servo; omit --engine wega".into());
-        }
-        if result.test_mode() && !result.engine_test && result.engine.is_none() {
-            result.engine = Some(crate::engine_choice::EngineKind::Servo);
+            return Err(
+                "This embedded-backend test mode was retired; use --engine-test or WebDriver"
+                    .into(),
+            );
         }
         Ok(result)
     }
 
-    /// Resolve isolation before media registries, instance handoff or Servo can
+    /// Resolve isolation before media registries, instance handoff or engine processes can
     /// touch a profile. Unknown/corrupt identities never fall back to default.
     pub fn prepare_container(&mut self) -> Result<(), String> {
         let Some(id) = &self.container else {

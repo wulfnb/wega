@@ -217,4 +217,4 @@ mod platform {
         None
     }
 }
-pub use platform::{NativeTheme, available_size};
+pub use platform::NativeTheme;

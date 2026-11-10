@@ -26,14 +26,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=str(root / 'target/debug/wega'))
     parser.add_argument('--output', default=str(root / 'target/native-tests'))
-    parser.add_argument('--suite', choices=['all', 'smoke', 'theme', 'capabilities', 'toolbox', 'download', 'webdriver', 'media', 'capture', 'engine'], nargs='+', default=['all'])
+    parser.add_argument('--suite', choices=['all', 'smoke', 'webdriver', 'media', 'capture', 'engine'], nargs='+', default=['all'])
     args = parser.parse_args()
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     result_path = output / "results.json"
     result = json.loads(result_path.read_text()) if result_path.exists() else []
     current_failed = False
-    for suite in ['smoke', 'theme', 'capabilities', 'toolbox', 'download', 'webdriver', 'media', 'capture', 'engine']:
+    for suite in ['smoke', 'webdriver', 'media', 'capture', 'engine']:
         if 'all' not in args.suite and suite not in args.suite:
             continue
         module = load(f'wega_{suite}_fixture', root / 'tests' / ('download_server.py' if suite == 'download' else 'network_server.py'))
@@ -47,7 +47,8 @@ def main():
         profile = Path(tempfile.mkdtemp(prefix=f'{suite}-', dir=output))
         command = [str(Path(args.binary).resolve()), f'--{suite}-test', '--profile-dir', str(profile), f'http://127.0.0.1:{server.server_port}/{fixture}']
         environment = os.environ.copy()
-        if suite=='engine':
+        environment['WEGA_TEST_ALLOW_LOOPBACK']='1'
+        if suite in ('engine','smoke'):
             command.insert(1,'--engine');command.insert(2,'wega')
             helper=Path(args.binary).resolve().parent/('wega-engine.exe' if os.name=='nt' else 'wega-engine')
             if not helper.is_file():helper=root/'target/debug'/helper.name

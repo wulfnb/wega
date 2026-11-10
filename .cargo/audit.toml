@@ -1,9 +1,3 @@
 # Configuration for cargo-audit (RustSec)
-
 [advisories]
-ignore = [
-    # RUSTSEC-2023-0071: Marvin Attack timing sidechannel in rsa v0.10.0-rc.18
-    # Transitive dependency of servo-script; no fixed upstream release exists yet.
-    "RUSTSEC-2023-0071",
-]
-
+ignore = []

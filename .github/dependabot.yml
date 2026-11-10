@@ -16,16 +16,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    # Servo 0.7 pins RSA rc.18, which fails to compile with PKCS#1 rc.5.
-    # Revisit when Servo permits RSA rc.19 or newer.
-    ignore:
-      - dependency-name: pkcs1
-        versions: ["0.8.0-rc.5"]
-    # One PR per workspace for compatible updates; each major stays its own PR.
-    groups:
-      compatible:
-        patterns: ["*"]
-        update-types: [minor, patch]
+
   - package-ecosystem: cargo
     directory: /engines
     schedule:

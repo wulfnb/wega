@@ -169,7 +169,7 @@ impl View {
                         self.host.parser = None;
                         break;
                     }
-                    self.load_error("DOM node limit exceeded; use Servo for this page".into());
+                    self.load_error("DOM node limit exceeded".into());
                     continue;
                 }
             }
@@ -181,7 +181,7 @@ impl View {
     pub(super) fn parsed(&mut self) {
         let count = self.node_count();
         if count > self.limits.dom_nodes {
-            self.load_error("DOM node limit exceeded; use Servo for this page".into());
+            self.load_error("DOM node limit exceeded".into());
             return;
         }
         if let Some(script) = &mut self.script {

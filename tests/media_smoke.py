@@ -55,7 +55,7 @@ def request(method,path,body=None):
     except urllib.error.HTTPError as error:
         raise AssertionError(error.read().decode()) from error
 with (profile/'browser.log').open('w') as log:
-    process=subprocess.Popen([binary,'--engine','servo','--profile-dir',str(profile),'--webdriver-port',str(port),'wega://newtab'],stdout=log,stderr=log)
+    process=subprocess.Popen([binary,'--engine','wega','--profile-dir',str(profile),'--webdriver-port',str(port),'wega://newtab'],stdout=log,stderr=log)
     try:
         deadline=time.monotonic()+30
         while True:

@@ -41,7 +41,7 @@ def main():
         (wega_profile/'browser.json').write_text(json.dumps({'policy':{'allowed_hosts':'127.0.0.1 localhost'}}))
         subprocess.run([str(binary),'--engine','wega','--profile-dir',str(wega_profile),'--capture',str(capture),env['WEGA_FIXTURE_URL']+'/wega-engine.html'],env=env,check=True,timeout=65)
         report=json.loads(capture.with_suffix('.json').read_text())
-        assert report['engine']=='wega' and report['servoInitialized'] is False and report['title']=='Wega engine ready',report
+        assert report['engine']=='wega' and report['title']=='Wega engine ready',report
         with socket.socket() as listener:
             listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
         profile=work/'profile';profile.mkdir(parents=True,exist_ok=True)

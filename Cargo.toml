@@ -10,13 +10,9 @@ publish = false
 build = "build.rs"
 
 [features]
-default = ["desktop", "brotli-streams", "media"]
-desktop = ["dep:reqwest", "dep:log", "dep:wega-platform", "dep:wega-network", "dep:windows-sys", "dep:malloc_size_of", "dep:rfd", "dep:accesskit", "dep:egui-winit", "dep:egui", "dep:egui_glow", "dep:winit", "dep:servo", "dep:euclid", "dep:dpi", "dep:rustls", "dep:arboard", "dep:servo-devtools-traits", "dep:servo-base", "dep:crossbeam-channel", "dep:webdriver", "dep:base64", "dep:image", "dep:http", "dep:libc", "dep:pkcs1", "dep:objc2", "dep:block2", "dep:objc2-app-kit", "dep:objc2-foundation"]
+default = ["desktop"]
+desktop = ["dep:surfman", "dep:glow", "dep:reqwest", "dep:log", "dep:wega-platform", "dep:wega-network", "dep:windows-sys", "dep:rfd", "dep:accesskit", "dep:egui-winit", "dep:egui", "dep:egui_glow", "dep:winit", "dep:euclid", "dep:dpi", "dep:rustls", "dep:arboard", "dep:crossbeam-channel", "dep:webdriver", "dep:base64", "dep:image", "dep:http", "dep:libc", "dep:objc2", "dep:block2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 test-harness = ["desktop"]
-brotli-streams = ["desktop", "servo/brotli-compression-stream"]
-multiprocess = ["desktop", "servo/multiprocess"]
-media = ["desktop", "servo/media-gstreamer"]
-migration-tools = ["dep:regex", "dep:toml"]
 webidl-tools = []
 
 [[bin]]
@@ -25,38 +21,26 @@ path = "src/main.rs"
 required-features = ["desktop"]
 
 [[bin]]
-name = "wega-inventory"
-path = "tools/standalone_inventory.rs"
-required-features = ["migration-tools"]
-
-[[bin]]
 name = "wega-webidl"
 path = "tools/webidl/main.rs"
 required-features = ["webidl-tools"]
 
-[[test]]
-name = "servo-dom-memory"
-path = "vendor/servo-script-bindings/mem.rs"
-required-features = ["desktop"]
-
 [dependencies]
+surfman = { version = "=0.14.0", features = ["sm-angle-default"], optional = true }
+glow = { version = "=0.17.0", optional = true }
 ed25519-dalek = "=3.0.0"
 sha2 = "=0.11.1"
-regex = { version = "=1.13.1", optional = true }
-toml = { version = "=1.1.8", optional = true }
 wega-protocol = { path = "engines/protocol" }
 reqwest = {version="0.12",default-features=false,features=["blocking","rustls-tls"],optional=true}
 log = {version="0.4",optional=true}
 wega-platform = {path="engines/platform",optional=true}
 wega-network = {path="engines/network",optional=true}
-malloc_size_of = { package = "servo-malloc-size-of", version = "=0.7.0", optional = true }
 rfd = { version = "=0.17.2", optional = true }
 accesskit = { version = "=0.25.2", features = ["serde"], optional = true }
 egui-winit = { version = "=0.37.0", features = ["accesskit"], optional = true }
 egui = { optional = true, version = "=0.37.0", features = ["default_fonts"] }
 egui_glow = { optional = true, version = "=0.37.0", features = ["winit"] }
 winit = { version = "0.30.13", optional = true }
-servo = { optional = true, version = "=0.7.0", default-features = false, features = ["bundled", "js_jit", "webcrypto", "webgl"] }
 euclid = { version = "0.22", optional = true }
 dpi = { version = "0.1", optional = true }
 url = "2.5"
@@ -66,8 +50,6 @@ getrandom = "0.3"
 directories = "6"
 rustls = { optional = true, version = "0.23", default-features = false, features = ["aws_lc_rs"] }
 arboard = { version = "3", optional = true }
-servo-devtools-traits = { version = "=0.7.0", optional = true }
-servo-base = { version = "=0.7.0", optional = true }
 crossbeam-channel = { version = "0.5", optional = true }
 webdriver = { version = "=0.54.0", optional = true }
 base64 = { version = "0.22", optional = true }
@@ -75,28 +57,13 @@ image = { optional = true,version="0.25",default-features=false,features=["png"]
 http = { version = "1", optional = true }
 chrono = "0.4.45"
 libc = { version = "0.2", optional = true }
-# Servo's RSA prerelease requires rc.4; rc.5 changes its public key representation.
-pkcs1 = { version = "=0.8.0-rc.4", optional = true }
 
 [profile.dev]
 debug = 0
 incremental = false
 
-[patch.crates-io]
-# See vendor/README.md for the Servo/epaint vello_cpu feature-unification fix.
-epaint = { path = "vendor/epaint" }
-servo = { path = "vendor/servo" }
-servo-script-bindings = { path = "vendor/servo-script-bindings" }
-# Keep Servo's SQLite consumers on the same patched native library as Wega.
-servo-net = { path = "vendor/servo-net" }
-servo-storage = { path = "vendor/servo-storage" }
-sea-query-rusqlite = { path = "vendor/sea-query-rusqlite" }
-
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_Registry", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_DataExchange", "Win32_System_Console", "Win32_Security", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }
-# WGL fails without a full OpenGL driver (VMs, Remote Desktop, basic display adapters).
-# ANGLE runs GL ES on Direct3D, as Servo's own Windows builds do; ship libEGL.dll and libGLESv2.dll.
-servo = { optional = true, version = "=0.7.0", default-features = false, features = ["no-wgl"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

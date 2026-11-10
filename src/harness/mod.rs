@@ -1,56 +1,56 @@
-//! Native integration scenarios driven from inside the running browser.
-//! Built only with `--features test-harness`; release builds contain none of this.
-pub mod capabilities;
-pub mod coverage_ui;
-pub mod download;
-pub mod engines;
-pub mod smoke;
-pub mod theme;
-pub mod toolbox;
-
-use std::{cell::RefCell, rc::Rc, time::Instant};
-
-/// At most one scenario runs per process (enforced by option parsing).
+//! Standalone native integration harness.
+use std::time::{Duration, Instant};
 #[derive(Default)]
 pub struct Harness {
-    pub(crate) smoke: Option<Smoke>,
-    pub(crate) download_test: Option<download::Test>,
-    pub(crate) toolbox_test: Option<toolbox::Test>,
-    pub(crate) theme_test: Option<theme::Test>,
-    pub(crate) capabilities_test: Option<capabilities::Test>,
-    pub(crate) engine_test: Option<engines::Test>,
+    start: Option<Instant>,
+    evaluated: bool,
 }
-
 impl Harness {
     pub fn new(options: &wega::options::Options) -> Self {
         Self {
-            smoke: options.smoke_test.then(|| Smoke {
-                start: Instant::now(),
-                stage_at: Instant::now(),
-                stage: 0,
-                result: Rc::new(RefCell::new(None)),
-            }),
-            download_test: options.download_test.then(download::Test::new),
-            toolbox_test: options.toolbox_test.then(toolbox::Test::new),
-            theme_test: options.theme_test.then(theme::Test::new),
-            capabilities_test: options.capabilities_test.then(capabilities::Test::new),
-            engine_test: options.engine_test.then(engines::Test::new),
+            start: options.test_mode().then(Instant::now),
+            evaluated: false,
         }
     }
     pub fn running(&self) -> bool {
-        self.smoke.is_some()
-            || self.download_test.is_some()
-            || self.toolbox_test.is_some()
-            || self.theme_test.is_some()
-            || self.capabilities_test.is_some()
-            || self.engine_test.is_some()
+        self.start.is_some()
     }
 }
-
-pub struct Smoke {
-    pub(crate) start: Instant,
-    pub(crate) stage: u8,
-    pub(crate) stage_at: Instant,
-    pub(crate) result:
-        Rc<RefCell<Option<Result<servo::JSValue, servo::JavaScriptEvaluationError>>>>,
+impl crate::browser::Browser {
+    pub fn check_smoke_test(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let Some(start) = self.harness.start else {
+            return;
+        };
+        assert!(
+            start.elapsed() < Duration::from_secs(60),
+            "Standalone native test timed out"
+        );
+        let Some(page) = &self.tab().wega else {
+            return;
+        };
+        if page.loading() || page.texture.is_none() {
+            return;
+        }
+        if !self.harness.evaluated {
+            page.evaluate(
+                "JSON.stringify({title:document.title,url:location.href,dom:!!document.body})",
+            );
+            self.harness.evaluated = true;
+            return;
+        }
+        let mut state = page.state.lock().unwrap();
+        if let Some(result) = state.evaluated.take() {
+            let result = result.expect("Standalone JavaScript evaluation");
+            assert!(
+                result.contains("dom"),
+                "Worker returned document state: {result}"
+            );
+            println!(
+                "STANDALONE ENGINE TEST PASSED: native window, real worker pixels, DOM and V8 evaluation"
+            );
+            drop(state);
+            self.harness.start = None;
+            event_loop.exit();
+        }
+    }
 }

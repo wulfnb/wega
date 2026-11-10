@@ -85,15 +85,11 @@ fn rejects_invalid_and_missing_arguments_before_startup() {
     ] {
         assert!(parse(&args).is_err(), "{args:?}");
     }
-    assert_eq!(
-        parse(&["--multiprocess"]).is_ok(),
-        cfg!(feature = "multiprocess")
-    );
+    assert_eq!(parse(&["--multiprocess"]).is_ok(), false);
 }
 #[test]
 fn wega_only_option_configures_engine_choice() {
     let options = parse(&["--wega-only"]).unwrap();
-    assert!(options.wega_only);
     assert_eq!(options.engine, Some(crate::engine_choice::EngineKind::Wega));
 }
 
@@ -104,13 +100,10 @@ fn normal_startup_and_capture_do_not_require_test_harness() {
         "/tmp/capture.png",
         "--webdriver-port",
         "9000",
-        "--remote-devtools",
-        "9001",
         "https://example.com",
     ])
     .unwrap();
     assert_eq!(options.webdriver_port, Some(9000));
-    assert_eq!(options.remote_devtools, Some(9001));
     assert!(!options.test_mode());
     assert_eq!(options.capture, Some(PathBuf::from("/tmp/capture.png")));
 }
@@ -137,18 +130,9 @@ fn help_is_side_effect_free_and_empty_profile_is_rejected() {
 
 #[test]
 fn build_capability_validation_is_independent_of_the_engine() {
-    let features = BuildFeatures {
-        multiprocess: true,
-        test_harness: true,
-    };
-    let args = [
-        "--multiprocess",
-        "--download-test",
-        "--profile-dir",
-        "/tmp/wega-parser",
-    ];
+    let features = BuildFeatures { test_harness: true };
+    let args = ["--download-test", "--profile-dir", "/tmp/wega-parser"];
     let disabled = BuildFeatures {
-        multiprocess: false,
         test_harness: false,
     };
     assert!(
@@ -160,7 +144,7 @@ fn build_capability_validation_is_independent_of_the_engine() {
         .contains("test-harness")
     );
     let options = Options::parse_with(args.map(String::from), features).unwrap();
-    assert!(options.multiprocess && options.download_test);
+    assert!(options.download_test);
     assert!(
         Options::parse_with(
             [
@@ -223,10 +207,7 @@ fn engine_options_and_diagnostics_are_explicit() {
         parse(&["--engine", "wega"]).unwrap().engine,
         Some(EngineKind::Wega)
     );
-    assert_eq!(
-        parse(&["--engine", "servo"]).unwrap().engine,
-        Some(EngineKind::Servo)
-    );
+    assert!(parse(&["--engine", "servo"]).is_err());
     for args in [
         vec!["--engine"],
         vec!["--engine", "other"],

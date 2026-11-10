@@ -17,13 +17,13 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends \
 # tool for quick local builds; the image then carries only LICENSE and NOTICE.
 ARG LICENSE_NOTICES=1
 ARG CARGO_ABOUT_VERSION=0.9.2
-RUN --mount=type=cache,id=servo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+RUN --mount=type=cache,id=wega-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     if [ "${LICENSE_NOTICES}" = 1 ]; then \
         cargo install cargo-about --locked --features cli --version "${CARGO_ABOUT_VERSION}"; \
     fi
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs ./
-COPY vendor ./vendor
+COPY tools/webidl ./tools/webidl
 COPY src ./src
 COPY engines ./engines
 COPY scripts/build-wega-engine.py scripts/v8_prebuilt.py ./scripts/
@@ -31,8 +31,8 @@ COPY assets/icons/browser-icon-256.png ./assets/icons/browser-icon-256.png
 ARG BUILD_PROFILE=release
 ARG BUILD_JOBS=4
 ARG BUILD_FEATURES=desktop
-RUN --mount=type=cache,id=servo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
-    --mount=type=cache,id=servo-git-${TARGETARCH},target=/usr/local/cargo/git \
+RUN --mount=type=cache,id=wega-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,id=wega-git-${TARGETARCH},target=/usr/local/cargo/git \
     --mount=type=cache,id=wega-target-${TARGETARCH}-${BUILD_PROFILE},target=/src/target \
     touch src/main.rs assets/icons/browser-icon-256.png && \
     cargo build --locked --features "${BUILD_FEATURES}" --profile "${BUILD_PROFILE}" --jobs "${BUILD_JOBS}" && \
@@ -46,8 +46,8 @@ COPY about.toml about.hbs LICENSE NOTICE ./
 COPY scripts/third-party-notices.sh ./scripts/third-party-notices.sh
 # Appended to NOTICE by the script (CD passes the release commit).
 ARG WEGA_SOURCE_COMMIT=
-RUN --mount=type=cache,id=servo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
-    --mount=type=cache,id=servo-git-${TARGETARCH},target=/usr/local/cargo/git \
+RUN --mount=type=cache,id=wega-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,id=wega-git-${TARGETARCH},target=/usr/local/cargo/git \
     if [ "${LICENSE_NOTICES}" = 1 ]; then \
         WEGA_SOURCE_COMMIT="${WEGA_SOURCE_COMMIT}" bash scripts/third-party-notices.sh /out/notices --features "${BUILD_FEATURES}"; \
     else \
