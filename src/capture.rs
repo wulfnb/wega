@@ -122,7 +122,8 @@ impl crate::browser::Browser {
         };
         assert!(
             !state.lifecycle.failed(),
-            "Wega worker failed during capture"
+            "Wega worker failed during capture: {:?}",
+            state.recovery_reason
         );
         assert!(
             capture.start.elapsed() < Duration::from_secs(60),
