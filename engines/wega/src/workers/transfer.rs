@@ -14,6 +14,13 @@ pub struct PortMessage {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OffscreenCanvasTransfer {
+    pub canvas_id: u64,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArrayBufferTransfer {
     pub byte_length: usize,
     pub bytes: Vec<u8>,

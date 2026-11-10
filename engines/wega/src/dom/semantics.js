@@ -2253,179 +2253,517 @@
       return this.assignedNodes(options).filter((node) => node.nodeType === 1);
     }
   }
-  class CanvasRenderingContext2D {
-    constructor(canvas) {
-      this._canvas = canvas;
-      this.fillStyle = "#000000";
-      this.strokeStyle = "#000000";
-      this.lineWidth = 1;
-      this.lineCap = "butt";
-      this.lineJoin = "miter";
-      this.miterLimit = 10;
-      this.lineDashOffset = 0;
-      this.globalAlpha = 1.0;
-      this.globalCompositeOperation = "source-over";
-      this.font = "10px sans-serif";
-      this.textAlign = "start";
-      this.textBaseline = "alphabetic";
-      this.direction = "inherit";
-      this.shadowBlur = 0;
-      this.shadowColor = "rgba(0, 0, 0, 0)";
-      this.shadowOffsetX = 0;
-      this.shadowOffsetY = 0;
-      this.imageSmoothingEnabled = true;
-      this.imageSmoothingQuality = "low";
-      this.filter = "none";
+  class CanvasGradient {
+    constructor(type, coords) {
+      this._type = type;
+      this._coords = coords;
+      this._stops = [];
     }
-    get canvas() {
-      return this._canvas;
+    addColorStop(offset, color) {
+      const num = Number(offset);
+      if (Number.isNaN(num) || num < 0 || num > 1) {
+        fail("IndexSizeError", "Offset must be between 0 and 1");
+      }
+      this._stops.push({ offset: num, color: String(color) });
     }
-    save() {}
-    restore() {}
-    reset() {}
-    scale(_x, _y) {}
-    rotate(_angle) {}
-    translate(_x, _y) {}
-    transform(_a, _b, _c, _d, _e, _f) {}
-    setTransform(_a, _b, _c, _d, _e, _f) {}
-    resetTransform() {}
-    getTransform() {
-      return {
-        a: 1,
-        b: 0,
-        c: 0,
-        d: 1,
-        e: 0,
-        f: 0,
-        m11: 1,
-        m12: 0,
-        m21: 0,
-        m22: 1,
-        m41: 0,
-        m42: 0,
-      };
-    }
-    clearRect(_x, _y, _w, _h) {}
-    fillRect(_x, _y, _w, _h) {}
-    strokeRect(_x, _y, _w, _h) {}
-    beginPath() {}
-    fill(_fillRule) {}
-    stroke() {}
-    clip(_fillRule) {}
-    isPointInPath(_x, _y) {
-      return false;
-    }
-    isPointInStroke(_x, _y) {
-      return false;
-    }
-    fillText(_text, _x, _y, _maxWidth) {}
-    strokeText(_text, _x, _y, _maxWidth) {}
-    measureText(text) {
-      const len = String(text ?? "").length;
-      return {
-        width: len * 8,
-        actualBoundingBoxLeft: 0,
-        actualBoundingBoxRight: len * 8,
-        fontBoundingBoxAscent: 10,
-        fontBoundingBoxDescent: 2,
-        actualBoundingBoxAscent: 10,
-        actualBoundingBoxDescent: 2,
-        emHeightAscent: 10,
-        emHeightDescent: 2,
-        hangingBaseline: 8,
-        alphabeticBaseline: 0,
-        ideographicBaseline: -2,
-      };
-    }
-    drawImage() {}
-    createImageData(w, h) {
-      const width = Math.max(0, w | 0);
-      const height = Math.max(0, h | 0);
-      return {
-        width,
-        height,
-        data: new Uint8ClampedArray(Math.max(0, (width * height * 4) | 0)),
-      };
-    }
-    getImageData(_sx, _sy, sw, sh) {
-      const width = Math.max(0, sw | 0);
-      const height = Math.max(0, sh | 0);
-      return {
-        width,
-        height,
-        data: new Uint8ClampedArray(Math.max(0, (width * height * 4) | 0)),
-      };
-    }
-    putImageData(_imagedata, _dx, _dy) {}
-    createLinearGradient(_x0, _y0, _x1, _y1) {
-      return { addColorStop() {} };
-    }
-    createRadialGradient(_x0, _y0, _r0, _x1, _y1, _r1) {
-      return { addColorStop() {} };
-    }
-    createConicGradient(_startAngle, _x, _y) {
-      return { addColorStop() {} };
-    }
-    createPattern(_image, _repetition) {
-      return { setTransform() {} };
-    }
-    setLineDash(_segments) {}
-    getLineDash() {
-      return [];
-    }
-    closePath() {}
-    moveTo(_x, _y) {}
-    lineTo(_x, _y) {}
-    quadraticCurveTo(_cpx, _cpy, _x, _y) {}
-    bezierCurveTo(_cp1x, _cp1y, _cp2x, _cp2y, _x, _y) {}
-    arcTo(_x1, _y1, _x2, _y2, _radius) {}
-    rect(_x, _y, _w, _h) {}
-    roundRect(_x, _y, _w, _h, _radii) {}
-    arc(_x, _y, _radius, _startAngle, _endAngle, _counterclockwise) {}
-    ellipse(
-      _x,
-      _y,
-      _radiusX,
-      _radiusY,
-      _rotation,
-      _startAngle,
-      _endAngle,
-      _counterclockwise,
-    ) {}
   }
+
+  class CanvasPattern {
+    constructor(image, repetition) {
+      this._image = image;
+      this._repetition = repetition;
+    }
+    setTransform(_transform) {}
+  }
+
+  class ImageData {
+    constructor(arg1, arg2, arg3) {
+      if (arg1 instanceof Uint8ClampedArray) {
+        this.data = arg1;
+        this.width = arg2 >>> 0;
+        this.height = arg3 ? (arg3 >>> 0) : ((arg1.length / 4 / this.width) >>> 0);
+      } else {
+        this.width = Math.max(1, arg1 >>> 0);
+        this.height = Math.max(1, arg2 >>> 0);
+        this.data = new Uint8ClampedArray(this.width * this.height * 4);
+      }
+      this.colorSpace = "srgb";
+    }
+  }
+
+  class Path2D {
+    constructor(path) {
+      this._ops = [];
+      if (path instanceof Path2D) {
+        this._ops = [...path._ops];
+      }
+    }
+    addPath(path) {
+      if (path instanceof Path2D) {
+        this._ops.push(...path._ops);
+      }
+    }
+    closePath() { this._ops.push(["closePath"]); }
+    moveTo(x, y) { this._ops.push(["moveTo", x, y]); }
+    lineTo(x, y) { this._ops.push(["lineTo", x, y]); }
+    quadraticCurveTo(cpx, cpy, x, y) { this._ops.push(["quadraticCurveTo", cpx, cpy, x, y]); }
+    bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) { this._ops.push(["bezierCurveTo", cp1x, cp1y, cp2x, cp2y, x, y]); }
+    arcTo(x1, y1, x2, y2, radius) { this._ops.push(["arcTo", x1, y1, x2, y2, radius]); }
+    rect(x, y, w, h) { this._ops.push(["rect", x, y, w, h]); }
+    arc(x, y, radius, startAngle, endAngle, counterclockwise = false) {
+      this._ops.push(["arc", x, y, radius, startAngle, endAngle, counterclockwise]);
+    }
+    ellipse(x, y, rx, ry, rotation, startAngle, endAngle, counterclockwise = false) {
+      this._ops.push(["ellipse", x, y, rx, ry, rotation, startAngle, endAngle, counterclockwise]);
+    }
+  }
+
+  class CanvasRenderingContext2DBase {
+    constructor(canvas, canvasId, isOffscreen) {
+      this._canvas = canvas;
+      this._canvasId = canvasId;
+      this._isOffscreen = isOffscreen;
+      this._fillStyle = "#000000";
+      this._strokeStyle = "#000000";
+      this._lineWidth = 1;
+      this._lineCap = "butt";
+      this._lineJoin = "miter";
+      this._miterLimit = 10;
+      this._lineDashOffset = 0;
+      this._globalAlpha = 1.0;
+      this._globalCompositeOperation = "source-over";
+      this._font = "10px sans-serif";
+      this._textAlign = "start";
+      this._textBaseline = "alphabetic";
+      this._direction = "inherit";
+      this._shadowBlur = 0;
+      this._shadowColor = "rgba(0, 0, 0, 0)";
+      this._shadowOffsetX = 0;
+      this._shadowOffsetY = 0;
+      this._imageSmoothingEnabled = true;
+      this._imageSmoothingQuality = "low";
+      this._filter = "none";
+    }
+
+    get canvas() { return this._canvas; }
+
+    get fillStyle() { return this._fillStyle; }
+    set fillStyle(val) {
+      this._fillStyle = val;
+      const str = typeof val === "string" ? val : (val?._stops?.[0]?.color || "#000000");
+      this._exec("fillStyle", [str]);
+    }
+
+    get strokeStyle() { return this._strokeStyle; }
+    set strokeStyle(val) {
+      this._strokeStyle = val;
+      const str = typeof val === "string" ? val : (val?._stops?.[0]?.color || "#000000");
+      this._exec("strokeStyle", [str]);
+    }
+
+    get lineWidth() { return this._lineWidth; }
+    set lineWidth(val) {
+      const num = Number(val);
+      if (num > 0) {
+        this._lineWidth = num;
+        this._exec("lineWidth", [num]);
+      }
+    }
+
+    get lineCap() { return this._lineCap; }
+    set lineCap(val) {
+      if (["butt", "round", "square"].includes(val)) {
+        this._lineCap = val;
+        this._exec("lineCap", [val]);
+      }
+    }
+
+    get lineJoin() { return this._lineJoin; }
+    set lineJoin(val) {
+      if (["round", "bevel", "miter"].includes(val)) {
+        this._lineJoin = val;
+        this._exec("lineJoin", [val]);
+      }
+    }
+
+    get miterLimit() { return this._miterLimit; }
+    set miterLimit(val) {
+      const num = Number(val);
+      if (num > 0) {
+        this._miterLimit = num;
+        this._exec("miterLimit", [num]);
+      }
+    }
+
+    get globalAlpha() { return this._globalAlpha; }
+    set globalAlpha(val) {
+      const num = Number(val);
+      if (!Number.isNaN(num) && num >= 0 && num <= 1) {
+        this._globalAlpha = num;
+        this._exec("globalAlpha", [num]);
+      }
+    }
+
+    get globalCompositeOperation() { return this._globalCompositeOperation; }
+    set globalCompositeOperation(val) {
+      this._globalCompositeOperation = String(val);
+      this._exec("globalCompositeOperation", [this._globalCompositeOperation]);
+    }
+
+    get font() { return this._font; }
+    set font(val) {
+      this._font = String(val);
+      const m = /(\d+(?:\.\d+)?)\s*px\s*(.*)/.exec(this._font);
+      const size = m ? parseFloat(m[1]) : 10;
+      const family = m && m[2] ? m[2].trim() : "sans-serif";
+      this._exec("font", [size, family]);
+    }
+
+    get textAlign() { return this._textAlign; }
+    set textAlign(val) { this._textAlign = String(val); }
+
+    get textBaseline() { return this._textBaseline; }
+    set textBaseline(val) { this._textBaseline = String(val); }
+
+    get direction() { return this._direction; }
+    set direction(val) { this._direction = String(val); }
+
+    get imageSmoothingEnabled() { return this._imageSmoothingEnabled; }
+    set imageSmoothingEnabled(val) { this._imageSmoothingEnabled = Boolean(val); }
+
+    get imageSmoothingQuality() { return this._imageSmoothingQuality; }
+    set imageSmoothingQuality(val) { this._imageSmoothingQuality = String(val); }
+
+    _exec(cmd, args = []) {
+      if (this._canvas?._detached) {
+        fail("InvalidStateError", "Canvas is detached");
+      }
+      return host("canvasExecute", String(this._canvasId), cmd, JSON.stringify(args));
+    }
+
+    save() { this._exec("save"); }
+    restore() { this._exec("restore"); }
+    reset() {
+      this._exec("reset");
+      this._fillStyle = "#000000";
+      this._strokeStyle = "#000000";
+      this._lineWidth = 1;
+      this._lineCap = "butt";
+      this._lineJoin = "miter";
+      this._miterLimit = 10;
+      this._globalAlpha = 1.0;
+      this._globalCompositeOperation = "source-over";
+      this._font = "10px sans-serif";
+    }
+
+    scale(x, y) { this._exec("scale", [Number(x) || 0, Number(y) || 0]); }
+    rotate(angle) { this._exec("rotate", [Number(angle) || 0]); }
+    translate(x, y) { this._exec("translate", [Number(x) || 0, Number(y) || 0]); }
+    transform(a, b, c, d, e, f) {
+      this._exec("transform", [Number(a) || 0, Number(b) || 0, Number(c) || 0, Number(d) || 0, Number(e) || 0, Number(f) || 0]);
+    }
+    setTransform(a, b, c, d, e, f) {
+      if (typeof a === "object" && a !== null) {
+        this.setTransform(a.a, a.b, a.c, a.d, a.e, a.f);
+        return;
+      }
+      this._exec("setTransform", [Number(a) || 0, Number(b) || 0, Number(c) || 0, Number(d) || 0, Number(e) || 0, Number(f) || 0]);
+    }
+    resetTransform() { this._exec("resetTransform"); }
+    getTransform() {
+      return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0, m11: 1, m12: 0, m21: 0, m22: 1, m41: 0, m42: 0 };
+    }
+
+    clearRect(x, y, w, h) { this._exec("clearRect", [Number(x) || 0, Number(y) || 0, Number(w) || 0, Number(h) || 0]); }
+    fillRect(x, y, w, h) { this._exec("fillRect", [Number(x) || 0, Number(y) || 0, Number(w) || 0, Number(h) || 0]); }
+    strokeRect(x, y, w, h) { this._exec("strokeRect", [Number(x) || 0, Number(y) || 0, Number(w) || 0, Number(h) || 0]); }
+
+    beginPath() { this._exec("beginPath"); }
+    closePath() { this._exec("closePath"); }
+    moveTo(x, y) { this._exec("moveTo", [Number(x) || 0, Number(y) || 0]); }
+    lineTo(x, y) { this._exec("lineTo", [Number(x) || 0, Number(y) || 0]); }
+    quadraticCurveTo(cpx, cpy, x, y) { this._exec("quadraticCurveTo", [Number(cpx) || 0, Number(cpy) || 0, Number(x) || 0, Number(y) || 0]); }
+    bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) {
+      this._exec("bezierCurveTo", [Number(cp1x) || 0, Number(cp1y) || 0, Number(cp2x) || 0, Number(cp2y) || 0, Number(x) || 0, Number(y) || 0]);
+    }
+    rect(x, y, w, h) { this._exec("rect", [Number(x) || 0, Number(y) || 0, Number(w) || 0, Number(h) || 0]); }
+    arc(x, y, radius, startAngle, endAngle, counterclockwise = false) {
+      this._exec("arc", [Number(x) || 0, Number(y) || 0, Number(radius) || 0, Number(startAngle) || 0, Number(endAngle) || 0, Boolean(counterclockwise)]);
+    }
+    ellipse(x, y, rx, ry, rotation, startAngle, endAngle, counterclockwise = false) {
+      this._exec("ellipse", [Number(x) || 0, Number(y) || 0, Number(rx) || 0, Number(ry) || 0, Number(rotation) || 0, Number(startAngle) || 0, Number(endAngle) || 0, Boolean(counterclockwise)]);
+    }
+
+    fill(pathOrRule, rule) {
+      if (pathOrRule instanceof Path2D) {
+        for (const op of pathOrRule._ops) {
+          this._exec(op[0], op.slice(1));
+        }
+      }
+      this._exec("fill");
+    }
+
+    stroke(path) {
+      if (path instanceof Path2D) {
+        for (const op of path._ops) {
+          this._exec(op[0], op.slice(1));
+        }
+      }
+      this._exec("stroke");
+    }
+
+    clip(pathOrRule, rule) {
+      if (pathOrRule instanceof Path2D) {
+        for (const op of pathOrRule._ops) {
+          this._exec(op[0], op.slice(1));
+        }
+      }
+      this._exec("clip");
+    }
+
+    isPointInPath(x, y) {
+      return Boolean(this._exec("isPointInPath", [Number(x) || 0, Number(y) || 0]));
+    }
+    isPointInStroke(x, y) {
+      return false;
+    }
+
+    fillText(text, x, y, maxWidth) {
+      this._exec("fillText", [String(text ?? ""), Number(x) || 0, Number(y) || 0, maxWidth !== undefined ? Number(maxWidth) : null]);
+    }
+    strokeText(text, x, y, maxWidth) {
+      this._exec("strokeText", [String(text ?? ""), Number(x) || 0, Number(y) || 0, maxWidth !== undefined ? Number(maxWidth) : null]);
+    }
+    measureText(text) {
+      const res = host("canvasMeasureText", String(this._canvasId), String(text ?? ""));
+      return {
+        width: res.width,
+        actualBoundingBoxLeft: 0,
+        actualBoundingBoxRight: res.width,
+        fontBoundingBoxAscent: res.fontBoundingBoxAscent,
+        fontBoundingBoxDescent: res.fontBoundingBoxDescent,
+        actualBoundingBoxAscent: res.actualBoundingBoxAscent,
+        actualBoundingBoxDescent: res.actualBoundingBoxDescent,
+        emHeightAscent: res.fontBoundingBoxAscent,
+        emHeightDescent: res.fontBoundingBoxDescent,
+        hangingBaseline: res.fontBoundingBoxAscent * 0.8,
+        alphabeticBaseline: 0,
+        ideographicBaseline: -res.fontBoundingBoxDescent,
+      };
+    }
+
+    createImageData(sw, sh) {
+      return new ImageData(sw, sh);
+    }
+
+    getImageData(sx, sy, sw, sh) {
+      if (this._canvas?._detached) fail("InvalidStateError", "Canvas is detached");
+      try {
+        const coords = JSON.stringify([sx >>> 0, sy >>> 0, sw >>> 0, sh >>> 0]);
+        const pixels = host("canvasGetImageData", String(this._canvasId), coords);
+        return new ImageData(new Uint8ClampedArray(pixels), sw >>> 0, sh >>> 0);
+      } catch (e) {
+        if (String(e.message || e).includes("SecurityError")) {
+          fail("SecurityError", "The operation is insecure");
+        }
+        throw e;
+      }
+    }
+
+    putImageData(imageData, dx, dy) {
+      if (this._canvas?._detached) fail("InvalidStateError", "Canvas is detached");
+      host("canvasPutImageData", String(this._canvasId), JSON.stringify({
+        data: Array.from(imageData.data),
+        dx: dx >>> 0,
+        dy: dy >>> 0,
+        w: imageData.width,
+        h: imageData.height,
+      }));
+    }
+
+    drawImage(image, ...args) {
+      if (!image) throw new TypeError("Image must be provided");
+      if (image instanceof HTMLCanvasElement || image instanceof OffscreenCanvas) {
+        if (!image._canvasId) {
+          image._canvasId = host("canvasCreate", String(image.width), String(image.height), image instanceof OffscreenCanvas ? "true" : "false");
+        }
+        host("canvasDrawImage", String(this._canvasId), String(image._canvasId), "clean");
+      } else if (image instanceof HTMLImageElement) {
+        const crossOrigin = image.crossOrigin;
+        const isClean = crossOrigin === "anonymous" || crossOrigin === "use-credentials" || !image.src?.startsWith("http");
+        if (!isClean) {
+          host("canvasTaint", String(this._canvasId));
+        }
+      }
+    }
+
+    createLinearGradient(x0, y0, x1, y1) {
+      return new CanvasGradient("linear", { x0, y0, x1, y1 });
+    }
+    createRadialGradient(x0, y0, r0, x1, y1, r1) {
+      return new CanvasGradient("radial", { x0, y0, r0, x1, y1, r1 });
+    }
+    createConicGradient(startAngle, x, y) {
+      return new CanvasGradient("conic", { startAngle, x, y });
+    }
+    createPattern(image, repetition) {
+      return new CanvasPattern(image, repetition);
+    }
+    setLineDash(segments) {}
+    getLineDash() { return []; }
+  }
+
+  class CanvasRenderingContext2D extends CanvasRenderingContext2DBase {}
+  class OffscreenCanvasRenderingContext2D extends CanvasRenderingContext2DBase {}
+
+  class OffscreenCanvas {
+    constructor(width, height, existingId = null) {
+      this._width = Math.max(1, width >>> 0);
+      this._height = Math.max(1, height >>> 0);
+      this._detached = false;
+      this._canvasId = existingId ?? host("canvasCreate", String(this._width), String(this._height), "true");
+      this._context2d = null;
+    }
+    get width() { return this._width; }
+    set width(val) {
+      if (this._detached) fail("InvalidStateError", "Canvas is detached");
+      this._width = Math.max(1, val >>> 0);
+      host("canvasResize", String(this._canvasId), String(this._width), String(this._height));
+      this._context2d?.reset();
+    }
+    get height() { return this._height; }
+    set height(val) {
+      if (this._detached) fail("InvalidStateError", "Canvas is detached");
+      this._height = Math.max(1, val >>> 0);
+      host("canvasResize", String(this._canvasId), String(this._width), String(this._height));
+      this._context2d?.reset();
+    }
+    getContext(type) {
+      if (this._detached) fail("InvalidStateError", "Canvas is detached");
+      if (type === "2d") {
+        if (!this._context2d) {
+          this._context2d = new OffscreenCanvasRenderingContext2D(this, this._canvasId, true);
+        }
+        return this._context2d;
+      }
+      return null;
+    }
+    convertToBlob(options = {}) {
+      if (this._detached) return Promise.reject(new DOMException("Canvas is detached", "InvalidStateError"));
+      try {
+        const type = options.type || "image/png";
+        const bytes = host("canvasToBlob", String(this._canvasId), type);
+        const blob = new Blob([new Uint8Array(bytes)], { type });
+        return Promise.resolve(blob);
+      } catch (e) {
+        if (String(e.message || e).includes("SecurityError")) {
+          return Promise.reject(new DOMException("The operation is insecure", "SecurityError"));
+        }
+        return Promise.reject(e);
+      }
+    }
+    transfer() {
+      this._detached = true;
+      return { canvasId: this._canvasId, width: this._width, height: this._height };
+    }
+  }
+
   class HTMLCanvasElement extends HTMLElement {
     get width() {
       const v = this.getAttribute("width");
       return v === null ? 300 : parseInt(v, 10) || 0;
     }
     set width(value) {
-      this.setAttribute("width", String(value >>> 0));
+      const w = Math.max(1, value >>> 0);
+      this.setAttribute("width", String(w));
+      if (this._canvasId) {
+        host("canvasResize", String(this._canvasId), String(w), String(this.height));
+        this._context2d?.reset();
+      }
     }
     get height() {
       const v = this.getAttribute("height");
       return v === null ? 150 : parseInt(v, 10) || 0;
     }
     set height(value) {
-      this.setAttribute("height", String(value >>> 0));
+      const h = Math.max(1, value >>> 0);
+      this.setAttribute("height", String(h));
+      if (this._canvasId) {
+        host("canvasResize", String(this._canvasId), String(this.width), String(h));
+        this._context2d?.reset();
+      }
     }
     getContext(type) {
+      if (this._transferredToOffscreen) {
+        fail("InvalidStateError", "Cannot get context on canvas that was transferred to offscreen");
+      }
       if (type === "2d") {
+        if (!this._canvasId) {
+          this._canvasId = host("canvasCreate", String(this.width), String(this.height), "false");
+        }
         if (!this._context2d) {
-          this._context2d = new CanvasRenderingContext2D(this);
+          this._context2d = new CanvasRenderingContext2D(this, this._canvasId, false);
         }
         return this._context2d;
       }
       return null;
     }
-    toDataURL() {
-      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    }
-    toBlob(callback) {
-      if (typeof callback === "function") {
-        setTimeout(() => callback(null), 0);
+    toDataURL(type = "image/png", quality) {
+      if (this._transferredToOffscreen) {
+        fail("InvalidStateError", "Canvas was transferred to offscreen");
+      }
+      if (!this._canvasId) {
+        this._canvasId = host("canvasCreate", String(this.width), String(this.height), "false");
+      }
+      try {
+        return host("canvasToDataURL", String(this._canvasId), String(type));
+      } catch (e) {
+        if (String(e.message || e).includes("SecurityError")) {
+          fail("SecurityError", "The operation is insecure");
+        }
+        throw e;
       }
     }
+    toBlob(callback, type = "image/png", quality) {
+      if (this._transferredToOffscreen) {
+        fail("InvalidStateError", "Canvas was transferred to offscreen");
+      }
+      if (typeof callback !== "function") {
+        throw new TypeError("Callback must be a function");
+      }
+      if (!this._canvasId) {
+        this._canvasId = host("canvasCreate", String(this.width), String(this.height), "false");
+      }
+      try {
+        const bytes = host("canvasToBlob", String(this._canvasId), String(type));
+        const blob = new Blob([new Uint8Array(bytes)], { type });
+        setTimeout(() => callback(blob), 0);
+      } catch (e) {
+        if (String(e.message || e).includes("SecurityError")) {
+          fail("SecurityError", "The operation is insecure");
+        }
+        throw e;
+      }
+    }
+    transferControlToOffscreen() {
+      if (this._context2d || this._transferredToOffscreen) {
+        fail("InvalidStateError", "Canvas control cannot be transferred");
+      }
+      this._transferredToOffscreen = true;
+      if (!this._canvasId) {
+        this._canvasId = host("canvasCreate", String(this.width), String(this.height), "true");
+      }
+      return new OffscreenCanvas(this.width, this.height, this._canvasId);
+    }
   }
+  HTMLCanvasElement.getMemoryUsage = () => Number(host("canvasGetMemory") || 0);
+  HTMLCanvasElement.destroy = (canvas) => {
+    if (canvas && canvas._canvasId) {
+      host("canvasDestroy", String(canvas._canvasId));
+      canvas._canvasId = null;
+      canvas._context2d = null;
+    }
+  };
   class Screen {
     get width() {
       try {
@@ -3792,6 +4130,12 @@
     CustomElementRegistry,
     customElements,
     CanvasRenderingContext2D,
+    OffscreenCanvasRenderingContext2D,
+    OffscreenCanvas,
+    ImageData,
+    Path2D,
+    CanvasGradient,
+    CanvasPattern,
     Document,
     HTMLDocument: Document,
     DocumentFragment,

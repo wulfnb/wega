@@ -25,6 +25,7 @@ mod v8;
 mod view;
 mod web;
 mod web_extensions;
+pub mod canvas;
 pub mod workers;
 pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use network::NetworkPolicy;

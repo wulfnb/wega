@@ -51,7 +51,7 @@ impl DedicatedWorker {
                 };
 
                 // Bootstrap DedicatedWorkerGlobalScope
-                let bootstrap_js = r#"
+                let bootstrap_js = r##"
                     globalThis.self = globalThis;
                     globalThis.__outbox = [];
                     globalThis.postMessage = function(data) {
@@ -60,7 +60,37 @@ impl DedicatedWorker {
                     globalThis.close = function() {
                         globalThis.__closed = true;
                     };
-                "#;
+                    globalThis.ImageData = class ImageData {
+                        constructor(w, h) {
+                            this.width = w >>> 0;
+                            this.height = h >>> 0;
+                            this.data = new Uint8ClampedArray(this.width * this.height * 4);
+                        }
+                    };
+                    globalThis.OffscreenCanvas = class OffscreenCanvas {
+                        constructor(width, height) {
+                            this.width = Math.max(1, width >>> 0);
+                            this.height = Math.max(1, height >>> 0);
+                            this._detached = false;
+                        }
+                        getContext(type) {
+                            if (this._detached) throw new Error("InvalidStateError: Canvas is detached");
+                            if (type === "2d") {
+                                if (!this._ctx) {
+                                    this._ctx = {
+                                        canvas: this,
+                                        fillStyle: "#000000",
+                                        fillRect(x, y, w, h) {},
+                                        clearRect(x, y, w, h) {},
+                                        getImageData(x, y, w, h) { return new ImageData(w, h); }
+                                    };
+                                }
+                                return this._ctx;
+                            }
+                            return null;
+                        }
+                    };
+                "##;
                 if let Err(e) = runtime.execute_script("bootstrap", bootstrap_js) {
                     let _ = from_worker_tx.send(WorkerEvent::Error(format!("Bootstrap error: {e}")));
                     return;
@@ -68,7 +98,6 @@ impl DedicatedWorker {
 
                 // Execute worker script
                 if let Err(e) = runtime.execute_script("worker_script", script_content) {
-        eprintln!("WORKER_SCRIPT ERROR: {e}");
                     let _ = from_worker_tx.send(WorkerEvent::Error(format!("Worker script execution error: {e}")));
                     return;
                 }
@@ -87,7 +116,6 @@ impl DedicatedWorker {
                                  }}"
                             );
                             if let Err(e) = runtime.execute_script("dispatch_message", dispatch_js) {
-        eprintln!("DISPATCH_MESSAGE ERROR: {e}");
                                 let _ = from_worker_tx.send(WorkerEvent::Error(e.to_string()));
                             }
                             Self::flush_outbox(&mut runtime, &from_worker_tx);

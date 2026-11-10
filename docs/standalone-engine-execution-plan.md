@@ -611,6 +611,7 @@ audited baseline, connected to worker transfer behavior from 17.
 **Done when:** pixel/reftests and drawing apps exercise the real surface, cross-origin
 readback is blocked, resize resets state correctly, and destroyed canvases release
 memory. Separate supported API coverage from GPU acceleration.
+- Contract & verification: [Step 18 contract](step-18-canvas-2d-graphics.md).
 
 ### 19 — Implement WebGL and resilient composition
 
@@ -804,7 +805,7 @@ separate gates in `docs/validation/standalone/progress.json`.
 - [ ] 15 Web components
 - [ ] 16 Storage and data management
 - [x] 17 Workers and offline execution
-- [ ] 18 Canvas 2D
+- [x] 18 Canvas 2D
 - [ ] 19 WebGL and composition
 - [ ] 20 Media and audio
 - [ ] 21 Permissions/native/device APIs
