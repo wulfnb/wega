@@ -129,7 +129,7 @@ impl Browser {
             );
             return;
         }
-        if self.is_wega() || self.is_internal() {
+        if self.is_wega() || self.tab().view().is_none() {
             self.notify(
                 crate::ux::Severity::Info,
                 "This page action requires Servo in this version. Use the engine selector below.",

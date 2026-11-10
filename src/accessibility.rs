@@ -138,15 +138,10 @@ impl Browser {
             }
             return;
         }
-        if self.is_internal() {
-            return;
-        }
         let Some(view) = self.tab().view().cloned() else {
             return;
         };
         if self.accessibility.grafted != Some(view.id()) {
-            // Removing a native graft removes its subtree. Revisiting a tab
-            // therefore needs a fresh full tree, not incremental stale nodes.
             self.accessibility.pending.clear();
             self.accessibility.trees.clear();
             self.accessibility.document = None;

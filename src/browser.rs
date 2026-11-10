@@ -824,14 +824,11 @@ impl Browser {
         let Some(tab) = self.session.tabs().get(index) else {
             return;
         };
-        if tab.loaded() {
+        if tab.live.is_some() || tab.wega.is_some() {
             return;
         }
         let url = profile::resolve_address(&tab.initial_url)
             .unwrap_or_else(|_| url::Url::parse("about:blank").expect("static URL"));
-        if url.scheme() == "wega" {
-            return;
-        }
         if tab.engine == EngineKind::Wega {
             match crate::wega_page::Page::new(
                 &url,
@@ -1205,6 +1202,9 @@ impl Browser {
                 tab.saved_title = tab.title();
                 self.chrome.address = url.to_string();
                 self.chrome.last_url = self.chrome.address.clone();
+                if let Some(view) = tab.view() {
+                    view.load(url.clone());
+                }
                 self.window.request_redraw();
                 return Ok(true);
             }
@@ -1943,17 +1943,17 @@ impl Browser {
             && matches!(character.as_str(), "i" | "e" | "k")
         {
             self.chrome.show_console = true;
+            self.tools.active = match character.as_str() {
+                "e" => crate::toolbox::Tool::Network,
+                "k" => crate::toolbox::Tool::Console,
+                _ => crate::toolbox::Tool::Inspector,
+            };
             if self.is_wega() || self.is_internal() {
                 self.window.request_redraw();
                 return true;
             }
             let view = self.tab().view().cloned();
             if let Some(view) = view {
-                self.tools.active = match character.as_str() {
-                    "e" => crate::toolbox::Tool::Network,
-                    "k" => crate::toolbox::Tool::Console,
-                    _ => crate::toolbox::Tool::Inspector,
-                };
                 self.tools.refresh(&view, &self.servo);
                 self.window.request_redraw();
             }
@@ -2155,9 +2155,9 @@ impl Browser {
                     | WindowEvent::MouseInput { .. }
                     | WindowEvent::MouseWheel { .. }
                     | WindowEvent::PinchGesture { .. }
-                    | WindowEvent::Ime(_)
                     | WindowEvent::KeyboardInput { .. }
-            ) {
+            ) || (self.is_wega() && matches!(event, WindowEvent::Ime(_)))
+            {
                 self.pump();
                 return;
             }
@@ -2362,7 +2362,7 @@ impl Browser {
         }
         self.flush_accessibility(&mut gui);
         // Servo may bind its framebuffer while painting. Restore the window target before egui.
-        if self.tab().crash.is_none() && !self.is_wega() && !self.is_internal() {
+        if self.tab().crash.is_none() && !self.is_wega() {
             if let Some(view) = self.tab().view() {
                 view.paint();
             }
@@ -2518,6 +2518,7 @@ impl Browser {
             outer.shrink(8.0)
         };
         self.chrome.page_rect = rect;
+        self.accessibility_viewport(ui, rect);
         if self.is_internal() {
             self.internal_viewport(ui, rect, outer);
             return;
@@ -2526,7 +2527,6 @@ impl Browser {
             self.wega_viewport(ui, rect, outer);
             return;
         }
-        self.accessibility_viewport(ui, rect);
         if let Some(reason) = self.tab().crash.clone() {
             ui.centered_and_justified(|ui| {
                 ui.vertical_centered(|ui| {
