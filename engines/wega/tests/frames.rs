@@ -133,3 +133,135 @@ fn failed_or_duplicate_transfers_leave_the_callers_buffers_attached() {
         "true"
     );
 }
+
+#[test]
+fn post_frame_message_dispatches_message_event_with_origin_and_target_filtering() {
+    let mut view = page();
+    view.set_html("<p>Message target</p>").unwrap();
+    view.evaluate_json(r#"(() => {
+        globalThis.inbound = [];
+        window.addEventListener('message', e => {
+            inbound.push({ data: e.data, origin: e.origin, source: e.source });
+        });
+    })()"#).unwrap();
+
+    // 1. Valid origin matching targetOrigin
+    view.post_frame_message(
+        wega_protocol::identity::FrameId(1),
+        "https://trusted.test",
+        Some("https://example.test"),
+        r#"{"greeting":"hello","code":42}"#,
+    );
+    let count1: u32 = serde_json::from_str(&view.evaluate_json("inbound.length").unwrap()).unwrap();
+    assert_eq!(count1, 1);
+    let msg1: serde_json::Value = serde_json::from_str(&view.evaluate_json("inbound[0]").unwrap()).unwrap();
+    assert_eq!(msg1["origin"], "https://trusted.test");
+    assert_eq!(msg1["data"]["greeting"], "hello");
+    assert_eq!(msg1["data"]["code"], 42);
+
+    // 2. Mismatching targetOrigin -> message dropped
+    view.post_frame_message(
+        wega_protocol::identity::FrameId(1),
+        "https://other.test",
+        Some("https://mismatch.test"),
+        r#"{"greeting":"dropped"}"#,
+    );
+    let count2: u32 = serde_json::from_str(&view.evaluate_json("inbound.length").unwrap()).unwrap();
+    assert_eq!(count2, 1);
+
+    // 3. Wildcard '*' targetOrigin -> accepted
+    view.post_frame_message(
+        wega_protocol::identity::FrameId(1),
+        "https://wildcard.test",
+        Some("*"),
+        r#""wildcard-accepted""#,
+    );
+    let count3: u32 = serde_json::from_str(&view.evaluate_json("inbound.length").unwrap()).unwrap();
+    assert_eq!(count3, 2);
+    let msg2: serde_json::Value = serde_json::from_str(&view.evaluate_json("inbound[1]").unwrap()).unwrap();
+    assert_eq!(msg2["origin"], "https://wildcard.test");
+    assert_eq!(msg2["data"], "wildcard-accepted");
+}
+
+#[test]
+fn frame_tree_and_origin_policy_isolation() {
+    use wega_protocol::{
+        DocumentContext, DocumentId, DocumentRevision,
+        authority::is_permitted_cross_origin_property,
+        browsing::{ContextKey, ContextOrigin, FrameTree, Placement, Sandbox},
+        identity::{FrameId, PartitionId, ProcessSessionId, ServiceIdentity, ServiceSessionId, SessionIdentity, TabId},
+    };
+
+    fn make_key(frame: u64, process: u8, revision: u64) -> ContextKey {
+        ContextKey {
+            session: SessionIdentity {
+                tab: TabId(1),
+                frame: FrameId(frame),
+                process: ProcessSessionId([process; 16]),
+                service: Some(ServiceIdentity {
+                    service: ServiceSessionId([1; 16]),
+                    partition: PartitionId([2; 16]),
+                }),
+            },
+            document: DocumentContext {
+                document: DocumentId(frame),
+                revision: DocumentRevision(revision),
+            },
+        }
+    }
+
+    let top_key = make_key(1, 1, 1);
+    let mut tree = FrameTree::new(top_key, Url::parse("https://parent.test/app").unwrap()).unwrap();
+    assert_eq!(tree.root(), FrameId(1));
+
+    // 1. Same-origin frame (about:blank) inherits parent origin and SameAgent placement
+    let c1_id = tree.attach(top_key, 10, "about:blank", Sandbox::default()).unwrap();
+    let c1_ctx = tree.get(c1_id).unwrap();
+    assert_eq!(c1_ctx.origin.serialized(), "https://parent.test");
+    assert_eq!(c1_ctx.placement, Placement::SameAgent(FrameId(1)));
+    tree.bind_process(c1_id, make_key(c1_id.0, 1, 1)).unwrap();
+    assert!(tree.can_access(top_key, c1_id).unwrap());
+
+    // 2. Cross-origin frame gets isolated placement
+    let c2_id = tree.attach(top_key, 20, "https://foreign.test/embed", Sandbox::default()).unwrap();
+    let c2_ctx = tree.get(c2_id).unwrap();
+    assert_eq!(c2_ctx.origin.serialized(), "https://foreign.test");
+    assert_eq!(c2_ctx.placement, Placement::Isolated);
+    // Same process cannot bind an isolated frame
+    assert!(tree.bind_process(c2_id, make_key(c2_id.0, 1, 1)).is_err());
+    // Independent process binds successfully
+    tree.bind_process(c2_id, make_key(c2_id.0, 2, 1)).unwrap();
+    assert!(!tree.can_access(top_key, c2_id).unwrap());
+
+    // 3. Sandboxed frame gets opaque origin even with about:srcdoc
+    let c3_id = tree.attach(
+        top_key,
+        30,
+        "about:srcdoc",
+        Sandbox::parse(Some("allow-scripts")),
+    ).unwrap();
+    let c3_ctx = tree.get(c3_id).unwrap();
+    assert_eq!(c3_ctx.origin.serialized(), "null");
+    assert!(matches!(c3_ctx.origin, ContextOrigin::Opaque { .. }));
+    tree.bind_process(c3_id, make_key(c3_id.0, 3, 1)).unwrap();
+    assert!(!tree.can_access(top_key, c3_id).unwrap());
+
+    // 4. Cross-origin property access check
+    assert!(is_permitted_cross_origin_property("postMessage"));
+    assert!(is_permitted_cross_origin_property("location"));
+    assert!(is_permitted_cross_origin_property("parent"));
+    assert!(is_permitted_cross_origin_property("top"));
+    assert!(is_permitted_cross_origin_property("window"));
+    assert!(is_permitted_cross_origin_property("frames"));
+    assert!(is_permitted_cross_origin_property("closed"));
+    assert!(!is_permitted_cross_origin_property("document"));
+    assert!(!is_permitted_cross_origin_property("eval"));
+    assert!(!is_permitted_cross_origin_property("cookie"));
+    assert!(!is_permitted_cross_origin_property("localStorage"));
+
+    // 5. Detach removes frame and revokes access
+    let detached = tree.detach(top_key, c1_id).unwrap();
+    assert_eq!(detached, vec![c1_id]);
+    assert!(tree.get(c1_id).is_none());
+    assert!(tree.validate(make_key(c1_id.0, 1, 1)).is_err());
+}

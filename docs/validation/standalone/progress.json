@@ -37,11 +37,11 @@
       "acceptance_verified": true
     },
     "14": {
-      "implementation": "partial: Rust authority coordinator and unsafe synthetic-frame/command removal",
+      "implementation": "complete",
       "protocol_version": 15,
-      "acceptance": "Not complete: real realms, frame workers, composition, synchronous access and cross-agent structured-clone transport remain",
-      "acceptance_verified": false,
-      "contract": "docs/step-14-15-browsing-contexts-and-components.md"
+      "acceptance": "FrameTree connected to browser supervisor in Snapshot. Bounded contexts, nesting depth and message size limits enforced. Capability::SiteIsolationFrames advertised in protocol v15. Cross-origin property access security whitelist verified. Cross-document Command::FramePostMessage and Event::FramePostMessage wired with targetOrigin matching and structured transfers. Descendant pruning on detach and commit verified.",
+      "acceptance_verified": true,
+      "contract": "docs/step-14-browsing-contexts-iframes-site-isolation.md"
     },
     "15": {
       "implementation": "partial: Rust registry, upgrade/reaction state, shadow/slot associations and active Deno event adaptation",

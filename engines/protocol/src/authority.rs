@@ -78,6 +78,9 @@ impl FrameAuthority {
             next_activation: 0,
         }
     }
+    pub fn session(&self) -> SessionIdentity {
+        self.session
+    }
     /// Called only with a principal resolved by the host/service, never a page-provided origin.
     pub fn bind(&mut self, context: DocumentContext, principal: Principal) {
         if self

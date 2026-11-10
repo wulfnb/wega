@@ -3803,6 +3803,7 @@
     CSSStyleDeclaration,
     MutationObserver,
     Event,
+    MessageEvent: web.MessageEvent,
     EventTarget: BaseTarget,
     Window,
     Screen,
@@ -4106,6 +4107,7 @@
   globalThis.DataTransfer = DataTransfer;
   globalThis.DragEvent = DragEvent;
   globalThis.ClipboardEvent = ClipboardEvent;
+  globalThis.MessageEvent = web.MessageEvent;
   const eventTypeGetter = Object.getOwnPropertyDescriptor(Event.prototype, "type").get;
   const targetAdd = BaseTarget.prototype.addEventListener;
   Object.defineProperty(globalThis, "__wega_semantics", { configurable: true, value: {

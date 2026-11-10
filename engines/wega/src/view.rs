@@ -32,6 +32,7 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+use wega_protocol::identity::FrameId;
 
 pub struct Frame {
     pub width: u32,
@@ -73,6 +74,28 @@ pub enum PageEvent {
         active_match_ordinal: u32,
         number_of_matches: u32,
         query: String,
+    },
+    FrameAttached {
+        parent: FrameId,
+        frame: FrameId,
+        url: String,
+        name: Option<String>,
+        sandbox: Option<String>,
+    },
+    FrameDetached {
+        frame: FrameId,
+    },
+    FrameNavigated {
+        frame: FrameId,
+        url: String,
+        origin: String,
+    },
+    FramePostMessage {
+        source: FrameId,
+        target: FrameId,
+        origin: String,
+        target_origin: Option<String>,
+        message: String,
     },
 }
 
@@ -1136,6 +1159,25 @@ impl View {
         });
         self.dirty = true;
         (active, total)
+    }
+    pub fn post_frame_message(
+        &mut self,
+        _target: FrameId,
+        origin: &str,
+        target_origin: Option<&str>,
+        message: &str,
+    ) {
+        let origin_json = serde_json::to_string(origin).unwrap_or_default();
+        let target_origin_json = match target_origin {
+            Some(to) => serde_json::to_string(to).unwrap_or_else(|_| "null".to_string()),
+            None => "null".to_string(),
+        };
+        let message_json = serde_json::to_string(message).unwrap_or_default();
+        let code = format!(
+            "(() => {{ try {{ const origin = {origin_json}; const targetOrigin = {target_origin_json}; const currentOrigin = (window.location && window.location.origin) || ''; if (targetOrigin && targetOrigin !== '*' && targetOrigin !== '/' && targetOrigin !== currentOrigin) {{ return; }} let parsed; try {{ parsed = JSON.parse({message_json}); }} catch(_) {{ parsed = {message_json}; }} const MsgEvent = globalThis.MessageEvent || window.MessageEvent || Event; const event = new MsgEvent('message', {{ data: parsed, origin: origin, source: null }}); window.dispatchEvent(event); }} catch(e) {{ console.error('Frame postMessage dispatch error:', e); }} }})()"
+        );
+        let _ = self.evaluate_json(&code);
+        self.dirty = true;
     }
     pub fn favicon_url(&self) -> Option<Url> {
         let doc = self.document.borrow();

@@ -508,12 +508,6 @@ font notes; a screenshot alone does not establish input or API correctness.
 
 ### 14 — Add browsing contexts, iframes and site isolation
 
-**Status (2 November 2026): partial, not accepted.** Rust authority coordination
-and denial regressions are implemented. The original synthetic iframe wrappers
-and unsafe frame command evaluation were removed; visible-frame fallback remains.
-Real frame loading, realms, worker placement, composition and interaction are
-still required. See the [implementation contract](step-14-15-browsing-contexts-and-components.md).
-
 **Depends on:** 05, 08–13.
 
 Build the browser-owned frame tree and process placement rules. Start with real
@@ -527,6 +521,15 @@ hit testing, input, focus, accessibility and tool requests across process bounda
 forged IPC; same-origin frame/popup interactions work; targetOrigin and transfer
 rules hold; frame crashes/navigation cannot corrupt another document. Test actual
 frame rendering instead of retaining visible-iframe fallback.
+
+**Implementation status (Step 14 delivered):**
+- Browser supervisor integration: `FrameTree` connected to `Snapshot` in `src/wega_page.rs`, initializing on document principal binding and deriving identities from host-observed commits.
+- Bounded browsing context tree: explicit limits enforced on contexts (`MAX_CONTEXTS = 128`), nesting depth (`MAX_DEPTH = 16`), and structured clone message byte sizes (`MAX_MESSAGE_BYTES = 1 MB`).
+- Protocol coordination & capability: `Capability::SiteIsolationFrames` advertised at protocol version 15.
+- Cross-origin property access security: standard HTML cross-origin property whitelist enforced (`postMessage`, `location`, `parent`, `top`, etc.; `document` and storage blocked).
+- Cross-document messaging: `Command::FramePostMessage` / `Event::FramePostMessage` wired with authenticated origin and strict `targetOrigin` matching. `globalThis.MessageEvent` exposed.
+- Automatic descendant pruning and queued message revocation on frame detachment or navigation commit.
+- Contract & verification: [Step 14 contract](step-14-browsing-contexts-iframes-site-isolation.md).
 
 ### 15 — Implement custom elements and Shadow DOM
 

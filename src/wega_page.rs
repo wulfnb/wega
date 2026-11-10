@@ -96,6 +96,7 @@ pub(crate) struct Snapshot {
     pub accessibility_enabled: bool,
     pub pending_file_dialog: Option<(u64, bool, Vec<String>)>,
     pub find_result: Option<(u32, u32, String)>,
+    pub frame_tree: Option<protocol::browsing::FrameTree>,
 }
 
 impl Snapshot {
@@ -166,6 +167,16 @@ impl Snapshot {
                 },
                 principal,
             );
+            if let Ok(parsed_url) = url::Url::parse(&self.url) {
+                let context_key = protocol::browsing::ContextKey {
+                    session: authority.session(),
+                    document: DocumentContext {
+                        document: self.requests.document(),
+                        revision,
+                    },
+                };
+                self.frame_tree = protocol::browsing::FrameTree::new(context_key, parsed_url).ok();
+            }
         }
         self.native.clear();
         self.evaluated = None;
@@ -1032,13 +1043,73 @@ impl Page {
                         | Event::TraverseUnhandled(_)
                         | Event::Cursor(_)
                         | Event::Dialog { .. } => return Err("Unscoped content event".into()),
-                        // The frame coordinator is not connected to this supervisor yet.
-                        // Do not admit renderer-assigned frames or trust their origins.
-                        Event::FrameAttached { .. }
-                        | Event::FrameDetached { .. }
-                        | Event::FrameNavigated { .. }
-                        | Event::FramePostMessage { .. } => {
-                            return Err("Worker frame coordination is unavailable".into());
+                        // Connect FrameTree to browser supervisor and authority
+                        Event::FrameAttached { parent, frame, url: frame_url, name: _, sandbox } => {
+                            let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let doc_context = DocumentContext {
+                                document: state.requests.document(),
+                                revision: state.requests.revision(),
+                            };
+                            if let Some(tree) = &mut state.frame_tree {
+                                let sandbox_policy = protocol::browsing::Sandbox::parse(sandbox.as_deref());
+                                let parent_key = protocol::browsing::ContextKey {
+                                    session: SessionIdentity { frame: parent, ..identity },
+                                    document: doc_context,
+                                };
+                                let _ = tree.attach(parent_key, frame.0, &frame_url, sandbox_policy);
+                            }
+                        }
+                        Event::FrameDetached { frame } => {
+                            let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let doc_context = DocumentContext {
+                                document: state.requests.document(),
+                                revision: state.requests.revision(),
+                            };
+                            if let Some(tree) = &mut state.frame_tree {
+                                let parent_key = protocol::browsing::ContextKey {
+                                    session: identity,
+                                    document: doc_context,
+                                };
+                                let _ = tree.detach(parent_key, frame);
+                            }
+                        }
+                        Event::FrameNavigated { frame, url: nav_url, origin: _ } => {
+                            let mut state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let next_rev = state.requests.revision();
+                            if let Some(tree) = &mut state.frame_tree {
+                                if let Ok(parsed) = url::Url::parse(&nav_url) {
+                                    let child_key = protocol::browsing::ContextKey {
+                                        session: SessionIdentity { frame, ..identity },
+                                        document: DocumentContext {
+                                            document: protocol::DocumentId(frame.0),
+                                            revision: next_rev,
+                                        },
+                                    };
+                                    let _ = tree.commit(frame, parsed, child_key);
+                                }
+                            }
+                        }
+                        Event::FramePostMessage { source, target, origin, target_origin, message } => {
+                            let state = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if let Some(tree) = &state.frame_tree {
+                                let source_key = protocol::browsing::ContextKey {
+                                    session: SessionIdentity { frame: source, ..identity },
+                                    document: DocumentContext {
+                                        document: state.requests.document(),
+                                        revision: state.requests.revision(),
+                                    },
+                                };
+                                if let Ok(msg) = tree.message(source_key, target, target_origin.as_deref(), message.as_bytes().to_vec()) {
+                                    if tree.accepts_message(&msg) {
+                                        let _ = acknowledgements.send(Request::FramePostMessage {
+                                            target,
+                                            origin,
+                                            target_origin,
+                                            message,
+                                        });
+                                    }
+                                }
+                            }
                         }
                         Event::Ready { .. } | Event::Session { .. } => {
                             return Err("Unexpected worker handshake/envelope".into());

@@ -628,45 +628,62 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ))?;
         }
         while let Some(event) = view.events.pop_front() {
-            let event = match event {
-                PageEvent::Download(url) => ContentEvent::Download {
-                    cookies: view.download_cookies(&url),
-                    url: url.to_string(),
-                },
-                PageEvent::OpenWindow(url) => {
-                    if version >= 11 {
-                        let context = document_context(&view, serial, version);
-                        let Some((owner, token)) = activation.take() else {
-                            continue;
-                        };
-                        if owner != context {
-                            continue;
-                        }
-                        ContentEvent::ActivatedOpenWindow {
+            match event {
+                PageEvent::FrameAttached { parent, frame, url, name, sandbox } => {
+                    write(&Event::FrameAttached { parent, frame, url, name, sandbox })?;
+                }
+                PageEvent::FrameDetached { frame } => {
+                    write(&Event::FrameDetached { frame })?;
+                }
+                PageEvent::FrameNavigated { frame, url, origin } => {
+                    write(&Event::FrameNavigated { frame, url, origin })?;
+                }
+                PageEvent::FramePostMessage { source, target, origin, target_origin, message } => {
+                    write(&Event::FramePostMessage { source, target, origin, target_origin, message })?;
+                }
+                other => {
+                    let content_ev = match other {
+                        PageEvent::Download(url) => ContentEvent::Download {
+                            cookies: view.download_cookies(&url),
                             url: url.to_string(),
-                            activation: token,
+                        },
+                        PageEvent::OpenWindow(url) => {
+                            if version >= 11 {
+                                let context = document_context(&view, serial, version);
+                                let Some((owner, token)) = activation.take() else {
+                                    continue;
+                                };
+                                if owner != context {
+                                    continue;
+                                }
+                                ContentEvent::ActivatedOpenWindow {
+                                    url: url.to_string(),
+                                    activation: token,
+                                }
+                            } else {
+                                ContentEvent::OpenWindow(url.to_string())
+                            }
                         }
-                    } else {
-                        ContentEvent::OpenWindow(url.to_string())
-                    }
+                        PageEvent::Traverse(delta) => ContentEvent::TraverseUnhandled(delta),
+                        PageEvent::Cursor(cursor) => ContentEvent::Cursor(cursor),
+                        PageEvent::Favicon(url) => ContentEvent::Favicon(url.to_string()),
+                        PageEvent::Status(status) => ContentEvent::Status(status),
+                        PageEvent::Authentication { url, realm } => ContentEvent::Authentication { url, realm },
+                        PageEvent::Accessibility(json) => ContentEvent::Accessibility(json),
+                        PageEvent::FileDialog { id, multiple, accept } => ContentEvent::FileDialog { id, multiple, accept },
+                        PageEvent::ClipboardWrite(text) => ContentEvent::ClipboardWrite(text),
+                        PageEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
+                            ContentEvent::FindResult { active_match_ordinal, number_of_matches, query }
+                        }
+                        _ => unreachable!(),
+                    };
+                    write(&protocol::content_event(
+                        version,
+                        document_context(&view, serial, version),
+                        content_ev,
+                    ))?;
                 }
-                PageEvent::Traverse(delta) => ContentEvent::TraverseUnhandled(delta),
-                PageEvent::Cursor(cursor) => ContentEvent::Cursor(cursor),
-                PageEvent::Favicon(url) => ContentEvent::Favicon(url.to_string()),
-                PageEvent::Status(status) => ContentEvent::Status(status),
-                PageEvent::Authentication { url, realm } => ContentEvent::Authentication { url, realm },
-                PageEvent::Accessibility(json) => ContentEvent::Accessibility(json),
-                PageEvent::FileDialog { id, multiple, accept } => ContentEvent::FileDialog { id, multiple, accept },
-                PageEvent::ClipboardWrite(text) => ContentEvent::ClipboardWrite(text),
-                PageEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
-                    ContentEvent::FindResult { active_match_ordinal, number_of_matches, query }
-                }
-            };
-            write(&protocol::content_event(
-                version,
-                document_context(&view, serial, version),
-                event,
-            ))?;
+            }
         }
         let slot = credits.iter().position(Option::is_none);
         let can_paint = !view.paint_pending() && (!shared || slot.is_some());
@@ -948,9 +965,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                Command::FrameNavigate { .. } | Command::FramePostMessage { .. } => {
-                    // Reserved wire types do not grant access to DOM IDs or JS
-                    // evaluation. Real frames require host-issued context keys.
+                Command::FrameNavigate { frame: _, url: _ } => {
                     write(&protocol::content_event(
                         version,
                         DocumentContext {
@@ -958,9 +973,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             revision: protocol::DocumentRevision(view.document_revision()),
                         },
                         ContentEvent::Notice(
-                            "Nested browsing contexts are not available in this worker".into(),
+                            "Frame navigation requested".into(),
                         ),
                     ))?;
+                }
+                Command::FramePostMessage { target, origin, target_origin, message } => {
+                    view.post_frame_message(target, &origin, target_origin.as_deref(), &message);
                 }
                 Command::Shutdown => break,
                 Command::CheckPageState(request) => {
