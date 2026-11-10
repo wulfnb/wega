@@ -662,12 +662,14 @@ impl Browser {
         true
     }
     /// Engine resources of the selected tab, which is always loaded.
+    #[cfg_attr(not(feature = "test-harness"), allow(dead_code))]
     pub(crate) fn live(&self) -> &Live {
         self.tab()
             .live
             .as_ref()
             .expect("the selected tab is always loaded")
     }
+    #[cfg_attr(not(feature = "test-harness"), allow(dead_code))]
     pub(crate) fn view(&self) -> &WebView {
         &self.live().view
     }

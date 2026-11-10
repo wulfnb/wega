@@ -117,7 +117,9 @@ impl Browser {
                 }
             });
         }
-        let view = self.view().clone();
+        let Some(view) = self.tab().view().cloned() else {
+            return;
+        };
         if let Some((source, line)) = action.breakpoint {
             self.tools.toggle_breakpoint(&view, source, line);
         }

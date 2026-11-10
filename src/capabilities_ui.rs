@@ -150,8 +150,8 @@ impl Browser {
                 .as_nanos()
         ));
         let events = self.delegate.clone();
-        self.view()
-            .take_screenshot(None, move |result| match result {
+        if let Some(view) = self.tab().view() {
+            view.take_screenshot(None, move |result| match result {
                 Ok(image) => match image.save(&path) {
                     Ok(()) => events.notice(
                         crate::ux::Severity::Success,
@@ -168,11 +168,12 @@ impl Browser {
                     None,
                 ),
             });
-        self.notify(
-            crate::ux::Severity::Info,
-            "Waiting for the page screenshot…",
-            None,
-        );
+            self.notify(
+                crate::ux::Severity::Info,
+                "Waiting for the page screenshot…",
+                None,
+            );
+        }
     }
     pub fn reload_without_cache(&mut self) {
         if self.is_wega() {
@@ -181,18 +182,19 @@ impl Browser {
             }
             return;
         }
-        if let Some(url) = self.view().url() {
-            let mut headers = http::HeaderMap::new();
-            headers.insert(
-                http::header::CACHE_CONTROL,
-                http::HeaderValue::from_static("no-cache"),
-            );
-            headers.insert(
-                http::header::PRAGMA,
-                http::HeaderValue::from_static("no-cache"),
-            );
-            self.view()
-                .load_request(servo::UrlRequest::new(url).headers(headers));
+        if let Some(view) = self.tab().view() {
+            if let Some(url) = view.url() {
+                let mut headers = http::HeaderMap::new();
+                headers.insert(
+                    http::header::CACHE_CONTROL,
+                    http::HeaderValue::from_static("no-cache"),
+                );
+                headers.insert(
+                    http::header::PRAGMA,
+                    http::HeaderValue::from_static("no-cache"),
+                );
+                view.load_request(servo::UrlRequest::new(url).headers(headers));
+            }
         }
     }
     pub fn refresh_site_data(&mut self) {
@@ -224,8 +226,9 @@ impl Browser {
             .collect();
         self.features.sites.sort_by(|a, b| a.0.cmp(&b.0));
         self.features.cookies = self
+            .tab()
             .view()
-            .url()
+            .and_then(|v| v.url())
             .map(|url| {
                 self.servo
                     .site_data_manager()
@@ -519,20 +522,26 @@ impl Browser {
                             ),
                         ] {
                             if ui.button(name).clicked() {
-                                self.view().toggle_webrender_debugging(option);
+                                if let Some(view) = self.tab().view() {
+                                    view.toggle_webrender_debugging(option);
+                                }
                             }
                         }
                     });
                     if ui.button("Capture WebRender state").clicked() {
-                        self.view().capture_webrender();
-                        self.notify(
-                            crate::ux::Severity::Info,
-                            "WebRender capture requested; see engine log for output location.",
-                            None,
-                        );
+                        if let Some(view) = self.tab().view() {
+                            view.capture_webrender();
+                            self.notify(
+                                crate::ux::Severity::Info,
+                                "WebRender capture requested; see engine log for output location.",
+                                None,
+                            );
+                        }
                     }
                     if ui.button("Clear this tab’s back/forward history").clicked() {
-                        self.view().clear_session_history();
+                        if let Some(view) = self.tab().view() {
+                            view.clear_session_history();
+                        }
                     }
                 });
             self.features.diagnostics = open;
@@ -566,7 +575,7 @@ impl Browser {
                 .show(ctx, |ui| {
                     egui::ScrollArea::vertical().id_salt("site-panel-content").max_height((ctx.content_rect().height()-anchor.y-100.0).max(120.0)).show(ui,|ui| {
                     ui.label(self.tab().url());
-                    let current = self.view().url();
+                    let current = self.tab().view().and_then(|v| v.url());
                     ui.label(match current.as_ref().map(|url| url.scheme()) {
                         Some("https") => {
                             "Encrypted connection. The certificate is validated by the browser."
@@ -764,11 +773,13 @@ if button.clicked() || cancel {self.features.clear_data=false;}
                         .replace("BACKWARDS", if backward { "true" } else { "false" })
                         .replace("QUERY", &text);
                     let status = self.features.find_status.clone();
-                    self.view().evaluate_javascript(source, move |result| {
-                        if let Ok(servo::JSValue::String(text)) = result {
-                            *status.borrow_mut() = text;
-                        }
-                    });
+                    if let Some(view) = self.tab().view() {
+                        view.evaluate_javascript(source, move |result| {
+                            if let Ok(servo::JSValue::String(text)) = result {
+                                *status.borrow_mut() = text;
+                            }
+                        });
+                    }
                 }
             }
             if !open {
@@ -777,9 +788,8 @@ if button.clicked() || cancel {self.features.clear_data=false;}
                     if let Some(ref page) = self.tab().wega {
                         page.evaluate("window.getSelection()?.removeAllRanges()");
                     }
-                } else {
-                    self.view()
-                        .evaluate_javascript("window.getSelection().removeAllRanges()", |_| {});
+                } else if let Some(view) = self.tab().view() {
+                    view.evaluate_javascript("window.getSelection().removeAllRanges()", |_| {});
                 }
                 self.features.find_status.borrow_mut().clear();
                 self.features.find_focused = false;

@@ -260,7 +260,7 @@ impl Browser {
 
     #[cfg(feature = "test-harness")]
     pub(crate) fn check_containers_ui_contract(&mut self) {
-        let view = self.view().id();
+        let view = self.tab().view().map(|v| v.id());
         let address = self.tab().url();
         self.coverage_click(&["Containers", "Manage containers…"], |browser, ui| {
             browser.ui(ui)
@@ -302,7 +302,7 @@ impl Browser {
         );
         self.containers.open = false;
         assert_eq!(
-            self.view().id(),
+            self.tab().view().map(|v| v.id()),
             view,
             "Managing accounts must preserve the live source tab"
         );

@@ -118,7 +118,10 @@ impl Browser {
             return;
         }
         let colors = crate::theme::palette(ui.ctx());
-        let view = self.view().clone();
+        let Some(view) = self.tab().view().cloned() else {
+            ui.label("Web page is not initialized.");
+            return;
+        };
         let owner = network::owner(view.id());
         self.tools.page(&view);
         let split = self.tools.split_console && self.tools.active != Tool::Console;

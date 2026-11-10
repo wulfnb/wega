@@ -216,8 +216,8 @@ impl Browser {
                 }
                 // History restoration can switch the active document before the
                 // embedder's cached title notification arrives. Query the document.
-                self.view()
-                    .evaluate_javascript("document.title", move |result| {
+                if let Some(view) = self.tab().view().cloned() {
+                    view.evaluate_javascript("document.title", move |result| {
                         let result = result.map(js).map(value).unwrap_or_else(|error_value| {
                             Err(error(
                                 ErrorStatus::JavascriptError,
@@ -226,6 +226,9 @@ impl Browser {
                         });
                         let _ = reply.send(result);
                     });
+                    return;
+                }
+                let _ = reply.send(value(json!(self.tab().title())));
                 return;
             }
             Command::Get(params) => {
