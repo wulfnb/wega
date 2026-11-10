@@ -61,18 +61,13 @@ impl Browser {
         });
     }
     pub(crate) fn engine_badge(&mut self, ui: &mut egui::Ui) {
-        let name = if self.is_wega() { "Wega" } else { "Servo" };
-        ui.menu_button(name, |ui| self.engine_options(ui))
-            .response
-            .on_hover_text("Page engine and preference for this site");
+        crate::components::chip(ui, true, "Wega").on_hover_text("Wega standalone engine");
     }
     fn engine_options(&mut self, ui: &mut egui::Ui) {
         let mut engine = self.tab().engine;
-        ui.selectable_value(&mut engine, EngineKind::Servo, "Servo")
-            .on_hover_text("Full browser engine for interactive apps, media and page tools.");
-        ui.add_enabled_ui(crate::wega_page::executable().is_some(), |ui| {
-            ui.selectable_value(&mut engine, EngineKind::Wega, "Wega (experimental)")
-        });
+        ui.selectable_value(&mut engine, EngineKind::Wega, "Wega");
+        ui.selectable_value(&mut engine, EngineKind::Servo, "Servo (legacy)")
+            .on_hover_text("Historical Servo engine comparison path.");
         let mut policy = self.profile().policy.clone();
         let mut changed = false;
         if let Some(key) = self
@@ -197,20 +192,30 @@ impl Browser {
                     let page = self.session().tabs()[index].wega.as_ref().unwrap();
                     let tab_url = page.url();
                     if let Some(gui) = &self.gui
-                        && let Some(icon) = self.profile().favicons.get(&tab_url).or_else(|| self.profile().favicons.get(&favicon_url))
+                        && let Some(icon) = self
+                            .profile()
+                            .favicons
+                            .get(&tab_url)
+                            .or_else(|| self.profile().favicons.get(&favicon_url))
                         && let Some((width, height, pixels)) = crate::browser::decode_favicon(icon)
                     {
-                        let image = egui::ColorImage::from_rgba_unmultiplied([width, height], &pixels);
+                        let image =
+                            egui::ColorImage::from_rgba_unmultiplied([width, height], &pixels);
                         self.favicons.insert(
                             tab_url,
-                            gui.egui_ctx.load_texture("favicon", image, egui::TextureOptions::LINEAR),
+                            gui.egui_ctx.load_texture(
+                                "favicon",
+                                image,
+                                egui::TextureOptions::LINEAR,
+                            ),
                         );
                         self.window.request_redraw();
                     }
                 }
                 ContentEvent::Authentication { url, realm } => {
                     if let Ok(target) = url::Url::parse(&url) {
-                        let prompt_title = realm.unwrap_or_else(|| target.host_str().unwrap_or("Website").to_string());
+                        let prompt_title = realm
+                            .unwrap_or_else(|| target.host_str().unwrap_or("Website").to_string());
                         self.dialogs.push_prompt(crate::capabilities::Prompt {
                             origin: target.origin().ascii_serialization(),
                             title: format!("Authentication required: {prompt_title}"),
@@ -228,17 +233,33 @@ impl Browser {
                         }
                     }
                 }
-                ContentEvent::FileDialog { id, multiple, accept } => {
+                ContentEvent::FileDialog {
+                    id,
+                    multiple,
+                    accept,
+                } => {
                     let page = self.session().tabs()[index].wega.as_ref().unwrap();
-                    let mut dialog = rfd::FileDialog::new().set_parent(self.window.as_ref()).set_title("Choose file for website");
+                    let mut dialog = rfd::FileDialog::new()
+                        .set_parent(self.window.as_ref())
+                        .set_title("Choose file for website");
                     if !accept.is_empty() {
-                        let extensions: Vec<&str> = accept.iter().map(|s| s.trim_start_matches('.')).collect();
+                        let extensions: Vec<&str> =
+                            accept.iter().map(|s| s.trim_start_matches('.')).collect();
                         dialog = dialog.add_filter("Allowed Files", &extensions);
                     }
                     let paths: Vec<String> = if multiple {
-                        dialog.pick_files().unwrap_or_default().into_iter().map(|p| p.to_string_lossy().to_string()).collect()
+                        dialog
+                            .pick_files()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect()
                     } else {
-                        dialog.pick_file().into_iter().map(|p| p.to_string_lossy().to_string()).collect()
+                        dialog
+                            .pick_file()
+                            .into_iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect()
                     };
                     page.select_files(id, paths);
                 }
@@ -247,15 +268,21 @@ impl Browser {
                         let _ = clipboard.set_text(text);
                     }
                 }
-                ContentEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
+                ContentEvent::FindResult {
+                    active_match_ordinal,
+                    number_of_matches,
+                    query,
+                } => {
                     let page = self.session().tabs()[index].wega.as_ref().unwrap();
                     if let Ok(mut state) = page.state.lock() {
-                        state.find_result = Some((active_match_ordinal, number_of_matches, query.clone()));
+                        state.find_result =
+                            Some((active_match_ordinal, number_of_matches, query.clone()));
                     }
                     if number_of_matches == 0 {
                         *self.features.find_status.borrow_mut() = "No matches".to_string();
                     } else {
-                        *self.features.find_status.borrow_mut() = format!("{active_match_ordinal} of {number_of_matches}");
+                        *self.features.find_status.borrow_mut() =
+                            format!("{active_match_ordinal} of {number_of_matches}");
                     }
                 }
                 event => {

@@ -717,6 +717,25 @@ are distinct from Wega-owned semantic implementations.
 baseline product flows run with no Servo initialization/fallback, and the unified
 workspace produces browser and worker through documented locked commands.
 
+**Implementation status (Step 23 delivered):**
+- Wega standalone runtime made the default engine across the application:
+  - `EngineKind::default()` set to `EngineKind::Wega`.
+  - `wega::engine_choice::choose()` selects `EngineKind::Wega` by default.
+  - Profile normalization safely migrates legacy/saved tab choices to `EngineKind::Wega` without losing tabs, titles, or bookmarks.
+  - UI engine badge made a clean static indicator (`Wega`) instead of an engine selector dropdown.
+  - Automatic fallback to Servo on Wega load error removed from browser tab loading and navigation dispatch.
+- Navigation history & automation traversal parity:
+  - Added `Page::history_target(&self, forward: bool)` and `Browser::history_target(&self, forward: bool)` to correlate traversal targets on Wega tabs.
+  - WebDriver automation bridge (`src/automation.rs`) uses `self.history_target(...)` for GoBack/GoForward destinations and correlates load completion via `wega::navigation::Completion`.
+  - Screenshot capture (`TakeScreenshot`) on Wega tabs polls frame availability up to a bounded timeout, eliminating race conditions against frame intervals.
+- Verification:
+  - `tests/webdriver_smoke.py` passes 100% against standalone Wega runtime (`GET /status`, `POST /session`, `POST /url`, `GET /title`, `POST /back`, `POST /forward`, `POST /refresh`, `GET /screenshot`, `DELETE /session`).
+  - `cargo check --bin wega` compiles with 0 warnings and 0 errors.
+  - `cargo test --bin wega` passes 50/50 unit and integration tests.
+  - `cargo test --lib` passes 111/111 tests.
+  - `cargo test --manifest-path engines/Cargo.toml` passes all protocol, platform, and engine tests.
+- Contract & verification: [Step 23 contract](step-23-standalone-default-and-unified-workspace.md).
+
 ### 24 — Measure and tune resource use without losing behavior
 
 **Depends on:** 23; collect incremental measurements from 03 onward.

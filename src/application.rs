@@ -141,7 +141,7 @@ impl Application {
     pub fn save_tabs(&mut self, tabs: Vec<(String, String)>, active: usize) -> Result<(), String> {
         self.save_engine_tabs(
             tabs.into_iter()
-                .map(|(url, title)| (url, title, crate::engine_choice::EngineKind::Servo))
+                .map(|(url, title)| (url, title, crate::engine_choice::EngineKind::Wega))
                 .collect(),
             active,
         )

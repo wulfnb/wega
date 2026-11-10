@@ -15,7 +15,7 @@ fn normalization_keeps_engine_and_title_with_each_valid_address() {
     assert_eq!(profile.engines, vec![Wega]);
     let mut legacy: Profile = serde_json::from_str(r#"{"urls":["https://legacy.test/"]}"#).unwrap();
     legacy.normalize();
-    assert_eq!(legacy.engines, vec![Servo]);
+    assert_eq!(legacy.engines, vec![Wega]);
 }
 
 #[test]

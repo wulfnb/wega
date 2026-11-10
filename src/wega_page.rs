@@ -1445,6 +1445,21 @@ impl Page {
     pub fn can_forward(&self) -> bool {
         self.index + 1 < self.history.len() || self.document_history().1
     }
+    pub fn history_target(&self, forward: bool) -> Option<&str> {
+        if forward {
+            if self.index + 1 < self.history.len() {
+                self.history.get(self.index + 1).map(String::as_str)
+            } else {
+                None
+            }
+        } else {
+            if self.index > 0 {
+                self.history.get(self.index - 1).map(String::as_str)
+            } else {
+                None
+            }
+        }
+    }
     /// Pointer input in viewport CSS pixels; see `Command::Pointer`.
     /// `buttons` is (DOM `button`, DOM `buttons`).
     pub fn enable_accessibility(&self, enable: bool) {

@@ -144,6 +144,12 @@
       "acceptance": "W3C WebDriver support across Servo and Wega runtimes: session/window management, engine navigation (Get, GoBack, GoForward, Refresh) with load completion correlation, ExecuteScript with JSON argument serialization and exception mapping, GetPageSource, GetTitle, TakeScreenshot viewport PNG encoding, and /wega/resources extension reporting live worker process metrics. Native developer tools panel displaying URL, Title, PID, Worker RSS, JS Heap, DOM Nodes, Loading, Lifecycle phase, and Compatibility for Wega tabs. Safe guards for internal/unloaded tabs preventing panics. Verified with tests/webdriver_smoke.py against both engines.",
       "acceptance_verified": true,
       "contract": "docs/step-22-developer-tools-and-automation.md"
+    },
+    "23": {
+      "implementation": "complete",
+      "acceptance": "Wega standalone runtime established as default application engine. Profile normalization safely migrates saved tab choices to Wega without loss of tabs, URLs, titles, or bookmarks. Engine badge rendered as static Wega chip, removing interactive dropdown selectors. Automatic fallback to Servo on Wega load error removed from browser tab loading and navigation dispatch. Navigation history traversal targets computed for backward/forward navigation parity. Screenshot capture polls frame buffer with bounded timeout. Verified with tests/webdriver_smoke.py (100% pass), cargo test --bin wega (50/50), cargo test --lib (111/111), and engines workspace tests.",
+      "acceptance_verified": true,
+      "contract": "docs/step-23-standalone-default-and-unified-workspace.md"
     }
   },
   "substeps": {

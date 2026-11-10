@@ -559,6 +559,15 @@ impl Browser {
             .as_ref()
             .map_or_else(|| self.view().can_go_forward(), |page| page.can_forward())
     }
+    pub(crate) fn history_target(&self, forward: bool) -> Option<String> {
+        if self.tab().is_internal() {
+            return self.tab().history.target(forward).map(str::to_owned);
+        }
+        if let Some(page) = &self.tab().wega {
+            return page.history_target(forward).map(str::to_owned);
+        }
+        self.tab().history.target(forward).map(str::to_owned)
+    }
     pub(crate) fn wega_mut(&mut self) -> Option<&mut crate::wega_page::Page> {
         let active = self.session.active();
         self.session.tabs_mut()[active].wega.as_mut()
@@ -737,7 +746,7 @@ impl Browser {
         self.session.push(Tab {
             live,
             wega: None,
-            engine: EngineKind::Servo,
+            engine: EngineKind::Wega,
             fallback_origin: None,
             key: self.next_tab_key,
             initial_url: url,
@@ -828,8 +837,8 @@ impl Browser {
                     return;
                 }
                 Err(error) => {
-                    self.status = Some(format!("{error} Opening this tab in Servo."));
-                    self.session.tabs_mut()[index].engine = EngineKind::Servo;
+                    self.status = Some(format!("{error}"));
+                    return;
                 }
             }
         }
@@ -1212,8 +1221,8 @@ impl Browser {
                             return Ok(true);
                         }
                         Err(error) => {
-                            self.status = Some(format!("{error} Opening this tab in Servo."));
-                            self.session.tabs_mut()[active].engine = EngineKind::Servo;
+                            self.status = Some(format!("{error}"));
+                            return Err(error);
                         }
                     }
                 }

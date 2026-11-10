@@ -303,8 +303,8 @@ impl Browser {
                     return;
                 }
                 let expected = match command {
-                    Command::GoBack => self.tab().history.target(false).map(str::to_owned),
-                    Command::GoForward => self.tab().history.target(true).map(str::to_owned),
+                    Command::GoBack => self.history_target(false),
+                    Command::GoForward => self.history_target(true),
                     _ => None,
                 };
                 if let Some(pending) = self.automation_navigation.take() {
@@ -460,13 +460,20 @@ impl Browser {
                             let state = state.ok_or_else(|| {
                                 error(ErrorStatus::NoSuchWindow, "No Wega page available")
                             })?;
-                            let (w, h, bytes) = {
-                                let state = state
-                                    .lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                state.frame.clone().ok_or_else(|| {
-                                    error(ErrorStatus::UnknownError, "No frame rendered yet")
-                                })?
+                            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                            let (w, h, bytes) = loop {
+                                {
+                                    let s = state
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                    if let Some(frame) = s.frame.clone() {
+                                        break frame;
+                                    }
+                                }
+                                if std::time::Instant::now() >= deadline {
+                                    return Err(error(ErrorStatus::UnknownError, "No frame rendered yet"));
+                                }
+                                std::thread::sleep(Duration::from_millis(20));
                             };
                             use base64::Engine;
                             let image =
