@@ -177,6 +177,9 @@ impl Options {
         {
             return Err("These engine diagnostics require Servo; omit --engine wega".into());
         }
+        if result.test_mode() && !result.engine_test && result.engine.is_none() {
+            result.engine = Some(crate::engine_choice::EngineKind::Servo);
+        }
         Ok(result)
     }
 

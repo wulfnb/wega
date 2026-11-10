@@ -179,6 +179,7 @@ pub struct Browser {
     /// The window is minimized or fully covered; skip work that only updates pixels.
     pub(crate) occluded: bool,
     pub(crate) focused: bool,
+    pub(crate) cli_engine: Option<EngineKind>,
 }
 
 impl Browser {
@@ -385,6 +386,7 @@ impl Browser {
                 .as_ref()
                 .map(|path| crate::capture::Capture::new(path.clone())),
             internal_state: Default::default(),
+            cli_engine: options.engine,
         };
         if options.wega_only {
             let mut policy = browser.profile().policy.clone();
@@ -728,7 +730,7 @@ impl Browser {
             &self.profile().policy,
             &url,
             None,
-            None,
+            self.cli_engine,
             crate::wega_page::executable().is_some(),
         );
         let index = self.push_tab(None, url.to_string(), String::new(), false);
@@ -1145,7 +1147,7 @@ impl Browser {
             &self.profile().policy,
             url,
             same.then_some(self.tab().engine),
-            None,
+            self.cli_engine,
             crate::wega_page::executable().is_some(),
         )
     }
