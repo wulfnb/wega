@@ -150,5 +150,11 @@ mod tests {
             ),
             EngineKind::Wega
         );
+        assert_eq!(EngineKind::Wega.name(), "Wega");
+        assert_eq!(EngineKind::Servo.name(), "Servo (legacy)");
+        assert_eq!(EngineKind::parse("wega"), Ok(EngineKind::Wega));
+        assert_eq!(EngineKind::parse("servo"), Ok(EngineKind::Servo));
+        assert!(EngineKind::parse("invalid").is_err());
+        assert_eq!(choose(&policy, &url, None, None, false), EngineKind::Servo);
     }
 }

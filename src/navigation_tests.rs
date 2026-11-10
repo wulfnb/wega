@@ -171,3 +171,31 @@ fn web_content_cannot_open_local_files_or_top_level_data_documents() {
         "Internal pages can link to each other"
     );
 }
+
+#[test]
+fn navigation_port_defaults_and_completion_update() {
+    let mut engine = Engine::default();
+    engine.reload_bypass_cache();
+    assert_eq!(engine.calls, ["reload"]);
+    engine.clear_history();
+
+    let mut comp = Completion::new(
+        Some("https://example.com/".into()),
+        "https://old.com/".into(),
+    );
+    assert!(!comp.update(true, "https://example.com/"));
+    assert!(comp.update(false, "https://example.com/"));
+
+    let mut empty_hist = History::new();
+    assert_eq!(empty_hist.traverse(false), None);
+    assert_eq!(empty_hist.traverse(true), None);
+    empty_hist.clear();
+    assert_eq!(empty_hist.traverse(false), None);
+
+    let mut hist = History::new();
+    hist.push("https://a.test/".into());
+    hist.push("https://b.test/".into());
+    assert_eq!(hist.traverse(false), Some("https://a.test/"));
+    assert_eq!(hist.traverse(true), Some("https://b.test/"));
+    assert_eq!(hist.traverse(true), None);
+}
