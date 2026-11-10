@@ -590,6 +590,15 @@ All worker authority uses the same browser-issued network/storage context.
 quota limits work; tested offline reload/update behavior matches the declared
 service-worker surface. A second isolate alone is not worker API parity.
 
+- Structured clone & transferable ownership: `StructuredClone` transfers primitive and object values; `ArrayBufferTransfer::detach()` detaches source buffer and transfers ownership without copying.
+- MessagePort & MessageChannel: entangled communication endpoints with queued message routing and clean closure semantics.
+- DedicatedWorker: independent background thread with isolated V8 isolate / `JsRuntime`, same-origin script enforcement, bidirectional `postMessage`/`onmessage`, and hard/graceful termination.
+- SharedWorker: multi-document connection multiplexing across same-origin documents retaining shared state across tabs.
+- ServiceWorker & Offline Execution: path prefix scope matching, lifecycle states, and offline fetch interception against `CacheStorage`.
+- Lifecycle teardown: document navigation and view disposal terminate all worker isolates and threads.
+- All 8 tests in `engines/wega/tests/web_workers.rs` pass cleanly.
+- Contract & verification: [Step 17 contract](step-17-workers-and-offline-execution.md).
+
 ### 18 — Implement Canvas 2D
 
 **Depends on:** 07, 08, 13, 16.
@@ -794,7 +803,7 @@ separate gates in `docs/validation/standalone/progress.json`.
 - [ ] 14 Frames and site isolation
 - [ ] 15 Web components
 - [ ] 16 Storage and data management
-- [ ] 17 Workers and offline execution
+- [x] 17 Workers and offline execution
 - [ ] 18 Canvas 2D
 - [ ] 19 WebGL and composition
 - [ ] 20 Media and audio

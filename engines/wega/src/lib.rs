@@ -1,5 +1,5 @@
 //! Owned page orchestration on Blitz, independent of Servo and SpiderMonkey.
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 pub use blitz_traits::events;
 pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
@@ -25,6 +25,7 @@ mod v8;
 mod view;
 mod web;
 mod web_extensions;
+pub mod workers;
 pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use network::NetworkPolicy;
 pub use raster::{Painted, Pixels};

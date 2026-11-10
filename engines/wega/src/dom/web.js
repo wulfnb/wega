@@ -177,6 +177,261 @@
     activeTimers.delete(id);
     timers.clearInterval.call(globalThis, id);
   };
+  class MessagePort extends event.EventTarget {
+    #id;
+    #closed = false;
+    #onmessage = null;
+    #timer = null;
+
+    constructor(id) {
+      super();
+      this.#id = id;
+      event.setEventTargetData(this);
+      this.#timer = timers.setInterval.call(globalThis, () => {
+        if (this.#closed) return;
+        try {
+          const messages = core.ops.op_dom_read("portPoll", String(this.#id), "", "");
+          if (Array.isArray(messages)) {
+            for (const msg of messages) {
+              const data = typeof msg.data === "string" ? JSON.parse(msg.data) : msg.data;
+              const ev = new event.MessageEvent("message", { data });
+              if (typeof this.#onmessage === "function") {
+                this.#onmessage.call(this, ev);
+              }
+              this.dispatchEvent(ev);
+            }
+          }
+        } catch (_) {}
+      }, 5);
+    }
+
+    get onmessage() { return this.#onmessage; }
+    set onmessage(fn) {
+      this.#onmessage = fn;
+      this.start();
+    }
+
+    start() {}
+
+    poll() {
+      if (this.#closed) return;
+      try {
+        const messages = core.ops.op_dom_read("portPoll", String(this.#id), "", "");
+        if (Array.isArray(messages)) {
+          for (const msg of messages) {
+            const data = typeof msg.data === "string" ? JSON.parse(msg.data) : msg.data;
+            const ev = new event.MessageEvent("message", { data });
+            if (typeof this.#onmessage === "function") {
+              this.#onmessage.call(this, ev);
+            }
+            this.dispatchEvent(ev);
+          }
+        }
+      } catch (_) {}
+    }
+
+    close() {
+      if (this.#closed) return;
+      this.#closed = true;
+      if (this.#timer) {
+        timers.clearInterval.call(globalThis, this.#timer);
+        this.#timer = null;
+      }
+      try {
+        core.ops.op_dom_read("portClose", String(this.#id), "", "");
+      } catch (_) {}
+    }
+
+    postMessage(message, transfer = []) {
+      if (this.#closed) return;
+      if (Array.isArray(transfer)) {
+        for (const item of transfer) {
+          if (item instanceof ArrayBuffer) {
+            Object.defineProperty(item, "byteLength", { value: 0, configurable: true });
+            Object.defineProperty(item, "detached", { value: true, configurable: true });
+          }
+        }
+      }
+      const transferredPortIds = Array.isArray(transfer)
+        ? transfer.filter(x => x instanceof MessagePort).map(p => p.#id)
+        : [];
+      core.ops.op_dom_read(
+        "portPost",
+        String(this.#id),
+        JSON.stringify(message),
+        JSON.stringify(transferredPortIds)
+      );
+    }
+  }
+
+  class MessageChannel {
+    constructor() {
+      const ids = core.ops.op_dom_read("channelCreate", "", "", "");
+      this.port1 = new MessagePort(ids.port1);
+      this.port2 = new MessagePort(ids.port2);
+    }
+  }
+
+  class Worker extends event.EventTarget {
+    #id;
+    #terminated = false;
+    #onmessage = null;
+    #onerror = null;
+    #timer = null;
+
+    constructor(scriptURL, options = {}) {
+      super();
+      event.setEventTargetData(this);
+      const urlStr = String(scriptURL);
+      const scriptContent = options.content || "";
+      this.#id = core.ops.op_dom_read("workerCreate", urlStr, scriptContent, "");
+
+      this.#timer = timers.setInterval.call(globalThis, () => {
+        if (this.#terminated) return;
+        try {
+          const events = core.ops.op_dom_read("workerPoll", String(this.#id), "", "");
+          if (Array.isArray(events)) {
+            for (const ev of events) {
+              if (ev.Message !== undefined) {
+                const data = JSON.parse(ev.Message);
+                const me = new event.MessageEvent("message", { data });
+                if (typeof this.#onmessage === "function") {
+                  this.#onmessage.call(this, me);
+                }
+                this.dispatchEvent(me);
+              } else if (ev.Error !== undefined) {
+                const ee = new event.ErrorEvent("error", { message: ev.Error });
+                if (typeof this.#onerror === "function") {
+                  this.#onerror.call(this, ee);
+                }
+                this.dispatchEvent(ee);
+              }
+            }
+          }
+        } catch (_) {}
+      }, 5);
+    }
+
+    get onmessage() { return this.#onmessage; }
+    set onmessage(fn) { this.#onmessage = fn; }
+
+    get onerror() { return this.#onerror; }
+    set onerror(fn) { this.#onerror = fn; }
+
+    poll() {
+      if (this.#terminated) return;
+      try {
+        const events = core.ops.op_dom_read("workerPoll", String(this.#id), "", "");
+        if (Array.isArray(events)) {
+          for (const ev of events) {
+            if (ev.Message !== undefined) {
+              const data = JSON.parse(ev.Message);
+              const me = new event.MessageEvent("message", { data });
+              if (typeof this.#onmessage === "function") {
+                this.#onmessage.call(this, me);
+              }
+              this.dispatchEvent(me);
+            } else if (ev.Error !== undefined) {
+              const ee = new event.ErrorEvent("error", { message: ev.Error });
+              if (typeof this.#onerror === "function") {
+                this.#onerror.call(this, ee);
+              }
+              this.dispatchEvent(ee);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    postMessage(message, transfer = []) {
+      if (this.#terminated) return;
+      if (Array.isArray(transfer)) {
+        for (const item of transfer) {
+          if (item instanceof ArrayBuffer) {
+            Object.defineProperty(item, "byteLength", { value: 0, configurable: true });
+            Object.defineProperty(item, "detached", { value: true, configurable: true });
+          }
+        }
+      }
+      core.ops.op_dom_read("workerPost", String(this.#id), JSON.stringify(message), "");
+    }
+
+    terminate() {
+      if (this.#terminated) return;
+      this.#terminated = true;
+      if (this.#timer) {
+        timers.clearInterval.call(globalThis, this.#timer);
+        this.#timer = null;
+      }
+      try {
+        core.ops.op_dom_read("workerTerminate", String(this.#id), "", "");
+      } catch (_) {}
+    }
+  }
+
+  class SharedWorker extends event.EventTarget {
+    #port;
+    constructor(scriptURL, nameOrOptions = "") {
+      super();
+      event.setEventTargetData(this);
+      const name = typeof nameOrOptions === "string" ? nameOrOptions : (nameOrOptions.name || "");
+      const content = typeof nameOrOptions === "object" && nameOrOptions.content ? nameOrOptions.content : "";
+      const res = core.ops.op_dom_read("sharedWorkerConnect", String(scriptURL), name, content);
+      this.#port = new MessagePort(res.docPort);
+    }
+    get port() { return this.#port; }
+  }
+
+  class ServiceWorkerRegistration {
+    constructor(info) {
+      this.scope = info.scope;
+      this.installing = null;
+      this.waiting = null;
+      this.active = { scriptURL: info.script_url, state: (info.state || "activated").toLowerCase() };
+    }
+
+    async unregister() {
+      return core.ops.op_dom_read("serviceWorkerUnregister", this.scope, "", "");
+    }
+  }
+
+  const serviceWorkerContainer = new class extends event.EventTarget {
+    constructor() {
+      super();
+      event.setEventTargetData(this);
+    }
+
+    async register(scriptURL, options = {}) {
+      const scope = options.scope ? String(options.scope) : "";
+      const info = core.ops.op_dom_read("serviceWorkerRegister", String(scriptURL), scope, "");
+      return new ServiceWorkerRegistration(info);
+    }
+
+    async getRegistration(clientURL = "") {
+      const info = core.ops.op_dom_read("serviceWorkerGetRegistration", String(clientURL), "", "");
+      if (!info) return undefined;
+      return new ServiceWorkerRegistration(info);
+    }
+  }();
+
+  globals.MessagePort = MessagePort;
+  globals.MessageChannel = MessageChannel;
+  globals.Worker = Worker;
+  globals.SharedWorker = SharedWorker;
+  globals.ServiceWorkerRegistration = ServiceWorkerRegistration;
+  globals.serviceWorkerContainer = serviceWorkerContainer;
+  globals.structuredClone = (value, options = {}) => {
+    if (options && Array.isArray(options.transfer)) {
+      for (const item of options.transfer) {
+        if (item instanceof ArrayBuffer) {
+          Object.defineProperty(item, "byteLength", { value: 0, configurable: true });
+          Object.defineProperty(item, "detached", { value: true, configurable: true });
+        }
+      }
+    }
+    return JSON.parse(JSON.stringify(value));
+  };
+
   globals.console = new console.Console((message, level) =>
     core.ops.op_dom_read("log", message, String(level), ""),
   );

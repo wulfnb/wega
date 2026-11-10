@@ -164,6 +164,8 @@ pub(crate) struct Network {
     pub storage_dir: Option<std::path::PathBuf>,
     pub remote: Option<wega_network::Remote>,
     pub fonts: Option<Arc<Vec<Vec<u8>>>>,
+    pub shared_workers: Arc<Mutex<crate::workers::SharedWorkerHub>>,
+    pub port_hub: crate::workers::SharedPortHub,
 }
 impl Network {
     pub fn new(policy: NetworkPolicy, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
@@ -184,6 +186,8 @@ impl Network {
         let policy = Arc::new(std::sync::RwLock::new(policy));
         let brokered = remote.is_some();
         let broker = remote.clone();
+        let shared_workers = Arc::new(Mutex::new(crate::workers::SharedWorkerHub::new()));
+        let port_hub = Arc::new(Mutex::new(crate::workers::MessagePortHub::new()));
         let fonts = remote
             .as_ref()
             .filter(|remote| remote.is_bound())
@@ -253,6 +257,8 @@ impl Network {
             remote: broker,
             fonts,
             cookies,
+            shared_workers,
+            port_hub,
         })
     }
     pub fn spawn(&self, task: impl FnOnce(&Client) + Send + 'static) -> Result<(), String> {

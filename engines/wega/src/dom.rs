@@ -57,6 +57,7 @@ pub(crate) struct Dom {
     components: RefCell<crate::components::Registry>,
     shadows: RefCell<crate::components::ShadowTree>,
     clipboard: RefCell<String>,
+    pub workers: RefCell<crate::workers::WorkerManager>,
     // The DOM thread cannot receive parser/input mutations during script. Start
     // a fresh epoch at each host step, then invalidate synchronously on writes.
     revision: Cell<u64>,
@@ -67,6 +68,13 @@ impl Dom {
         let document = context.document;
         let allocated =
             Cell::new(blitz_dom::traversal::TreeTraverser::new(&document.borrow()).count());
+        let doc_url = document.borrow().url().clone();
+        let workers = RefCell::new(crate::workers::WorkerManager::with_shared(
+            doc_url,
+            context.network.storage_dir.clone(),
+            context.network.shared_workers.clone(),
+            context.network.port_hub.clone(),
+        ));
         Self {
             network: context.network,
             document,
@@ -88,6 +96,7 @@ impl Dom {
             components: Default::default(),
             shadows: Default::default(),
             clipboard: Default::default(),
+            workers,
             revision: Cell::new(0),
             layout_dirty: Cell::new(true),
         }
@@ -129,6 +138,81 @@ impl Dom {
             return Ok(Value::Null);
         }
         match text(0) {
+            "workerCreate" => {
+                let id = self
+                    .workers
+                    .borrow_mut()
+                    .spawn_dedicated(text(1), text(2).to_string())?;
+                return Ok(json!(id.0));
+            }
+            "workerPost" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
+                self.workers.borrow().post_dedicated(crate::workers::WorkerId(id), text(2).to_string())?;
+                return Ok(Value::Null);
+            }
+            "workerTerminate" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
+                self.workers
+                    .borrow_mut()
+                    .terminate_dedicated(crate::workers::WorkerId(id))?;
+                return Ok(Value::Null);
+            }
+            "workerPoll" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
+                let events = self.workers.borrow_mut().poll_dedicated_events(crate::workers::WorkerId(id));
+                return Ok(json!(events));
+            }
+            "sharedWorkerConnect" => {
+                let (doc_port, worker_port) = self
+                    .workers
+                    .borrow_mut()
+                    .connect_shared(text(1), text(2), text(3).to_string())?;
+                return Ok(json!({ "docPort": doc_port.0, "workerPort": worker_port.0 }));
+            }
+            "serviceWorkerRegister" => {
+                let info = self.workers.borrow_mut().register_service_worker(
+                    text(1),
+                    (!text(2).is_empty()).then_some(text(2)),
+                )?;
+                return Ok(json!(info));
+            }
+            "serviceWorkerGetRegistration" => {
+                let url = url::Url::parse(text(1)).map_err(|e| e.to_string())?;
+                let info = self.workers.borrow().get_service_worker(&url);
+                return Ok(json!(info));
+            }
+            "serviceWorkerUnregister" => {
+                let removed = self.workers.borrow_mut().unregister_service_worker(text(1));
+                return Ok(json!(removed));
+            }
+            "serviceWorkerInterceptFetch" => {
+                let url = url::Url::parse(text(1)).map_err(|e| e.to_string())?;
+                let entry = self.workers.borrow().intercept_fetch(&url);
+                return Ok(json!(entry));
+            }
+            "channelCreate" => {
+                let (p1, p2) = self.workers.borrow_mut().create_channel();
+                return Ok(json!({ "port1": p1.0, "port2": p2.0 }));
+            }
+            "portPost" => {
+                let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
+                let transferred: Vec<u64> = serde_json::from_str(text(3)).unwrap_or_default();
+                let ports = transferred.into_iter().map(crate::workers::PortId).collect();
+                self.workers.borrow_mut().post_port(crate::workers::PortId(port), text(2).to_string(), ports)?;
+                return Ok(Value::Null);
+            }
+            "portClose" => {
+                let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
+                self.workers
+                    .borrow_mut()
+                    .close_port(crate::workers::PortId(port));
+                return Ok(Value::Null);
+            }
+            "portPoll" => {
+                let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
+                let msgs = self.workers.borrow_mut().poll_port(crate::workers::PortId(port));
+                return Ok(json!(msgs));
+            }
             "clipboardWrite" => {
                 self.clipboard.borrow_mut().clear();
                 self.clipboard.borrow_mut().push_str(text(1));

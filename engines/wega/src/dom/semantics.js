@@ -3856,6 +3856,9 @@
           return false;
         }
       },
+      get serviceWorker() {
+        return web ? web.serviceWorkerContainer : undefined;
+      },
       clipboard: {
         async writeText(text) {
           try {
@@ -4108,6 +4111,14 @@
   globalThis.DragEvent = DragEvent;
   globalThis.ClipboardEvent = ClipboardEvent;
   globalThis.MessageEvent = web.MessageEvent;
+  if (web) {
+    globalThis.MessagePort = web.MessagePort;
+    globalThis.MessageChannel = web.MessageChannel;
+    globalThis.Worker = web.Worker;
+    globalThis.SharedWorker = web.SharedWorker;
+    globalThis.ServiceWorkerRegistration = web.ServiceWorkerRegistration;
+    globalThis.structuredClone = web.structuredClone;
+  }
   const eventTypeGetter = Object.getOwnPropertyDescriptor(Event.prototype, "type").get;
   const targetAdd = BaseTarget.prototype.addEventListener;
   Object.defineProperty(globalThis, "__wega_semantics", { configurable: true, value: {

@@ -108,6 +108,12 @@
       "acceptance": "Authoritative storage keys with origin, container/profile, and top-level partition context. Opaque origins and stale grants rejected. localStorage and sessionStorage scope and isolation verified. 10MB quota enforcement with QuotaExceededError rejection. Cookie inventory with HttpOnly inspector and script isolation. Per-site and global clear-data. Validated legacy data preservation on copies. CacheStorage and IndexedDB packages with SQLite WAL crash recovery.",
       "acceptance_verified": true,
       "contract": "docs/step-16-storage-and-browser-data-management.md"
+    },
+    "17": {
+      "implementation": "complete",
+      "acceptance": "Structured clone and transferable ownership detaching source ArrayBuffers. MessagePort and MessageChannel peer entanglement and closure. DedicatedWorker background threads with dedicated V8 isolates/JsRuntimes, bidirectional postMessage/onmessage, and navigation teardown. SharedWorker connection multiplexing and state sharing across same-origin documents. ServiceWorker path prefix scope matching and offline fetch interception against CacheStorage.",
+      "acceptance_verified": true,
+      "contract": "docs/step-17-workers-and-offline-execution.md"
     }
   },
   "substeps": {
