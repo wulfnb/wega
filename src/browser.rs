@@ -546,13 +546,9 @@ impl Browser {
             return self.tab().history.can_back();
         }
         if self.is_wega() {
-            return self
-                .tab()
-                .wega
-                .as_ref()
-                .map_or(false, |page| page.can_back());
+            return self.tab().wega.as_ref().is_some_and(|page| page.can_back());
         }
-        self.tab().view().map_or(false, |view| view.can_go_back())
+        self.tab().view().is_some_and(|view| view.can_go_back())
     }
     pub(crate) fn can_go_forward(&self) -> bool {
         if self.tab().is_internal() {
@@ -563,11 +559,9 @@ impl Browser {
                 .tab()
                 .wega
                 .as_ref()
-                .map_or(false, |page| page.can_forward());
+                .is_some_and(|page| page.can_forward());
         }
-        self.tab()
-            .view()
-            .map_or(false, |view| view.can_go_forward())
+        self.tab().view().is_some_and(|view| view.can_go_forward())
     }
     pub(crate) fn history_target(&self, forward: bool) -> Option<String> {
         if self.tab().is_internal() {
@@ -847,7 +841,7 @@ impl Browser {
                     return;
                 }
                 Err(error) => {
-                    self.status = Some(format!("{error}"));
+                    self.status = Some(error);
                     return;
                 }
             }
@@ -1062,16 +1056,15 @@ impl Browser {
             self.forget_view(id);
         }
         let closed_tab = &self.session.tabs()[index];
-        if let Some(pending) = &self.automation_navigation {
-            if pending.tab_key == closed_tab.key
-                || (closed_tab.id().is_some() && pending.owner == closed_tab.id())
-            {
-                if let Some(pending) = self.automation_navigation.take() {
-                    let _ = pending.reply.send(Err(crate::automation::error(
-                        webdriver::error::ErrorStatus::NoSuchWindow,
-                        "Window was closed",
-                    )));
-                }
+        if let Some(pending) = &self.automation_navigation
+            && (pending.tab_key == closed_tab.key
+                || (closed_tab.id().is_some() && pending.owner == closed_tab.id()))
+        {
+            if let Some(pending) = self.automation_navigation.take() {
+                let _ = pending.reply.send(Err(crate::automation::error(
+                    webdriver::error::ErrorStatus::NoSuchWindow,
+                    "Window was closed",
+                )));
             }
         }
         self.session.apply(Command::Close(index));
@@ -1235,7 +1228,7 @@ impl Browser {
                             return Ok(true);
                         }
                         Err(error) => {
-                            self.status = Some(format!("{error}"));
+                            self.status = Some(error.clone());
                             return Err(error);
                         }
                     }
@@ -1246,19 +1239,19 @@ impl Browser {
                 return Ok(true);
             }
         }
-        if let wega::navigation::Command::Traverse { forward } = command {
-            if self.tab().is_internal() {
-                let active = self.session.active();
-                if let Some(dest) = self.session.tabs_mut()[active]
-                    .history
-                    .traverse(forward)
-                    .map(str::to_owned)
-                {
-                    self.navigate(&dest);
-                    return Ok(true);
-                }
-                return Ok(false);
+        if let wega::navigation::Command::Traverse { forward } = command
+            && self.tab().is_internal()
+        {
+            let active = self.session.active();
+            if let Some(dest) = self.session.tabs_mut()[active]
+                .history
+                .traverse(forward)
+                .map(str::to_owned)
+            {
+                self.navigate(&dest);
+                return Ok(true);
             }
+            return Ok(false);
         }
         if matches!(command, wega::navigation::Command::Reload) && self.tab().is_internal() {
             self.window.request_redraw();

@@ -1160,17 +1160,17 @@ impl Page {
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
                             let next_rev = state.requests.revision();
-                            if let Some(tree) = &mut state.frame_tree {
-                                if let Ok(parsed) = url::Url::parse(&nav_url) {
-                                    let child_key = protocol::browsing::ContextKey {
-                                        session: SessionIdentity { frame, ..identity },
-                                        document: DocumentContext {
-                                            document: protocol::DocumentId(frame.0),
-                                            revision: next_rev,
-                                        },
-                                    };
-                                    let _ = tree.commit(frame, parsed, child_key);
-                                }
+                            if let Some(tree) = &mut state.frame_tree
+                                && let Ok(parsed) = url::Url::parse(&nav_url)
+                            {
+                                let child_key = protocol::browsing::ContextKey {
+                                    session: SessionIdentity { frame, ..identity },
+                                    document: DocumentContext {
+                                        document: protocol::DocumentId(frame.0),
+                                        revision: next_rev,
+                                    },
+                                };
+                                let _ = tree.commit(frame, parsed, child_key);
                             }
                         }
                         Event::FramePostMessage {
@@ -1199,15 +1199,14 @@ impl Page {
                                     target,
                                     target_origin.as_deref(),
                                     message.as_bytes().to_vec(),
-                                ) {
-                                    if tree.accepts_message(&msg) {
-                                        let _ = acknowledgements.send(Request::FramePostMessage {
-                                            target,
-                                            origin,
-                                            target_origin,
-                                            message,
-                                        });
-                                    }
+                                ) && tree.accepts_message(&msg)
+                                {
+                                    let _ = acknowledgements.send(Request::FramePostMessage {
+                                        target,
+                                        origin,
+                                        target_origin,
+                                        message,
+                                    });
                                 }
                             }
                         }

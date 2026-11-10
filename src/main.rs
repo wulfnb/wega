@@ -1,4 +1,5 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
+#![allow(clippy::collapsible_if, clippy::useless_format)]
 // Browser chrome and engine integration, MPL-2.0.
 mod automation;
 mod brand;

@@ -280,10 +280,10 @@ impl Browser {
                 self.automation_navigation = Some(pending);
                 self.navigate(url.as_str());
                 let current_owner = self.tab().id();
-                if let Some(pending) = &mut self.automation_navigation {
-                    if pending.owner.is_none() {
-                        pending.owner = current_owner;
-                    }
+                if let Some(pending) = &mut self.automation_navigation
+                    && pending.owner.is_none()
+                {
+                    pending.owner = current_owner;
                 }
                 self.automation_poll();
                 return;

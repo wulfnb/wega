@@ -24,7 +24,7 @@ impl Tab {
             return page.url().starts_with("wega://");
         }
         if let Some(view) = self.view() {
-            return view.url().map_or(false, |u| u.scheme() == "wega");
+            return view.url().is_some_and(|u| u.scheme() == "wega");
         }
         self.initial_url.starts_with("wega://")
     }
@@ -519,10 +519,10 @@ impl Browser {
             ui.add_space(4.0);
         }
 
-        if let Some(url) = to_remove {
-            if let Some(idx) = self.profile().bookmarks.iter().position(|b| b.url == url) {
-                self.apply(AppCommand::RemoveBookmark(idx));
-            }
+        if let Some(url) = to_remove
+            && let Some(idx) = self.profile().bookmarks.iter().position(|b| b.url == url)
+        {
+            self.apply(AppCommand::RemoveBookmark(idx));
         }
     }
 
