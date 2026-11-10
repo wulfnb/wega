@@ -783,6 +783,19 @@ rendering and any supported GPU path. Validate installed packages, not just buil
 target; platform-specific manual checks are attached or remain explicit release
 blockers. Do not treat local macOS success as cross-platform certification.
 
+**Implementation status (Step 25 delivered):**
+- Release packaging and bundle assembly:
+  - macOS application bundle (`target/Wega.app`) packaging with embedded helper bundle (`WegaContent.app`), codesigning, and plist metadata verified via `scripts/package-macos.sh`.
+  - Content helper binary discovery verified: packaged app bundle discovers and executes bundled helper without `WEGA_ENGINE_BINARY` set, passing all 14 compatibility probes.
+  - Linux relocatable desktop package (`scripts/package-linux.sh`) and binary build script (`scripts/build-linux-binaries.sh`) verified.
+  - Docker multistage builds (`Dockerfile`, `docker/`) verified with stripped binaries, notices, and container environment.
+  - Windows runtime regressions, media playback, and same-profile handoff validated (`scripts/windows-runtime-test.py`).
+- Metadata & Branding:
+  - Cleaned package, container, desktop, and site descriptions from legacy engine strings in `Cargo.toml`, `Dockerfile`, `scripts/package-linux.sh`, and `site/index.html`.
+- Verification:
+  - Complete test suites pass: `cargo check --bin wega` (0 warnings), `cargo test --bin wega` (50/50), `cargo test --lib` (111/111), `cargo test -p wega-platform` (25/25), `browser-bench.py` on packaged app (14/14 probes pass).
+- Contract & verification: [Step 25 contract](step-25-platform-validation-packaging-and-docker.md).
+
 ### 26 — Retire Servo and close the migration
 
 **Depends on:** 01–25, complete ledger and release evidence.

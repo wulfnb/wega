@@ -156,6 +156,12 @@
       "acceptance": "Process-tree resource measurement and tuning validated via scripts/browser-bench.py and tests/test_browser_bench.py. All 7 compatibility probes passed (article, dom, timer, events, forms, storage, fetch). Resource measurements captured at 1 tab (307.9 MiB median idle RSS), 5 tabs (620.9 MiB median idle RSS), and 10 tabs (1006.3 MiB median idle RSS). Supervisor default worker budget scaled from 8 to 32 and frame reservations scaled to 2 GiB in engines/platform/src/supervision.rs. Fixed unwrap panics in can_go_back/can_go_forward for uninitialized tabs in src/browser.rs. Synchronized src/harness/engines.rs with Wega default labels and verified passing native-tests.py --suite engine and --suite webdriver.",
       "acceptance_verified": true,
       "contract": "docs/step-24-resource-use-and-tuning.md"
+    },
+    "25": {
+      "implementation": "complete",
+      "acceptance": "Multi-platform packaging, application bundle layout, helper binary discovery, and Docker container verification completed. Validated macOS Wega.app assembly with WegaContent.app helper bundle and codesigning; tested browser-bench.py compatibility probes against packaged application binary without WEGA_ENGINE_BINARY override. Validated Linux relocatable package structure, stripped binary builder, desktop file integration, Windows runtime test suite, and Dockerfile multistage targets. Updated package and container metadata branding across Cargo.toml, Dockerfile, package-linux.sh, and site/index.html.",
+      "acceptance_verified": true,
+      "contract": "docs/step-25-platform-validation-packaging-and-docker.md"
     }
   },
   "substeps": {

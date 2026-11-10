@@ -110,7 +110,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 
 LABEL org.opencontainers.image.title="Wega" \
-      org.opencontainers.image.description="Native Rust browser powered by Servo, with a secure web viewer" \
+      org.opencontainers.image.description="Native Rust browser with a secure web viewer" \
       org.opencontainers.image.licenses="MPL-2.0" \
       org.opencontainers.image.source="https://github.com/wulfnb/wega"
 
