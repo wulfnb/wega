@@ -3261,11 +3261,7 @@
       return 24;
     }
     get orientation() {
-      return {
-        type: "landscape-primary",
-        angle: 0,
-        onchange: null,
-      };
+      return screenOrientationInstance;
     }
   }
   const screen = new Screen();
@@ -3687,6 +3683,375 @@
   }
 
   const mediaSessionInstance = new MediaSession();
+
+
+  // --- Step 21: Permissions, Notifications and Device Capabilities ---
+  let currentFullscreenElement = null;
+
+  class ScreenOrientation extends BaseTarget {
+    constructor() {
+      super();
+      this._type = "landscape-primary";
+      this._angle = 0;
+      this.onchange = null;
+    }
+    get type() { return this._type; }
+    get angle() { return this._angle; }
+    lock(orientation) {
+      return Promise.resolve();
+    }
+    unlock() {
+      return undefined;
+    }
+  }
+  const screenOrientationInstance = new ScreenOrientation();
+
+  class PermissionStatus extends BaseTarget {
+    constructor(name, state) {
+      super();
+      this._name = name;
+      this._state = state;
+      this.onchange = null;
+    }
+    get name() { return this._name; }
+    get state() { return this._state; }
+    _update(newState) {
+      if (this._state !== newState) {
+        this._state = newState;
+        const ev = new Event("change");
+        this.dispatchEvent(ev);
+        if (typeof this.onchange === "function") {
+          try { this.onchange.call(this, ev); } catch(e) { report(e); }
+        }
+      }
+    }
+  }
+
+  const activePermissionStatuses = new Set();
+  const permissionsApi = {
+    query(desc) {
+      return new Promise((resolve, reject) => {
+        if (!desc || typeof desc.name !== "string") {
+          return reject(new TypeError("PermissionDescriptor.name is required"));
+        }
+        try {
+          const state = host("permissionQuery", desc.name);
+          const status = new PermissionStatus(desc.name, state);
+          activePermissionStatuses.add(status);
+          resolve(status);
+        } catch(e) {
+          reject(new TypeError("Invalid permission feature: " + desc.name));
+        }
+      });
+    }
+  };
+
+  let nextNotificationId = 1;
+  const activeNotifications = new Map();
+  const pendingPermissionRequests = new Map();
+
+  class Notification extends BaseTarget {
+    constructor(title, options = {}) {
+      super();
+      if (Notification.permission !== "granted") {
+        throw new TypeError("Notification permission not granted");
+      }
+      this.title = String(title || "");
+      this.body = options.body ? String(options.body) : "";
+      this.icon = options.icon ? String(options.icon) : "";
+      this.tag = options.tag ? String(options.tag) : "";
+      this.lang = options.lang ? String(options.lang) : "";
+      this.dir = options.dir ? String(options.dir) : "auto";
+      this._id = nextNotificationId++;
+      activeNotifications.set(this._id, this);
+
+      this.onclick = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.onshow = null;
+
+      try {
+        host("notificationCreate", String(this._id), this.title, JSON.stringify({
+          body: this.body,
+          icon: this.icon,
+          tag: this.tag,
+          lang: this.lang,
+          dir: this.dir,
+        }));
+        setTimeout(() => {
+          const ev = new Event("show");
+          this.dispatchEvent(ev);
+          if (typeof this.onshow === "function") this.onshow.call(this, ev);
+        }, 0);
+      } catch(e) {
+        setTimeout(() => {
+          const ev = new Event("error");
+          this.dispatchEvent(ev);
+          if (typeof this.onerror === "function") this.onerror.call(this, ev);
+        }, 0);
+      }
+    }
+    close() {
+      if (activeNotifications.has(this._id)) {
+        activeNotifications.delete(this._id);
+        try {
+          host("notificationClose", String(this._id));
+        } catch(_) {}
+        const ev = new Event("close");
+        this.dispatchEvent(ev);
+        if (typeof this.onclose === "function") this.onclose.call(this, ev);
+      }
+    }
+    static get permission() {
+      try {
+        const state = host("permissionQuery", "notifications");
+        if (state === "granted") return "granted";
+        if (state === "denied") return "denied";
+        return "default";
+      } catch {
+        return "default";
+      }
+    }
+    static requestPermission(callback) {
+      return new Promise((resolve) => {
+        try {
+          const res = host("permissionRequest", "notifications");
+          const info = typeof res === "string" ? JSON.parse(res) : res;
+          const finalize = (rawState) => {
+            const perm = rawState === "granted" ? "granted" : (rawState === "denied" ? "denied" : "default");
+            if (typeof callback === "function") {
+              try { callback(perm); } catch(e) { report(e); }
+            }
+            resolve(perm);
+          };
+          if (info.promptId) {
+            pendingPermissionRequests.set(info.promptId, finalize);
+          } else {
+            finalize(info.state);
+          }
+        } catch(e) {
+          if (typeof callback === "function") callback("denied");
+          resolve("denied");
+        }
+      });
+    }
+  }
+
+  const activeMediaTracks = new Map();
+
+  class MediaStreamTrack extends BaseTarget {
+    constructor(id, kind, label) {
+      super();
+      this._id = String(id);
+      this._kind = String(kind);
+      this._label = String(label || "");
+      this._enabled = true;
+      this._readyState = "live";
+      this.onended = null;
+      activeMediaTracks.set(this._id, this);
+    }
+    get id() { return this._id; }
+    get kind() { return this._kind; }
+    get label() { return this._label; }
+    get enabled() { return this._enabled; }
+    set enabled(val) { this._enabled = !!val; }
+    get readyState() { return this._readyState; }
+    stop() {
+      if (this._readyState !== "ended") {
+        this._readyState = "ended";
+        try { host("deviceTrackStop", this._id); } catch(_) {}
+        activeMediaTracks.delete(this._id);
+        const ev = new Event("ended");
+        this.dispatchEvent(ev);
+        if (typeof this.onended === "function") this.onended.call(this, ev);
+      }
+    }
+    clone() {
+      const cloneId = host("deviceTrackClone", this._id);
+      const cloned = new MediaStreamTrack(cloneId, this._kind, this._label + " (clone)");
+      cloned._enabled = this._enabled;
+      if (this._readyState === "ended") {
+        cloned._readyState = "ended";
+      }
+      return cloned;
+    }
+    _terminate() {
+      if (this._readyState !== "ended") {
+        this._readyState = "ended";
+        activeMediaTracks.delete(this._id);
+        const ev = new Event("ended");
+        this.dispatchEvent(ev);
+        if (typeof this.onended === "function") this.onended.call(this, ev);
+      }
+    }
+  }
+
+  class MediaStream extends BaseTarget {
+    constructor(tracks = []) {
+      super();
+      this._tracks = [...tracks];
+    }
+    getTracks() { return [...this._tracks]; }
+    getVideoTracks() { return this._tracks.filter(t => t.kind === "video"); }
+    getAudioTracks() { return this._tracks.filter(t => t.kind === "audio"); }
+    addTrack(track) {
+      if (track && !this._tracks.includes(track)) this._tracks.push(track);
+    }
+    removeTrack(track) {
+      const idx = this._tracks.indexOf(track);
+      if (idx >= 0) this._tracks.splice(idx, 1);
+    }
+    clone() {
+      return new MediaStream(this._tracks.map(t => t.clone()));
+    }
+  }
+
+  const mediaDevicesApi = {
+    getUserMedia(constraints = {}) {
+      return new Promise((resolve, reject) => {
+        const needAudio = !!constraints.audio;
+        const needVideo = !!constraints.video;
+        if (!needAudio && !needVideo) {
+          return reject(new TypeError("At least one audio or video constraint is required"));
+        }
+        try {
+          const res = host("deviceGetUserMedia", String(needAudio), String(needVideo));
+          const list = typeof res === "string" ? JSON.parse(res) : res;
+          const tracks = list.map(item => new MediaStreamTrack(item.id, item.kind, item.label));
+          resolve(new MediaStream(tracks));
+        } catch(e) {
+          reject(new DOMException("Permission denied or device unavailable", "NotAllowedError"));
+        }
+      });
+    },
+    enumerateDevices() {
+      return Promise.resolve([
+        { deviceId: "default-audio-in", kind: "audioinput", label: "Default Audio Input", groupId: "group-1" },
+        { deviceId: "default-video-in", kind: "videoinput", label: "Default Video Input", groupId: "group-2" },
+        { deviceId: "default-audio-out", kind: "audiooutput", label: "Default Audio Output", groupId: "group-1" },
+      ]);
+    }
+  };
+
+  const activeWakeLocks = new Map();
+
+  class WakeLockSentinel extends BaseTarget {
+    constructor(id, type) {
+      super();
+      this._id = id;
+      this._type = type;
+      this._released = false;
+      this.onrelease = null;
+      activeWakeLocks.set(this._id, this);
+    }
+    get type() { return this._type; }
+    get released() { return this._released; }
+    release() {
+      if (!this._released) {
+        this._released = true;
+        activeWakeLocks.delete(this._id);
+        try { host("wakeLockRelease", String(this._id)); } catch(_) {}
+        const ev = new Event("release");
+        this.dispatchEvent(ev);
+        if (typeof this.onrelease === "function") this.onrelease.call(this, ev);
+      }
+      return Promise.resolve();
+    }
+    _terminate() {
+      if (!this._released) {
+        this._released = true;
+        activeWakeLocks.delete(this._id);
+        const ev = new Event("release");
+        this.dispatchEvent(ev);
+        if (typeof this.onrelease === "function") this.onrelease.call(this, ev);
+      }
+    }
+  }
+
+  const wakeLockApi = {
+    request(type = "screen") {
+      return new Promise((resolve, reject) => {
+        if (type !== "screen") {
+          return reject(new DOMException("Unsupported wake lock type", "NotSupportedError"));
+        }
+        try {
+          const id = host("wakeLockRequest", type);
+          resolve(new WakeLockSentinel(Number(id), type));
+        } catch(e) {
+          reject(new DOMException("Wake lock request denied", "NotAllowedError"));
+        }
+      });
+    }
+  };
+
+  Element.prototype.requestFullscreen = function() {
+    return new Promise((resolve, reject) => {
+      try {
+        host("requestFullscreen");
+        currentFullscreenElement = this;
+        const ev = new Event("fullscreenchange", { bubbles: true });
+        if (this.ownerDocument) this.ownerDocument.dispatchEvent(ev);
+        resolve();
+      } catch(e) {
+        reject(new TypeError("Fullscreen request denied: transient activation required"));
+      }
+    });
+  };
+
+  globalThis.__wega_permission_answered = function(promptId, state) {
+    const cb = pendingPermissionRequests.get(Number(promptId));
+    if (cb) {
+      pendingPermissionRequests.delete(Number(promptId));
+      cb(state);
+    }
+    for (const status of activePermissionStatuses) {
+      try {
+        const current = host("permissionQuery", status.name);
+        status._update(current);
+      } catch(_) {}
+    }
+  };
+
+  globalThis.__wega_revoke_permission = function(origin, feature, stoppedTracks, releasedLocks) {
+    for (const status of activePermissionStatuses) {
+      const featNorm = feature.toLowerCase().replace(/_/g, "-");
+      const statNorm = status.name.toLowerCase().replace(/_/g, "-");
+      if (featNorm === statNorm || (featNorm === "screen-wake-lock" && statNorm === "wake-lock")) {
+        try {
+          const current = host("permissionQuery", status.name);
+          status._update(current);
+        } catch(_) {
+          status._update("prompt");
+        }
+      }
+    }
+
+    if (Array.isArray(stoppedTracks)) {
+      for (const trackId of stoppedTracks) {
+        const track = activeMediaTracks.get(trackId);
+        if (track) {
+          track._terminate();
+        }
+      }
+    }
+
+    if (Array.isArray(releasedLocks)) {
+      for (const lockId of releasedLocks) {
+        const lock = activeWakeLocks.get(Number(lockId));
+        if (lock) {
+          lock._terminate();
+        }
+      }
+    }
+  };
+
+  globalThis.__wega_fullscreen_changed = function(fullscreen) {
+    if (!fullscreen) {
+      currentFullscreenElement = null;
+      const ev = new Event("fullscreenchange", { bubbles: true });
+      document.dispatchEvent(ev);
+    }
+  };
 
   const htmlConstructors = {
     iframe: HTMLIFrameElement,
@@ -4828,6 +5193,26 @@
       host("setCookie", String(value));
     },
   });
+  Document.prototype.exitFullscreen = function() {
+    return new Promise((resolve) => {
+      try { host("exitFullscreen"); } catch(_) {}
+      currentFullscreenElement = null;
+      const ev = new Event("fullscreenchange", { bubbles: true });
+      this.dispatchEvent(ev);
+      resolve();
+    });
+  };
+
+  Object.defineProperty(Document.prototype, "fullscreenElement", {
+    get() { return currentFullscreenElement; },
+    configurable: true,
+  });
+
+  Object.defineProperty(Document.prototype, "fullscreenEnabled", {
+    get() { return true; },
+    configurable: true,
+  });
+
   for (const name of [
     "click",
     "dblclick",
@@ -5137,6 +5522,18 @@
       get mediaSession() {
         return mediaSessionInstance;
       },
+      get permissions() {
+        return permissionsApi;
+      },
+      get mediaDevices() {
+        return mediaDevicesApi;
+      },
+      get wakeLock() {
+        return wakeLockApi;
+      },
+      registerProtocolHandler(scheme, url) {
+        host("registerProtocolHandler", String(scheme), String(url));
+      },
       get serviceWorker() {
         return web ? web.serviceWorkerContainer : undefined;
       },
@@ -5390,13 +5787,20 @@ return {
   const classes = { Node, Element, Document, DocumentFragment, CharacterData, Text, Comment, CDATASection, ProcessingInstruction, DocumentType,
     Attr, NamedNodeMap, NodeList, HTMLCollection, DOMTokenList, MutationObserver, MutationRecord,
     Location, Event, EventTarget: BaseTarget, HTMLElement, HTMLHeadElement: HTMLElement,
-    HTMLScriptElement, ShadowRoot, Range, Selection, TreeWalker, DataTransfer, DragEvent, ClipboardEvent, Window, DOMImplementation, AbortSignal: web.AbortSignal };
+    HTMLScriptElement, ShadowRoot, Range, Selection, TreeWalker, DataTransfer, DragEvent, ClipboardEvent, Window, DOMImplementation, AbortSignal: web.AbortSignal,
+    Notification, MediaStream, MediaStreamTrack, PermissionStatus, WakeLockSentinel, ScreenOrientation };
   globalThis.Selection = Selection;
   globalThis.TreeWalker = TreeWalker;
   globalThis.DataTransfer = DataTransfer;
   globalThis.DragEvent = DragEvent;
   globalThis.ClipboardEvent = ClipboardEvent;
   globalThis.MessageEvent = web.MessageEvent;
+  globalThis.Notification = Notification;
+  globalThis.MediaStream = MediaStream;
+  globalThis.MediaStreamTrack = MediaStreamTrack;
+  globalThis.PermissionStatus = PermissionStatus;
+  globalThis.WakeLockSentinel = WakeLockSentinel;
+  globalThis.ScreenOrientation = ScreenOrientation;
   if (web) {
     globalThis.MessagePort = web.MessagePort;
     globalThis.MessageChannel = web.MessageChannel;

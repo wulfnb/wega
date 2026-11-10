@@ -132,6 +132,12 @@
       "acceptance": "Common media service and capability/codec reporting (canPlayType) for WAV, WebM (VP8/VP9/Opus/Vorbis), MP4, and MP3. RIFF WAVE parser and PCM audio sample extractor. WebM EBML demuxer with video/audio track parsing and stream dimensions. Monotonic media playback clock with play, pause, seek, volume, mute, playback rates, and looping. Bounded buffer manager with quota enforcement. MediaSession API with metadata, playback state, position state, and action dispatch. HTMLMediaElement, HTMLVideoElement, HTMLAudioElement, and global Audio constructor. Element-local error fallback panel with download link.",
       "acceptance_verified": true,
       "contract": "docs/step-20-media-playback-and-audio.md"
+    },
+    "21": {
+      "implementation": "complete",
+      "acceptance": "Origin-scoped permissions registry with Permissions-Policy enforcement, opaque origin denial, pending prompt queuing and document navigation cancellation. Protocol version 21 with Capability::PermissionsRevocation, Command::AnswerPermission, Command::RevokePermission, Command::ExitFullscreen, and typed content events for notifications, prompts, fullscreen, protocol registrations, and external apps. Native device lifecycle tracking for MediaStreamTrack audio/video capture and WakeLock sentinels with acknowledged embedder revocation tearing down active tracks (readyState = 'ended', firing 'ended') and releasing wake locks (released = true, firing 'release'). Full Web API semantics for navigator.permissions, Notification, navigator.mediaDevices.getUserMedia, MediaStreamTrack, MediaStream, navigator.wakeLock, screen.orientation, and requestFullscreen/exitFullscreen requiring user activation.",
+      "acceptance_verified": true,
+      "contract": "docs/step-21-permissions-and-native-capabilities.md"
     }
   },
   "substeps": {
@@ -240,7 +246,7 @@
     "Step 04 full authority/CSP/cache audit and new renderer navigation grants",
     "Release qualification beyond the Step 05/06 fixture gate: parent-crash/pressure/restart stress, distribution signing/notarization and whole-browser resource calibration"
   ],
-  "current_protocol_version": 14,
+  "current_protocol_version": 21,
   "validation_05_06": [
     {
       "kind": "engine workspace",

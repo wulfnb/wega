@@ -27,6 +27,7 @@ mod web;
 mod web_extensions;
 pub mod canvas;
 pub mod media;
+pub mod permissions;
 pub mod webgl;
 pub mod workers;
 pub use dom::{DialogHandler, DocumentDialogHandler};

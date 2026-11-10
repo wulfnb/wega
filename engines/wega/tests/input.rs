@@ -22,6 +22,7 @@ fn page(html: &str) -> View {
     view.set_html(html).unwrap();
     view.poll();
     view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    view.events.clear();
     view
 }
 const BOXES: &str = "<style>body{margin:0}#target{width:100px;height:50px;color:rgb(0,0,0)}#target:hover{color:rgb(255,0,0);cursor:pointer}\
@@ -141,7 +142,7 @@ fn popups_need_a_user_gesture_and_target_blank_links_open_windows() {
     let windows = |view: &mut View| {
         view.events
             .drain(..)
-            .filter(|event| !matches!(event, PageEvent::Cursor(_)))
+            .filter(|event| !matches!(event, PageEvent::Cursor(_) | PageEvent::Status(_)))
             .collect::<Vec<_>>()
     };
     view.click(10.0, 10.0);

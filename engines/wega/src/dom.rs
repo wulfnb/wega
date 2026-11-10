@@ -32,6 +32,12 @@ pub(crate) struct Requests {
     pub opened: Vec<url::Url>,
     pub traverse: Vec<i32>,
     pub compatibility: Option<String>,
+    pub permission_prompts: Vec<(u64, String, wega_protocol::permissions::PermissionFeature)>,
+    pub notifications: Vec<(u64, String, wega_protocol::permissions::NotificationOptions)>,
+    pub notification_closes: Vec<u64>,
+    pub fullscreen: Vec<bool>,
+    pub protocol_registrations: Vec<wega_protocol::permissions::ProtocolHandlerRegistration>,
+    pub external_apps: Vec<String>,
 }
 
 pub(crate) struct Dom {
@@ -61,11 +67,26 @@ pub(crate) struct Dom {
     pub canvas_engine: RefCell<crate::canvas::CanvasEngine>,
     pub webgl_engine: RefCell<crate::webgl::WebGLEngine>,
     pub media_engine: RefCell<crate::media::MediaEngine>,
+    pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
     // The DOM thread cannot receive parser/input mutations during script. Start
     // a fresh epoch at each host step, then invalidate synchronously on writes.
     revision: Cell<u64>,
     layout_dirty: Cell<bool>,
 }
+pub fn origin_for_url(url: &url::Url) -> wega_protocol::authority::Origin {
+    match url.scheme() {
+        "http" | "https" | "file" | "ws" | "wss" => {
+            let ser = url.origin().ascii_serialization();
+            if ser == "null" || ser.is_empty() {
+                wega_protocol::authority::Origin::Opaque
+            } else {
+                wega_protocol::authority::Origin::Tuple(ser)
+            }
+        }
+        _ => wega_protocol::authority::Origin::Opaque,
+    }
+}
+
 impl Dom {
     pub fn new(context: crate::script::HostContext, limits: &Limits, initial_bytes: usize) -> Self {
         let document = context.document;
@@ -103,6 +124,7 @@ impl Dom {
             canvas_engine: RefCell::new(crate::canvas::CanvasEngine::new(limits.max_pixels * 4)),
             webgl_engine: RefCell::new(crate::webgl::WebGLEngine::new(limits.max_pixels * 8)),
             media_engine: RefCell::new(crate::media::MediaEngine::new(limits.resource_bytes * 8)),
+            permissions: context.permissions,
             revision: Cell::new(0),
             layout_dirty: Cell::new(true),
         }
@@ -607,6 +629,188 @@ impl Dom {
                     _ => return Ok(Value::Null),
                 };
                 let _ = ev;
+                return Ok(Value::Null);
+            }
+            "permissionQuery" => {
+                let feature_name = text(1);
+                let feature = wega_protocol::permissions::PermissionFeature::parse(feature_name)
+                    .ok_or_else(|| format!("Invalid permission feature: {}", feature_name))?;
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let state = self.permissions.borrow().query(
+                    &origin,
+                    feature,
+                    &self.network.policy.read().unwrap(),
+                );
+                return Ok(json!(state.as_str()));
+            }
+            "permissionRequest" => {
+                let feature_name = text(1);
+                let feature = wega_protocol::permissions::PermissionFeature::parse(feature_name)
+                    .ok_or_else(|| format!("Invalid permission feature: {}", feature_name))?;
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let doc_ctx = wega_protocol::DocumentContext {
+                    document: wega_protocol::DocumentId(self.document_generation.get()),
+                    revision: wega_protocol::DocumentRevision(self.document_revision),
+                };
+                let (state, prompt_id) = self.permissions.borrow_mut().request(
+                    &origin,
+                    doc_ctx,
+                    feature,
+                    &self.network.policy.read().unwrap(),
+                );
+                if let Some(id) = prompt_id {
+                    let origin_str = match &origin {
+                        wega_protocol::authority::Origin::Tuple(s) => s.clone(),
+                        wega_protocol::authority::Origin::Opaque => "null".into(),
+                    };
+                    self.requests.borrow_mut().permission_prompts.push((id, origin_str, feature));
+                }
+                return Ok(json!({
+                    "state": state.as_str(),
+                    "promptId": prompt_id,
+                }));
+            }
+            "notificationCreate" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid notification id")?;
+                let title = text(2);
+                let opts_raw = text(3);
+                let opts: wega_protocol::permissions::NotificationOptions =
+                    serde_json::from_str(opts_raw).unwrap_or_default();
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let state = self.permissions.borrow().query(
+                    &origin,
+                    wega_protocol::permissions::PermissionFeature::Notifications,
+                    &self.network.policy.read().unwrap(),
+                );
+                if state != wega_protocol::permissions::PermissionState::Granted {
+                    return Err("Notification permission not granted".into());
+                }
+                self.requests.borrow_mut().notifications.push((id, title.to_string(), opts));
+                return Ok(Value::Null);
+            }
+            "notificationClose" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid notification id")?;
+                self.requests.borrow_mut().notification_closes.push(id);
+                return Ok(Value::Null);
+            }
+            "wakeLockRequest" => {
+                let lock_type = text(1);
+                if lock_type != "screen" {
+                    return Err("NotSupportedError".into());
+                }
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let origin_str = match origin {
+                    wega_protocol::authority::Origin::Tuple(s) => s,
+                    wega_protocol::authority::Origin::Opaque => return Err("NotAllowedError: opaque origin cannot request wake lock".into()),
+                };
+                let state = self.permissions.borrow().query(
+                    &wega_protocol::authority::Origin::Tuple(origin_str.clone()),
+                    wega_protocol::permissions::PermissionFeature::ScreenWakeLock,
+                    &self.network.policy.read().unwrap(),
+                );
+                if state == wega_protocol::permissions::PermissionState::Denied {
+                    return Err("NotAllowedError: screen wake lock permission denied".into());
+                }
+                let doc_ctx = wega_protocol::DocumentContext {
+                    document: wega_protocol::DocumentId(self.document_generation.get()),
+                    revision: wega_protocol::DocumentRevision(self.document_revision),
+                };
+                let lock_id = self.permissions.borrow_mut().devices.create_wake_lock(origin_str, doc_ctx);
+                return Ok(json!(lock_id));
+            }
+            "wakeLockRelease" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid wake lock id")?;
+                self.permissions.borrow_mut().devices.release_wake_lock(id);
+                return Ok(Value::Null);
+            }
+            "deviceGetUserMedia" => {
+                let need_audio = text(1) == "true";
+                let need_video = text(2) == "true";
+                let url = self.document.borrow().url().clone();
+                let origin = origin_for_url(&url);
+                let origin_str = match origin {
+                    wega_protocol::authority::Origin::Tuple(s) => s,
+                    wega_protocol::authority::Origin::Opaque => return Err("NotAllowedError: opaque origin cannot access media devices".into()),
+                };
+                let policy = self.network.policy.read().unwrap();
+                if need_video {
+                    let state = self.permissions.borrow().query(
+                        &wega_protocol::authority::Origin::Tuple(origin_str.clone()),
+                        wega_protocol::permissions::PermissionFeature::Camera,
+                        &policy,
+                    );
+                    if state != wega_protocol::permissions::PermissionState::Granted {
+                        return Err("NotAllowedError: Camera permission not granted".into());
+                    }
+                }
+                if need_audio {
+                    let state = self.permissions.borrow().query(
+                        &wega_protocol::authority::Origin::Tuple(origin_str.clone()),
+                        wega_protocol::permissions::PermissionFeature::Microphone,
+                        &policy,
+                    );
+                    if state != wega_protocol::permissions::PermissionState::Granted {
+                        return Err("NotAllowedError: Microphone permission not granted".into());
+                    }
+                }
+                let doc_ctx = wega_protocol::DocumentContext {
+                    document: wega_protocol::DocumentId(self.document_generation.get()),
+                    revision: wega_protocol::DocumentRevision(self.document_revision),
+                };
+                let mut perms = self.permissions.borrow_mut();
+                let mut track_descriptors = Vec::new();
+                if need_video {
+                    let vid = perms.devices.create_track(origin_str.clone(), doc_ctx, crate::permissions::MediaTrackKind::Video, None);
+                    track_descriptors.push(json!({ "id": vid, "kind": "video", "label": "Default Video Camera" }));
+                }
+                if need_audio {
+                    let aid = perms.devices.create_track(origin_str.clone(), doc_ctx, crate::permissions::MediaTrackKind::Audio, None);
+                    track_descriptors.push(json!({ "id": aid, "kind": "audio", "label": "Default Audio Device" }));
+                }
+                return Ok(json!(track_descriptors));
+            }
+            "deviceTrackStop" => {
+                let id = text(1);
+                self.permissions.borrow_mut().devices.stop_track(id);
+                return Ok(Value::Null);
+            }
+            "deviceTrackClone" => {
+                let id = text(1);
+                let cloned_id = self.permissions.borrow_mut().devices.clone_track(id)?;
+                return Ok(json!(cloned_id));
+            }
+            "requestFullscreen" => {
+                let now = Instant::now();
+                let has_activation = self.activation.get().map(|until| until > now).unwrap_or(false);
+                if !has_activation {
+                    return Err("TypeError: requestFullscreen requires transient user activation".into());
+                }
+                self.activation.set(None);
+                self.requests.borrow_mut().fullscreen.push(true);
+                return Ok(Value::Null);
+            }
+            "exitFullscreen" => {
+                self.requests.borrow_mut().fullscreen.push(false);
+                return Ok(Value::Null);
+            }
+            "registerProtocolHandler" => {
+                let scheme = text(1);
+                let target_url = text(2);
+                self.requests.borrow_mut().protocol_registrations.push(
+                    wega_protocol::permissions::ProtocolHandlerRegistration {
+                        scheme: scheme.to_string(),
+                        url: target_url.to_string(),
+                    },
+                );
+                return Ok(Value::Null);
+            }
+            "openExternalApp" => {
+                let target_url = text(1);
+                self.requests.borrow_mut().external_apps.push(target_url.to_string());
                 return Ok(Value::Null);
             }
             "canvasCreate" => {

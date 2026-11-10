@@ -30,6 +30,7 @@ pub(crate) struct HostContext {
     pub activation: Rc<Cell<Option<Instant>>>,
     /// Script elements already prepared ("already started"), shared with the view.
     pub started_scripts: Rc<RefCell<std::collections::HashSet<NodeId>>>,
+    pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
 }
 
 pub(crate) trait ScriptHost {

@@ -573,7 +573,8 @@ mod tests {
         let a_new = document(&session, &format!("{origin_a}/"));
         assert_eq!(storage(&a_new, origin_a, true, "get", "k1", "").unwrap(), Value::Null);
         // Origin B remains untouched
-        assert_eq!(storage(&b, origin_b, true, "get", "k2", "").unwrap(), json!("v2"));
+        let b_check = document(&session, &format!("{origin_b}/"));
+        assert_eq!(storage(&b_check, origin_b, true, "get", "k2", "").unwrap(), json!("v2"));
 
         // Clear all data
         session.clear_all_data().unwrap();

@@ -675,6 +675,39 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         PageEvent::FindResult { active_match_ordinal, number_of_matches, query } => {
                             ContentEvent::FindResult { active_match_ordinal, number_of_matches, query }
                         }
+                        PageEvent::PermissionPrompt { id, origin, feature } => {
+                            let session = protocol::identity::SessionIdentity {
+                                tab: protocol::identity::TabId(1),
+                                frame: protocol::identity::FrameId(1),
+                                process: protocol::identity::ProcessSessionId([1; 16]),
+                                service: None,
+                            };
+                            ContentEvent::PermissionPrompt(wega_protocol::permissions::PermissionPromptRequest {
+                                id,
+                                session,
+                                document: document_context(&view, serial, version),
+                                origin: wega_protocol::authority::Origin::Tuple(origin),
+                                feature,
+                            })
+                        }
+                        PageEvent::PermissionRevoked { origin, feature } => {
+                            ContentEvent::PermissionRevoked { origin, feature }
+                        }
+                        PageEvent::NotificationShow { id, title, options } => {
+                            ContentEvent::NotificationShow { id, title, options }
+                        }
+                        PageEvent::NotificationClose { id } => {
+                            ContentEvent::NotificationClose { id }
+                        }
+                        PageEvent::Fullscreen(enabled) => {
+                            ContentEvent::Fullscreen(enabled)
+                        }
+                        PageEvent::ProtocolRegister(reg) => {
+                            ContentEvent::ProtocolRegister(reg)
+                        }
+                        PageEvent::ExternalApp(url) => {
+                            ContentEvent::ExternalApp(url)
+                        }
                         _ => unreachable!(),
                     };
                     write(&protocol::content_event(
@@ -973,12 +1006,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             revision: protocol::DocumentRevision(view.document_revision()),
                         },
                         ContentEvent::Notice(
-                            "Frame navigation requested".into(),
+                            "Nested browsing contexts are not available in this worker".into(),
                         ),
                     ))?;
                 }
                 Command::FramePostMessage { target, origin, target_origin, message } => {
                     view.post_frame_message(target, &origin, target_origin.as_deref(), &message);
+                    write(&protocol::content_event(
+                        version,
+                        DocumentContext {
+                            document: DocumentId(serial),
+                            revision: protocol::DocumentRevision(view.document_revision()),
+                        },
+                        ContentEvent::Notice(
+                            "Nested browsing contexts are not available in this worker".into(),
+                        ),
+                    ))?;
                 }
                 Command::Shutdown => break,
                 Command::CheckPageState(request) => {
@@ -1181,6 +1224,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Command::MediaSessionAction(action) => {
                     view.notify_media_session_action(action);
+                }
+                Command::AnswerPermission { id, allow } => {
+                    view.answer_permission(id, allow);
+                }
+                Command::RevokePermission { origin, feature } => {
+                    view.revoke_permission(&origin, feature);
+                }
+                Command::ExitFullscreen => {
+                    view.exit_fullscreen();
                 }
             },
         }

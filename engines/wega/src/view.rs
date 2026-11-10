@@ -97,6 +97,26 @@ pub enum PageEvent {
         target_origin: Option<String>,
         message: String,
     },
+    PermissionPrompt {
+        id: u64,
+        origin: String,
+        feature: wega_protocol::permissions::PermissionFeature,
+    },
+    PermissionRevoked {
+        origin: String,
+        feature: wega_protocol::permissions::PermissionFeature,
+    },
+    NotificationShow {
+        id: u64,
+        title: String,
+        options: wega_protocol::permissions::NotificationOptions,
+    },
+    NotificationClose {
+        id: u64,
+    },
+    Fullscreen(bool),
+    ProtocolRegister(wega_protocol::permissions::ProtocolHandlerRegistration),
+    ExternalApp(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -326,6 +346,8 @@ pub struct View {
     pub next_dialog_id: u64,
     pub pending_file_dialog: Option<(u64, NodeId)>,
     pub selected_files: std::collections::HashMap<NodeId, Vec<String>>,
+    pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
+    pub fullscreen: bool,
 }
 impl View {
     pub(crate) fn new(url: Url, network: Network, limits: Limits) -> Result<Self, String> {
@@ -387,6 +409,8 @@ impl View {
             next_dialog_id: 1,
             pending_file_dialog: None,
             selected_files: std::collections::HashMap::new(),
+            permissions: Rc::new(RefCell::new(crate::permissions::PermissionRegistry::new())),
+            fullscreen: false,
         };
         view.load(url)?;
         Ok(view)
@@ -478,6 +502,11 @@ impl View {
         self.load_request(url, context)
     }
     fn load_request(&mut self, url: Url, context: FetchContext) -> Result<(), String> {
+        let doc_ctx = wega_protocol::DocumentContext {
+            document: wega_protocol::DocumentId(self.document_generation.get()),
+            revision: wega_protocol::DocumentRevision(self.document_revision),
+        };
+        self.permissions.borrow_mut().cancel_document(doc_ctx);
         self.stop_pending();
         self.scheduler.suspend();
         if let Some(script) = &mut self.script {
@@ -618,6 +647,7 @@ impl View {
                 document_revision: self.document_revision,
                 activation: self.activation.clone(),
                 started_scripts: self.host.started_scripts.clone(),
+                permissions: self.permissions.clone(),
             },
             &self.limits,
             html.len(),
@@ -985,6 +1015,53 @@ impl View {
         self.drain_requests();
         result.map_err(|e| e.to_string())
     }
+
+    pub fn answer_permission(&mut self, id: u64, allow: bool) {
+        let answer = self.permissions.borrow_mut().answer_prompt(id, allow);
+        if let Some((_origin, _feature, allowed)) = answer {
+            let state = if allowed { "granted" } else { "denied" };
+            let _ = self.run(
+                &format!("if (typeof __wega_permission_answered === 'function') __wega_permission_answered({}, {:?});", id, state),
+                "wega:permissions",
+            );
+        }
+    }
+
+    pub fn revoke_permission(
+        &mut self,
+        origin: &str,
+        feature: wega_protocol::permissions::PermissionFeature,
+    ) {
+        let res = self.permissions.borrow_mut().revoke(origin, feature);
+        self.events.push_back(PageEvent::PermissionRevoked {
+            origin: origin.to_string(),
+            feature,
+        });
+        let tracks_json = serde_json::to_string(&res.stopped_tracks).unwrap_or_else(|_| "[]".into());
+        let locks_json = serde_json::to_string(&res.released_locks).unwrap_or_else(|_| "[]".into());
+        let _ = self.run(
+            &format!(
+                "if (typeof __wega_revoke_permission === 'function') __wega_revoke_permission({:?}, {:?}, {}, {});",
+                origin,
+                feature.as_str(),
+                tracks_json,
+                locks_json,
+            ),
+            "wega:permissions",
+        );
+    }
+
+    pub fn exit_fullscreen(&mut self) {
+        if self.fullscreen {
+            self.fullscreen = false;
+            self.events.push_back(PageEvent::Fullscreen(false));
+            let _ = self.run(
+                "if (typeof __wega_fullscreen_changed === 'function') __wega_fullscreen_changed(false);",
+                "wega:fullscreen",
+            );
+        }
+    }
+
     pub fn clear_history(&mut self) {
         self.run(
             "if (typeof __wega_clear_history === 'function') __wega_clear_history();",
@@ -1334,8 +1411,8 @@ impl View {
             self.dirty = true;
         }
     }
-    fn activate(&mut self) {
-        self.activation.set(Some(Instant::now()));
+    pub fn activate(&mut self) {
+        self.activation.set(Some(Instant::now() + Duration::from_secs(5)));
     }
     fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
         let scroll = self.document.borrow().viewport_scroll();

@@ -420,17 +420,6 @@
   globals.SharedWorker = SharedWorker;
   globals.ServiceWorkerRegistration = ServiceWorkerRegistration;
   globals.serviceWorkerContainer = serviceWorkerContainer;
-  globals.structuredClone = (value, options = {}) => {
-    if (options && Array.isArray(options.transfer)) {
-      for (const item of options.transfer) {
-        if (item instanceof ArrayBuffer) {
-          Object.defineProperty(item, "byteLength", { value: 0, configurable: true });
-          Object.defineProperty(item, "detached", { value: true, configurable: true });
-        }
-      }
-    }
-    return JSON.parse(JSON.stringify(value));
-  };
 
   globals.console = new console.Console((message, level) =>
     core.ops.op_dom_read("log", message, String(level), ""),

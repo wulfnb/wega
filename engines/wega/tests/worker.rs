@@ -831,6 +831,7 @@ fn css_html_and_javascript_errors_are_structured_with_urls_before_ui_queue_limit
     worker.send(Command::Load {
         url: server.url("127.0.0.1", "/"),
         serial: 1,
+        bypass_cache: false,
     });
     worker.until(|e| matches!(e,Event::Content { event: protocol::ContentEvent::Notice(s), .. } if s.contains("post-js")));
     worker.until(|e| {

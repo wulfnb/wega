@@ -662,6 +662,13 @@ before offering persistent allow/stop-access controls. Follow the existing
 navigation cancels old prompts, device denial/stop/clone cleanup is verified, and
 notification/device/OS integrations have explicit platform runtime results.
 
+- Permission registry & origin isolation: `PermissionRegistry` with origin-scoped grants, opaque origin denial (`data:`, `about:blank`), policy checks, prompt queuing, prompt answering, and acknowledged revocation.
+- Protocol & capability negotiation: protocol `VERSION = 21` with `Capability::PermissionsRevocation`, `Command::AnswerPermission`, `Command::RevokePermission`, `Command::ExitFullscreen`, and typed content events for prompts, notifications, fullscreen, protocol registrations, and external apps.
+- Native device lifecycle teardown: `DeviceTracker` tracking `MediaStreamTrack` audio/video capture tracks and `WakeLock` sentinels; embedder revocation automatically shuts down active tracks (`readyState = "ended"`, fires `'ended'`) and releases wake locks (`released = true`, fires `'release'`).
+- Web API & DOM semantics: `navigator.permissions.query()`, `Notification` (with permission prompt, dispatch, and close), `navigator.mediaDevices.getUserMedia()`, `MediaStreamTrack`, `MediaStream`, `navigator.wakeLock`, `screen.orientation`, and `element.requestFullscreen()` (requiring user activation).
+- All 7 tests in `engines/wega/tests/permissions.rs` pass cleanly.
+- Contract & verification: [Step 21 contract](step-21-permissions-and-native-capabilities.md).
+
 ### 22 — Port every existing tool and automation endpoint
 
 **Depends on:** 03, 09, 12, 14, 16, 19, 21.

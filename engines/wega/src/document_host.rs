@@ -546,5 +546,24 @@ impl View {
                 self.host.asynchronous.push(script);
             }
         }
+        for (id, origin, feature) in requests.permission_prompts {
+            self.events.push_back(PageEvent::PermissionPrompt { id, origin, feature });
+        }
+        for (id, title, options) in requests.notifications {
+            self.events.push_back(PageEvent::NotificationShow { id, title, options });
+        }
+        for id in requests.notification_closes {
+            self.events.push_back(PageEvent::NotificationClose { id });
+        }
+        for enabled in requests.fullscreen {
+            self.fullscreen = enabled;
+            self.events.push_back(PageEvent::Fullscreen(enabled));
+        }
+        for reg in requests.protocol_registrations {
+            self.events.push_back(PageEvent::ProtocolRegister(reg));
+        }
+        for app_url in requests.external_apps {
+            self.events.push_back(PageEvent::ExternalApp(app_url));
+        }
     }
 }

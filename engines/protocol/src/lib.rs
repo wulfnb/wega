@@ -10,7 +10,8 @@ pub mod queue;
 pub mod requests;
 pub mod storage;
 pub mod media;
-pub const VERSION: u32 = 20;
+pub mod permissions;
+pub const VERSION: u32 = 21;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -82,6 +83,22 @@ pub enum ContentEvent {
         query: String,
     },
     MediaSession(media::MediaSessionEvent),
+    PermissionPrompt(permissions::PermissionPromptRequest),
+    PermissionRevoked {
+        origin: String,
+        feature: permissions::PermissionFeature,
+    },
+    NotificationShow {
+        id: u64,
+        title: String,
+        options: permissions::NotificationOptions,
+    },
+    NotificationClose {
+        id: u64,
+    },
+    Fullscreen(bool),
+    ProtocolRegister(permissions::ProtocolHandlerRegistration),
+    ExternalApp(String),
 }
 
 pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent) -> Event {
@@ -92,6 +109,27 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
         ContentEvent::ScriptStopped(reason) if version < 14 => ContentEvent::Notice(reason),
         ContentEvent::MediaSession(_) if version < 20 => {
             ContentEvent::Notice("Media session update".into())
+        }
+        ContentEvent::PermissionPrompt(_) if version < 21 => {
+            ContentEvent::Notice("Permission prompt".into())
+        }
+        ContentEvent::PermissionRevoked { feature, .. } if version < 21 => {
+            ContentEvent::Notice(format!("Permission revoked: {feature}"))
+        }
+        ContentEvent::NotificationShow { title, .. } if version < 21 => {
+            ContentEvent::Notice(format!("Notification: {title}"))
+        }
+        ContentEvent::NotificationClose { id } if version < 21 => {
+            ContentEvent::Notice(format!("Notification closed {id}"))
+        }
+        ContentEvent::Fullscreen(f) if version < 21 => {
+            ContentEvent::Notice(format!("Fullscreen: {f}"))
+        }
+        ContentEvent::ProtocolRegister(r) if version < 21 => {
+            ContentEvent::Notice(format!("Register protocol: {}", r.scheme))
+        }
+        ContentEvent::ExternalApp(u) if version < 21 => {
+            ContentEvent::Notice(format!("External app: {u}"))
         }
         event => event,
     };
@@ -136,6 +174,13 @@ pub fn content_event(version: u32, context: DocumentContext, event: ContentEvent
             Event::Notice(format!("Find {query}: {active_match_ordinal}/{number_of_matches}"))
         }
         ContentEvent::MediaSession(_) => Event::Notice("Media session update".into()),
+        ContentEvent::PermissionPrompt(_) => Event::Notice("Permission prompt".into()),
+        ContentEvent::PermissionRevoked { feature, .. } => Event::Notice(format!("Permission revoked: {feature}")),
+        ContentEvent::NotificationShow { title, .. } => Event::Notice(format!("Notification: {title}")),
+        ContentEvent::NotificationClose { id } => Event::Notice(format!("Notification closed {id}")),
+        ContentEvent::Fullscreen(f) => Event::Notice(format!("Fullscreen: {f}")),
+        ContentEvent::ProtocolRegister(r) => Event::Notice(format!("Register protocol: {}", r.scheme)),
+        ContentEvent::ExternalApp(u) => Event::Notice(format!("External app: {u}")),
     }
 }
 
@@ -170,6 +215,7 @@ pub enum Capability {
     SiteIsolationFrames,
     AuthoritativeStorage,
     MediaPlayback,
+    PermissionsRevocation,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -190,6 +236,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::SiteIsolationFrames,
     Capability::AuthoritativeStorage,
     Capability::MediaPlayback,
+    Capability::PermissionsRevocation,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -265,6 +312,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::SiteIsolationFrames => 15,
                     Capability::AuthoritativeStorage => 16,
                     Capability::MediaPlayback => 20,
+                    Capability::PermissionsRevocation => 21,
                 }
         })
         .collect()
@@ -435,6 +483,15 @@ pub enum Command {
         message: String,
     },
     MediaSessionAction(media::MediaSessionAction),
+    AnswerPermission {
+        id: u64,
+        allow: bool,
+    },
+    RevokePermission {
+        origin: String,
+        feature: permissions::PermissionFeature,
+    },
+    ExitFullscreen,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Event {
@@ -891,11 +948,13 @@ mod tests {
     }
     #[test]
     fn authoritative_storage_capability_and_version() {
-        assert_eq!(VERSION, 20);
+        assert_eq!(VERSION, 21);
         assert!(capabilities(16).contains(&Capability::AuthoritativeStorage));
         assert!(!capabilities(15).contains(&Capability::AuthoritativeStorage));
         assert!(capabilities(20).contains(&Capability::MediaPlayback));
         assert!(!capabilities(19).contains(&Capability::MediaPlayback));
+        assert!(capabilities(21).contains(&Capability::PermissionsRevocation));
+        assert!(!capabilities(20).contains(&Capability::PermissionsRevocation));
     }
     #[test]
     fn media_session_command_and_event_transport() {
@@ -922,5 +981,28 @@ mod tests {
 
         let downgraded = content_event(19, context, ContentEvent::MediaSession(media::MediaSessionEvent::PlaybackStateChange(media::MediaSessionPlaybackState::Playing)));
         assert!(matches!(downgraded, Event::Content { event: ContentEvent::Notice(ref s), .. } if s.contains("Media session")));
+    }
+
+    #[test]
+    fn permissions_and_device_capabilities_transport() {
+        let answer_cmd: Command = serde_json::from_str(r#"{"AnswerPermission":{"id":42,"allow":true}}"#).unwrap();
+        assert!(matches!(answer_cmd, Command::AnswerPermission { id: 42, allow: true }));
+
+        let revoke_cmd: Command = serde_json::from_str(r#"{"RevokePermission":{"origin":"https://a.test","feature":"Camera"}}"#).unwrap();
+        assert!(matches!(revoke_cmd, Command::RevokePermission { ref origin, feature: permissions::PermissionFeature::Camera } if origin == "https://a.test"));
+
+        let exit_fs_cmd: Command = serde_json::from_str(r#""ExitFullscreen""#).unwrap();
+        assert!(matches!(exit_fs_cmd, Command::ExitFullscreen));
+
+        let context = DocumentContext { document: DocumentId(1), revision: DocumentRevision(1) };
+        let notif_event = content_event(VERSION, context, ContentEvent::NotificationShow {
+            id: 99,
+            title: "Test Alert".into(),
+            options: permissions::NotificationOptions { body: Some("Alert body".into()), ..Default::default() },
+        });
+        assert!(matches!(notif_event, Event::Content { event: ContentEvent::NotificationShow { id: 99, ref title, .. }, .. } if title == "Test Alert"));
+
+        let fs_event = content_event(VERSION, context, ContentEvent::Fullscreen(true));
+        assert!(matches!(fs_event, Event::Content { event: ContentEvent::Fullscreen(true), .. }));
     }
 }

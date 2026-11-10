@@ -433,7 +433,7 @@ mod tests {
         let site_a = url("https://a.example.com/");
         let site_b = url("https://b.other.org/");
         jar.set(&site_a, "a=1; Path=/; Secure", false, SiteContext::SameSite);
-        jar.set(&site_b, "b=2; Path=/; Secure", false, SiteContext::SameSite);
+        jar.set(&site_b, "b=2; Path=/; Secure; Max-Age=3600", false, SiteContext::SameSite);
 
         assert_eq!(jar.inventory(&site_a).len(), 1);
         assert_eq!(jar.inventory(&site_b).len(), 1);
