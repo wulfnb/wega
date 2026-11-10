@@ -2284,6 +2284,34 @@ impl View {
             Err("Unexpected shared raster result".into())
         }
     }
+    /// Capture a screenshot of the rendered view as RGBA pixels.
+    pub fn screenshot(
+        &mut self,
+        width: u32,
+        height: u32,
+        scale: f32,
+        zoom: f32,
+        rect: Option<(u32, u32, u32, u32)>,
+    ) -> Result<Vec<u8>, String> {
+        let frame = self.paint(width, height, scale, zoom, false)?;
+        if let Some((rx, ry, rw, rh)) = rect {
+            let rx = rx.min(width);
+            let ry = ry.min(height);
+            let rw = rw.min(width - rx);
+            let rh = rh.min(height - ry);
+            let mut sub = Vec::with_capacity((rw * rh * 4) as usize);
+            for y in ry..(ry + rh) {
+                let start = ((y * width + rx) * 4) as usize;
+                let end = start + (rw * 4) as usize;
+                if end <= frame.rgba.len() {
+                    sub.extend_from_slice(&frame.rgba[start..end]);
+                }
+            }
+            Ok(sub)
+        } else {
+            Ok(frame.rgba)
+        }
+    }
     pub fn text(&self, selector: &str) -> Option<String> {
         let doc = self.document.borrow();
         doc.query_selector(selector)

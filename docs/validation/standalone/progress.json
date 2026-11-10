@@ -120,6 +120,12 @@
       "acceptance": "Skia raster surface Canvas 2D engine with save/restore stack, affine 2D transforms, Path2D vector geometry with arcs and curves, fill/stroke/clip/isPointInPath, linear/radial/conic gradients and pattern shaders, text rendering with font metrics fallback, RGBA8888 unpremultiplied pixel readback and writes (getImageData/putImageData), toDataURL and toBlob serialization, cross-origin canvas tainting and SecurityError enforcement, aggregate pixel memory tracking with QuotaExceededError rejection, and OffscreenCanvas with worker transfer.",
       "acceptance_verified": true,
       "contract": "docs/step-18-canvas-2d-graphics.md"
+    },
+    "19": {
+      "implementation": "complete",
+      "acceptance": "OpenGL ES 2.0/3.0 WebGL 1.0 and 2.0 state machine, shader compilation and reflection, buffer upload and drawArrays execution, uniform upload, texture uploads with cross-origin taint propagation, pixel readback with SecurityError enforcement, drawing buffer toDataURL serialization, context loss and recovery extension (WEBGL_lose_context), aggregate WebGL pixel memory allocation quotas with QuotaExceededError rejection, context isolation preventing 2D/WebGL collision on the same canvas, and View resilient screenshot composition with device scaling, CSS zoom, and subregion clipping.",
+      "acceptance_verified": true,
+      "contract": "docs/step-19-webgl-and-composition.md"
     }
   },
   "substeps": {

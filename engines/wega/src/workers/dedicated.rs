@@ -87,6 +87,30 @@ impl DedicatedWorker {
                                 }
                                 return this._ctx;
                             }
+                            if (type === "webgl" || type === "experimental-webgl") {
+                                if (!this._gl) {
+                                    this._gl = {
+                                        canvas: this,
+                                        clearColor(r, g, b, a) {},
+                                        clear(mask) {},
+                                        createBuffer() { return {}; },
+                                        bindBuffer(t, b) {},
+                                        bufferData(t, d, u) {},
+                                        createShader(t) { return {}; },
+                                        shaderSource(s, src) {},
+                                        compileShader(s) {},
+                                        getShaderParameter(s, p) { return true; },
+                                        createProgram() { return {}; },
+                                        attachShader(p, s) {},
+                                        linkProgram(p) {},
+                                        useProgram(p) {},
+                                        getProgramParameter(p, param) { return true; },
+                                        drawArrays(m, f, c) {},
+                                        readPixels(x, y, w, h, f, t, p) { return p; }
+                                    };
+                                }
+                                return this._gl;
+                            }
                             return null;
                         }
                     };

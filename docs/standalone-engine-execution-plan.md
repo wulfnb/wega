@@ -627,6 +627,7 @@ path available. WebGPU is a separately audited extension unless baseline proves 
 **Done when:** audited WebGL behavior and graphics fixtures pass on real macOS,
 Linux and Windows backends; device/context loss recovers; screenshot, zoom and
 fullscreen remain correct. Backend profiler/capture tools have Wega equivalents.
+- Contract & verification: [Step 19 contract](step-19-webgl-and-composition.md).
 
 ### 20 — Implement media playback and audio
 
