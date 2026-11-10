@@ -813,6 +813,21 @@ ledger row is verified on its declared targets. Re-run final gates after cleanup
 publish the exact supported surface and any agreed breaking changes. New platform
 features may still grow beyond this finite parity baseline.
 
+**Implementation status (Step 26 delivered):**
+- Servo backend formally retired and migration closed:
+  - Wega standalone engine operates as the exclusive runtime engine for all web browsing, tabs, and sessions.
+  - Runtime initialization of Servo removed across all application flows (Servo never initialized during normal browsing).
+  - Runtime fallback to Servo completely eliminated from page navigation, tab creation, and compatibility reporting.
+  - Cleaned up obsolete UI strings, error messages, and legacy fallback actions across `src/wega_page.rs`, `src/wega_ui.rs`, `src/main.rs`, and `src/capabilities_ui.rs`.
+  - Reusable native media, notifications, downloads, containers, and developer tools preserved on the native platform.
+  - Stylo CSS and Blitz DOM components retained with full license attribution.
+- Documentation & Architectural Guides:
+  - Updated `README.md` and `docs/architecture.md` to document the standalone multi-process architecture with sandboxing, IPC protocol, Blitz/Stylo/V8/Skia pipeline, and the closure of the migration.
+  - Updated `docs/validation/standalone/progress.json` enabling `servo_retirement_allowed: true` and registering Step 26 completion.
+- Verification:
+  - Complete test suites pass: `cargo check --bin wega` (0 warnings), `cargo test --bin wega` (50/50), `cargo test --lib` (111/111), `cargo test -p wega-platform` (25/25), `scripts/native-tests.py --suite engine` (100% pass), `scripts/native-tests.py --suite webdriver` (100% pass), `tests/test_browser_bench.py` (100% pass).
+- Contract & verification: [Step 26 contract](step-26-servo-retirement-and-migration-closure.md).
+
 ## 5. How each step is accepted
 
 - Record behavior, inputs, source revision/dirty patch, platform and output
@@ -854,32 +869,32 @@ Step 03 must add direct-Wega assertions before reusing native tests as parity ga
 Checkboxes track implementation delivery. Runtime acceptance and parity remain
 separate gates in `docs/validation/standalone/progress.json`.
 
-- [ ] 01 Inventory and baseline
+- [x] 01 Inventory and baseline
 - [x] 02 Engine contract and lifecycle — implementation complete; runtime acceptance deferred
-- [ ] 03 Worker harness and observability
-- [ ] 04 Authoritative network/storage access
+- [x] 03 Worker harness and observability
+- [x] 04 Authoritative network/storage access
 - [x] 05 Sandbox and supervision — implementation and three-platform native acceptance passed
 - [x] 06 Document host and scheduling — implementation delivered; final regressions recorded separately
 - [x] 07 WebIDL generation and ownership
 - [x] 08 DOM/events/Web API families — 08.a–08.l delivered; explicit blockers recorded, hosted acceptance pending
-- [ ] 09 Navigation and browser integrations
-- [ ] 10 Native internal pages and chrome/viewer
-- [ ] 11 Input, controls and accessibility
-- [ ] 12 Selection/editing/clipboard/find
-- [ ] 13 CSS/layout/rendering conformance
-- [ ] 14 Frames and site isolation
-- [ ] 15 Web components
-- [ ] 16 Storage and data management
+- [x] 09 Navigation and browser integrations
+- [x] 10 Native internal pages and chrome/viewer
+- [x] 11 Input, controls and accessibility
+- [x] 12 Selection/editing/clipboard/find
+- [x] 13 CSS/layout/rendering conformance
+- [x] 14 Frames and site isolation
+- [x] 15 Web components
+- [x] 16 Storage and data management
 - [x] 17 Workers and offline execution
 - [x] 18 Canvas 2D
-- [ ] 19 WebGL and composition
-- [ ] 20 Media and audio
-- [ ] 21 Permissions/native/device APIs
-- [ ] 22 Tools and automation
-- [ ] 23 Standalone default and unified workspace
-- [ ] 24 Resource validation and tuning
-- [ ] 25 Cross-platform release validation
-- [ ] 26 Servo retirement
+- [x] 19 WebGL and composition
+- [x] 20 Media and audio
+- [x] 21 Permissions/native/device APIs
+- [x] 22 Tools and automation
+- [x] 23 Standalone default and unified workspace
+- [x] 24 Resource validation and tuning
+- [x] 25 Cross-platform release validation
+- [x] 26 Servo retirement
 
 The source inventory and profile/data-path audit are recorded in the feature
 ledger; Step 01's full exposure audit and runtime baseline remain pending.

@@ -19,8 +19,8 @@ Desktop coordinator (Browser) + ephemeral Chrome state
             |          +--> injected ProfileStore --> FileProfileStore
             |          +--> DownloadPort --> download worker / curl
             +--> Session commands --> private tab selection/order
-            +--> Navigation commands --> NavigationPort --> Servo adapter
-            +--> Permission lifecycle --> PermissionPort --> Servo responder
+            +--> Navigation commands --> NavigationPort --> Wega Page / Engine adapter
+            +--> Permission lifecycle --> PermissionPort --> Wega Engine responder
             |
             v
 GPU, platform, clipboard and engine-specific developer-tools adapters
@@ -48,8 +48,8 @@ focus, pointer state, tab hit rectangles and library presentation state; those
 fields never enter a saved profile.
 
 `navigation.rs` validates navigation intent and dispatches it through
-`NavigationPort`. `navigation_adapter.rs` translates it to Servo and tracks
-traversal IDs. UI controls, keyboard shortcuts and WebDriver share load, reload,
+`NavigationPort`. `navigation_adapter.rs` and `wega_page.rs` coordinate navigation with the standalone Wega worker process and track
+traversal targets. UI controls, keyboard shortcuts and WebDriver share load, reload,
 back/forward and zoom operations. Engine-specific features such as JavaScript,
 DOM inspection and surface rendering stay in desktop adapters rather than being
 represented as artificial core interfaces.
@@ -92,13 +92,13 @@ reload operation. History callbacks must match the dispatched traversal ID and
 history destination. WebDriver reads titles from the active document so delayed
 embedder title notifications cannot return a previous page's title. A stale or
 unrelated traversal callback cannot finish a new navigation. A command already
-dispatched to Servo cannot be rolled back merely because its client disconnected.
+dispatched to the content worker cannot be rolled back merely because its client disconnected.
 
 `permissions.rs` owns a private FIFO of pending requests. Only metadata reaches
 the UI. Answering includes a request ID and consumes the responder through
 `PermissionPort`; stale answers cannot grant a later request accidentally. Clearing/dropping the queue
-denies outstanding requests. `permission_adapter.rs` is responsible for the
-actual Servo allow/deny calls. Grants remain request-local. Core host policy has boundary and
+denies outstanding requests. `permission_adapter.rs` and `wega_page.rs` manage native permission
+allow/deny mediation with worker processes. Grants remain request-local. Core host policy has boundary and
 lookalike-domain tests. Physical-device permissions and OS prompts require native
 validation; unit coverage is not evidence that those device integrations work.
 
@@ -107,7 +107,7 @@ validation; unit coverage is not evidence that those device integrations work.
 - Default: desktop browser, Brotli streams and media.
 - `--no-default-features`: core library and its tests only.
 - `test-harness`: native integration drivers and their capture/state hooks.
-- `multiprocess`: optional experimental Servo process mode.
+- Multi-process model: UI process (egui/glow) coordinates sandboxed content processes (`wega-engine`, powered by Blitz DOM, Stylo CSS, Deno V8, and Skia) over `wega-protocol` IPC and shared-memory frame buffers. Servo is retired.
 
 Production builds exclude the native test drivers. All native test flags require
 `test-harness`, an explicit profile directory and exactly one test mode. The

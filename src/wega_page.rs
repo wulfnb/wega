@@ -1157,7 +1157,7 @@ impl Page {
                     }
                     let _ = proxy.send_event(Wake::Ui);
                 }
-                Err("Wega engine stopped. Reload this page or switch to Servo.".into())
+                Err("Wega engine stopped. Reload this page or restart the tab.".into())
             })();
             if let Err(error) = result {
                 reader_broker.revoke();
@@ -1339,7 +1339,7 @@ impl Page {
             .as_ref()
             .ok_or("Worker is closed")?
             .try_send(request)
-            .map_err(|_| "Wega engine is busy or stopped. Reload or switch to Servo.".to_string());
+            .map_err(|_| "Wega engine is busy or stopped. Reload the page.".to_string());
         if result.is_err()
             && activates
             && let Some(authority) = &mut self

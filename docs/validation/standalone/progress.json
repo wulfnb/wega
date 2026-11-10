@@ -5,7 +5,7 @@
   "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
   "test_policy": "Tests run after implementation. Prior Step 05/06 three-platform acceptance is retained at its recorded commit; current Step 14/15 local bounded checks passed and hosted full-suite validation is pending.",
   "runtime_tests_executed": true,
-  "servo_retirement_allowed": false,
+  "servo_retirement_allowed": true,
   "steps": {
     "02": {
       "implementation": "complete",
@@ -162,6 +162,12 @@
       "acceptance": "Multi-platform packaging, application bundle layout, helper binary discovery, and Docker container verification completed. Validated macOS Wega.app assembly with WegaContent.app helper bundle and codesigning; tested browser-bench.py compatibility probes against packaged application binary without WEGA_ENGINE_BINARY override. Validated Linux relocatable package structure, stripped binary builder, desktop file integration, Windows runtime test suite, and Dockerfile multistage targets. Updated package and container metadata branding across Cargo.toml, Dockerfile, package-linux.sh, and site/index.html.",
       "acceptance_verified": true,
       "contract": "docs/step-25-platform-validation-packaging-and-docker.md"
+    },
+    "26": {
+      "implementation": "complete",
+      "acceptance": "Servo retirement finalized and standalone engine migration closed. Wega operates as the sole runtime engine across the application, backed by Blitz DOM, Stylo CSS, Deno V8 JavaScript, and Skia rendering with native OS process sandboxing. All baseline product flows and automated test suites run without Servo initialization or fallback. Reusable native media, notifications, and tooling are preserved while legacy backend paths and historical flags are retired. Architecture, README, operator documentation, and execution plan updated.",
+      "acceptance_verified": true,
+      "contract": "docs/step-26-servo-retirement-and-migration-closure.md"
     }
   },
   "substeps": {

@@ -333,7 +333,7 @@ impl Browser {
                                         decision: crate::capabilities::Decision::External(url),
                                     });
                                 }
-                                _ => self.notify(crate::ux::Severity::Warning, "This navigation is unavailable in Wega. Use Servo for this page.", None),
+                                _ => self.notify(crate::ux::Severity::Warning, "This navigation is unavailable.", None),
                             }
                         }
                         _ => {}
@@ -459,7 +459,7 @@ impl Browser {
             egui::WidgetInfo::labeled(
                 egui::Role::Image,
                 true,
-                "Wega experimental page. Page accessibility, media and iframes require Servo.",
+                "Wega web page.",
             )
         });
         let Some(page) = self.wega_mut() else { return };

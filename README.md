@@ -3,10 +3,9 @@
 *Wega* is the German name of Vega, the bright star in the constellation Lyra.
 It was the pole star around 12,000 BC and will be again around 13,700 AD.
 
-A native Rust desktop browser engineered in Germany that embeds the open-source **Servo 0.7.0** web engine. Websites are fetched,
-parsed, styled, painted, and executed by Servo. The interface uses egui 0.37 and
-winit. Servo's WebRender and the browser chrome share a Surfman/OpenGL context;
-each tab renders into its own offscreen framebuffer, composited into the window.
+A native Rust desktop browser engineered in Germany, powered by its own independent multi-process web engine (`wega-engine`). Websites are fetched,
+parsed, styled, painted, and executed by the Wega standalone engine (Blitz DOM, Stylo CSS, Deno V8 JavaScript, and Skia rendering) inside native OS sandboxes. The interface uses egui 0.37 and
+winit. The browser coordinator communicates with sandboxed worker processes over an IPC protocol and shared-memory frame buffers.
 
 The browser chrome uses Wega's own emerald theme. It is an independent design and
 contains no Firefox code or artwork. Tabs can be
@@ -45,7 +44,7 @@ also available if the DMG layout is inconvenient.
 >
 > **This is an experimental Alpha preview (`v0.1.0-alpha.1`) intended strictly for testing, developer evaluation, and feedback.**
 >
-> 1. **Experimental Engine**: Wega embeds the Servo web engine. Websites are rendered and executed using an engine that is under continuous active open-source development and does not yet implement all web security standards or process isolation mechanisms found in production browsers.
+> 1. **Independent Engine**: Wega runs on its standalone native engine (Blitz DOM, Stylo CSS, Deno V8 JavaScript, and Skia graphics) with multi-process isolation and OS-level sandboxing (Landlock/seccomp on Linux, Apple App Sandbox on macOS, and AppContainer on Windows). The historical embedded Servo backend has been retired.
 > 2. **User Responsibility**: Wega is **not** intended for security-sensitive activities such as online banking, financial transactions, or critical personal data. Any use of this experimental software is at your own risk (*Nutzung auf eigene Gefahr*).
 > 3. **Limitation of Liability (German Law)**: This software is provided free of charge (*unentgeltlich*). Pursuant to § 521 of the German Civil Code (BGB), liability of the developers and contributors is limited to intent (*Vorsatz*) and gross negligence (*grobe Fahrlässigkeit*).
 > 4. **Trademark Notice**: Servo is a trademark of the Linux Foundation. Wega is an independent project and is not affiliated with or endorsed by the Linux Foundation or Mozilla.
@@ -54,8 +53,8 @@ also available if the DMG layout is inconvenient.
 
 Modern web browsing has largely converged into a monoculture of memory-hungry, corporate-controlled browsers. Wega was born out of three immediate personal needs and a broader architectural vision:
 
-1. **Turning the Servo Engine into a Real Everyday Browser**:
-   Servo is one of the most exciting achievements in modern systems programming—a ground-up parallel web engine written in Rust. Yet for years, it has existed primarily as an embedded research library or tech demo. Wega takes Servo and builds an actual, usable desktop browser around it: complete with movable tabs, bookmarks, history, developer tools, download managers, and window management.
+1. **A Lean, Ground-Up Native Web Engine**:
+   Wega pairs Rust systems programming with the Blitz DOM, Stylo's parallel CSS engine, Deno's V8 runtime, and Skia graphics to build a fast, secure, and independent desktop browser complete with movable tabs, bookmarks, history, developer tools, download managers, and window management.
 2. **The Ideal Lightweight Homelab Browser**:
    In homelab and self-hosted environments, accessing internal dashboards, web services, and the internet directly from the server typically requires running heavy remote desktop environments (like XFCE + Chrome) that consume gigabytes of RAM. Wega was designed to run seamlessly in a lightweight Docker container with built-in authenticated HTTPS, noVNC streaming, and minimal server overhead.
 3. **Escaping RAM Bloat & System Freezes**:

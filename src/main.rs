@@ -292,7 +292,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if (options.engine == Some(wega::engine_choice::EngineKind::Wega) || options.engine_test)
         && wega_page::executable().is_none()
     {
-        return Err("Wega engine is not installed. Run python3 scripts/build-wega-engine.py --debug, or use --engine servo.".into());
+        return Err("Wega engine is not installed. Run python3 scripts/build-wega-engine.py --debug.".into());
     }
     #[cfg(target_os = "windows")]
     let Some(instance) = windows_instance::claim(&options)? else {

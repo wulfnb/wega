@@ -384,18 +384,12 @@ impl Browser {
             self.settings_sheet(ctx);
             if self.features.site_info || self.features.diagnostics {
                 let mut open = true;
-                let mut servo = false;
-                egui::Window::new("Wega experimental engine").open(&mut open).show(ctx,|ui|{
-                    ui.label("This engine currently supports article rendering, page find, form controls and accessibility. Site-data inspection, media and page tools require Servo.");
-                    servo=ui.button("Reload this page in Servo").clicked();
-                    ui.label("Website cookies and sign-in state are separate. Engine selection is remembered per open tab.");
+                egui::Window::new("Wega Engine Info").open(&mut open).show(ctx,|ui|{
+                    ui.label("Wega standalone engine is active (powered by Blitz DOM, Stylo CSS, Deno V8 JavaScript, and Skia rendering).");
                 });
                 if !open {
                     self.features.site_info = false;
                     self.features.diagnostics = false;
-                }
-                if servo {
-                    self.switch_engine(wega::engine_choice::EngineKind::Servo);
                 }
             }
         }
