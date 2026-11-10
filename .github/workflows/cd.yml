@@ -400,6 +400,8 @@ jobs:
         shell: pwsh
         run: scripts\windows-launch-check.ps1 -Directory dist\wega-windows-x64
       - name: Test packaged media and URL handoff without installed SDK
+        env:
+          WEGA_TEST_ALLOW_LOOPBACK: '1'
         run: python scripts/windows-runtime-test.py --binary dist/wega-windows-x64/wega.exe
       - name: Verify both engines in the packaged directory
         shell: pwsh

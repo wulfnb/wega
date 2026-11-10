@@ -197,8 +197,11 @@ jobs:
 
   desktop-macos:
     name: Desktop Native & Engine Suite (macOS)
-    needs: [changes, lint]
-    if: needs.changes.outputs.desktop-macos == 'true'
+    needs: [changes, lint, engine-validation]
+    if: |
+      !failure() && !cancelled() &&
+      needs.changes.outputs.desktop-macos == 'true' &&
+      (needs.engine-validation.result == 'success' || needs.engine-validation.result == 'skipped')
     runs-on: macos-15
     timeout-minutes: 90
     # No job-level CARGO_* variables: they are part of rust-cache's key, and the
@@ -451,8 +454,11 @@ jobs:
 
   desktop-windows:
     name: Desktop Build & Launch (Windows)
-    needs: [changes, lint]
-    if: needs.changes.outputs.desktop-windows == 'true'
+    needs: [changes, lint, engine-validation]
+    if: |
+      !failure() && !cancelled() &&
+      needs.changes.outputs.desktop-windows == 'true' &&
+      (needs.engine-validation.result == 'success' || needs.engine-validation.result == 'skipped')
     runs-on: windows-2022
     timeout-minutes: 90
     steps:

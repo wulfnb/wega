@@ -33,16 +33,19 @@ def main():
     env['PATH']=os.pathsep.join(path for path in env['PATH'].split(os.pathsep) if not sdk or not path.lower().startswith(sdk.lower()))
     for key in list(env):
         if key.startswith(('GSTREAMER_','GST_PLUGIN','SERVO_GSTREAMER')):env.pop(key)
-    env.update(WEGA_FIXTURE_URL=f'http://127.0.0.1:{server.server_port}',WEGA_TEST_OUTPUT=str(work))
+    env.update(WEGA_FIXTURE_URL=f'http://127.0.0.1:{server.server_port}',WEGA_TEST_OUTPUT=str(work),WEGA_TEST_ALLOW_LOOPBACK='1')
     try:
         subprocess.run([sys.executable,str(ROOT/'tests/media_smoke.py'),str(binary)],env=env,check=True,timeout=120)
         capture=work/'wega-engine.png'
-        subprocess.run([str(binary),'--engine','wega','--profile-dir',str(work/'wega-engine-profile'),'--capture',str(capture),env['WEGA_FIXTURE_URL']+'/wega-engine.html'],env=env,check=True,timeout=65)
+        wega_profile=work/'wega-engine-profile';wega_profile.mkdir(parents=True,exist_ok=True)
+        (wega_profile/'browser.json').write_text(json.dumps({'policy':{'allowed_hosts':'127.0.0.1 localhost'}}))
+        subprocess.run([str(binary),'--engine','wega','--profile-dir',str(wega_profile),'--capture',str(capture),env['WEGA_FIXTURE_URL']+'/wega-engine.html'],env=env,check=True,timeout=65)
         report=json.loads(capture.with_suffix('.json').read_text())
         assert report['engine']=='wega' and report['servoInitialized'] is False and report['title']=='Wega engine ready',report
         with socket.socket() as listener:
             listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
-        profile=work/'profile';profile.mkdir()
+        profile=work/'profile';profile.mkdir(parents=True,exist_ok=True)
+        (profile/'browser.json').write_text(json.dumps({'policy':{'allowed_hosts':'127.0.0.1 localhost'}}))
         local=work/'some page & café.html';local.write_text('<title>Local Windows handoff</title><p>Local bytes</p>',encoding='utf8')
         def request(method,path,body=None):
             req=urllib.request.Request(f'http://127.0.0.1:{port}'+path,data=None if body is None else json.dumps(body).encode(),method=method,headers={'Content-Type':'application/json'})
