@@ -1,3 +1,93 @@
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpw0polrgu/blitz-paint-0.3.0-beta.4/.cargo_vcs_info.json /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint/.cargo_vcs_info.json
+--- a/.cargo_vcs_info.json
++++ b/.cargo_vcs_info.json
+@@ -1,6 +0,0 @@
+-{
+-  "git": {
+-    "sha1": "92b11f1bd8ab7975411328b0406a95a09445b4e7"
+-  },
+-  "path_in_vcs": "packages/blitz-paint"
+-}
+\ No newline at end of file
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpw0polrgu/blitz-paint-0.3.0-beta.4/src/gradient.rs /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint/src/gradient.rs
+--- a/src/gradient.rs
++++ b/src/gradient.rs
+@@ -514,6 +514,74 @@
+     )
+ }
+ 
++pub(crate) fn gradient_first_color(
++    gradient: &StyloGradient,
++    current_color: &AbsoluteColor,
++) -> Option<Color> {
++    match gradient {
++        GenericGradient::Linear { items, .. } => {
++            for item in items.iter() {
++                match item {
++                    GenericGradientItem::SimpleColorStop(color) => {
++                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
++                        if c.components[3] > 0.0 {
++                            return Some(c);
++                        }
++                    }
++                    GenericGradientItem::ComplexColorStop { color, .. } => {
++                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
++                        if c.components[3] > 0.0 {
++                            return Some(c);
++                        }
++                    }
++                    _ => {}
++                }
++            }
++            None
++        }
++        GenericGradient::Radial { items, .. } => {
++            for item in items.iter() {
++                match item {
++                    GenericGradientItem::SimpleColorStop(color) => {
++                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
++                        if c.components[3] > 0.0 {
++                            return Some(c);
++                        }
++                    }
++                    GenericGradientItem::ComplexColorStop { color, .. } => {
++                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
++                        if c.components[3] > 0.0 {
++                            return Some(c);
++                        }
++                    }
++                    _ => {}
++                }
++            }
++            None
++        }
++        GenericGradient::Conic { items, .. } => {
++            for item in items.iter() {
++                match item {
++                    GenericGradientItem::SimpleColorStop(color) => {
++                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
++                        if c.components[3] > 0.0 {
++                            return Some(c);
++                        }
++                    }
++                    GenericGradientItem::ComplexColorStop { color, .. } => {
++                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
++                        if c.components[3] > 0.0 {
++                            return Some(c);
++                        }
++                    }
++                    _ => {}
++                }
++            }
++            None
++        }
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpw0polrgu/blitz-paint-0.3.0-beta.4/src/layers.rs /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint/src/layers.rs
 --- a/src/layers.rs
 +++ b/src/layers.rs
 @@ -1,3 +1,4 @@
@@ -5,11 +95,10 @@
  use anyrender::{Filter, PaintScene};
  use kurbo::{Affine, Shape};
  use peniko::{Fill, Mix};
-@@ -16,6 +17,16 @@
- }
+@@ -17,6 +18,16 @@
  
  impl LayerManager {
-+    #[allow(clippy::too_many_arguments)]
+     #[allow(clippy::too_many_arguments)]
 +    pub(crate) fn with_blend_layer<S: PaintScene, F: FnOnce(&mut S)>(
 +        &self, scene: &mut S, condition: bool, blend: Mix, opacity: f32,
 +        transform: Affine, shape: &impl Shape, filter: Option<Arc<Filter>>,
@@ -19,9 +108,10 @@
 +        paint(scene);
 +        self.maybe_pop_layer(scene, used);
 +    }
-     #[allow(clippy::too_many_arguments)]
++    #[allow(clippy::too_many_arguments)]
      pub(crate) fn maybe_with_layer<S: PaintScene, F: FnOnce(&mut S)>(
          &self,
+         scene: &mut S,
 @@ -52,6 +63,21 @@
          filter: Option<Arc<Filter>>,
          backdrop_filter: Option<Arc<Filter>>,
@@ -59,6 +149,65 @@
                  opacity,
                  transform,
                  shape,
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpw0polrgu/blitz-paint-0.3.0-beta.4/src/render/background.rs /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint/src/render/background.rs
+--- a/src/render/background.rs
++++ b/src/render/background.rs
+@@ -39,6 +39,7 @@
+     BorderBox,
+     PaddingBox,
+     ContentBox,
++    Text,
+ }
+ 
+ // Also covers MaskClip as the type is the same
+@@ -51,6 +52,7 @@
+ 
+             // TODO: support BorderArea
+             StyloBackgroundClip::BorderArea => Self::BorderBox,
++            StyloBackgroundClip::Text => Self::Text,
+         }
+     }
+ }
+@@ -141,14 +143,16 @@
+         // The background color is clipped by the clip of the last layer in the list
+         let background_clip: BoxModelBox =
+             (*get_cyclic(&bg_styles.background_clip.0, layer_count - 1)).into();
+-        let background_clip_path = self.box_path(background_clip);
+ 
+-        // Draw background color (if any)
+-        self.draw_solid_bg(scene, &background_clip_path);
++        if background_clip != BoxModelBox::Text {
++            let background_clip_path = self.box_path(background_clip);
++            // Draw background color (if any)
++            self.draw_solid_bg(scene, &background_clip_path);
++        }
+ 
+         for idx in (0..layer_count).rev() {
+             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
+-            if layer_paints_nothing(&layer) {
++            if layer_paints_nothing(&layer) || layer.clip == BoxModelBox::Text {
+                 continue;
+             }
+             let background_clip_path = self.box_path(layer.clip);
+@@ -171,7 +175,7 @@
+     /// The path of the given CSS box model box for this element
+     pub(super) fn box_path(&self, css_box: BoxModelBox) -> BezPath {
+         match css_box {
+-            BoxModelBox::BorderBox => self.frame.border_box_path(),
++            BoxModelBox::BorderBox | BoxModelBox::Text => self.frame.border_box_path(),
+             BoxModelBox::PaddingBox => self.frame.padding_box_path(),
+             BoxModelBox::ContentBox => self.frame.content_box_path(),
+         }
+@@ -180,7 +184,7 @@
+     /// The rect of the given CSS box model box for this element
+     fn box_rect(&self, css_box: BoxModelBox) -> Rect {
+         match css_box {
+-            BoxModelBox::BorderBox => self.frame.border_box,
++            BoxModelBox::BorderBox | BoxModelBox::Text => self.frame.border_box,
+             BoxModelBox::PaddingBox => self.frame.padding_box,
+             BoxModelBox::ContentBox => self.frame.content_box,
+         }
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpw0polrgu/blitz-paint-0.3.0-beta.4/src/render.rs /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint/src/render.rs
 --- a/src/render.rs
 +++ b/src/render.rs
 @@ -1,3 +1,4 @@
@@ -106,6 +255,7 @@
                      opacity,
                      cx.transform,
                      &effect_layer_clip,
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpw0polrgu/blitz-paint-0.3.0-beta.4/src/text.rs /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint/src/text.rs
 --- a/src/text.rs
 +++ b/src/text.rs
 @@ -1,3 +1,4 @@
@@ -149,15 +299,53 @@
          // Decorations accumulated for this line, keyed by decorating box, so each box is
          // painted once (spanning all its runs) using its own font — matching Firefox, which
          // draws one decoration per box rather than one stepped segment per differently-sized
-@@ -637,6 +654,7 @@
+@@ -635,8 +652,44 @@
+ 
+                 // The glyph colour comes from the run's own node (the stack top): `color`
                  // inherits, so the innermost inline element already carries the right value.
-                 let text_color = stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK);
+-                let text_color = stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK);
++                let mut text_color = stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK);
++                if text_color.components[3] == 0.0 {
++                    let mut curr_id = Some(style.brush.id);
++                    while let Some(id) = curr_id {
++                        if let Some(node) = doc.get_node(id) {
++                            if let Some(styles) = node.primary_styles() {
++                                let bg = styles.get_background();
++                                let has_text_clip = bg.background_clip.0.iter().any(|c| *c == style::values::computed::BackgroundClip::Text);
++                                let current = styles.clone_color();
++                                let bg_color = bg.background_color.resolve_to_absolute(&current).as_srgb_color();
++                                if has_text_clip || bg_color.components[3] > 0.0 || !bg.background_image.0.is_empty() {
++                                    if bg_color.components[3] > 0.0 {
++                                        text_color = bg_color;
++                                        break;
++                                    }
++                                    let mut found = None;
++                                    for img in bg.background_image.0.iter() {
++                                        if let style::values::generics::image::GenericImage::Gradient(grad) = img {
++                                            if let Some(c) = crate::gradient::gradient_first_color(grad, &current) {
++                                                found = Some(c);
++                                                break;
++                                            }
++                                        }
++                                    }
++                                    if let Some(c) = found {
++                                        text_color = c;
++                                        break;
++                                    }
++                                }
++                            }
++                            curr_id = node.parent;
++                        } else {
++                            break;
++                        }
++                    }
++                }
  
 +
                  let embolden = if FONT_EMBOLDEN_ENABLED {
                      let fs = font_size as f64 / scale;
                      kurbo::Vec2::new((0.015125 * fs).min(0.3), (0.0121 * fs).min(0.3))
-@@ -644,7 +662,49 @@
+@@ -644,7 +697,49 @@
                      kurbo::Vec2::default()
                  };
  
@@ -207,7 +395,7 @@
                  scene.draw_glyphs(
                      font,
                      font_size,
-@@ -656,11 +716,7 @@
+@@ -656,11 +751,7 @@
                      1.0, // alpha
                      transform,
                      glyph_xform,

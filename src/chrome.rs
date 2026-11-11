@@ -23,20 +23,12 @@ pub(crate) struct Chrome {
     pub library_query: String,
     pub confirm_clear_history: bool,
     pub library_rect: Rect,
-    pub username: String,
-    pub password: String,
-    pub file_paths: String,
-    pub prompt_text: String,
-    pub original_selection: Vec<usize>,
-    pub original_color: Option<[u8; 3]>,
     pub dialog_key: Option<String>,
     pub dialog_previous_focus: Option<egui::Id>,
     pub file_error: Option<String>,
-    pub file_handoff: Option<crate::file_handoff::Request>,
     pub notice: Option<crate::ux::Notice>,
     pub expanded_notice: bool,
     pub closed_tabs: Vec<String>,
-    pub ime_composing: bool,
 }
 impl Default for Chrome {
     fn default() -> Self {
@@ -58,20 +50,12 @@ impl Default for Chrome {
             library_query: String::new(),
             confirm_clear_history: false,
             library_rect: Rect::NOTHING,
-            username: String::new(),
-            password: String::new(),
-            file_paths: String::new(),
-            prompt_text: String::new(),
-            original_selection: Vec::new(),
-            original_color: None,
             dialog_key: None,
             dialog_previous_focus: None,
             file_error: None,
-            file_handoff: None,
             notice: None,
             expanded_notice: false,
             closed_tabs: Vec::new(),
-            ime_composing: false,
         }
     }
 }

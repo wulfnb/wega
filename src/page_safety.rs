@@ -1,13 +1,10 @@
 //! Confirm destructive actions when the document reports edits, or cannot be queried.
 use crate::browser::Browser;
-use wega::engine_choice::EngineKind;
 
 #[derive(Clone)]
 pub(crate) enum Action {
     Close(u64),
     Discard(u64),
-    Switch(u64, EngineKind),
-    Fallback(u64),
     Navigate(u64, wega::navigation::Command),
     Quit,
 }
@@ -27,11 +24,7 @@ impl Browser {
             return true;
         }
         let key = match &action {
-            Action::Close(key)
-            | Action::Discard(key)
-            | Action::Fallback(key)
-            | Action::Switch(key, _)
-            | Action::Navigate(key, _) => Some(*key),
+            Action::Close(key) | Action::Discard(key) | Action::Navigate(key, _) => Some(*key),
             Action::Quit => None,
         };
         let tabs: Vec<_> = self
@@ -70,20 +63,6 @@ impl Browser {
                 {
                     self.page_state_result(request, key, true);
                 }
-            } else if let Some(view) = tab.view() {
-                let delegate = self.delegate.clone();
-                let window = self.window.clone();
-                view.evaluate_javascript(
-                    "typeof __wega_page_has_edits==='function' ? __wega_page_has_edits() : true",
-                    move |result| {
-                        let dirty = !matches!(result, Ok(servo::JSValue::Boolean(false)));
-                        delegate
-                            .events
-                            .borrow_mut()
-                            .push_back(crate::engine::Event::PageState(request, key, dirty));
-                        window.request_redraw();
-                    },
-                );
             } else {
                 self.page_state_result(request, key, true);
             }
@@ -147,11 +126,7 @@ impl Browser {
                 self.quit_requested = true;
                 return;
             }
-            Action::Close(key)
-            | Action::Discard(key)
-            | Action::Fallback(key)
-            | Action::Switch(key, _)
-            | Action::Navigate(key, _) => key,
+            Action::Close(key) | Action::Discard(key) | Action::Navigate(key, _) => key,
         };
         // Resolve identity at decision time; indices may change while a prompt is open.
         let Some(index) = self.session().tabs().iter().position(|tab| tab.key == key) else {
@@ -161,19 +136,6 @@ impl Browser {
             Action::Close(_) => self.close_tab_confirmed(index),
             Action::Discard(_) => {
                 self.discard_tab_confirmed(index);
-            }
-            Action::Fallback(_) => {
-                self.select_tab(index);
-                if let Some(url) = self.current_url() {
-                    let key = wega::engine_choice::site_key(&url);
-                    if self.replace_engine_confirmed(EngineKind::Servo, url, false) {
-                        self.mark_fallback(key);
-                    }
-                }
-            }
-            Action::Switch(_, engine) => {
-                self.select_tab(index);
-                self.switch_engine_confirmed(engine);
             }
             Action::Navigate(_, command) => {
                 self.select_tab(index);
@@ -191,7 +153,6 @@ impl Browser {
         let label = match self.destructive_action {
             Some(Action::Close(_)) => "Close tab",
             Some(Action::Discard(_)) => "Unload tab",
-            Some(Action::Switch(_, _)) | Some(Action::Fallback(_)) => "Switch engine",
             Some(Action::Navigate(_, _)) => "Leave page",
             _ => "Quit browser",
         };

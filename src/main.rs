@@ -7,34 +7,20 @@ mod browser;
 mod capabilities;
 mod capabilities_ui;
 mod capture;
-mod compat;
 mod components;
-mod console_model;
-mod console_ui;
 mod containers_ui;
-mod cookie_inspector;
-mod debug_driver;
-mod debug_model;
-mod debugger_ui;
 mod devtools_ui;
-mod file_handoff;
 mod page_safety;
 use wega::downloads;
 mod downloads_ui;
 mod engine;
-mod input;
-mod inspector_probes;
-mod inspector_ui;
 mod internal_pages;
 #[cfg(target_os = "macos")]
 mod mac_application;
 mod native_media;
 mod native_notifications;
 mod native_theme;
-mod network;
-mod network_controls;
-mod performance_ui;
-mod probes;
+mod window_context;
 #[cfg(target_os = "windows")]
 mod windows_instance;
 use wega::profile;
@@ -151,22 +137,14 @@ impl ApplicationHandler<Wake> for App {
         if let Some(browser) = &mut self.browser {
             browser.sync_tool_window(event_loop);
             match &event {
-                Wake::Media(action) => browser.media_action(Some(action.clone())),
+                Wake::Media(action) => browser.media_action(Some(*action)),
                 Wake::ToggleMedia => browser.media_action(None),
                 Wake::Accessibility(event) => browser.accessibility_event(event),
                 _ => {}
             }
-            if matches!(event, Wake::Servo) {
-                // Servo also wakes for paint acknowledgements. Repainting here
-                // feeds those acknowledgements back into another full paint,
-                // keeping software renderers busy even on a static page.
-                // Delegates request a redraw when a new frame or UI change is ready.
-                browser.pump();
-            } else {
-                browser.window.request_redraw();
-                if let Some(window) = &browser.tool_window {
-                    window.window.request_redraw();
-                }
+            browser.window.request_redraw();
+            if let Some(window) = &browser.tool_window {
+                window.window.request_redraw();
             }
             browser.check_background_tasks(event_loop);
         }
@@ -226,16 +204,6 @@ impl ApplicationHandler<Wake> for App {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    #[cfg(feature = "multiprocess")]
-    {
-        let mut args = std::env::args();
-        while let Some(arg) = args.next() {
-            if arg == "--content-process" {
-                servo::run_content_process(args.next().ok_or("Missing content process token")?);
-                return Ok(());
-            }
-        }
-    }
     let mut options =
         Options::parse_from(std::env::args().skip(1)).map_err(std::io::Error::other)?;
     if options.help {
@@ -248,7 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             );
         }
         println!(
-            "Wega Browser\nUsage: wega [--engine servo|wega] [--profile-dir PATH] [--capture FILE.png] [URL]\n  --remote-devtools PORT · --webdriver-port PORT\n    Both open UNAUTHENTICATED endpoints on 127.0.0.1. Any local process or user\n    can then read and control open pages (cookies, sessions, input). Use them\n    only on a trusted machine and with a disposable --profile-dir.\n  --multiprocess (requires --features multiprocess)\n  Native tests require --features test-harness and an isolated --profile-dir.\n  Test modes: --engine-test, --smoke-test, --download-test, --toolbox-test, --theme-test, --capabilities-test"
+            "Wega Browser\nUsage: wega [--engine wega] [--profile-dir PATH] [--capture FILE.png] [URL]\n  --webdriver-port PORT\n    Opens an UNAUTHENTICATED endpoint on 127.0.0.1. Any local process or user\n    can then read and control open pages (cookies, sessions, input). Use them\n    only on a trusted machine and with a disposable --profile-dir.\n  Native tests require --features test-harness and an isolated --profile-dir.\n  Test modes: --engine-test, --smoke-test, --download-test"
         );
         println!(
             "  --container ID: open Personal (personal), Work (work), Banking (banking),\n    Shopping (shopping), or a custom ID in an isolated container window.\n    --profile-dir selects the parent profile when used with --container."
@@ -268,9 +236,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let may_forward = options.engine.is_none()
             && !options.test_mode()
             && options.capture.is_none()
-            && options.webdriver_port.is_none()
-            && options.remote_devtools.is_none()
-            && !options.multiprocess;
+            && options.webdriver_port.is_none();
         match wega::container_launch::Server::claim(
             options.profile_dir.as_ref().unwrap(),
             urls,
@@ -290,9 +256,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .clone()
             .unwrap_or_else(profile::Profile::default_dir),
     );
-    if (options.engine == Some(wega::engine_choice::EngineKind::Wega) || options.engine_test)
-        && wega_page::executable().is_none()
-    {
+    if wega_page::executable().is_none() {
         return Err(
             "Wega engine is not installed. Run python3 scripts/build-wega-engine.py --debug."
                 .into(),
@@ -302,27 +266,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let Some(instance) = windows_instance::claim(&options)? else {
         return Ok(());
     };
-    #[cfg(feature = "media")]
-    {
-        let profile = options
-            .profile_dir
-            .clone()
-            .unwrap_or_else(crate::profile::Profile::default_dir);
-        let engine = profile.join("engine");
-        std::fs::create_dir_all(&engine)?;
-        // This runs before winit, Servo or worker threads are started. macOS and
-        // Windows load Servo's explicit plugin list. Linux needs system plugin
-        // discovery, since Servo uses distribution-provided GStreamer plugins.
-        unsafe {
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            if std::env::var_os("GST_PLUGIN_SYSTEM_PATH_1_0").is_none() {
-                std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", "");
-            }
-            if std::env::var_os("GST_REGISTRY_1_0").is_none() {
-                std::env::set_var("GST_REGISTRY_1_0", engine.join("gstreamer-registry.bin"));
-            }
-        }
-    }
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .map_err(|_| std::io::Error::other("Cannot install TLS provider"))?;
@@ -360,8 +303,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 mod chrome;
 mod download_actions;
-mod navigation_adapter;
 mod permission_adapter;
-mod servo_host;
 mod wega_page;
 mod wega_ui;

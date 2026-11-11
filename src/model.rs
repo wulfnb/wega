@@ -120,12 +120,6 @@ pub struct Policy {
     /// Migrate the original hidden-by-default counter once; later opt-outs persist.
     #[serde(default)]
     pub performance_visibility_version: u8,
-    /// Exact canonical HTTP(S) origins; no wildcard or credential/path matching.
-    pub site_engines: std::collections::BTreeMap<String, crate::engine_choice::EngineKind>,
-    #[serde(default)]
-    pub wega_only: bool,
-    pub wega_rollout: bool,
-    pub wega_fallback: bool,
     pub blocked_site_permissions:
         std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
     pub user_script: String,
@@ -143,10 +137,6 @@ impl Default for Policy {
             allow_window_changes: false,
             show_performance: true,
             performance_visibility_version: 1,
-            site_engines: Default::default(),
-            wega_only: false,
-            wega_rollout: true,
-            wega_fallback: true,
             blocked_site_permissions: Default::default(),
             user_script: String::new(),
             search_engine: SearchEngine::default(),

@@ -345,7 +345,7 @@ jobs:
       - name: Build Windows release executable
         env:
           RUSTFLAGS: "-C link-arg=msvcprt.lib"
-        run: cargo build --release --locked --no-default-features --features desktop,brotli-streams,media
+        run: cargo build --release --locked --no-default-features --features desktop
       - name: Build the independent Wega engine
         id: engine
         shell: bash
@@ -362,7 +362,7 @@ jobs:
           tool: cargo-about@0.9.2
       - name: Write LICENSE, NOTICE and THIRD-PARTY-NOTICES.html
         shell: bash
-        run: bash scripts/third-party-notices.sh dist/wega-windows-x64 --no-default-features --features "desktop brotli-streams media" --target x86_64-pc-windows-msvc
+        run: bash scripts/third-party-notices.sh dist/wega-windows-x64 --no-default-features --features "desktop" --target x86_64-pc-windows-msvc
       - name: Package Windows ZIP archive
         shell: pwsh
         run: |
@@ -411,11 +411,11 @@ jobs:
       - name: Launch the packaged executable
         shell: pwsh
         run: scripts\windows-launch-check.ps1 -Directory dist\wega-windows-x64
-      - name: Test packaged media and URL handoff without installed SDK
+      - name: Test packaged worker and URL handoff without installed SDK
         env:
           WEGA_TEST_ALLOW_LOOPBACK: '1'
         run: python scripts/windows-runtime-test.py --binary dist/wega-windows-x64/wega.exe
-      - name: Verify both engines in the packaged directory
+      - name: Verify the standalone worker in the packaged directory
         shell: pwsh
         env:
           WEGA_TEST_ALLOW_LOOPBACK: '1'

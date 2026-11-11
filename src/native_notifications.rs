@@ -1,5 +1,10 @@
-//! macOS UserNotifications delivery. Site permission is still handled by Servo's permission hook.
+//! macOS UserNotifications delivery. Site permission is handled by the worker protocol.
 use std::sync::OnceLock;
+pub struct Notification {
+    pub title: String,
+    pub body: String,
+    pub tag: String,
+}
 static RESULTS: OnceLock<(
     crossbeam_channel::Sender<String>,
     crossbeam_channel::Receiver<String>,
@@ -17,7 +22,7 @@ pub fn updates() -> Vec<String> {
 #[link(name = "UserNotifications", kind = "framework")]
 unsafe extern "C" {}
 #[cfg(target_os = "macos")]
-pub fn show(notification: servo::Notification, origin: &str) -> Result<(), String> {
+pub fn show(notification: Notification, origin: &str) -> Result<(), String> {
     use objc2::{
         class, msg_send,
         rc::Retained,
@@ -75,7 +80,7 @@ pub fn show(notification: servo::Notification, origin: &str) -> Result<(), Strin
     Ok(())
 }
 #[cfg(not(target_os = "macos"))]
-pub fn show(notification: servo::Notification, origin: &str) -> Result<(), String> {
+pub fn show(notification: Notification, origin: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         let mut cmd = std::process::Command::new("notify-send");

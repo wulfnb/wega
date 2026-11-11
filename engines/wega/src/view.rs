@@ -943,11 +943,14 @@ impl View {
     fn load_error(&mut self, error: String) {
         let escaped = escape(&error);
         self.showing_error = false;
-        let _=self.set_html(&format!("<!doctype html><title>Page unavailable</title><body style='font:18px system-ui;padding:36px;background:white;color:#142b24'><h1>This page could not be loaded</h1><p>{escaped}</p><p>Retry, or choose Servo using the engine selector below.</p>"));
+        let _=self.set_html(&format!("<!doctype html><title>Page unavailable</title><body style='font:18px system-ui;padding:36px;background:white;color:#142b24'><h1>This page could not be loaded</h1><p>{escaped}</p><p>Reload the page to retry.</p>"));
         self.showing_error = true;
         self.notice(error);
     }
     fn script_error(&mut self, error: crate::script::ScriptError) {
+        if error.message == "Module graph is loading" {
+            return;
+        }
         crate::diagnostics::Diagnostic::error(
             crate::diagnostics::Category::Javascript,
             error.to_string(),

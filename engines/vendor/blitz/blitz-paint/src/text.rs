@@ -652,7 +652,42 @@ pub(crate) fn stroke_text<'a>(
 
                 // The glyph colour comes from the run's own node (the stack top): `color`
                 // inherits, so the innermost inline element already carries the right value.
-                let text_color = stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK);
+                let mut text_color = stack.last().map(|e| e.text_color).unwrap_or(Color::BLACK);
+                if text_color.components[3] == 0.0 {
+                    let mut curr_id = Some(style.brush.id);
+                    while let Some(id) = curr_id {
+                        if let Some(node) = doc.get_node(id) {
+                            if let Some(styles) = node.primary_styles() {
+                                let bg = styles.get_background();
+                                let has_text_clip = bg.background_clip.0.iter().any(|c| *c == style::values::computed::BackgroundClip::Text);
+                                let current = styles.clone_color();
+                                let bg_color = bg.background_color.resolve_to_absolute(&current).as_srgb_color();
+                                if has_text_clip || bg_color.components[3] > 0.0 || !bg.background_image.0.is_empty() {
+                                    if bg_color.components[3] > 0.0 {
+                                        text_color = bg_color;
+                                        break;
+                                    }
+                                    let mut found = None;
+                                    for img in bg.background_image.0.iter() {
+                                        if let style::values::generics::image::GenericImage::Gradient(grad) = img {
+                                            if let Some(c) = crate::gradient::gradient_first_color(grad, &current) {
+                                                found = Some(c);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if let Some(c) = found {
+                                        text_color = c;
+                                        break;
+                                    }
+                                }
+                            }
+                            curr_id = node.parent;
+                        } else {
+                            break;
+                        }
+                    }
+                }
 
 
                 let embolden = if FONT_EMBOLDEN_ENABLED {

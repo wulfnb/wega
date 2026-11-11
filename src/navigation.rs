@@ -5,6 +5,7 @@ use crate::profile::resolve_address;
 pub enum Command {
     Load(String),
     Reload,
+    ReloadBypassCache,
     Traverse { forward: bool },
     Zoom { factor: f32 },
     ResetZoom,
@@ -26,6 +27,7 @@ pub fn dispatch(command: Command, port: &mut impl NavigationPort) -> Result<bool
     match command {
         Command::Load(address) => port.load(resolve_address(&address)?),
         Command::Reload => port.reload(),
+        Command::ReloadBypassCache => port.reload_bypass_cache(),
         Command::Traverse { forward } => return Ok(port.traverse(forward)),
         Command::Zoom { factor } => {
             if !factor.is_finite() || factor <= 0.0 {

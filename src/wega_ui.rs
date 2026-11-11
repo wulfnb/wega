@@ -1,5 +1,4 @@
 use crate::browser::Browser;
-use wega::engine_choice::EngineKind;
 
 /// A CSS cursor keyword as the closest egui cursor.
 fn cursor_icon(name: &str) -> egui::CursorIcon {
@@ -46,75 +45,13 @@ fn button_index(button: egui::PointerButton) -> u8 {
 }
 
 impl Browser {
-    pub(crate) fn engine_picker(&mut self, ui: &mut egui::Ui) {
-        let response = egui::ComboBox::from_id_salt("page-engine")
-            .selected_text(self.tab().engine.name())
-            .width(145.0)
-            .show_ui(ui, |ui| self.engine_options(ui))
-            .response;
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::Role::ComboBox,
-                true,
-                format!("Engine: {}", self.tab().engine.name()),
-            )
-        });
-    }
     pub(crate) fn engine_badge(&mut self, ui: &mut egui::Ui) {
         crate::components::chip(ui, true, "Wega").on_hover_text("Wega standalone engine");
-    }
-    fn engine_options(&mut self, ui: &mut egui::Ui) {
-        let mut engine = self.tab().engine;
-        ui.selectable_value(&mut engine, EngineKind::Wega, "Wega");
-        ui.selectable_value(&mut engine, EngineKind::Servo, "Servo (legacy)")
-            .on_hover_text("Historical Servo engine comparison path.");
-        let mut policy = self.profile().policy.clone();
-        let mut changed = false;
-        if let Some(key) = self
-            .current_url()
-            .and_then(|url| wega::engine_choice::site_key(&url))
-        {
-            ui.separator();
-            ui.label(&key);
-            let mut remember = policy.site_engines.contains_key(&key);
-            if ui
-                .checkbox(&mut remember, "Remember engine for this site")
-                .changed()
-            {
-                if remember {
-                    policy.site_engines.insert(key, self.tab().engine);
-                } else {
-                    policy.site_engines.remove(&key);
-                }
-                changed = true;
-            }
-        }
-        changed |= ui
-            .checkbox(
-                &mut policy.wega_rollout,
-                "Use Wega for validated static sites",
-            )
-            .changed();
-        changed |= ui
-            .checkbox(
-                &mut policy.wega_fallback,
-                "Use Servo when Wega cannot run a page",
-            )
-            .on_hover_text("Edited pages require confirmation before their state is discarded.")
-            .changed();
-        if changed {
-            self.apply(wega::application::Command::Policy(policy));
-        }
-        if engine != self.tab().engine {
-            self.switch_engine(engine);
-            ui.close();
-        }
     }
     pub(crate) fn pump_wega(&mut self) {
         let active = self.session().active();
         let mut notices = vec![];
         let mut native = vec![];
-        let mut navigated = false;
         let mut visits = vec![];
         let mut checks = vec![];
         for (index, tab) in self.session().tabs().iter().enumerate() {
@@ -210,6 +147,87 @@ impl Browser {
                             ),
                         );
                         self.window.request_redraw();
+                    }
+                }
+                ContentEvent::PermissionPrompt(request) => {
+                    let page = self.session().tabs()[index].wega.as_ref().unwrap();
+                    if request.document == requester.document
+                        && request.session == requester.session
+                        && request.origin == requester.principal.origin
+                    {
+                        if let Some(sender) = page.command_sender() {
+                            let origin = match &requester.principal.origin {
+                                wega::engine_protocol::authority::Origin::Tuple(origin) => {
+                                    origin.clone()
+                                }
+                                _ => String::new(),
+                            };
+                            let responder = crate::permission_adapter::Permission {
+                                sender,
+                                state: page.state.clone(),
+                                requester: requester.clone(),
+                                id: request.id,
+                                feature: request.feature,
+                            };
+                            if !wega::engine_protocol::authority::can_request_permission(&requester)
+                                || self
+                                    .profile()
+                                    .policy
+                                    .permission_blocked(&origin, request.feature.as_str())
+                            {
+                                wega::permissions::PermissionPort::respond(responder, false);
+                                continue;
+                            }
+                            self.dialogs.permissions.push(
+                                origin,
+                                request.feature.to_string(),
+                                responder,
+                            );
+                        }
+                    }
+                }
+                ContentEvent::MediaSession(event) => {
+                    let media = self.features.media.entry(owner).or_default();
+                    media.update(event);
+                    self.features.media_owner = Some(owner);
+                    self.native_media.update(media);
+                }
+                ContentEvent::PermissionRevoked { feature, .. } => {
+                    if let Some(page) = &self.session().tabs()[index].wega {
+                        page.state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .grants
+                            .remove(&feature);
+                    }
+                }
+                ContentEvent::NotificationShow { title, options, .. } => {
+                    let page = self.session().tabs()[index].wega.as_ref().unwrap();
+                    let state = page
+                        .state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if !state.accepts_requester(&requester)
+                        || !state.grants.contains(
+                            &wega::engine_protocol::permissions::PermissionFeature::Notifications,
+                        )
+                    {
+                        continue;
+                    }
+                    drop(state);
+                    let origin = match &requester.principal.origin {
+                        wega::engine_protocol::authority::Origin::Tuple(origin) => origin.clone(),
+                        _ => continue,
+                    };
+                    if let Err(error) = crate::native_notifications::show(
+                        crate::native_notifications::Notification {
+                            title,
+                            body: options.body.unwrap_or_default(),
+                            tag: options.tag.unwrap_or_default(),
+                        },
+                        &origin,
+                    ) {
+                        notices.push(error);
                     }
                 }
                 ContentEvent::Authentication { url, realm } => {
@@ -319,7 +337,6 @@ impl Browser {
                             }
                         }
                         ContentEvent::Navigate(address) => {
-                            navigated = true;
                             let current = self.current_url();
                             match url::Url::parse(&address) {
                                 Ok(url)
@@ -381,39 +398,6 @@ impl Browser {
                 },
             ));
         }
-        // Handle one compatibility report only after any existing prompt is resolved.
-        // Initial unedited pages can reload automatically; user input always keeps
-        // the existing conservative page-state confirmation path.
-        if !self.modal() && self.profile().policy.wega_fallback && !navigated {
-            let fallback = self.tab().wega.as_ref().and_then(|page| {
-                let mut state = page
-                    .state
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if state.recovery_reason.is_some() {
-                    return None;
-                }
-                state.compatibility.take().map(|reason| {
-                    state.fallback_reported = true;
-                    (reason, state.interacted)
-                })
-            });
-            if let Some((reason, interacted)) = fallback {
-                self.notify(
-                    crate::ux::Severity::Warning,
-                    format!("This page needs Servo: {reason}"),
-                    None,
-                );
-                if interacted {
-                    self.confirm_page_action(crate::page_safety::Action::Fallback(self.tab().key));
-                } else if let Some(url) = self.current_url() {
-                    let key = wega::engine_choice::site_key(&url);
-                    if self.replace_engine_confirmed(EngineKind::Servo, url, false) {
-                        self.mark_fallback(key);
-                    }
-                }
-            }
-        }
     }
     pub(crate) fn wega_viewport(&mut self, ui: &mut egui::Ui, rect: egui::Rect, outer: egui::Rect) {
         let failed = self.tab().wega.as_ref().is_some_and(|p| {
@@ -435,7 +419,6 @@ impl Browser {
                 page.texture = None;
             }
             let mut restart = false;
-            let mut servo = false;
             ui.centered_and_justified(|ui| {
                 ui.vertical_centered(|ui| {
                     ui.heading("Wega engine stopped");
@@ -447,14 +430,17 @@ impl Browser {
                         restart = ui
                             .add(crate::components::primary_button(ui, "Restart Wega"))
                             .clicked();
-                        servo = ui.button("Reload in Servo").clicked();
                     });
                 })
             });
             if restart {
-                self.switch_engine(EngineKind::Wega);
-            } else if servo {
-                self.switch_engine(EngineKind::Servo);
+                let url = self.tab().url();
+                self.tab_mut().wega.take();
+                if let Err(error) =
+                    self.dispatch_navigation_confirmed(wega::navigation::Command::Load(url))
+                {
+                    self.status = Some(error);
+                }
             }
             return;
         }
@@ -494,7 +480,8 @@ impl Browser {
             }
         }
         if let Some(texture) = &page.texture {
-            ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
+            ui.painter()
+                .rect_filled(rect, 0.0, crate::capture::canvas_color(dark));
             ui.painter().image(
                 texture.id(),
                 rect,
@@ -600,6 +587,9 @@ impl Browser {
         if pressed || response.clicked() {
             self.chrome.page_focused = true;
             context.memory_mut(|m| m.surrender_focus(egui::Id::unique("address")));
+        }
+        if !self.fullscreen {
+            crate::ui::page_corners(ui.painter(), rect);
         }
         ui.allocate_rect(outer, egui::Sense::hover());
     }

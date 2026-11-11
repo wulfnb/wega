@@ -23,22 +23,16 @@ impl crate::browser::Browser {
             test.stage
         );
         match test.stage {
-            0 if self.view().page_title().as_deref() == Some("Download fixture")
-                && self.view().load_status() == servo::LoadStatus::Complete =>
-            {
+            0 if self.tab().title() == "Download fixture" && !self.tab().loading() => {
                 self.harness.download_test.as_mut().unwrap().stage = 1;
-                self.view()
-                    .evaluate_javascript("document.querySelector('#download').click()", |_| {});
+                self.tab()
+                    .wega
+                    .as_ref()
+                    .unwrap()
+                    .evaluate("document.querySelector('#download').click()");
             }
-            1 if self.download_ui.open => {
-                assert!(self.download_ui.url.ends_with("/file.bin"));
-                assert_eq!(self.download_ui.filename, "fixture.bin");
-                self.begin_download();
-                assert_eq!(
-                    self.downloads.jobs().len(),
-                    1,
-                    "Download starts through the native confirmation UI"
-                );
+            1 if !self.downloads.jobs().is_empty() => {
+                assert_eq!(self.downloads.jobs().len(), 1);
                 self.harness.download_test.as_mut().unwrap().stage = 2;
             }
             2 => {
@@ -58,7 +52,7 @@ impl crate::browser::Browser {
                 assert_eq!(bytes.len(), 6 * 1024 * 1024 + 173);
                 assert!(bytes.iter().enumerate().all(|(i, b)| *b == (i % 251) as u8));
                 println!(
-                    "DOWNLOAD TEST PASSED: page download link, native confirmation, HttpOnly site-cookie reuse, four parallel connections, exact file bytes and safe publication"
+                    "DOWNLOAD TEST PASSED: standalone page download link, host download service, HttpOnly site-cookie reuse, four parallel connections, exact file bytes and safe publication"
                 );
                 self.harness.download_test = None;
                 event_loop.exit();

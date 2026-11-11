@@ -40,12 +40,6 @@ mod platform {
             );
             Ok(Self { effect })
         }
-        #[cfg(feature = "test-harness")]
-        pub fn glass_active(&self) -> bool {
-            !self.effect.isHidden()
-                && unsafe { self.effect.superview() }.is_some()
-                && self.effect.blendingMode() == NSVisualEffectBlendingMode::BehindWindow
-        }
         pub fn available(&self) -> bool {
             true
         }
@@ -73,20 +67,6 @@ mod platform {
             }
         }
     }
-    pub fn available_size(window: &winit::window::Window) -> Option<(i32, i32)> {
-        let handle = window.window_handle().ok()?;
-        let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
-            return None;
-        };
-        let view = unsafe { &*handle.ns_view.as_ptr().cast::<NSView>() };
-        let screen = view.window()?.screen()?;
-        let frame = screen.visibleFrame();
-        let scale = window.scale_factor();
-        Some((
-            (frame.size.width * scale).round() as i32,
-            (frame.size.height * scale).round() as i32,
-        ))
-    }
     impl Drop for NativeTheme {
         fn drop(&mut self) {
             self.effect.removeFromSuperview();
@@ -95,9 +75,6 @@ mod platform {
 }
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 mod platform {
-    pub fn available_size(_: &winit::window::Window) -> Option<(i32, i32)> {
-        None
-    }
     pub struct NativeTheme;
     impl NativeTheme {
         pub fn new(_: &winit::window::Window) -> Result<Self, String> {
@@ -107,10 +84,6 @@ mod platform {
             false
         }
         pub fn apply(&self, _: crate::theme::Theme, _: bool) {}
-        #[cfg(feature = "test-harness")]
-        pub fn glass_active(&self) -> bool {
-            false
-        }
     }
 }
 #[cfg(target_os = "windows")]
@@ -208,13 +181,6 @@ mod platform {
             self.available.set(enabled && success);
             self.glass.set(glass && success);
         }
-        #[cfg(feature = "test-harness")]
-        pub fn glass_active(&self) -> bool {
-            self.glass.get()
-        }
-    }
-    pub fn available_size(_: &winit::window::Window) -> Option<(i32, i32)> {
-        None
     }
 }
-pub use platform::{NativeTheme, available_size};
+pub use platform::NativeTheme;

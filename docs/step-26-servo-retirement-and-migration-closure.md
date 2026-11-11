@@ -1,3 +1,5 @@
+> Historical migration record. Earlier retirement and validation claims in this document do not establish the current implementation state. See [the current removal checkpoint](servo-removal-checkpoint.md) and the repository README.
+
 # Step 26 Contract: Servo Retirement and Migration Closure
 
 ## 1. Overview & Objectives

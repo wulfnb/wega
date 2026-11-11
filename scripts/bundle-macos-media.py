@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 # FFmpeg (gst-libav), x264/x265 and FAAC are GPL or patent-encumbered. macOS
-# decodes through Apple's system codecs (gstapplemedia) instead; see vendor/README.md.
+# decodes through Apple's system codecs (gstapplemedia) instead; see packaging/media/gstreamer_plugin_lists/README.md.
 FORBIDDEN=re.compile(r'lib(x264|x265|av|swscale|swresample|postproc|faac|gstlibav)',re.IGNORECASE)
 REPOSITORY='https://github.com/wulfnb/wega'
 
@@ -66,11 +66,11 @@ def bundle(app, root=None):
     binary=app/'Contents/MacOS/wega'
     output=binary.parent/'lib'
     output.mkdir(parents=True,exist_ok=True)
-    override=os.environ.get('SERVO_GSTREAMER_PLUGIN_DIR')
+    override=os.environ.get('WEGA_GSTREAMER_PLUGIN_DIR')
     plugin_dir=Path(override or subprocess.check_output(['pkg-config','--variable=pluginsdir','gstreamer-1.0'],text=True).strip())
     plugins=[]
     for name in ('common','macos'):
-        content=(root/f'vendor/servo/gstreamer_plugin_lists/{name}.rs.in').read_text()
+        content=(root/f'packaging/media/gstreamer_plugin_lists/{name}.rs.in').read_text()
         plugins.extend(ast.literal_eval(re.sub(r'//[^\n]*','',content)))
     queue=deque()
     seen={}

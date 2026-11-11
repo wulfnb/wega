@@ -8,13 +8,13 @@ if [[ "$(uname -s)" != Darwin ]]; then
 fi
 build_profile=release
 build_args=(--release)
-media_args=(--features media)
-bundle_media=true
+media_args=()
+bundle_media=false
 for argument in "$@"; do
   case "$argument" in
     --debug) build_profile=debug; build_args=() ;;
-    --media) media_args=(--features media); bundle_media=true ;;
-    --no-media) media_args=(--no-default-features --features brotli-streams); bundle_media=false ;;
+    --media) media_args=(--features desktop); bundle_media=true ;;
+    --no-media) media_args=(); bundle_media=false ;;
     *) echo 'Usage: scripts/package-macos.sh [--debug] [--media|--no-media]' >&2; exit 1 ;;
   esac
 done

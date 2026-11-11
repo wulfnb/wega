@@ -1,6 +1,6 @@
 //! The toolbox shares the active page's state, but owns its OS window and GPU context.
 use crate::browser::Browser;
-use servo::{RenderingContext, WindowRenderingContext};
+use crate::window_context::WindowRenderingContext;
 use std::time::{Duration, Instant};
 use winit::{
     event::WindowEvent,
@@ -26,34 +26,9 @@ impl Drop for ToolWindow {
     }
 }
 impl Browser {
-    pub fn cancel_element_picker(&mut self) -> bool {
-        let active = self.tools.pages.values().any(|page| page.inspector.picking);
-        if active {
-            for page in self.tools.pages.values_mut() {
-                page.inspector.picking = false;
-            }
-            for view in self
-                .session()
-                .tabs()
-                .iter()
-                .filter_map(crate::browser::Tab::view)
-            {
-                view.evaluate_javascript("globalThis.__wegaPickerCancel?.()".to_owned(), |_| {});
-            }
-        }
-        active
-    }
     pub fn close_developer_tools(&mut self) {
         self.chrome.show_console = false;
-        self.tools.resume_all();
-        for view in self
-            .session()
-            .tabs()
-            .iter()
-            .filter_map(crate::browser::Tab::view)
-        {
-            view.evaluate_javascript("globalThis.__wegaPickerCancel?.()".to_owned(), |_| {});
-        }
+        self.window.request_redraw();
     }
     pub fn toggle_developer_tools(&mut self) {
         if self.chrome.show_console {
@@ -144,13 +119,6 @@ impl Browser {
             && key.state.is_pressed()
         {
             use winit::keyboard::{Key, NamedKey};
-            let shift = self
-                .tool_window
-                .as_ref()
-                .is_some_and(|w| w.modifiers.shift_key());
-            if self.debugger_shortcut(&key.logical_key, shift) {
-                return;
-            }
             if matches!(&key.logical_key, Key::Character(key) if key.eq_ignore_ascii_case("w"))
                 && self.tool_window.as_ref().is_some_and(|w| {
                     if cfg!(target_os = "macos") {
@@ -168,10 +136,8 @@ impl Browser {
                 return;
             }
             if key.logical_key == Key::Named(NamedKey::Escape) {
-                let cancelled = self.cancel_element_picker();
-                if !cancelled && self.tools.active != crate::toolbox::Tool::Console {
-                    self.tools.split_console = !self.tools.split_console;
-                }
+                self.close_developer_tools();
+                return;
             }
         }
         let Some(mut window) = self.tool_window.take() else {
@@ -219,22 +185,6 @@ impl Browser {
                         .painter
                         .clear(window.window.inner_size().into(), color);
                     window.gui.paint(&window.window);
-                    #[cfg(feature = "test-harness")]
-                    if let Some(test) = &self.harness.toolbox_test
-                        && let Some(name) = &test.capture
-                        && name.starts_with("detached-")
-                    {
-                        let size = window.window.inner_size();
-                        let rect = servo::DeviceIntRect::from_size(servo::DeviceIntSize::new(
-                            size.width as i32,
-                            size.height as i32,
-                        ));
-                        if let Some(image) = window.context.read_to_image(rect) {
-                            image
-                                .save(self.profile_dir.join(name))
-                                .expect("Save detached toolbox frame");
-                        }
-                    }
                     window.context.present();
                     window.last_frame = Instant::now();
                     window.frames += 1;

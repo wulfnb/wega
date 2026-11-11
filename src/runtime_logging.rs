@@ -31,10 +31,7 @@ struct NativeLogger;
 static NATIVE_LOGGER: NativeLogger = NativeLogger;
 impl log::Log for NativeLogger {
     fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
-        metadata.level() <= log::Level::Warn
-            || metadata.target().contains("error_reporting")
-            || metadata.target().contains("servoparser")
-            || metadata.target().contains("script::dom::window")
+        metadata.level() <= log::Level::Warn || metadata.target().contains("error_reporting")
     }
     fn log(&self, record: &log::Record<'_>) {
         if !self.enabled(record.metadata()) {
@@ -48,12 +45,8 @@ impl log::Log for NativeLogger {
             wega::diagnostics::record(record.target(), &message);
             return;
         }
-        let category = if record.target().contains("error_reporting")
-            || record.target().contains("script::dom::window") && message.starts_with("Url:\t")
-        {
+        let category = if record.target().contains("error_reporting") {
             wega::diagnostic_event::Category::Css
-        } else if record.target().contains("servoparser") && message.contains("Parse error:") {
-            wega::diagnostic_event::Category::Html
         } else if record.level() <= log::Level::Warn {
             wega::diagnostic_event::Category::Browser
         } else {
@@ -80,7 +73,7 @@ impl log::Log for NativeLogger {
             "warning"
         }
         .into();
-        wega::diagnostics::report(&format!("servo:{}", record.target()), event);
+        wega::diagnostics::report(&format!("desktop:{}", record.target()), event);
     }
     fn flush(&self) {}
 }

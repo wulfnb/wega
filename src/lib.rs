@@ -1,4 +1,4 @@
-//! Wega core and application services. The default-free build has no Servo or GPU dependency.
+//! Wega core and application services. The core build has no GPU dependency.
 #![forbid(unsafe_code)]
 pub mod diagnostic_event;
 pub mod diagnostics;

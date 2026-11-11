@@ -3,7 +3,7 @@
 #   OUT_DIR/THIRD-PARTY-NOTICES.html  (cargo-about, from about.toml + about.hbs)
 #   OUT_DIR/LICENSE                   (MPL-2.0)
 #   OUT_DIR/NOTICE                    (with the exact source commit appended)
-# Extra arguments go to `cargo about generate`, e.g. `--features media` or
+# Extra arguments go to `cargo about generate`, e.g. `--features desktop` or
 # `--target x86_64-pc-windows-msvc`. Requires network access for crate sources.
 # The source commit comes from WEGA_SOURCE_COMMIT, GITHUB_SHA or git, in order.
 set -euo pipefail

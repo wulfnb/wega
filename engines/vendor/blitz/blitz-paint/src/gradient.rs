@@ -514,6 +514,74 @@ fn get_translation(
     )
 }
 
+pub(crate) fn gradient_first_color(
+    gradient: &StyloGradient,
+    current_color: &AbsoluteColor,
+) -> Option<Color> {
+    match gradient {
+        GenericGradient::Linear { items, .. } => {
+            for item in items.iter() {
+                match item {
+                    GenericGradientItem::SimpleColorStop(color) => {
+                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
+                        if c.components[3] > 0.0 {
+                            return Some(c);
+                        }
+                    }
+                    GenericGradientItem::ComplexColorStop { color, .. } => {
+                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
+                        if c.components[3] > 0.0 {
+                            return Some(c);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        GenericGradient::Radial { items, .. } => {
+            for item in items.iter() {
+                match item {
+                    GenericGradientItem::SimpleColorStop(color) => {
+                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
+                        if c.components[3] > 0.0 {
+                            return Some(c);
+                        }
+                    }
+                    GenericGradientItem::ComplexColorStop { color, .. } => {
+                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
+                        if c.components[3] > 0.0 {
+                            return Some(c);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        GenericGradient::Conic { items, .. } => {
+            for item in items.iter() {
+                match item {
+                    GenericGradientItem::SimpleColorStop(color) => {
+                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
+                        if c.components[3] > 0.0 {
+                            return Some(c);
+                        }
+                    }
+                    GenericGradientItem::ComplexColorStop { color, .. } => {
+                        let c = color.resolve_to_absolute(current_color).as_srgb_color();
+                        if c.components[3] > 0.0 {
+                            return Some(c);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

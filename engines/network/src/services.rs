@@ -207,6 +207,12 @@ impl StorageHub {
     ) -> Result<(), String> {
         let id = (root.to_path_buf(), origin.to_owned());
         self.persistent.remove(&id);
+        self.transient.retain(|(_, queued_origin), (owner, _)| {
+            queued_origin != origin
+                || owner
+                    .upgrade()
+                    .is_some_and(|session| std::path::Path::new(&session.scope) != root)
+        });
         let directory = root.join(
             Sha256::digest(origin.as_bytes())
                 .iter()
@@ -219,8 +225,13 @@ impl StorageHub {
         Ok(())
     }
     pub(crate) fn clear_all(&mut self, root: &std::path::Path) -> Result<(), String> {
-        self.persistent.clear();
-        self.transient.clear();
+        self.persistent
+            .retain(|(directory, _), _| directory != root);
+        self.transient.retain(|_, (owner, _)| {
+            owner
+                .upgrade()
+                .is_some_and(|session| std::path::Path::new(&session.scope) != root)
+        });
         if root.exists()
             && let Ok(entries) = std::fs::read_dir(root)
         {
@@ -599,5 +610,95 @@ mod tests {
             storage(&b_new, origin_b, true, "get", "k2", "").unwrap(),
             Value::Null
         );
+    }
+}
+
+#[cfg(test)]
+mod clearing_tests {
+    use super::*;
+
+    fn value(
+        hub: &mut StorageHub,
+        session: &SessionHandle,
+        origin: &str,
+        persistent: bool,
+        write: Option<&str>,
+    ) -> Value {
+        hub.call(
+            &session.session,
+            StorageCall {
+                origin,
+                persistent,
+                operation: if write.is_some() { "set" } else { "get" },
+                key: "account",
+                index: 0,
+            },
+            write.unwrap_or(""),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn clearing_a_site_or_container_preserves_other_containers_and_origins() {
+        let broker = Broker::new().unwrap();
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let a = broker
+            .open_session(first.path().into(), Policy::default())
+            .unwrap();
+        let b = broker
+            .open_session(second.path().into(), Policy::default())
+            .unwrap();
+        let root = first.path().canonicalize().unwrap();
+        let mut hub = StorageHub::default();
+        for persistent in [false, true] {
+            value(
+                &mut hub,
+                &a,
+                "https://example.test",
+                persistent,
+                Some("first"),
+            );
+            value(
+                &mut hub,
+                &a,
+                "https://other.test",
+                persistent,
+                Some("other origin"),
+            );
+            value(
+                &mut hub,
+                &b,
+                "https://example.test",
+                persistent,
+                Some("second"),
+            );
+        }
+        hub.clear_origin(&root, "https://example.test").unwrap();
+        for persistent in [false, true] {
+            assert_eq!(
+                value(&mut hub, &a, "https://example.test", persistent, None),
+                Value::Null
+            );
+            assert_eq!(
+                value(&mut hub, &a, "https://other.test", persistent, None),
+                json!("other origin")
+            );
+            assert_eq!(
+                value(&mut hub, &b, "https://example.test", persistent, None),
+                json!("second")
+            );
+        }
+        hub.clear_all(&root).unwrap();
+        for persistent in [false, true] {
+            assert_eq!(
+                value(&mut hub, &a, "https://other.test", persistent, None),
+                Value::Null
+            );
+            assert_eq!(
+                value(&mut hub, &b, "https://example.test", persistent, None),
+                json!("second")
+            );
+        }
     }
 }

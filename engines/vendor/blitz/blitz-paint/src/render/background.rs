@@ -39,6 +39,7 @@ pub(super) enum BoxModelBox {
     BorderBox,
     PaddingBox,
     ContentBox,
+    Text,
 }
 
 // Also covers MaskClip as the type is the same
@@ -51,6 +52,7 @@ impl From<StyloBackgroundClip> for BoxModelBox {
 
             // TODO: support BorderArea
             StyloBackgroundClip::BorderArea => Self::BorderBox,
+            StyloBackgroundClip::Text => Self::Text,
         }
     }
 }
@@ -141,14 +143,16 @@ impl ElementCx<'_, '_> {
         // The background color is clipped by the clip of the last layer in the list
         let background_clip: BoxModelBox =
             (*get_cyclic(&bg_styles.background_clip.0, layer_count - 1)).into();
-        let background_clip_path = self.box_path(background_clip);
 
-        // Draw background color (if any)
-        self.draw_solid_bg(scene, &background_clip_path);
+        if background_clip != BoxModelBox::Text {
+            let background_clip_path = self.box_path(background_clip);
+            // Draw background color (if any)
+            self.draw_solid_bg(scene, &background_clip_path);
+        }
 
         for idx in (0..layer_count).rev() {
             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
-            if layer_paints_nothing(&layer) {
+            if layer_paints_nothing(&layer) || layer.clip == BoxModelBox::Text {
                 continue;
             }
             let background_clip_path = self.box_path(layer.clip);
@@ -171,7 +175,7 @@ impl ElementCx<'_, '_> {
     /// The path of the given CSS box model box for this element
     pub(super) fn box_path(&self, css_box: BoxModelBox) -> BezPath {
         match css_box {
-            BoxModelBox::BorderBox => self.frame.border_box_path(),
+            BoxModelBox::BorderBox | BoxModelBox::Text => self.frame.border_box_path(),
             BoxModelBox::PaddingBox => self.frame.padding_box_path(),
             BoxModelBox::ContentBox => self.frame.content_box_path(),
         }
@@ -180,7 +184,7 @@ impl ElementCx<'_, '_> {
     /// The rect of the given CSS box model box for this element
     fn box_rect(&self, css_box: BoxModelBox) -> Rect {
         match css_box {
-            BoxModelBox::BorderBox => self.frame.border_box,
+            BoxModelBox::BorderBox | BoxModelBox::Text => self.frame.border_box,
             BoxModelBox::PaddingBox => self.frame.padding_box,
             BoxModelBox::ContentBox => self.frame.content_box,
         }
