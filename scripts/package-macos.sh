@@ -13,7 +13,7 @@ bundle_media=false
 for argument in "$@"; do
   case "$argument" in
     --debug) build_profile=debug; build_args=() ;;
-    --media) media_args=(); bundle_media=true ;;
+    --media) media_args=(--features desktop); bundle_media=true ;;
     --no-media) media_args=(); bundle_media=false ;;
     *) echo 'Usage: scripts/package-macos.sh [--debug] [--media|--no-media]' >&2; exit 1 ;;
   esac
