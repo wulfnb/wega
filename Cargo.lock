@@ -3813,6 +3813,7 @@ dependencies = [
  "wayland-sys",
  "winapi",
  "wio",
+ "x11-dl",
 ]
 
 [[package]]

@@ -1571,6 +1571,7 @@ impl Page {
             case_sensitive,
         });
     }
+    #[allow(dead_code)]
     pub fn evaluate(&self, source: &str) {
         let _ = self.send(Request::Evaluate(source.to_string()));
     }
