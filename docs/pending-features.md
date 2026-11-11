@@ -18,12 +18,12 @@ design; each area's contract lives in its `step-NN-*.md` page.
 | Canvas in workers | Real `OffscreenCanvas` rendering | No-op rendering paths | 18 |
 | WebGL | Real shader compilation and execution, conformance | Software simulation | 19 |
 | WebGPU | Everything | Not exposed | 19 |
-| Media | Brokered loading, real decoding, audio output, video surfaces, accurate codec reporting | Loads fabricate success; video is a generated colour pattern | 20 |
-| Devices | Native camera/microphone enumeration and capture, revocation | `enumerateDevices()` returns hardcoded devices | 21 |
+| Media | Brokered loading, real decoding, audio output, video surfaces, accurate codec reporting | Unreadable sources now fail with `MEDIA_ERR_SRC_NOT_SUPPORTED`; the video frame path is still a generated colour pattern and sources are still read from local files rather than the broker | 20 |
+| Devices | Native camera/microphone enumeration and capture, revocation | `enumerateDevices()` now returns an empty list; `getUserMedia()` still hands out placeholder tracks after permission | 21 |
 | WebRTC and Web Audio | Everything | No `RTCPeerConnection` or `AudioContext` | 21 |
-| Clipboard/editing | OS clipboard with permission and activation checks, complete selection/editing | `navigator.clipboard` uses an in-memory string (`engines/wega/src/dom.rs`) | 12 |
+| Clipboard/editing | OS clipboard read with permission, page-script `execCommand('copy')`, complete selection/editing | `navigator.clipboard.writeText()` now requires transient activation and writes the OS clipboard; `readText()` still returns the in-memory string | 12 |
 | Security | CSP `frame-ancestors`/`frame-src`, violation reporting, frame and worker policy coverage | Fetch-type directives and `sandbox` only | 04 |
-| HTML element interfaces | 64 per-tag classes such as `HTMLDivElement` | Not exposed | 08 |
+| HTML element interfaces | Element-specific members (for example `HTMLTableElement.rows`) and generated WebIDL bindings | 54 per-tag classes now exist with the correct prototype chain but no members of their own | 08 |
 | Accessibility | Screen-reader acceptance on all platforms | Page subtree grafts implemented | 11 |
 
 ## Browser services

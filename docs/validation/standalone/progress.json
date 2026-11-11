@@ -71,7 +71,7 @@
       "blockers": [
         "DOMImplementation (createDocument/createDocumentType/createHTMLDocument), XML/XHTML documents and script-created DocumentType",
         "ProcessingInstruction and CDATASection nodes",
-        "Per-tag HTML element interfaces (HTMLDivElement, HTMLAreaElement, ...) beyond HTMLElement/HTMLHeadElement/HTMLScriptElement",
+        "Per-tag HTML element interfaces now exist as member-less classes; element-specific members and generated bindings remain open",
         "Legacy platform object named properties (HTMLCollection/NamedNodeMap named getters, supported property names)",
         "Namespace-aware attribute matching and Attr.value mutation records",
         "MutationObserver childList record details for textContent/normalize",
@@ -107,7 +107,7 @@
       "contract": "docs/step-12-selection-editing-clipboard-find.md",
       "acceptance_verified": false,
       "blockers": [
-        "The page navigator.clipboard binding still uses an internal string; OS clipboard permission and activation brokering remain open."
+        "navigator.clipboard.writeText is activation-gated and reaches the OS clipboard; readText still uses an internal string and OS read permission brokering remains open."
       ],
       "historical_acceptance": "Range and Selection DOM interfaces, contentEditable and document.designMode, TreeWalker and NodeFilter, clipboard commands and navigator.clipboard, in-page find and browser find bar integration, and DataTransfer/DragEvent structures implemented and verified.",
       "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
@@ -167,7 +167,7 @@
       "acceptance_verified": false,
       "contract": "docs/step-20-media-playback-and-audio.md",
       "blockers": [
-        "Media loading fabricates success for missing sources; the video frame path generates a color pattern rather than decoding video.",
+        "Unreadable media sources now fail to load; the video frame path still generates a color pattern rather than decoding video.",
         "Real brokered media resource loading, codec decoding, audio output and video composition remain open."
       ],
       "historical_acceptance": "Common media service and capability/codec reporting (canPlayType) for WAV, WebM (VP8/VP9/Opus/Vorbis), MP4, and MP3. RIFF WAVE parser and PCM audio sample extractor. WebM EBML demuxer with video/audio track parsing and stream dimensions. Monotonic media playback clock with play, pause, seek, volume, mute, playback rates, and looping. Bounded buffer manager with quota enforcement. MediaSession API with metadata, playback state, position state, and action dispatch. HTMLMediaElement, HTMLVideoElement, HTMLAudioElement, and global Audio constructor. Element-local error fallback panel with download link.",
@@ -178,7 +178,7 @@
       "acceptance_verified": false,
       "contract": "docs/step-21-permissions-and-native-capabilities.md",
       "blockers": [
-        "Device enumeration returns hardcoded descriptions; real native camera/microphone capture remains open.",
+        "Device enumeration returns an empty list; getUserMedia still creates placeholder tracks and real native camera/microphone capture remains open.",
         "WebRTC and Web Audio are not exposed."
       ],
       "historical_acceptance": "Origin-scoped permissions registry with Permissions-Policy enforcement, opaque origin denial, pending prompt queuing and document navigation cancellation. Protocol version 21 with Capability::PermissionsRevocation, Command::AnswerPermission, Command::RevokePermission, Command::ExitFullscreen, and typed content events for notifications, prompts, fullscreen, protocol registrations, and external apps. Native device lifecycle tracking for MediaStreamTrack audio/video capture and WakeLock sentinels with acknowledged embedder revocation tearing down active tracks (readyState = 'ended', firing 'ended') and releasing wake locks (released = true, firing 'release'). Full Web API semantics for navigator.permissions, Notification, navigator.mediaDevices.getUserMedia, MediaStreamTrack, MediaStream, navigator.wakeLock, screen.orientation, and requestFullscreen/exitFullscreen requiring user activation.",

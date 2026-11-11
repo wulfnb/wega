@@ -3925,11 +3925,9 @@
       });
     },
     enumerateDevices() {
-      return Promise.resolve([
-        { deviceId: "default-audio-in", kind: "audioinput", label: "Default Audio Input", groupId: "group-1" },
-        { deviceId: "default-video-in", kind: "videoinput", label: "Default Video Input", groupId: "group-2" },
-        { deviceId: "default-audio-out", kind: "audiooutput", label: "Default Audio Output", groupId: "group-1" },
-      ]);
+      // No native capture backend is connected, so there is no hardware to
+      // describe. An empty list is the truthful answer.
+      return Promise.resolve([]);
     }
   };
 
@@ -4070,6 +4068,70 @@
     template: HTMLTemplateElement,
     slot: HTMLSlotElement,
   };
+
+  // Per-tag interfaces without element-specific behaviour yet. They give
+  // pages the correct prototype chain, instanceof results and constructor names.
+  const plainHtmlInterfaces = {};
+  for (const [name, tagNames] of Object.entries({
+    HTMLHtmlElement: ["html"],
+    HTMLHeadElement: ["head"],
+    HTMLBodyElement: ["body"],
+    HTMLTitleElement: ["title"],
+    HTMLBaseElement: ["base"],
+    HTMLLinkElement: ["link"],
+    HTMLMetaElement: ["meta"],
+    HTMLStyleElement: ["style"],
+    HTMLDivElement: ["div"],
+    HTMLSpanElement: ["span"],
+    HTMLParagraphElement: ["p"],
+    HTMLHeadingElement: ["h1", "h2", "h3", "h4", "h5", "h6"],
+    HTMLQuoteElement: ["blockquote", "q"],
+    HTMLPreElement: ["pre", "listing", "xmp"],
+    HTMLBRElement: ["br"],
+    HTMLHRElement: ["hr"],
+    HTMLUListElement: ["ul"],
+    HTMLOListElement: ["ol"],
+    HTMLLIElement: ["li"],
+    HTMLDListElement: ["dl"],
+    HTMLMenuElement: ["menu"],
+    HTMLDirectoryElement: ["dir"],
+    HTMLTableElement: ["table"],
+    HTMLTableCaptionElement: ["caption"],
+    HTMLTableColElement: ["col", "colgroup"],
+    HTMLTableSectionElement: ["thead", "tbody", "tfoot"],
+    HTMLTableRowElement: ["tr"],
+    HTMLTableCellElement: ["td", "th"],
+    HTMLLabelElement: ["label"],
+    HTMLFieldSetElement: ["fieldset"],
+    HTMLLegendElement: ["legend"],
+    HTMLOptGroupElement: ["optgroup"],
+    HTMLDataListElement: ["datalist"],
+    HTMLOutputElement: ["output"],
+    HTMLProgressElement: ["progress"],
+    HTMLMeterElement: ["meter"],
+    HTMLAreaElement: ["area"],
+    HTMLMapElement: ["map"],
+    HTMLPictureElement: ["picture"],
+    HTMLSourceElement: ["source"],
+    HTMLTrackElement: ["track"],
+    HTMLEmbedElement: ["embed"],
+    HTMLObjectElement: ["object"],
+    HTMLParamElement: ["param"],
+    HTMLDetailsElement: ["details"],
+    HTMLDialogElement: ["dialog"],
+    HTMLDataElement: ["data"],
+    HTMLTimeElement: ["time"],
+    HTMLModElement: ["ins", "del"],
+    HTMLFontElement: ["font"],
+    HTMLMarqueeElement: ["marquee"],
+    HTMLFrameElement: ["frame"],
+    HTMLFrameSetElement: ["frameset"],
+    HTMLUnknownElement: [],
+  })) {
+    const Interface = ({ [name]: class extends HTMLElement {} })[name];
+    plainHtmlInterfaces[name] = Interface;
+    for (const tagName of tagNames) htmlConstructors[tagName] = Interface;
+  }
 
   // Ranges hold real DOM boundary points. Fragment parsing uses the start
   // element's HTML/SVG context and retains executable fragment scripts.
@@ -5405,6 +5467,7 @@
     "message",
   ])
     defineHandler(globalThis, name);
+  Object.assign(globalThis, plainHtmlInterfaces);
   Object.assign(globalThis, {
     Node,
     CharacterData,
@@ -5540,10 +5603,10 @@
       clipboard: {
         async writeText(text) {
           try {
-            host("clipboardWrite", String(text));
+            host("clipboardWriteText", String(text));
             return undefined;
           } catch(e) {
-            throw new DOMException("Clipboard write failed", "NotAllowedError");
+            throw new DOMException(String(e?.message || "Clipboard write failed"), "NotAllowedError");
           }
         },
         async readText() {
@@ -5786,7 +5849,7 @@ return {
   Object.defineProperty(globalThis, "length", { get: () => 0, configurable: true });
   const classes = { Node, Element, Document, DocumentFragment, CharacterData, Text, Comment, CDATASection, ProcessingInstruction, DocumentType,
     Attr, NamedNodeMap, NodeList, HTMLCollection, DOMTokenList, MutationObserver, MutationRecord,
-    Location, Event, EventTarget: BaseTarget, HTMLElement, HTMLHeadElement: HTMLElement,
+    Location, Event, EventTarget: BaseTarget, HTMLElement, ...plainHtmlInterfaces,
     HTMLScriptElement, ShadowRoot, Range, Selection, TreeWalker, DataTransfer, DragEvent, ClipboardEvent, Window, DOMImplementation, AbortSignal: web.AbortSignal,
     Notification, MediaStream, MediaStreamTrack, PermissionStatus, WakeLockSentinel, ScreenOrientation };
   globalThis.Selection = Selection;

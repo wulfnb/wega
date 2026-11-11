@@ -2776,4 +2776,116 @@ mod tests {
         assert_eq!(val["dtRead"], "drag payload");
         assert_eq!(val["evtType"], "dragstart");
     }
+    fn blank_view(html: &str) -> View {
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Limits::default(),
+        )
+        .unwrap();
+        view.set_html(html).unwrap();
+        view
+    }
+    fn settle(view: &mut View, expression: &str) -> serde_json::Value {
+        for _ in 0..200 {
+            view.poll();
+            let value: serde_json::Value =
+                serde_json::from_str(&view.evaluate_json(expression).unwrap()).unwrap();
+            if !value.is_null() {
+                return value;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("{expression} did not settle");
+    }
+    #[test]
+    fn clipboard_write_text_requires_activation_and_reaches_the_browser() {
+        let mut view = blank_view("<!doctype html><div>Test</div>");
+        let write = |tag: &str| {
+            format!(
+                "globalThis.{tag} = null; navigator.clipboard.writeText('os payload')\
+                 .then(() => {{ globalThis.{tag} = 'ok'; }}, e => {{ globalThis.{tag} = e.name; }}); true"
+            )
+        };
+        view.evaluate_json(&write("denied")).unwrap();
+        assert_eq!(settle(&mut view, "globalThis.denied"), "NotAllowedError");
+        assert!(
+            !view
+                .events
+                .iter()
+                .any(|event| matches!(event, PageEvent::ClipboardWrite(_)))
+        );
+
+        view.activate();
+        view.evaluate_json(&write("allowed")).unwrap();
+        assert_eq!(settle(&mut view, "globalThis.allowed"), "ok");
+        assert!(
+            view.events.iter().any(
+                |event| matches!(event, PageEvent::ClipboardWrite(text) if text == "os payload")
+            )
+        );
+    }
+    #[test]
+    fn html_elements_use_per_tag_interfaces() {
+        let mut view =
+            blank_view("<!doctype html><div id=d><p>x</p><table><tr><td>y</td></tr></table></div>");
+        let js = r#"
+            const name = tag => Object.getPrototypeOf(document.createElement(tag)).constructor.name;
+            ({
+                div: document.getElementById('d') instanceof HTMLDivElement,
+                divIsHtml: document.getElementById('d') instanceof HTMLElement,
+                p: document.querySelector('p') instanceof HTMLParagraphElement,
+                td: document.querySelector('td') instanceof HTMLTableCellElement,
+                head: document.head instanceof HTMLHeadElement,
+                body: document.body instanceof HTMLBodyElement,
+                h2: name('h2'),
+                span: name('span'),
+                input: name('input'),
+                custom: name('x-unknown'),
+                notDiv: document.createElement('span') instanceof HTMLDivElement,
+                illegal: (() => { try { new HTMLDivElement(); return false; } catch { return true; } })(),
+            })
+        "#;
+        let val: serde_json::Value =
+            serde_json::from_str(&view.evaluate_json(js).unwrap()).unwrap();
+        for key in ["div", "divIsHtml", "p", "td", "head", "body", "illegal"] {
+            assert_eq!(val[key], true, "{key}");
+        }
+        assert_eq!(val["h2"], "HTMLHeadingElement");
+        assert_eq!(val["span"], "HTMLSpanElement");
+        assert_eq!(val["input"], "HTMLInputElement");
+        assert_eq!(val["custom"], "HTMLElement");
+        assert_eq!(val["notDiv"], false);
+    }
+    #[test]
+    fn media_devices_and_missing_media_are_reported_truthfully() {
+        let mut view = blank_view("<!doctype html><div>Test</div>");
+        view.evaluate_json(
+            "globalThis.devices = null; navigator.mediaDevices.enumerateDevices()\
+             .then(list => { globalThis.devices = list.length; }); true",
+        )
+        .unwrap();
+        assert_eq!(settle(&mut view, "globalThis.devices"), 0);
+
+        let js = r#"
+            const results = {};
+            for (const src of ["https://media.invalid/missing-video.webm", "https://media.invalid/missing-audio.wav"]) {
+                const el = document.createElement(src.endsWith("wav") ? "audio" : "video");
+                let failed = false, loaded = false;
+                el.addEventListener("error", () => { failed = true; });
+                el.addEventListener("loadedmetadata", () => { loaded = true; });
+                el.src = src;
+                results[el.localName] = { failed, loaded, code: el.error ? el.error.code : 0 };
+            }
+            results
+        "#;
+        let val: serde_json::Value =
+            serde_json::from_str(&view.evaluate_json(js).unwrap()).unwrap();
+        for kind in ["video", "audio"] {
+            assert_eq!(val[kind]["failed"], true, "{kind}");
+            assert_eq!(val[kind]["loaded"], false, "{kind}");
+            assert_eq!(val[kind]["code"], 4, "{kind}");
+        }
+    }
 }

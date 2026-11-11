@@ -570,5 +570,8 @@ impl View {
         for app_url in requests.external_apps {
             self.events.push_back(PageEvent::ExternalApp(app_url));
         }
+        for text in requests.clipboard_writes {
+            self.events.push_back(PageEvent::ClipboardWrite(text));
+        }
     }
 }

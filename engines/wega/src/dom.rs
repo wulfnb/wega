@@ -38,6 +38,8 @@ pub(crate) struct Requests {
     pub fullscreen: Vec<bool>,
     pub protocol_registrations: Vec<wega_protocol::permissions::ProtocolHandlerRegistration>,
     pub external_apps: Vec<String>,
+    /// Text for the OS clipboard, written by the browser process.
+    pub clipboard_writes: Vec<String>,
 }
 
 pub(crate) struct Dom {
@@ -526,41 +528,15 @@ impl Dom {
                     .ok_or("Media instance not found")?;
 
                 if bytes.is_empty() {
-                    if src.ends_with(".wav") || src.contains("audio") {
-                        let mut wav_bytes = Vec::new();
-                        wav_bytes.extend_from_slice(b"RIFF");
-                        let chunk_sz = (36 + 128000) as u32;
-                        wav_bytes.extend_from_slice(&chunk_sz.to_le_bytes());
-                        wav_bytes.extend_from_slice(b"WAVEfmt ");
-                        wav_bytes.extend_from_slice(&16u32.to_le_bytes());
-                        wav_bytes.extend_from_slice(&1u16.to_le_bytes());
-                        wav_bytes.extend_from_slice(&1u16.to_le_bytes());
-                        wav_bytes.extend_from_slice(&16000u32.to_le_bytes());
-                        wav_bytes.extend_from_slice(&32000u32.to_le_bytes());
-                        wav_bytes.extend_from_slice(&2u16.to_le_bytes());
-                        wav_bytes.extend_from_slice(&16u16.to_le_bytes());
-                        wav_bytes.extend_from_slice(b"data");
-                        wav_bytes.extend_from_slice(&128000u32.to_le_bytes());
-                        wav_bytes.resize(wav_bytes.len() + 128000, 0);
-                        let _ = inst.load_bytes(src, wav_bytes);
-                    } else if src.ends_with(".webm") || src.contains("video") {
-                        inst.src = src.to_string();
-                        inst.current_src = src.to_string();
-                        inst.clock.duration = 4.0;
-                        inst.video_width = 320;
-                        inst.video_height = 180;
-                        inst.clock.ready_state = crate::media::ReadyState::HaveEnoughData;
-                        inst.clock.network_state = crate::media::NetworkState::Idle;
-                    } else {
-                        let err = crate::media::MediaError {
-                            code: crate::media::MediaErrorCode::SrcNotSupported,
-                            message: "Failed to load media: unsupported format or missing source"
-                                .into(),
-                        };
-                        inst.clock.error = Some(err);
-                        inst.clock.ready_state = crate::media::ReadyState::HaveNothing;
-                        inst.clock.network_state = crate::media::NetworkState::NoSource;
-                    }
+                    // A source that cannot be read is a load failure; never
+                    // report synthetic metadata for it.
+                    inst.clock.error = Some(crate::media::MediaError {
+                        code: crate::media::MediaErrorCode::SrcNotSupported,
+                        message: "Failed to load media: unsupported format or missing source"
+                            .into(),
+                    });
+                    inst.clock.ready_state = crate::media::ReadyState::HaveNothing;
+                    inst.clock.network_state = crate::media::NetworkState::NoSource;
                 } else {
                     let _ = inst.load_bytes(src, bytes);
                 }
@@ -1202,6 +1178,28 @@ impl Dom {
             "clipboardWrite" => {
                 self.clipboard.borrow_mut().clear();
                 self.clipboard.borrow_mut().push_str(text(1));
+                return Ok(Value::Null);
+            }
+            "clipboardWriteText" => {
+                // navigator.clipboard.writeText: gated on transient activation
+                // and forwarded to the browser, which owns the OS clipboard.
+                const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
+                let now = Instant::now();
+                if !self.activation.get().is_some_and(|until| until > now) {
+                    return Err(
+                        "NotAllowedError: clipboard write requires transient user activation"
+                            .into(),
+                    );
+                }
+                if text(1).len() > MAX_CLIPBOARD_BYTES {
+                    return Err("NotAllowedError: clipboard text is too large".into());
+                }
+                self.clipboard.borrow_mut().clear();
+                self.clipboard.borrow_mut().push_str(text(1));
+                self.requests
+                    .borrow_mut()
+                    .clipboard_writes
+                    .push(text(1).to_string());
                 return Ok(Value::Null);
             }
             "clipboardRead" => {
