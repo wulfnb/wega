@@ -119,7 +119,19 @@ jobs:
           ditto target/Wega.app "$staging_dir/Wega.app"
           ln -s /Applications "$staging_dir/Applications"
           cp docs/install-macos.txt "$staging_dir/Read Me.txt"
-          hdiutil create -volname "Wega Browser" -srcfolder "$staging_dir" -ov -format UDZO "dist/Wega-macOS-$ARCH.dmg"
+          sudo mdutil -a -i off >/dev/null 2>&1 || true
+          xattr -rc "$staging_dir" || true
+          for attempt in 1 2 3 4 5; do
+            echo "Creating DMG (attempt $attempt)..."
+            if hdiutil create -volname "Wega Browser" -srcfolder "$staging_dir" -ov -format UDZO "dist/Wega-macOS-$ARCH.dmg"; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Failed to create DMG after 5 attempts"
+              exit 1
+            fi
+            sleep 3
+          done
           # Check the actual mounted distribution, not just the staging folder.
           hdiutil attach -readonly -nobrowse -mountpoint "$mount_dir" "dist/Wega-macOS-$ARCH.dmg"
           test -f "$mount_dir/Wega.app/Contents/Info.plist"
