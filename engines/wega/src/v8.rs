@@ -22,37 +22,19 @@ impl crate::native_ops::NativeHost for Dom {
         mut request: wega_network::Request,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<wega_network::Response, String>>>>
     {
-        if let Ok(parsed_url) = url::Url::parse(&request.url) {
-            if let Some(entry) = self.workers.borrow().intercept_fetch(&parsed_url) {
-                let resp = wega_network::Response {
-                    url: parsed_url.to_string(),
-                    status: entry.status,
-                    headers: entry.headers,
-                    body: entry.body,
-                    redirected: false,
-                };
-                return Box::pin(std::future::ready(Ok(resp)));
-            }
-        }
         let blocked = self.connect_check(&request.url);
         if !blocked.is_empty() {
             return Box::pin(std::future::ready(Err(blocked)));
         }
         let document = self.document.borrow().url().clone();
+        let document_url = document.clone();
         request.origin = document.origin().ascii_serialization();
         request.initiator = Some(document);
         request.top_level = false;
         request.destination = wega_network::ResourceDestination::Fetch;
         request.redirect = "manual".into();
         request.limit = self.limits.resource_bytes.min(wega_network::MAX_BODY);
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let queued = self.network.spawn(move |client| {
-            let _ = sender.send(client.response(&request));
-        });
-        Box::pin(async move {
-            queued?;
-            receiver.await.map_err(|_| "Network dispatcher stopped")?
-        })
+        self.network.request(request, Some(document_url))
     }
 
     fn call(&self, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
@@ -106,9 +88,6 @@ impl crate::native_ops::NativeHost for Dom {
         let Ok(url) = url::Url::parse(address) else {
             return "Invalid URL".into();
         };
-        if self.workers.borrow().intercept_fetch(&url).is_some() {
-            return String::new();
-        }
         let mut policy_url = url.clone();
         if url.scheme() == "ws" {
             let _ = policy_url.set_scheme("http");
@@ -124,7 +103,15 @@ impl crate::native_ops::NativeHost for Dom {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .permits(&policy_url)
         {
-            return "Network request blocked by browsing policy".into();
+            // A controlling service worker may still answer from its caches.
+            let document = self.document.borrow().url().clone();
+            if !self
+                .network
+                .service_workers
+                .controls(&self.network, &document)
+            {
+                return "Network request blocked by browsing policy".into();
+            }
         }
         let document = self.document.borrow().url().clone();
         if crate::network::mixed_content(Some(&document), &url, false) {
@@ -142,6 +129,9 @@ impl crate::native_ops::NativeHost for Dom {
     }
 }
 use crate::native_ops::wega_dom;
+/// Trusted bootstrap factories shared by document and worker realms.
+pub(crate) static STARTUP_SNAPSHOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/wega-startup.bin"));
 type ModuleLoad = std::pin::Pin<
     Box<
         dyn std::future::Future<
@@ -343,10 +333,7 @@ impl V8Host {
             }
         }
         let mut runtime = JsRuntime::try_new(RuntimeOptions {
-            startup_snapshot: Some(include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/wega-startup.bin"
-            ))),
+            startup_snapshot: Some(STARTUP_SNAPSHOT),
             module_loader: Some(Rc::new(crate::module_loader::Loader::new(
                 dom.network.clone(),
                 &document_url,

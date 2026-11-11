@@ -6,7 +6,7 @@ mod cors;
 mod services;
 mod websocket;
 use connection::Connection;
-pub use services::ResourceRequest;
+pub use services::{ResourceRequest, service_worker_store};
 use std::{
     collections::{HashMap, VecDeque},
     io::{Read, Write},

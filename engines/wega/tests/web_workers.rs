@@ -1,42 +1,74 @@
-//! Step 17 Workers and Offline Execution Verification Suite.
-//!
-//! Verifies:
-//! - Structured clone and transferable ownership: ArrayBuffer detachment and MessageChannel entanglement.
-//! - DedicatedWorker: independent isolate and event loop, bidirectional messaging, error handling, terminate().
-//! - SharedWorker: shared isolate per origin/name across documents, entangled port communication.
-//! - Cross-origin worker script rejection (SecurityError).
-//! - ServiceWorker registration, scope matching (path prefix and origin), unregistration.
-//! - Offline execution and fetch interception: CacheStorage cache serving when network is offline.
-//! - Document navigation and teardown cleanup terminating worker isolates.
+//! Workers and offline execution: real worker realms with Web APIs, script
+//! loading through the network stack, structured clone and transfer, worker
+//! canvas rendering, and service worker lifecycle and fetch handling.
 
-use std::{sync::Arc, time::Duration};
+mod support;
+
+use serde_json::{Value, json};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+use support::{Reply, Server};
 use url::Url;
 use wega_engine::{
     Engine, Limits, NetworkPolicy, View,
     workers::{ArrayBufferTransfer, MessagePortHub},
 };
-use wega_network::CacheStorage;
 
-fn test_engine(storage_dir: std::path::PathBuf, policy: NetworkPolicy) -> Engine {
-    Engine::new(
-        Limits {
-            script_time: Duration::from_secs(5),
-            ..Limits::default()
-        },
-        policy,
-        Arc::new(|| {}),
-    )
-    .unwrap()
-    .with_storage_dir(storage_dir)
+fn online() -> NetworkPolicy {
+    NetworkPolicy {
+        allow_loopback: true,
+        ..Default::default()
+    }
 }
 
-fn create_page(engine: &Engine, address: &str) -> View {
-    let url = Url::parse(address).unwrap();
-    let mut view = engine.create_view(url).unwrap();
-    view.set_html("<title>Worker Test</title>").unwrap();
+fn engine(storage: Option<&std::path::Path>, policy: NetworkPolicy) -> Engine {
+    let engine = Engine::new(Limits::default(), policy, Arc::new(|| {})).unwrap();
+    match storage {
+        Some(path) => engine.with_storage_dir(path.to_owned()),
+        None => engine,
+    }
+}
+
+fn page(engine: &Engine, address: &str) -> View {
+    let mut view = engine.create_view(Url::parse(address).unwrap()).unwrap();
+    view.set_html("<!doctype html><title>Workers</title><canvas id=c width=40 height=20></canvas>")
+        .unwrap();
     view.poll();
     view
 }
+
+/// Run an async function body in the page and wait for its result.
+fn run(page: &mut View, body: &str) -> Value {
+    page.evaluate(&format!(
+        "globalThis.__result=null;(async()=>{{{body}}})().then(value=>__result={{ok:value===undefined?null:value}},error=>__result={{error:error.name,message:String(error.message)}});"
+    ))
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        page.poll();
+        let result: Value = serde_json::from_str(&page.evaluate_json("__result").unwrap()).unwrap();
+        if !result.is_null() {
+            return result;
+        }
+        assert!(Instant::now() < deadline, "page task timed out: {body}");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+fn ok(page: &mut View, body: &str) -> Value {
+    let result = run(page, body);
+    assert!(result.get("ok").is_some(), "page task failed: {result}");
+    result["ok"].clone()
+}
+
+fn script(body: &str) -> Reply {
+    Reply::ok("text/javascript", body.as_bytes().to_vec())
+}
+
+/// Resolves with the next message (or error) from a worker.
+const NEXT: &str = "const next=(w)=>new Promise((resolve,reject)=>{w.onmessage=e=>resolve(e.data);w.onerror=e=>reject(new Error(e.message));});";
 
 #[test]
 fn transferable_ownership_detaches_source_buffer() {
@@ -82,343 +114,458 @@ fn message_channel_port_entanglement_and_closure() {
 }
 
 #[test]
-fn dedicated_worker_script_execution_and_bidirectional_messaging() {
-    let dir = tempfile::tempdir().unwrap();
-    let engine = test_engine(dir.path().to_path_buf(), NetworkPolicy::default());
-    let mut page = create_page(&engine, "https://app.test/index.html");
-
-    let setup = r#"
-        (() => {
-            globalThis.worker = new Worker('worker.js', {
-                content: "onmessage = function(e) { postMessage({ result: e.data.value * 3, text: 'computed' }); };"
-            });
-            globalThis.received = null;
-            globalThis.worker.onmessage = function(e) {
-                globalThis.received = e.data;
+fn dedicated_worker_loads_its_script_and_has_a_real_global_scope() {
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/worker.js" => script(
+            r#"
+            importScripts('lib.js');
+            self.onmessage = async (event) => {
+                const reply = await fetch('data.json').then(r => r.json());
+                await new Promise(resolve => setTimeout(resolve, 5));
+                postMessage({
+                    scope: self instanceof DedicatedWorkerGlobalScope,
+                    hasDocument: typeof document,
+                    name: self.name,
+                    href: location.href,
+                    secure: isSecureContext,
+                    lib: libValue,
+                    fetched: reply.value,
+                    echo: event.data,
+                    isMap: event.data.map instanceof Map,
+                    isDate: event.data.when instanceof Date,
+                    bytes: [...event.data.bytes],
+                });
             };
-            globalThis.worker.postMessage({ value: 14 });
-            return true;
-        })()
-    "#;
-    assert_eq!(page.evaluate_json(setup).unwrap(), "true");
-
-    // Poll until response arrives
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    let mut got_reply = false;
-    while std::time::Instant::now() < deadline {
-        page.poll();
-        let _ = page.evaluate_json("globalThis.worker.poll(); true");
-        let res = page.evaluate_json("globalThis.received").unwrap();
-        if res.contains("\"result\":42") {
-            got_reply = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(
-        got_reply,
-        "Dedicated worker must receive and reply to messages"
+            "#,
+        ),
+        "/lib.js" => script("var libValue = 'imported';"),
+        "/data.json" => Reply::ok("application/json", br#"{"value":42}"#.to_vec()),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let engine = engine(None, online());
+    let mut view = page(&engine, &server.url("localhost", "/app/"));
+    let worker = server.url("localhost", "/worker.js");
+    let result = ok(
+        &mut view,
+        &format!(
+            "{NEXT} const w=new Worker('{worker}',{{name:'crunch'}});
+             w.postMessage({{map:new Map([['a',1]]),when:new Date(5),bytes:new Uint8Array([1,2,3]),nested:{{list:[1,'two']}}}});
+             const data=await next(w); w.terminate();
+             return {{...data, echo:{{mapSize:data.echo.map.size,when:data.echo.when.getTime(),nested:data.echo.nested}}}};"
+        ),
     );
-
-    // Terminate worker
     assert_eq!(
-        page.evaluate_json("globalThis.worker.terminate(); true")
-            .unwrap(),
-        "true"
+        result,
+        json!({
+            "scope": true, "hasDocument": "undefined", "name": "crunch", "href": worker,
+            "secure": true, "lib": "imported", "fetched": 42, "isMap": true, "isDate": true,
+            "bytes": [1, 2, 3],
+            "echo": {"mapSize": 1, "when": 5, "nested": {"list": [1, "two"]}},
+        })
     );
+    assert_eq!(server.requests("/worker.js").len(), 1);
 }
 
 #[test]
-fn dedicated_worker_rejects_cross_origin_script() {
-    let dir = tempfile::tempdir().unwrap();
-    let engine = test_engine(dir.path().to_path_buf(), NetworkPolicy::default());
-    let mut page = create_page(&engine, "https://app.test/index.html");
-
-    // Attempt to spawn worker from cross-origin URL
-    let result = page.evaluate_json(
-        "(() => { try { new Worker('https://evil.test/worker.js'); return 'ok'; } catch(e) { return e.message; } })()"
-    );
-    assert!(result.is_ok());
-    let msg = result.unwrap();
-    assert!(
-        msg.contains("SecurityError") || msg.contains("same-origin"),
-        "Cross-origin worker creation must be rejected with SecurityError: got {msg}"
-    );
-}
-
-#[test]
-fn shared_worker_shares_state_across_same_origin_documents() {
-    let dir = tempfile::tempdir().unwrap();
-    let engine = test_engine(dir.path().to_path_buf(), NetworkPolicy::default());
-
-    let mut doc1 = create_page(&engine, "https://app.test/tab1.html");
-    let mut doc2 = create_page(&engine, "https://app.test/tab2.html");
-
-    let shared_script = "let total = 0; onconnect = function(e) { const port = e.ports[0]; port.onmessage = function(msg) { total += msg.data.delta; port.postMessage({ total: total }); }; };";
-
-    // Doc 1 connects to SharedWorker
-    let doc1_setup = format!(
-        r#"
-        (() => {{
-            globalThis.shared = new SharedWorker('shared.js', {{ name: 'counter', content: "{shared_script}" }});
-            globalThis.reply1 = null;
-            globalThis.shared.port.onmessage = function(e) {{
-                globalThis.reply1 = e.data;
-            }};
-            globalThis.shared.port.postMessage({{ delta: 10 }});
-            return true;
-        }})()
-        "#
-    );
-    assert_eq!(doc1.evaluate_json(&doc1_setup).unwrap(), "true");
-
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    let mut doc1_got = false;
-    while std::time::Instant::now() < deadline {
-        doc1.poll();
-        let _ = doc1.evaluate_json("globalThis.shared.port.poll(); true");
-        let res = doc1.evaluate_json("globalThis.reply1").unwrap();
-        if res.contains("\"total\":10") {
-            doc1_got = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(doc1_got, "Doc 1 must receive initial total of 10");
-
-    // Doc 2 connects to the SAME SharedWorker instance on same origin
-    let doc2_setup = format!(
-        r#"
-        (() => {{
-            globalThis.shared = new SharedWorker('shared.js', {{ name: 'counter', content: "{shared_script}" }});
-            globalThis.reply2 = null;
-            globalThis.shared.port.onmessage = function(e) {{
-                globalThis.reply2 = e.data;
-            }};
-            globalThis.shared.port.postMessage({{ delta: 25 }});
-            return true;
-        }})()
-        "#
-    );
-    assert_eq!(doc2.evaluate_json(&doc2_setup).unwrap(), "true");
-
-    let mut doc2_got = false;
-    while std::time::Instant::now() < deadline {
-        doc2.poll();
-        let _ = doc2.evaluate_json("globalThis.shared.port.poll(); true");
-        let res = doc2.evaluate_json("globalThis.reply2").unwrap();
-        if res.contains("\"total\":35") {
-            doc2_got = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(
-        doc2_got,
-        "Doc 2 must receive accumulated total of 35 from shared isolate"
-    );
-}
-
-#[test]
-fn service_worker_registration_scope_matching_and_unregistration() {
-    let dir = tempfile::tempdir().unwrap();
-    let engine = test_engine(dir.path().to_path_buf(), NetworkPolicy::default());
-    let mut page = create_page(&engine, "https://app.test/app/index.html");
-
-    // Register service worker with scope /app/
-    let reg_code = r#"
-        (() => {
-            globalThis.__scope = null;
-            navigator.serviceWorker.register('sw.js', { scope: '/app/' }).then(reg => {
-                globalThis.__scope = reg.scope;
-            });
-            return true;
-        })()
-    "#;
-    assert_eq!(page.evaluate_json(reg_code).unwrap(), "true");
-
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    while std::time::Instant::now() < deadline {
-        page.poll();
-        let res = page.evaluate_json("globalThis.__scope").unwrap();
-        if res.contains("https://app.test/app/") {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let res = page.evaluate_json("globalThis.__scope").unwrap();
-    assert!(res.contains("https://app.test/app/"));
-
-    // Check matching registration
-    let check_match = r#"
-        (() => {
-            globalThis.__matched = null;
-            navigator.serviceWorker.getRegistration('https://app.test/app/details').then(reg => {
-                globalThis.__matched = reg ? reg.scope : 'none';
-            });
-            return true;
-        })()
-    "#;
-    assert_eq!(page.evaluate_json(check_match).unwrap(), "true");
-    while std::time::Instant::now() < deadline {
-        page.poll();
-        let res = page.evaluate_json("globalThis.__matched").unwrap();
-        if res != "null" {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert_eq!(
-        page.evaluate_json("globalThis.__matched").unwrap(),
-        "\"https://app.test/app/\""
-    );
-
-    // Check non-matching scope
-    let check_non_match = r#"
-        (() => {
-            globalThis.__nonMatched = null;
-            navigator.serviceWorker.getRegistration('https://app.test/other/path').then(reg => {
-                globalThis.__nonMatched = reg ? reg.scope : 'none';
-            });
-            return true;
-        })()
-    "#;
-    assert_eq!(page.evaluate_json(check_non_match).unwrap(), "true");
-    while std::time::Instant::now() < deadline {
-        page.poll();
-        let res = page.evaluate_json("globalThis.__nonMatched").unwrap();
-        if res != "null" {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert_eq!(
-        page.evaluate_json("globalThis.__nonMatched").unwrap(),
-        "\"none\""
-    );
-
-    // Unregister
-    let unreg = r#"
-        (() => {
-            globalThis.__unreg = null;
-            navigator.serviceWorker.getRegistration('https://app.test/app/details').then(async reg => {
-                globalThis.__unreg = await reg.unregister();
-            });
-            return true;
-        })()
-    "#;
-    assert_eq!(page.evaluate_json(unreg).unwrap(), "true");
-    while std::time::Instant::now() < deadline {
-        page.poll();
-        let res = page.evaluate_json("globalThis.__unreg").unwrap();
-        if res != "null" {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert_eq!(page.evaluate_json("globalThis.__unreg").unwrap(), "true");
-}
-
-#[test]
-fn service_worker_offline_fetch_cache_interception() {
-    let dir = tempfile::tempdir().unwrap();
-
-    // 1. Pre-seed CacheStorage with offline response
-    {
-        let mut store = CacheStorage::open(dir.path()).unwrap();
-        let cache_id = store.open_cache("v1-cache").unwrap();
-        store
-            .put_entry(
-                cache_id,
-                "https://app.test/offline-data.json",
-                "GET",
-                200,
-                "OK",
-                &[("content-type", "application/json")],
-                br#"{"status":"offline-ready","items":[1,2,3]}"#,
-            )
-            .unwrap();
-    }
-
-    // 2. Launch engine with offline network policy
-    let offline_policy = NetworkPolicy {
-        offline: true,
-        allow_loopback: false,
-        ..Default::default()
+fn dedicated_worker_failures_are_reported_and_runaway_workers_can_be_terminated() {
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/throws.js" => script("onmessage = () => { throw new RangeError('boom'); };"),
+        "/html.js" => Reply::html("<p>not a script</p>"),
+        "/spin.js" => script("postMessage('spinning'); onmessage = () => { for (;;) {} };"),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let engine = engine(None, online());
+    let mut view = page(&engine, &server.url("localhost", "/"));
+    let base = server.url("localhost", "/");
+    let failure = |view: &mut View, file: &str, post: bool| {
+        run(
+            view,
+            &format!(
+                "{NEXT} const w=new Worker('{base}{file}'); {} return await next(w);",
+                if post { "w.postMessage(1);" } else { "" }
+            ),
+        )
     };
-    let engine = test_engine(dir.path().to_path_buf(), offline_policy);
-    let mut page = create_page(&engine, "https://app.test/index.html");
-
-    // 3. Register service worker covering the app
-    let setup = r#"
-        (() => {
-            globalThis.__swRegistered = false;
-            navigator.serviceWorker.register('sw.js', { scope: '/' }).then(() => {
-                globalThis.__swRegistered = true;
-            });
-            return true;
-        })()
-    "#;
-    assert_eq!(page.evaluate_json(setup).unwrap(), "true");
-
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    while std::time::Instant::now() < deadline {
-        page.poll();
-        let res = page.evaluate_json("globalThis.__swRegistered").unwrap();
-        if res == "true" {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-
-    // 4. Fetch offline resource: service worker must intercept and serve cached body!
-    let fetch_code = r#"
-        (() => {
-            globalThis.__fetchBody = null;
-            fetch('https://app.test/offline-data.json')
-                .then(r => r.text())
-                .then(t => { globalThis.__fetchBody = t; })
-                .catch(e => { globalThis.__fetchBody = 'error: ' + e; });
-            return true;
-        })()
-    "#;
-    assert_eq!(page.evaluate_json(fetch_code).unwrap(), "true");
-
-    while std::time::Instant::now() < deadline {
-        page.poll();
-        let res = page.evaluate_json("globalThis.__fetchBody").unwrap();
-        if res != "null" {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-
-    let result = page.evaluate_json("globalThis.__fetchBody").unwrap();
+    let missing = failure(&mut view, "missing.js", false);
     assert!(
-        result.contains("offline-ready"),
-        "Offline fetch must be served from service worker cache, got: {result}"
+        missing["message"].as_str().unwrap().contains("404"),
+        "{missing}"
+    );
+    let wrong_type = failure(&mut view, "html.js", false);
+    assert!(
+        wrong_type["message"].as_str().unwrap().contains("MIME"),
+        "{wrong_type}"
+    );
+    let thrown = failure(&mut view, "throws.js", true);
+    assert!(
+        thrown["message"].as_str().unwrap().contains("boom"),
+        "{thrown}"
+    );
+
+    let cross = run(
+        &mut view,
+        "new Worker('https://other.test/worker.js'); return 1;",
+    );
+    assert_eq!(cross["error"], "SecurityError");
+
+    // terminate() must stop a worker that never yields.
+    let started = Instant::now();
+    assert_eq!(
+        ok(
+            &mut view,
+            &format!(
+                "{NEXT} const w=new Worker('{base}spin.js'); await next(w); w.postMessage(1); await new Promise(r=>setTimeout(r,50)); w.terminate(); return 'stopped';"
+            ),
+        ),
+        "stopped"
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn blob_and_module_workers_run_and_transfers_move_ownership() {
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/module.js" => {
+            script("import { twice } from './dep.js'; onmessage = e => postMessage(twice(e.data));")
+        }
+        "/dep.js" => script("export const twice = value => value * 2;"),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let engine = engine(None, online());
+    let mut view = page(&engine, &server.url("localhost", "/"));
+    let result = ok(
+        &mut view,
+        &format!(
+            r#"{NEXT}
+            const source = "onmessage = e => {{ const view = new Uint8Array(e.data.buffer); e.data.port.postMessage({{sum: view[0] + view[1], length: view.length}}); }};";
+            const blob = new Worker(URL.createObjectURL(new Blob([source], {{type: 'text/javascript'}})));
+            const channel = new MessageChannel();
+            const buffer = new Uint8Array([40, 2]).buffer;
+            const reply = new Promise(resolve => {{ channel.port1.onmessage = e => resolve(e.data); }});
+            blob.postMessage({{buffer, port: channel.port2}}, [buffer, channel.port2]);
+            const transferred = await reply;
+            blob.terminate();
+            const module = new Worker('{}', {{type: 'module'}});
+            module.postMessage(21);
+            const doubled = await next(module);
+            module.terminate();
+            let illegal = false;
+            try {{ new MessagePort(); }} catch (e) {{ illegal = e instanceof TypeError; }}
+            let uncloneable = '';
+            try {{ channel.port1.postMessage(() => 1); }} catch (e) {{ uncloneable = e.name; }}
+            return {{transferred, detached: buffer.byteLength, doubled, illegal, uncloneable}};"#,
+            server.url("localhost", "/module.js")
+        ),
+    );
+    assert_eq!(
+        result,
+        json!({"transferred": {"sum": 42, "length": 2}, "detached": 0, "doubled": 42, "illegal": true, "uncloneable": "DataCloneError"})
     );
 }
 
 #[test]
-fn document_navigation_terminates_worker_isolates() {
+fn shared_worker_is_shared_by_same_origin_documents() {
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/shared.js" => script(
+            "let total = 0; onconnect = e => { const port = e.ports[0]; port.onmessage = m => { total += m.data; port.postMessage({total, scope: self instanceof SharedWorkerGlobalScope, name: self.name}); }; };",
+        ),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let engine = engine(None, online());
+    let address = server.url("localhost", "/");
+    let add = format!(
+        "const w=new SharedWorker('{}shared.js','tally'); return await new Promise(resolve=>{{ w.port.onmessage=e=>resolve(e.data); w.port.postMessage(AMOUNT); }});",
+        address
+    );
+    let mut first = page(&engine, &address);
+    assert_eq!(
+        ok(&mut first, &add.replace("AMOUNT", "10")),
+        json!({"total": 10, "scope": true, "name": "tally"})
+    );
+    let mut second = page(&engine, &format!("{address}other"));
+    assert_eq!(ok(&mut second, &add.replace("AMOUNT", "25"))["total"], 35);
+    assert_eq!(
+        server.requests("/shared.js").len(),
+        1,
+        "one realm serves both documents"
+    );
+}
+
+#[test]
+fn offscreen_canvas_renders_in_a_worker_and_commits_to_its_placeholder() {
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/paint.js" => script(
+            r#"
+            onmessage = (event) => {
+                const local = new OffscreenCanvas(8, 8);
+                const context = local.getContext('2d');
+                context.fillStyle = '#ff0000';
+                context.fillRect(0, 0, 8, 8);
+                const own = [...context.getImageData(2, 2, 1, 1).data];
+                const placeholder = event.data.canvas;
+                const target = placeholder.getContext('2d');
+                target.fillStyle = '#0000ff';
+                target.fillRect(0, 0, placeholder.width, placeholder.height);
+                setTimeout(() => postMessage({own, size: [placeholder.width, placeholder.height]}), 20);
+            };
+            "#,
+        ),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let engine = engine(None, online());
+    let mut view = page(&engine, &server.url("localhost", "/"));
+    let result = ok(
+        &mut view,
+        &format!(
+            "{NEXT} const canvas=document.getElementById('c'); const offscreen=canvas.transferControlToOffscreen();
+             const w=new Worker('{}'); w.postMessage({{canvas:offscreen}},[offscreen]);
+             const reply=await next(w); w.terminate();
+             const probe=document.createElement('canvas'); probe.width=40; probe.height=20;
+             const context=probe.getContext('2d'); context.drawImage(canvas,0,0);
+             let detached=false; try {{ offscreen.getContext('2d'); }} catch (e) {{ detached=e.name==='InvalidStateError'; }}
+             return {{reply, placeholder:[...context.getImageData(10,10,1,1).data], detached}};",
+            server.url("localhost", "/paint.js")
+        ),
+    );
+    assert_eq!(
+        result,
+        json!({"reply": {"own": [255, 0, 0, 255], "size": [40, 20]}, "placeholder": [0, 0, 255, 255], "detached": true})
+    );
+}
+
+const SERVICE_WORKER: &str = r#"
+const VERSION = 'v1';
+self.addEventListener('install', (event) => {
+    self.skipWaiting();
+    event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(['/app/data.json'])));
+});
+self.addEventListener('activate', (event) => { event.waitUntil(clients.claim()); });
+self.addEventListener('fetch', (event) => {
+    const url = new URL(event.request.url);
+    if (url.pathname === '/app/generated')
+        event.respondWith(new Response('made by ' + VERSION, {status: 203, headers: {'x-from': 'sw'}}));
+    else if (url.pathname === '/app/data.json')
+        event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request)));
+});
+self.addEventListener('message', (event) => {
+    event.source.postMessage({echo: event.data, scope: registration.scope, kind: self instanceof ServiceWorkerGlobalScope});
+});
+"#;
+
+fn service_server(version: Arc<Mutex<String>>) -> Server {
+    Server::new(move |seen| match seen.path.as_str() {
+        "/app/sw.js" => {
+            script(&SERVICE_WORKER.replace("'v1'", &format!("'{}'", version.lock().unwrap())))
+        }
+        "/app/data.json" => Reply::ok(
+            "application/json",
+            br#"{"status":"offline-ready"}"#.to_vec(),
+        ),
+        "/app/plain" => Reply::ok("text/plain", b"from network".to_vec()),
+        "/app/broken.js" => script("this is not javascript"),
+        "/app/rejects.js" => script(
+            "addEventListener('install', e => e.waitUntil(Promise.reject(new Error('no'))));",
+        ),
+        "/deep/sw.js" => script(""),
+        _ => Reply::html("").status("404 Not Found"),
+    })
+}
+
+/// Register and wait until the worker controls the page.
+const ACTIVATE: &str = "const registration=await navigator.serviceWorker.register('/app/sw.js'); \
+    const ready=await navigator.serviceWorker.ready; \
+    while(!navigator.serviceWorker.controller) await new Promise(r=>setTimeout(r,10));";
+
+#[test]
+fn service_worker_script_runs_through_install_activate_and_handles_fetches() {
+    let server = service_server(Arc::new(Mutex::new("v1".into())));
+    let engine = engine(None, online());
+    let mut view = page(&engine, &server.url("localhost", "/app/index.html"));
+    let result = ok(
+        &mut view,
+        "const states=[]; const pending=navigator.serviceWorker.register('/app/sw.js');
+             const registration=await pending; const worker=registration.installing||registration.waiting||registration.active;
+             states.push(worker.state); worker.addEventListener('statechange',()=>states.push(worker.state));
+             const ready=await navigator.serviceWorker.ready;
+             while(!navigator.serviceWorker.controller) await new Promise(r=>setTimeout(r,10));
+             const made=await fetch('/app/generated'); const plain=await fetch('/app/plain');
+             const reply=new Promise(resolve=>navigator.serviceWorker.addEventListener('message',e=>resolve(e.data)));
+             navigator.serviceWorker.controller.postMessage({hello:'worker'});
+             return {scope:registration.scope, same:ready===registration, final:registration.active.state,
+               script:registration.active.scriptURL.endsWith('/app/sw.js'), states,
+               made:[made.status, made.headers.get('x-from'), await made.text()], plain:await plain.text(),
+               reply:await reply, found:(await navigator.serviceWorker.getRegistration('/app/page')).scope,
+               count:(await navigator.serviceWorker.getRegistrations()).length};",
+    );
+    let scope = server.url("localhost", "/app/");
+    assert_eq!(result["scope"], scope);
+    assert_eq!(result["same"], true);
+    assert_eq!(result["final"], "activated");
+    assert_eq!(result["script"], true);
+    assert_eq!(result["made"], json!([203, "sw", "made by v1"]));
+    assert_eq!(result["plain"], "from network");
+    assert_eq!(
+        result["reply"],
+        json!({"echo": {"hello": "worker"}, "scope": scope, "kind": true})
+    );
+    assert_eq!(result["found"], scope);
+    assert_eq!(result["count"], 1);
+    let states = result["states"].as_array().unwrap();
+    assert_eq!(states.last().unwrap(), "activated", "{states:?}");
+    assert_eq!(
+        server.requests("/app/data.json").len(),
+        1,
+        "install precached the resource"
+    );
+}
+
+#[test]
+fn service_worker_registration_rejects_bad_scripts_and_scopes() {
+    let server = service_server(Arc::new(Mutex::new("v1".into())));
+    let engine = engine(None, online());
+    let mut view = page(&engine, &server.url("localhost", "/app/index.html"));
+    let register = |view: &mut View, call: &str| {
+        run(
+            view,
+            &format!("await navigator.serviceWorker.register({call}); return 'registered';"),
+        )
+    };
+    assert_eq!(
+        register(&mut view, "'/app/missing.js'")["error"],
+        "TypeError"
+    );
+    assert_eq!(
+        register(&mut view, "'/app/broken.js'")["error"],
+        "TypeError"
+    );
+    assert_eq!(
+        register(&mut view, "'https://other.test/sw.js'")["error"],
+        "SecurityError"
+    );
+    assert_eq!(
+        register(&mut view, "'/deep/sw.js', {scope: '/'}")["error"],
+        "SecurityError"
+    );
+    assert_eq!(
+        ok(
+            &mut view,
+            "return (await navigator.serviceWorker.getRegistrations()).length;"
+        ),
+        0
+    );
+    // A rejected install promise makes the worker redundant and leaves no registration.
+    let rejected = ok(
+        &mut view,
+        "const registration=await navigator.serviceWorker.register('/app/rejects.js'); const worker=registration.installing;
+         if(worker && worker.state!=='redundant') await new Promise(resolve=>worker.addEventListener('statechange',()=>worker.state==='redundant'&&resolve()));
+         await new Promise(r=>setTimeout(r,50));
+         return (await navigator.serviceWorker.getRegistrations()).length;",
+    );
+    assert_eq!(rejected, 0);
+    let insecure = engine.create_view(Url::parse("http://insecure.test/").unwrap());
+    let mut insecure = insecure.unwrap();
+    insecure.set_html("<!doctype html><p>x</p>").unwrap();
+    assert_eq!(
+        insecure
+            .evaluate_json("typeof navigator.serviceWorker")
+            .unwrap(),
+        "\"undefined\""
+    );
+}
+
+#[test]
+fn service_worker_serves_offline_survives_restart_updates_and_unregisters() {
     let dir = tempfile::tempdir().unwrap();
-    let engine = test_engine(dir.path().to_path_buf(), NetworkPolicy::default());
+    let version = Arc::new(Mutex::new(String::from("v1")));
+    let server = service_server(version.clone());
+    let address = server.url("localhost", "/app/index.html");
+    {
+        let engine = engine(Some(dir.path()), online());
+        let mut view = page(&engine, &address);
+        ok(&mut view, &format!("{ACTIVATE} return true;"));
+        // Offline: cached and generated responses still work; the network does not.
+        engine.set_policy(NetworkPolicy {
+            offline: true,
+            ..Default::default()
+        });
+        let offline = run(
+            &mut view,
+            "const data=await (await fetch('/app/data.json')).json(); const made=await (await fetch('/app/generated')).text();
+             let network='reached'; try { await fetch('/app/plain'); } catch (e) { network='blocked'; }
+             return {data, made, network};",
+        );
+        assert_eq!(
+            offline["ok"],
+            json!({"data": {"status": "offline-ready"}, "made": "made by v1", "network": "blocked"})
+        );
+    }
+    // A new engine restores the registration from storage and serves offline at once.
+    {
+        let engine = engine(
+            Some(dir.path()),
+            NetworkPolicy {
+                offline: true,
+                ..Default::default()
+            },
+        );
+        let mut view = page(&engine, &address);
+        let restored = ok(
+            &mut view,
+            "const registration=await navigator.serviceWorker.getRegistration(); const data=await (await fetch('/app/data.json')).json();
+             return {state:registration.active.state, controlled:!!navigator.serviceWorker.controller, data};",
+        );
+        assert_eq!(
+            restored,
+            json!({"state": "activated", "controlled": true, "data": {"status": "offline-ready"}})
+        );
+    }
+    // A changed script installs a new worker; an unchanged one does not.
+    let engine = engine(Some(dir.path()), online());
+    let mut view = page(&engine, &address);
+    let before = server.requests("/app/sw.js").len();
+    assert_eq!(
+        ok(
+            &mut view,
+            "const registration=await navigator.serviceWorker.getRegistration(); await registration.update(); return !!registration.installing || !!registration.waiting;"
+        ),
+        false
+    );
+    assert_eq!(server.requests("/app/sw.js").len(), before + 1);
+    *version.lock().unwrap() = "v2".into();
+    let updated = ok(
+        &mut view,
+        "const registration=await navigator.serviceWorker.getRegistration(); let found=false; registration.onupdatefound=()=>found=true;
+         await registration.update();
+         for(let i=0;i<500;i++){ const text=await (await fetch('/app/generated')).text(); if(text==='made by v2') return {found, text}; await new Promise(r=>setTimeout(r,10)); }
+         return {found, text:'stale'};",
+    );
+    assert_eq!(updated, json!({"found": true, "text": "made by v2"}));
+    let removed = ok(
+        &mut view,
+        "const registration=await navigator.serviceWorker.getRegistration(); const removed=await registration.unregister();
+         const after=await (await fetch('/app/plain')).text();
+         let generated='gone'; try { const r=await fetch('/app/generated'); generated=String(r.status); } catch (e) { generated='failed'; }
+         return {removed, after, generated, left:(await navigator.serviceWorker.getRegistrations()).length};",
+    );
+    assert_eq!(
+        removed,
+        json!({"removed": true, "after": "from network", "generated": "404", "left": 0})
+    );
+}
 
-    // Create page and spawn worker
-    let mut page = create_page(&engine, "https://app.test/page1.html");
-    let spawn = r#"
-        (() => {
-            globalThis.w = new Worker('w.js', { content: 'let count = 0; setInterval(() => { count++; }, 10);' });
-            return true;
-        })()
-    "#;
-    assert_eq!(page.evaluate_json(spawn).unwrap(), "true");
-
-    // Navigating or dropping the document cleans up all workers cleanly
-    drop(page);
-
-    // Verify a fresh page can be created without hanging or leaking worker isolates
-    let mut page2 = create_page(&engine, "https://app.test/page2.html");
-    assert_eq!(page2.evaluate_json("2 + 2").unwrap(), "4");
+#[test]
+fn document_teardown_terminates_its_workers() {
+    let engine = engine(None, online());
+    let mut view = page(&engine, "https://app.test/page1.html");
+    assert_eq!(
+        ok(
+            &mut view,
+            "const w=new Worker(URL.createObjectURL(new Blob(['let n=0; setInterval(()=>postMessage(++n),5);'])));
+             return await new Promise(resolve=>{ w.onmessage=e=>e.data>=3&&resolve('ticking'); });",
+        ),
+        "ticking"
+    );
+    drop(view);
+    let mut next = page(&engine, "https://app.test/page2.html");
+    assert_eq!(next.evaluate_json("2 + 2").unwrap(), "4");
 }

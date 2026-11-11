@@ -903,6 +903,7 @@ impl View {
             referrer_policy: self.referrer_policy.clone(),
             destination: Destination::Document,
             bypass_cache: false,
+            bypass_service_worker: false,
         };
         if let Err(error) = self.load_request(options.url, context) {
             self.notice(error);

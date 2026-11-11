@@ -86,6 +86,7 @@ fn main() {
     for (key, file) in [
         ("web", "web.js"),
         ("bridge", "v8-bridge.js"),
+        ("canvas", "canvas.js"),
         ("semantics", "semantics.js"),
         ("bindings", "bindings.js"),
         ("generated", "generated.js"),
@@ -94,6 +95,7 @@ fn main() {
         ("cache", "cache.js"),
         ("xhr", "xhr.js"),
         ("forms", "forms.js"),
+        ("worker", "worker.js"),
     ] {
         let path = PathBuf::from("src/dom").join(file);
         println!("cargo:rerun-if-changed={}", path.display());

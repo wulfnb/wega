@@ -39,6 +39,7 @@ impl Policy {
             "font-src" => &["font-src", "default-src"],
             "connect-src" => &["connect-src", "default-src"],
             "script-src" => &["script-src", "default-src"],
+            "worker-src" => &["worker-src", "child-src", "script-src", "default-src"],
             other => return self.get(other),
         };
         chain.iter().find_map(|name| self.get(name))

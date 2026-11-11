@@ -32,6 +32,20 @@ pub enum ResourceRequest {
     Cache {
         origin: String,
     },
+    /// An origin's stored service worker registrations: read, or replace
+    /// with the request body (an empty body removes them).
+    ServiceWorkers {
+        origin: String,
+        write: bool,
+    },
+}
+/// Where one origin's service worker registrations live under a profile root.
+pub fn service_worker_store(root: &std::path::Path, origin: &str) -> PathBuf {
+    let name = Sha256::digest(origin.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    root.join("service-workers").join(format!("{name}.json"))
 }
 #[derive(Default)]
 pub(crate) struct StorageHub {
@@ -238,6 +252,7 @@ impl StorageHub {
         if directory.exists() {
             let _ = std::fs::remove_dir_all(&directory);
         }
+        let _ = std::fs::remove_file(service_worker_store(root, origin));
         Ok(())
     }
     pub(crate) fn clear_all(&mut self, root: &std::path::Path) -> Result<(), String> {
@@ -295,6 +310,48 @@ impl Broker {
                     return Err("QuotaExceededError: Cache result exceeds IPC budget".into());
                 }
                 Ok(bytes)
+            }
+            ResourceRequest::ServiceWorkers { origin, write } => {
+                let receipt = session
+                    .navigation
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let document = receipt
+                    .committed
+                    .as_ref()
+                    .or(receipt.last.as_ref())
+                    .ok_or("No committed service worker storage grant")?;
+                if !cache_api::cache_allowed(document)
+                    || document.origin().ascii_serialization() != origin
+                {
+                    return Err("SecurityError: Service worker storage origin mismatch".into());
+                }
+                drop(receipt);
+                let path = service_worker_store(&PathBuf::from(&session.scope), &origin);
+                if !write {
+                    return match std::fs::read(&path) {
+                        Ok(bytes) if bytes.len() <= MAX_BODY => Ok(bytes),
+                        Ok(_) => {
+                            Err("QuotaExceededError: Stored registrations are too large".into())
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                            Ok(Vec::new())
+                        }
+                        Err(error) => Err(error.to_string()),
+                    };
+                }
+                if body.is_empty() {
+                    let _ = std::fs::remove_file(&path);
+                    return Ok(Vec::new());
+                }
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                // Replace atomically so a crash never leaves a partial registry.
+                let temporary = path.with_extension("json.tmp");
+                std::fs::write(&temporary, &body).map_err(|error| error.to_string())?;
+                std::fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
+                Ok(Vec::new())
             }
             ResourceRequest::WebSocketOpen { url, protocols } => {
                 if !body.is_empty() {
@@ -534,6 +591,42 @@ mod tests {
         assert!(storage(&a, origin, true, "get", "old", "").is_err());
         second.revoke();
         assert!(storage(&b, origin, true, "get", "shared", "").is_err());
+    }
+    #[test]
+    fn service_worker_registrations_are_stored_per_committed_origin_and_cleared() {
+        let broker = Broker::new().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let session = broker
+            .open_bound_session(root.path().into(), Policy::default())
+            .unwrap();
+        let remote = document(&session, "https://app.test/");
+        let call = |remote: &Remote, origin: &str, write: bool, body: &[u8]| {
+            remote.resource(
+                ResourceRequest::ServiceWorkers {
+                    origin: origin.into(),
+                    write,
+                },
+                body,
+            )
+        };
+        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
+        call(&remote, "https://app.test", true, b"[{\"scope\":\"/\"}]").unwrap();
+        assert_eq!(
+            call(&remote, "https://app.test", false, &[]).unwrap(),
+            b"[{\"scope\":\"/\"}]"
+        );
+        // Another origin's registrations are neither readable nor writable.
+        assert!(call(&remote, "https://other.test", false, &[]).is_err());
+        assert!(call(&remote, "https://other.test", true, b"[]").is_err());
+        let insecure = document(&session, "http://plain.test/");
+        assert!(call(&insecure, "http://plain.test", false, &[]).is_err());
+
+        session.clear_site_data("https://app.test").unwrap();
+        let remote = document(&session, "https://app.test/");
+        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
+        call(&remote, "https://app.test", true, b"[1]").unwrap();
+        call(&remote, "https://app.test", true, b"").unwrap();
+        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
     }
     #[test]
     fn cache_resources_are_bound_to_committed_origin_and_cleared_with_site_data() {
