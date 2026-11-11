@@ -1,3 +1,15 @@
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpgi5lif6n/stylo-0.22.0/.cargo_vcs_info.json /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/stylo/.cargo_vcs_info.json
+--- a/.cargo_vcs_info.json
++++ b/.cargo_vcs_info.json
+@@ -1,6 +0,0 @@
+-{
+-  "git": {
+-    "sha1": "34d25f741765a0bdb894f8271852e633299352d8"
+-  },
+-  "path_in_vcs": "style"
+-}
+\ No newline at end of file
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpgi5lif6n/stylo-0.22.0/properties/longhands.toml /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/stylo/properties/longhands.toml
 --- a/properties/longhands.toml
 +++ b/properties/longhands.toml
 @@ -1,3 +1,4 @@
@@ -13,6 +25,7 @@
  gecko_pref = "layout.css.line-clamp.enabled"
  gecko_ffi_name = "mWebkitLineClamp"
  spec = "https://drafts.csswg.org/css-overflow-4/#propdef-line-clamp"
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpgi5lif6n/stylo-0.22.0/properties/shorthands.toml /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/stylo/properties/shorthands.toml
 --- a/properties/shorthands.toml
 +++ b/properties/shorthands.toml
 @@ -1,3 +1,4 @@
@@ -28,17 +41,19 @@
  flags = "IS_LEGACY_SHORTHAND ALLOWS_DISABLED_SUBPROPERTIES"
  sub_properties = ["line-clamp"]
  spec = "https://drafts.csswg.org/css-overflow-4/#webkit-line-clamp"
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpgi5lif6n/stylo-0.22.0/stylesheets/rule_parser.rs /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/stylo/stylesheets/rule_parser.rs
 --- a/stylesheets/rule_parser.rs
 +++ b/stylesheets/rule_parser.rs
-@@ -1,6 +1,8 @@
+@@ -1,7 +1,9 @@
  /* This Source Code Form is subject to the terms of the Mozilla Public
   * License, v. 2.0. If a copy of the MPL was not distributed with this
   * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 +// Modified by Wega contributors, 2026: see the documented P4-P5 patch.
-+
  
++
  //! Parsing of the stylesheet contents.
  
+ use crate::counter_style::{parse_counter_style_body, parse_counter_style_name_definition};
 @@ -282,7 +284,8 @@
              "counter-style" if cfg!(feature = "gecko") => Self::CounterStyle,
              "media" => Self::Media,
@@ -49,3 +64,22 @@
              "supports" => Self::Supports,
              "keyframes" => Self::Keyframes(None),
              "-webkit-keyframes" => Self::Keyframes(Some(VendorPrefix::WebKit)),
+diff -uNr /var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/tmpgi5lif6n/stylo-0.22.0/values/specified/background.rs /Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/stylo/values/specified/background.rs
+--- a/values/specified/background.rs
++++ b/values/specified/background.rs
+@@ -210,7 +210,6 @@
+     #[value_info(skip)]
+     NoClip,
+     // TODO: text and border-area are supposed to combine in backgrounds-4...
+-    #[cfg(feature = "gecko")]
+     Text,
+     #[parse(condition = "background_clip_border_area_enabled")]
+     #[value_info(skip)]
+@@ -241,7 +240,6 @@
+             Self::ViewBox => ClipValidity::MASK,
+             #[cfg(feature = "gecko")]
+             Self::NoClip => ClipValidity::MASK,
+-            #[cfg(feature = "gecko")]
+             Self::Text => ClipValidity::BACKGROUND,
+             Self::BorderArea => ClipValidity::BACKGROUND,
+         }

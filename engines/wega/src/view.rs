@@ -948,6 +948,9 @@ impl View {
         self.notice(error);
     }
     fn script_error(&mut self, error: crate::script::ScriptError) {
+        if error.message == "Module graph is loading" {
+            return;
+        }
         crate::diagnostics::Diagnostic::error(
             crate::diagnostics::Category::Javascript,
             error.to_string(),

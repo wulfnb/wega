@@ -762,6 +762,9 @@ impl ScriptHost for V8Host {
                 }
             }
         }
+        if self.runtime.is_none() {
+            return Ok(());
+        }
         let next = self.evaluate_json("__wega_next_timer()")?;
         self.timer = serde_json::from_str::<Option<f64>>(&next)
             .ok()

@@ -350,3 +350,25 @@ fn svg_viewbox_and_path_scaling() {
     assert_eq!(val["h"], 150.0);
     assert!(!frame.rgba.is_empty());
 }
+
+#[test]
+fn svg_with_oklch_current_color_renders_without_error() {
+    let mut view = page(
+        "<div style=\"color: oklch(59.6% .145 163.225)\"><svg id=s viewBox=\"0 0 24 24\" stroke=\"currentColor\" style=\"width:50px;height:50px\"><path d=\"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2\" fill=\"none\"/></svg></div>",
+    );
+    let frame = view.paint(100, 100, 1.0, 1.0, false).unwrap();
+    assert!(!frame.rgba.is_empty());
+    let notices = view.notices.iter().cloned().collect::<Vec<_>>();
+    assert!(notices.is_empty(), "Expected no notices when rendering SVG with oklch stroke: {notices:?}");
+}
+
+#[test]
+fn background_clip_text_does_not_paint_solid_box_and_renders_text() {
+    let mut view = page(
+        "<div id=t style=\"width:100px;height:50px;background-clip:text;-webkit-background-clip:text;color:transparent;background:linear-gradient(to right, #0b7a5a, #17a97f);\">EduDia</div>",
+    );
+    let frame = view.paint(120, 80, 1.0, 1.0, false).unwrap();
+    assert!(!frame.rgba.is_empty());
+    let res = view.evaluate_json("document.getElementById('t').getBoundingClientRect().width").unwrap();
+    assert_eq!(serde_json::from_str::<f64>(&res).unwrap(), 100.0);
+}
