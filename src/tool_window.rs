@@ -136,9 +136,8 @@ impl Browser {
                 return;
             }
             if key.logical_key == Key::Named(NamedKey::Escape) {
-                if self.tools.active != crate::toolbox::Tool::Console {
-                    self.tools.split_console = !self.tools.split_console;
-                }
+                self.close_developer_tools();
+                return;
             }
         }
         let Some(mut window) = self.tool_window.take() else {

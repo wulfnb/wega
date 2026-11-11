@@ -153,18 +153,35 @@ impl Browser {
                     let page = self.session().tabs()[index].wega.as_ref().unwrap();
                     if request.document == requester.document
                         && request.session == requester.session
+                        && request.origin == requester.principal.origin
                     {
                         if let Some(sender) = page.command_sender() {
-                            let origin = self.session().tabs()[index].url();
+                            let origin = match &requester.principal.origin {
+                                wega::engine_protocol::authority::Origin::Tuple(origin) => {
+                                    origin.clone()
+                                }
+                                _ => String::new(),
+                            };
+                            let responder = crate::permission_adapter::Permission {
+                                sender,
+                                state: page.state.clone(),
+                                requester: requester.clone(),
+                                id: request.id,
+                                feature: request.feature,
+                            };
+                            if !wega::engine_protocol::authority::can_request_permission(&requester)
+                                || self
+                                    .profile()
+                                    .policy
+                                    .permission_blocked(&origin, request.feature.as_str())
+                            {
+                                wega::permissions::PermissionPort::respond(responder, false);
+                                continue;
+                            }
                             self.dialogs.permissions.push(
                                 origin,
                                 request.feature.to_string(),
-                                crate::permission_adapter::Permission {
-                                    sender,
-                                    state: page.state.clone(),
-                                    requester,
-                                    id: request.id,
-                                },
+                                responder,
                             );
                         }
                     }
@@ -175,8 +192,33 @@ impl Browser {
                     self.features.media_owner = Some(owner);
                     self.native_media.update(media);
                 }
+                ContentEvent::PermissionRevoked { feature, .. } => {
+                    if let Some(page) = &self.session().tabs()[index].wega {
+                        page.state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .grants
+                            .remove(&feature);
+                    }
+                }
                 ContentEvent::NotificationShow { title, options, .. } => {
-                    let origin = self.session().tabs()[index].url();
+                    let page = self.session().tabs()[index].wega.as_ref().unwrap();
+                    let state = page
+                        .state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if !state.accepts_requester(&requester)
+                        || !state.grants.contains(
+                            &wega::engine_protocol::permissions::PermissionFeature::Notifications,
+                        )
+                    {
+                        continue;
+                    }
+                    drop(state);
+                    let origin = match &requester.principal.origin {
+                        wega::engine_protocol::authority::Origin::Tuple(origin) => origin.clone(),
+                        _ => continue,
+                    };
                     if let Err(error) = crate::native_notifications::show(
                         crate::native_notifications::Notification {
                             title,
@@ -438,7 +480,8 @@ impl Browser {
             }
         }
         if let Some(texture) = &page.texture {
-            ui.painter().rect_filled(rect, 0.0, egui::Color32::WHITE);
+            ui.painter()
+                .rect_filled(rect, 0.0, crate::capture::canvas_color(dark));
             ui.painter().image(
                 texture.id(),
                 rect,
@@ -544,6 +587,9 @@ impl Browser {
         if pressed || response.clicked() {
             self.chrome.page_focused = true;
             context.memory_mut(|m| m.surrender_focus(egui::Id::unique("address")));
+        }
+        if !self.fullscreen {
+            crate::ui::page_corners(ui.painter(), rect);
         }
         ui.allocate_rect(outer, egui::Sense::hover());
     }

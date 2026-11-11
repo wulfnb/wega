@@ -141,6 +141,22 @@ fn real_http_is_shared_but_credentials_policy_and_cache_are_profile_partitioned(
         "token=shared"
     );
     assert_eq!(remote(&c).cookie_get(&cookie, false).unwrap(), "");
+    let other_cached = remote(&c).fetch(&request).unwrap().body;
+    let before = count.load(Ordering::Relaxed);
+    b.clear_all_data().unwrap();
+    assert_eq!(remote(&b).cookie_get(&cookie, false).unwrap(), "");
+    assert_eq!(remote(&c).fetch(&request).unwrap().body, other_cached);
+    assert_eq!(
+        count.load(Ordering::Relaxed),
+        before,
+        "Clearing one container must keep another container's cache"
+    );
+    assert_ne!(remote(&b).fetch(&request).unwrap().body, refreshed.body);
+    assert_eq!(
+        count.load(Ordering::Relaxed),
+        before + 1,
+        "Cleared responses must be fetched again"
+    );
     b.set_policy(Policy {
         allowed_hosts: "127.0.0.1".into(),
         ..Default::default()
@@ -179,4 +195,43 @@ fn cookie_values_use_bounded_body_framing_without_a_metadata_size_regression() {
     let cookies = remote.cookie_get(&url, true).unwrap();
     assert!(cookies.len() > 64 * 1024);
     assert!(cookies.contains("key39="));
+}
+
+#[test]
+fn attachment_navigation_hands_off_headers_without_buffering_the_download() {
+    use std::sync::RwLock;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let serving = std::thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 2048];
+            let _ = stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6291629\r\nContent-Disposition: Attachment; filename=fixture.bin\r\nContent-Type: application/octet-stream\r\nSet-Cookie: download=ok; HttpOnly; Path=/\r\nConnection: close\r\n\r\n").unwrap();
+            // Deliberately send no file bytes: document navigation must not read them.
+        }
+    });
+    let client = wega_network::LocalClient::new().unwrap();
+    let cookies = wega_network::Cookies::default();
+    let policy = RwLock::new(Policy {
+        allow_loopback: true,
+        ..Policy::default()
+    });
+    let url = url::Url::parse(&format!("http://{address}/file.bin")).unwrap();
+    let response = client
+        .fetch(&Request::get(&url, 1024), &policy, &cookies)
+        .unwrap();
+    assert_eq!(response.status, 200);
+    assert!(response.body.is_empty());
+    assert!(cookies.netscape(&url).contains("download"));
+    let mut request = Request::subresource(&url, wega_network::ResourceDestination::Fetch, 1024);
+    request.mode = "same-origin".into();
+    request.origin = url.origin().ascii_serialization();
+    assert!(
+        client
+            .fetch(&request, &policy, &cookies)
+            .unwrap_err()
+            .contains("size limit")
+    );
+    serving.join().unwrap();
 }

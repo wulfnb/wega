@@ -82,8 +82,8 @@ impl Browser {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        ui.monospace(format!("URL: {}", self.tab().url()));
-        ui.monospace(format!("Title: {}", self.tab().title()));
+        ui.monospace(format!("URL: {}", state.url));
+        ui.monospace(format!("Title: {}", state.title));
         ui.monospace(format!("PID: {}", page.pid()));
         ui.monospace(format!(
             "Worker RSS: {} KiB",
@@ -98,3 +98,7 @@ impl Browser {
         ui.weak("Worker inspection is available through WebDriver. The embedded-backend inspector and debugger have been removed.");
     }
 }
+
+#[cfg(test)]
+#[path = "devtools_ui_tests.rs"]
+mod tests;

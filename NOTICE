@@ -5,13 +5,14 @@ the LICENSE file or https://mozilla.org/MPL/2.0/. The complete source code is
 available at https://github.com/wulfnb/wega. Binary distributions record the
 exact source commit they were built from at the end of this file.
 
-Servo
-Wega embeds the Servo web engine (https://servo.org/), used under MPL-2.0.
-The vendor/ directory of the source repository contains modified copies of
-the Servo 0.7.0 crate (MPL-2.0) and the epaint 0.37.0 crate (MIT OR
-Apache-2.0). Each modified file is marked, and vendor/README.md describes the
-changes. Licenses of all other third-party components are listed in
-THIRD-PARTY-NOTICES.html, distributed with every binary.
+Servo-derived reusable components
+Wega uses Stylo CSS through the independent Blitz-based content worker. Three
+MPL-2.0 WebIDL reference inputs from Servo 0.7.0 are retained under
+tools/webidl/upstream with their original license. Optional media plugin
+allowlists are preserved under packaging/media/gstreamer_plugin_lists.
+The embedded Servo browser runtime and SpiderMonkey are not included in the
+current dependency graph. Licenses of other third-party components appear in
+the generated desktop and engine third-party notices shipped with binaries.
 
 Trademarks
 Servo is a trademark of the Linux Foundation. Wega is an independent project

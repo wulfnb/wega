@@ -105,7 +105,7 @@ def main():
         run('scripts/third-party-notices.sh', ['--features'], success=False)
         run('scripts/third-party-notices.sh', [str(notices)], env=dict(base_env, FAKE_NO_CARGO_ABOUT='1'), success=False)
         run('scripts/third-party-notices.sh', [str(notices)], env=dict(base_env, FAKE_EMPTY_NOTICES='1'), success=False)
-        run('scripts/third-party-notices.sh', [str(notices), '--features', 'media'], env=dict(base_env, WEGA_SOURCE_COMMIT='feedface'))
+        run('scripts/third-party-notices.sh', [str(notices), '--features', 'desktop'], env=dict(base_env, WEGA_SOURCE_COMMIT='feedface'))
         engine_manifest=checkout/'engines/wega/Cargo.toml';engine_manifest.parent.mkdir(parents=True);engine_manifest.write_text('[package]')
         run('scripts/third-party-notices.sh',[str(notices)],env=dict(base_env,WEGA_SOURCE_COMMIT='feedface'))
         assert (notices/'WEGA-ENGINE-THIRD-PARTY-NOTICES.html').is_file()
@@ -117,7 +117,7 @@ def main():
         assert notice.startswith((checkout / 'NOTICE').read_text())
         assert 'source commit: feedface\nCorresponding source: https://github.com/wulfnb/wega/tree/feedface' in notice
         commands = [json.loads(line) for line in calls.read_text().splitlines()]
-        assert any(name == 'cargo' and arguments[:5] == ['about', 'generate', '--locked', '--fail', '--config'] and arguments[-5:-3] == ['--features', 'media'] for name, arguments in commands)
+        assert any(name == 'cargo' and arguments[:5] == ['about', 'generate', '--locked', '--fail', '--config'] and arguments[-5:-3] == ['--features', 'desktop'] for name, arguments in commands)
         # Docker runtime-prebuilt binaries: usage, quick notices and full notices.
         run('scripts/build-linux-binaries.sh', [str(work / 'docker-out')], success=False)
         prebuilt = work / 'docker-out'
@@ -146,8 +146,8 @@ def main():
         assert (checkout / 'target/Wega.app/Contents/Resources/THIRD-PARTY-NOTICES.html').is_file()
         assert_native_licenses(checkout / 'target/Wega.app/Contents/Resources')
         commands = [json.loads(line) for line in calls.read_text().splitlines()]
-        assert ['cargo', ['build', '--locked', '--release', '--no-default-features', '--features', 'brotli-streams']] in commands
-        assert ['cargo', ['build', '--locked', '--features', 'media']] in commands
+        assert ['cargo', ['build', '--locked', '--release']] in commands
+        assert ['cargo', ['build', '--locked', '--features', 'desktop']] in commands
         assert any(name == 'python3' and arguments[0] == 'scripts/bundle-macos-media.py' for name, arguments in commands)
         # The gateway bootstrap is already tested against real encryption/storage.
         # Here its process boundary is recorded, while shell credential scrubbing,

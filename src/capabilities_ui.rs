@@ -6,7 +6,7 @@ impl Browser {
             .tab()
             .wega
             .as_ref()
-            .and_then(|page| page.state.lock().ok()?.frame.clone());
+            .and_then(|page| page.state.lock().ok()?.last_frame.clone());
         let Some((width, height, pixels)) = frame else {
             self.notify(
                 crate::ux::Severity::Warning,
@@ -21,7 +21,11 @@ impl Browser {
             .add_filter("PNG", &["png"])
             .save_file()
         {
-            let result = image::RgbaImage::from_raw(width, height, pixels)
+            let dark = self
+                .profile()
+                .theme
+                .dark(self.window.theme() != Some(winit::window::Theme::Light));
+            let result = crate::capture::page_image(width, height, &pixels, dark)
                 .ok_or_else(|| "Invalid page frame".to_string())
                 .and_then(|image| image.save(&path).map_err(|error| error.to_string()));
             match result {
@@ -230,10 +234,12 @@ impl Browser {
                         && let Some(url) = self.current_url()
                     {
                         let result = wega_network::Broker::shared().and_then(|broker| {
-                            broker.clear_site_data(
-                                &self.profile_dir.join("wega-storage"),
-                                &url.origin().ascii_serialization(),
-                            )
+                            broker
+                                .open_session(
+                                    self.profile_dir.join("wega-storage"),
+                                    wega_network::Policy::default(),
+                                )?
+                                .clear_site_data(&url.origin().ascii_serialization())
                         });
                         if let Err(error) = result {
                             self.notify(crate::ux::Severity::Error, error, None);
@@ -253,7 +259,12 @@ impl Browser {
                 self.features.clear_data = false;
                 if clear {
                     match wega_network::Broker::shared().and_then(|broker| {
-                        broker.clear_all_data(&self.profile_dir.join("wega-storage"))
+                        broker
+                            .open_session(
+                                self.profile_dir.join("wega-storage"),
+                                wega_network::Policy::default(),
+                            )?
+                            .clear_all_data()
                     }) {
                         Ok(()) => {
                             self.apply(wega::application::Command::ClearHistory);
@@ -288,6 +299,7 @@ impl Browser {
                         if !self.features.find_focused {
                             response.request_focus();
                             self.features.find_focused = true;
+                            self.chrome.page_focused = false;
                         }
                         let previous = ui.button("Previous").clicked();
                         let next = ui.button("Next").clicked()

@@ -88,6 +88,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Formatting check
         run: cargo fmt --check
+      - name: Verify standalone engine dependency boundary
+        run: python3 scripts/check-engine-boundary.py
       - name: Core lints
         run: cargo clippy --locked --no-default-features --all-targets -- -D warnings
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -268,7 +270,7 @@ jobs:
           name: containers-macos
           path: target/containers-validation/${{ github.run_id }}-${{ github.run_attempt }}/
       # Cargo caches can restore old reports; every workflow attempt needs a fresh output.
-      - name: Two-engine compatibility and process-tree baseline
+      - name: Standalone compatibility and process-tree baseline
         if: github.event_name != 'pull_request'
         run: python scripts/browser-bench.py --output target/browser-bench-ci/${{ github.run_id }}-${{ github.run_attempt }} --repeats 1 --tabs 1 5 --idle-seconds 5
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -390,11 +392,9 @@ jobs:
           path: target/viewer-live/
       - name: Test headless browser smoke & rendering
         run: sh scripts/docker-smoke.sh
-      - name: Test developer tools & toolbox
-        run: sh scripts/docker-toolbox-test.sh
       - name: Test streaming download pipeline
         run: sh scripts/docker-download-test.sh
-      - name: Two-engine compatibility and process-tree baseline in Linux
+      - name: Standalone compatibility and process-tree baseline in Linux
         if: github.event_name != 'pull_request'
         run: |
           mkdir -p target/browser-bench-linux/${{ github.run_id }}-${{ github.run_attempt }}
@@ -524,11 +524,11 @@ jobs:
           python scripts\bundle-windows-media.py --destination target\debug
           if ($LASTEXITCODE -ne 0) { throw "Media runtime bundling failed" }
           scripts\windows-launch-check.ps1 -Directory target\debug
-      - name: Real media playback and same-profile launch handoff
+      - name: Standalone worker and same-profile launch handoff
         env:
           WEGA_TEST_ALLOW_LOOPBACK: '1'
         run: python scripts/windows-runtime-test.py --binary target/debug/wega.exe
-      - name: Two-engine compatibility and process-tree baseline
+      - name: Standalone compatibility and process-tree baseline
         if: github.event_name != 'pull_request'
         env:
           WEGA_TEST_ALLOW_LOOPBACK: '1'

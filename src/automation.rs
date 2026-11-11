@@ -363,6 +363,10 @@ impl Browser {
             }
             Command::TakeScreenshot => {
                 if !self.is_internal() {
+                    let dark = self
+                        .profile()
+                        .theme
+                        .dark(self.window.theme() != Some(winit::window::Theme::Light));
                     let state = self.tab().wega.as_ref().map(|p| p.state.clone());
                     std::thread::spawn(move || {
                         let result = (|| {
@@ -375,7 +379,7 @@ impl Browser {
                                     let s = state
                                         .lock()
                                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                    if let Some(frame) = s.frame.clone() {
+                                    if let Some(frame) = s.last_frame.clone() {
                                         break frame;
                                     }
                                 }
@@ -388,10 +392,9 @@ impl Browser {
                                 std::thread::sleep(Duration::from_millis(20));
                             };
                             use base64::Engine;
-                            let image =
-                                image::RgbaImage::from_raw(w, h, bytes).ok_or_else(|| {
-                                    error(ErrorStatus::UnknownError, "Invalid frame buffer")
-                                })?;
+                            let image = crate::capture::page_image(w, h, &bytes, dark).ok_or_else(
+                                || error(ErrorStatus::UnknownError, "Invalid frame buffer"),
+                            )?;
                             let mut cursor = std::io::Cursor::new(Vec::new());
                             image::DynamicImage::ImageRgba8(image)
                                 .write_to(&mut cursor, image::ImageFormat::Png)

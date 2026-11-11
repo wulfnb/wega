@@ -150,11 +150,7 @@ impl Options {
         {
             return Err("Choose only one native test mode".into());
         }
-        if result.download_test
-            || result.toolbox_test
-            || result.theme_test
-            || result.capabilities_test
-        {
+        if result.toolbox_test || result.theme_test || result.capabilities_test {
             return Err(
                 "This embedded-backend test mode was retired; use --engine-test or WebDriver"
                     .into(),

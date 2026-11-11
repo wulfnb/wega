@@ -257,4 +257,57 @@ impl Browser {
         });
         self.containers.open = open;
     }
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn check_containers_ui_contract(&mut self) {
+        let view = self.tab().key;
+        let address = self.tab().url();
+        self.coverage_click(&["Containers", "Manage containers…"], |browser, ui| {
+            browser.ui(ui)
+        });
+        assert!(self.containers.open);
+        self.containers.name = "Native test account".into();
+        self.containers.color = Color::Purple;
+        self.coverage_click(&["Add container"], |browser, ui| browser.ui(ui));
+        let custom = Registry::load(&self.containers.root)
+            .unwrap()
+            .containers
+            .into_iter()
+            .find(|c| c.name == "Native test account")
+            .expect("Native manager must save the identity");
+        let directory =
+            wega::containers::profile_directory(&self.containers.root, &custom.id).unwrap();
+        std::fs::write(directory.join("retained-data"), b"account data").unwrap();
+        self.containers.editing = Some(custom.id.clone());
+        self.containers.name = "Renamed native account".into();
+        self.containers.color = Color::Green;
+        self.coverage_click(&["Save changes"], |browser, ui| browser.ui(ui));
+        let registry = Registry::load(&self.containers.root).unwrap();
+        assert_eq!(
+            registry.find(&custom.id).unwrap().name,
+            "Renamed native account"
+        );
+        assert_eq!(registry.find(&custom.id).unwrap().color, Color::Green);
+        self.containers.remove = Some(custom.id.clone());
+        self.coverage_click(&["Remove from menu"], |browser, ui| browser.ui(ui));
+        assert!(
+            Registry::load(&self.containers.root)
+                .unwrap()
+                .find(&custom.id)
+                .is_err()
+        );
+        assert_eq!(
+            std::fs::read(directory.join("retained-data")).unwrap(),
+            b"account data"
+        );
+        self.containers.open = false;
+        assert_eq!(
+            self.tab().key,
+            view,
+            "Managing accounts must preserve the live source tab"
+        );
+        assert_eq!(self.tab().url(), address);
+        println!(
+            "CONTAINERS UI PASSED: default menu, create, rename/color, remove with retained data and source-tab preservation"
+        );
+    }
 }

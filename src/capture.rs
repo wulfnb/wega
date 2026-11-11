@@ -4,6 +4,35 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// The canvas behind transparent document pixels follows the worker color scheme.
+pub(crate) fn canvas_color(dark: bool) -> egui::Color32 {
+    if dark {
+        egui::Color32::from_rgb(18, 18, 18)
+    } else {
+        egui::Color32::WHITE
+    }
+}
+pub(crate) fn page_image(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    dark: bool,
+) -> Option<image::RgbaImage> {
+    let background = canvas_color(dark).to_array();
+    let mut image = image::RgbaImage::from_raw(width, height, pixels.to_vec())?;
+    for pixel in image.pixels_mut() {
+        // Skia's shared frames are premultiplied RGBA.
+        let remaining = 255 - u16::from(pixel[3]);
+        for channel in 0..3 {
+            pixel[channel] = (u16::from(pixel[channel])
+                + (u16::from(background[channel]) * remaining + 127) / 255)
+                .min(255) as u8;
+        }
+        pixel[3] = 255;
+    }
+    Some(image)
+}
+
 pub struct Capture {
     pub output: PathBuf,
     start: Instant,
@@ -82,5 +111,19 @@ impl crate::browser::Browser {
             self.capture = None;
             event_loop.exit();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn transparent_page_pixels_use_the_same_opaque_canvas_in_exports_and_ui() {
+        let pixels = [0, 0, 0, 0, 100, 0, 0, 128, 10, 20, 30, 255];
+        let light = super::page_image(3, 1, &pixels, false).unwrap();
+        assert_eq!(light.get_pixel(0, 0).0, [255, 255, 255, 255]);
+        assert_eq!(light.get_pixel(1, 0).0, [227, 127, 127, 255]);
+        let dark = super::page_image(3, 1, &pixels, true).unwrap();
+        assert_eq!(dark.get_pixel(0, 0).0, [18, 18, 18, 255]);
+        assert_eq!(dark.get_pixel(2, 0).0, [10, 20, 30, 255]);
     }
 }

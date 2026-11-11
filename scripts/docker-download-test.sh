@@ -10,7 +10,7 @@ docker compose exec -T --user browser wega sh -eu -c '
     python3 /tmp/wega-download-server.py 8771 >"$test_dir/http.log" 2>&1 &
     server_pid=$!
     trap "kill $display_pid $server_pid 2>/dev/null || true" EXIT INT TERM
-    export DISPLAY=:95
+    export DISPLAY=:95 WEGA_TEST_ALLOW_LOOPBACK=1
     attempts=0
     until xdpyinfo >/dev/null 2>&1 && curl -fsS http://127.0.0.1:8771/ >/dev/null 2>&1; do
         attempts=$((attempts+1)); test "$attempts" -le 50; sleep 0.2

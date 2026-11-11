@@ -6,17 +6,26 @@ pub(crate) struct Permission {
     pub state: Arc<Mutex<crate::wega_page::Snapshot>>,
     pub requester: TrustedRequest,
     pub id: u64,
+    pub feature: wega::engine_protocol::permissions::PermissionFeature,
 }
 impl wega::permissions::PermissionPort for Permission {
     fn respond(self, allow: bool) {
-        let state = self
+        let mut state = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.accepts_requester(&self.requester) {
-            let _ = self
+            if self
                 .sender
-                .try_send(Command::AnswerPermission { id: self.id, allow });
+                .try_send(Command::AnswerPermission { id: self.id, allow })
+                .is_ok()
+            {
+                if allow {
+                    state.grants.insert(self.feature);
+                } else {
+                    state.grants.remove(&self.feature);
+                }
+            }
         }
     }
 }

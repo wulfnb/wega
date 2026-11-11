@@ -52,7 +52,7 @@ dialog buttons) and the palette roles `on_accent`, `danger_bg` and `success`,
 with a WCAG AA contrast test for all six themes. It applies them to the main
 menu, right-click menu, find bar, permission and website dialogs, settings,
 site data, downloads, containers, internal pages, the developer toolbox and the
-load-error page (`src/net_error.js`). Icons are regenerated per platform grid by
+former embedded-engine load-error page (removed with the Servo backend). Icons are regenerated per platform grid by
 `scripts/generate-icons.py`.
 
 Correction to the table above: A7's mint sign-in button was missing from

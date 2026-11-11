@@ -39,6 +39,7 @@ pub fn enter(ctx: &egui::Context) -> bool {
 pub fn escape(ctx: &egui::Context) -> bool {
     ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
 }
+#[cfg(test)]
 pub fn validate_files(input: &str, multiple: bool) -> Result<Vec<PathBuf>, String> {
     let paths: Vec<_> = input
         .lines()

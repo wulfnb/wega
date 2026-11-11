@@ -137,7 +137,7 @@ impl ApplicationHandler<Wake> for App {
         if let Some(browser) = &mut self.browser {
             browser.sync_tool_window(event_loop);
             match &event {
-                Wake::Media(action) => browser.media_action(Some(action.clone())),
+                Wake::Media(action) => browser.media_action(Some(*action)),
                 Wake::ToggleMedia => browser.media_action(None),
                 Wake::Accessibility(event) => browser.accessibility_event(event),
                 _ => {}
@@ -216,7 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             );
         }
         println!(
-            "Wega Browser\nUsage: wega [--engine wega] [--profile-dir PATH] [--capture FILE.png] [URL]\n  --webdriver-port PORT\n    Opens an UNAUTHENTICATED endpoint on 127.0.0.1. Any local process or user\n    can then read and control open pages (cookies, sessions, input). Use them\n    only on a trusted machine and with a disposable --profile-dir.\n  Native tests require --features test-harness and an isolated --profile-dir.\n  Test modes: --engine-test, --smoke-test"
+            "Wega Browser\nUsage: wega [--engine wega] [--profile-dir PATH] [--capture FILE.png] [URL]\n  --webdriver-port PORT\n    Opens an UNAUTHENTICATED endpoint on 127.0.0.1. Any local process or user\n    can then read and control open pages (cookies, sessions, input). Use them\n    only on a trusted machine and with a disposable --profile-dir.\n  Native tests require --features test-harness and an isolated --profile-dir.\n  Test modes: --engine-test, --smoke-test, --download-test"
         );
         println!(
             "  --container ID: open Personal (personal), Work (work), Banking (banking),\n    Shopping (shopping), or a custom ID in an isolated container window.\n    --profile-dir selects the parent profile when used with --container."

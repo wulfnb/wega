@@ -504,8 +504,6 @@ impl Browser {
         self.session.tabs().len() - 1
     }
 
-    /// Offscreen surface sized like the page area, so selecting the tab needs no resize.
-
     /// Give an unloaded tab a fresh engine view at its saved address.
     fn load_tab(&mut self, index: usize) {
         let Some(tab) = self.session.tabs().get(index) else {
@@ -538,8 +536,6 @@ impl Browser {
             }
         }
     }
-
-    /// Release state that belongs to a view that is closing or being unloaded.
 
     /// Whether unloading this tab could lose something the user would notice.
     fn tab_busy(&self, tab: &Tab) -> bool {
@@ -1137,15 +1133,7 @@ impl Browser {
             && matches!(character.as_str(), "i" | "e" | "k")
         {
             self.chrome.show_console = true;
-            self.tools.active = match character.as_str() {
-                "e" => crate::toolbox::Tool::Network,
-                "k" => crate::toolbox::Tool::Console,
-                _ => crate::toolbox::Tool::Inspector,
-            };
-            if true {
-                self.window.request_redraw();
-                return true;
-            }
+            self.window.request_redraw();
             return true;
         }
         if pressed && command {
@@ -1171,7 +1159,10 @@ impl Browser {
                 "]" => {
                     self.traverse(true);
                 }
-                "f" => self.features.find_open = true,
+                "f" => {
+                    self.features.find_open = true;
+                    self.chrome.page_focused = false;
+                }
                 "r" if state.shift_key() => self.reload_without_cache(),
                 "r" => self.reload(),
                 "d" => self.bookmark(),
@@ -1230,7 +1221,7 @@ impl Browser {
                         && !self.chrome.page_focused
                         && !self.fullscreen =>
                 {
-                    self.tools.split_console = !self.tools.split_console;
+                    self.close_developer_tools()
                 }
                 Key::Named(NamedKey::F5) => self.reload(),
                 Key::Named(NamedKey::Tab) if state.control_key() => {
@@ -1324,14 +1315,9 @@ impl Browser {
                 }
             }
             WindowEvent::ThemeChanged(_) => {
-                if let Some(gui) = &self.gui {
-                    crate::theme::install(
-                        &gui.egui_ctx,
-                        self.profile().theme.palette(
-                            self.window.theme() != Some(winit::window::Theme::Light),
-                            false,
-                        ),
-                    );
+                let context = self.gui.as_ref().map(|gui| gui.egui_ctx.clone());
+                if let Some(context) = context {
+                    self.set_theme(&context, self.profile().theme);
                 }
                 self.window.request_redraw();
             }
@@ -1368,6 +1354,16 @@ impl Browser {
             .chrome
             .to_array()
             .map(|c| c as f32 / 255.0);
+        let color = if self.profile().theme.glass()
+            && self
+                .native_theme
+                .as_ref()
+                .is_some_and(|native| native.available())
+        {
+            [0.0, 0.0, 0.0, 0.0]
+        } else {
+            color
+        };
         gui.painter.clear(window.inner_size().into(), color);
         gui.paint(&window);
         if let Some(capture) = &self.capture

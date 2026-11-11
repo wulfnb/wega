@@ -323,15 +323,6 @@ pub(crate) fn icon(ui: &mut Ui, symbol: &str, help: &str) -> egui::Response {
     response.on_hover_text(help)
 }
 
-fn shorten(text: &str, max: usize) -> String {
-    let mut chars = text.chars();
-    let mut short: String = chars.by_ref().take(max).collect();
-    if chars.next().is_some() {
-        short.push('…');
-    }
-    short
-}
-
 // Mask only the corners around the page texture.
 pub(crate) fn page_corners(painter: &egui::Painter, rect: egui::Rect) {
     let colors = crate::theme::palette(painter.ctx());
@@ -1523,7 +1514,6 @@ impl Browser {
                 self.answer_permission(request_id, allow);
                 self.finish_dialog(ctx);
             }
-            return;
         }
     }
 }

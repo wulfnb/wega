@@ -68,7 +68,11 @@ fn every_native_mode_requires_a_separate_profile() {
                 .contains("isolated --profile-dir")
         );
         let result = parse(&[flag, "--profile-dir", "/tmp/wega-option-test"]);
-        assert_eq!(result.is_ok(), cfg!(feature = "test-harness"));
+        assert_eq!(
+            result.is_ok(),
+            cfg!(feature = "test-harness")
+                && matches!(flag, "--smoke-test" | "--engine-test" | "--download-test")
+        );
     }
 }
 #[test]
@@ -85,7 +89,7 @@ fn rejects_invalid_and_missing_arguments_before_startup() {
     ] {
         assert!(parse(&args).is_err(), "{args:?}");
     }
-    assert_eq!(parse(&["--multiprocess"]).is_ok(), false);
+    assert!(parse(&["--multiprocess"]).is_err());
 }
 #[test]
 fn wega_only_option_configures_engine_choice() {
@@ -131,7 +135,7 @@ fn help_is_side_effect_free_and_empty_profile_is_rejected() {
 #[test]
 fn build_capability_validation_is_independent_of_the_engine() {
     let features = BuildFeatures { test_harness: true };
-    let args = ["--download-test", "--profile-dir", "/tmp/wega-parser"];
+    let args = ["--smoke-test", "--profile-dir", "/tmp/wega-parser"];
     let disabled = BuildFeatures {
         test_harness: false,
     };
@@ -144,7 +148,7 @@ fn build_capability_validation_is_independent_of_the_engine() {
         .contains("test-harness")
     );
     let options = Options::parse_with(args.map(String::from), features).unwrap();
-    assert!(options.download_test);
+    assert!(options.smoke_test);
     assert!(
         Options::parse_with(
             [

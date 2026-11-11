@@ -65,6 +65,7 @@ pub(crate) struct Snapshot {
     /// Resource and containment failures require an explicit restart, not automatic fallback.
     pub recovery_reason: Option<String>,
     pub authority: Option<FrameAuthority>,
+    pub grants: std::collections::BTreeSet<protocol::permissions::PermissionFeature>,
     pub lifecycle: Lifecycle,
     pub native: std::collections::VecDeque<(TrustedRequest, ContentEvent)>,
     last_dialog: u64,
@@ -82,7 +83,8 @@ pub(crate) struct Snapshot {
     pub nodes: usize,
     pub js_heap: usize,
     pub notices: std::collections::VecDeque<String>,
-    pub frame: Option<(u32, u32, Vec<u8>)>,
+    pub frame: Option<(u32, u32, Arc<[u8]>)>,
+    pub last_frame: Option<(u32, u32, Arc<[u8]>)>,
     pub capture: Option<PathBuf>,
     pub capture_result: Option<Result<(), String>>,
     pub visited: Option<(String, String)>,
@@ -179,8 +181,10 @@ impl Snapshot {
             }
         }
         self.native.clear();
+        self.grants.clear();
         self.evaluated = None;
         self.frame = None;
+        self.last_frame = None;
         self.dialog = None;
         self.cursor = None;
         self.compatibility = None;
@@ -443,6 +447,7 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
     state.native.clear();
     state.dialog = None;
     state.frame = None;
+    state.last_frame = None;
     if state.capture.take().is_some() {
         state.capture_result = Some(Err(message.clone()));
     }
@@ -490,7 +495,9 @@ fn accept_frame(
         if let Some(result) = result {
             state.capture_result = Some(result);
         }
-        state.frame = Some((width, height, bytes));
+        let bytes: Arc<[u8]> = bytes.into();
+        state.frame = Some((width, height, bytes.clone()));
+        state.last_frame = Some((width, height, bytes));
     }
 }
 pub(crate) fn evaluate_sync_parts(
@@ -1631,6 +1638,7 @@ impl Page {
             }
             self.texture = None;
             state.frame = None;
+            state.last_frame = None;
         }
         self.viewport = None;
     }
@@ -1666,6 +1674,7 @@ impl Page {
         state.cursor = None;
         state.evaluated = None;
         state.frame = None;
+        state.last_frame = None;
         for request in state
             .requests
             .navigate(document)
@@ -2031,6 +2040,71 @@ mod tests {
         assert_eq!(
             state.content_event(context, dialog(3)),
             Some((context, DialogId(3)))
+        );
+    }
+
+    #[test]
+    fn screenshots_retain_the_last_frame_after_ui_upload_but_not_after_navigation() {
+        let (state, context) = committed_state();
+        let shared = Mutex::new(state);
+        accept_frame(
+            &shared,
+            context.document.0,
+            context.revision,
+            1,
+            1,
+            vec![20, 30, 40, 255],
+        );
+        let mut state = shared.lock().unwrap();
+        assert!(state.frame.take().is_some());
+        assert_eq!(&*state.last_frame.as_ref().unwrap().2, &[20, 30, 40, 255]);
+        state
+            .bind_document(
+                context.document.0,
+                protocol::DocumentRevision(context.revision.0 + 1),
+            )
+            .unwrap();
+        assert!(state.frame.is_none() && state.last_frame.is_none());
+    }
+
+    #[test]
+    fn native_permission_responses_are_document_bound_and_grants_expire_on_commit() {
+        use protocol::permissions::PermissionFeature;
+        use wega::permissions::PermissionPort;
+        let (state, context) = committed_state();
+        let requester = state.authority.as_ref().unwrap().resolve(context).unwrap();
+        let shared = Arc::new(Mutex::new(state));
+        let (sender, receive) = mpsc::sync_channel(4);
+        let permission = |id| crate::permission_adapter::Permission {
+            sender: sender.clone(),
+            state: shared.clone(),
+            requester: requester.clone(),
+            id,
+            feature: PermissionFeature::Notifications,
+        };
+        permission(1).respond(true);
+        assert!(matches!(
+            receive.try_recv().unwrap(),
+            Request::AnswerPermission { id: 1, allow: true }
+        ));
+        assert!(
+            shared
+                .lock()
+                .unwrap()
+                .grants
+                .contains(&PermissionFeature::Notifications)
+        );
+        {
+            let mut state = shared.lock().unwrap();
+            let next = protocol::DocumentRevision(context.revision.0 + 1);
+            let document = state.requests.document().0;
+            state.bind_document(document, next).unwrap();
+            assert!(state.grants.is_empty());
+        }
+        permission(2).respond(true);
+        assert!(
+            receive.try_recv().is_err(),
+            "An old prompt cannot grant a replacement document"
         );
     }
 
