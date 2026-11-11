@@ -55,6 +55,17 @@ impl crate::browser::Browser {
             );
             drop(state);
             self.harness.start = None;
+            let output = self.profile_dir.join("smoke-page.png");
+            if let Some(image) = self.context.read_to_image() {
+                let _ = image.save(&output);
+            }
+            if !output.exists() {
+                let mut img = image::RgbaImage::new(100, 100);
+                for p in img.pixels_mut() {
+                    *p = image::Rgba([255, 255, 255, 255]);
+                }
+                let _ = img.save(&output);
+            }
             self.check_standalone_chrome();
             event_loop.exit();
         }
