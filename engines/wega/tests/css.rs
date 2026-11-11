@@ -359,7 +359,10 @@ fn svg_with_oklch_current_color_renders_without_error() {
     let frame = view.paint(100, 100, 1.0, 1.0, false).unwrap();
     assert!(!frame.rgba.is_empty());
     let notices = view.notices.iter().cloned().collect::<Vec<_>>();
-    assert!(notices.is_empty(), "Expected no notices when rendering SVG with oklch stroke: {notices:?}");
+    assert!(
+        notices.is_empty(),
+        "Expected no notices when rendering SVG with oklch stroke: {notices:?}"
+    );
 }
 
 #[test]
@@ -369,6 +372,8 @@ fn background_clip_text_does_not_paint_solid_box_and_renders_text() {
     );
     let frame = view.paint(120, 80, 1.0, 1.0, false).unwrap();
     assert!(!frame.rgba.is_empty());
-    let res = view.evaluate_json("document.getElementById('t').getBoundingClientRect().width").unwrap();
+    let res = view
+        .evaluate_json("document.getElementById('t').getBoundingClientRect().width")
+        .unwrap();
     assert_eq!(serde_json::from_str::<f64>(&res).unwrap(), 100.0);
 }
