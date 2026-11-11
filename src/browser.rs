@@ -1195,11 +1195,21 @@ impl Browser {
                         return Ok(true);
                     }
                 }
+                if self.is_wega() {
+                    self.release_pointer();
+                }
                 let active = self.session.active();
                 let tab = &mut self.session.tabs_mut()[active];
+                tab.saved_title = tab.title();
+                if tab.wega.is_some() {
+                    // Native pages have no content document. Keeping this worker
+                    // attached makes url()/is_internal() keep reporting the old
+                    // website and prevents native navigation from completing.
+                    tab.history.push(tab.url());
+                    tab.wega = None;
+                }
                 tab.history.push(url.to_string());
                 tab.initial_url = url.to_string();
-                tab.saved_title = tab.title();
                 self.chrome.address = url.to_string();
                 self.chrome.last_url = self.chrome.address.clone();
                 if let Some(view) = tab.view() {

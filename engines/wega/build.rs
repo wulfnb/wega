@@ -91,6 +91,7 @@ fn main() {
         ("generated", "generated.js"),
         ("observers", "observers.js"),
         ("install", "install-web.js"),
+        ("cache", "cache.js"),
         ("xhr", "xhr.js"),
         ("forms", "forms.js"),
     ] {

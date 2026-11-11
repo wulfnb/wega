@@ -63,6 +63,7 @@ pub(crate) struct Dom {
     components: RefCell<crate::components::Registry>,
     shadows: RefCell<crate::components::ShadowTree>,
     clipboard: RefCell<String>,
+    cache_storage: RefCell<Option<wega_network::CacheStorage>>,
     pub workers: RefCell<crate::workers::WorkerManager>,
     pub canvas_engine: RefCell<crate::canvas::CanvasEngine>,
     pub webgl_engine: RefCell<crate::webgl::WebGLEngine>,
@@ -120,6 +121,7 @@ impl Dom {
             components: Default::default(),
             shadows: Default::default(),
             clipboard: Default::default(),
+            cache_storage: Default::default(),
             workers,
             canvas_engine: RefCell::new(crate::canvas::CanvasEngine::new(limits.max_pixels * 4)),
             webgl_engine: RefCell::new(crate::webgl::WebGLEngine::new(limits.max_pixels * 8)),
@@ -166,6 +168,43 @@ impl Dom {
             return Ok(Value::Null);
         }
         match text(0) {
+            "cacheAllowed" => {
+                return Ok(json!(wega_network::cache_api::cache_allowed(
+                    self.document.borrow().url()
+                )));
+            }
+            "cacheCall" => {
+                let url = self.document.borrow().url().clone();
+                if !wega_network::cache_api::cache_allowed(&url) {
+                    return Err("SecurityError: Cache storage requires a secure context".into());
+                }
+                if text(1).len() > wega_network::MAX_BODY {
+                    return Err("QuotaExceededError: Cache operation exceeds IPC budget".into());
+                }
+                let operation: wega_network::cache_api::CacheOperation =
+                    serde_json::from_str(text(1)).map_err(|error| error.to_string())?;
+                if let Some(remote) = &self.network.remote {
+                    let bytes = remote.resource(
+                        wega_network::ResourceRequest::Cache {
+                            origin: url.origin().ascii_serialization(),
+                        },
+                        text(1).as_bytes(),
+                    )?;
+                    return serde_json::from_slice(&bytes).map_err(|error| error.to_string());
+                }
+                let mut cache = self.cache_storage.borrow_mut();
+                if cache.is_none() {
+                    *cache = Some(if let Some(root) = &self.network.storage_dir {
+                        wega_network::CacheStorage::open_origin(
+                            root,
+                            &url.origin().ascii_serialization(),
+                        )?
+                    } else {
+                        wega_network::CacheStorage::in_memory()?
+                    });
+                }
+                return cache.as_mut().unwrap().api_call(operation);
+            }
             "webglCreate" => {
                 let w = text(1).parse::<u32>().unwrap_or(300);
                 let h = text(2).parse::<u32>().unwrap_or(150);

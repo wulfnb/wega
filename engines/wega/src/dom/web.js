@@ -426,7 +426,13 @@
   );
   Object.defineProperty(globalThis, "__wega_web", {
     configurable: true,
-    value: { ...globals, event },
+    value: { ...globals, event, cacheResponse(entry) {
+      const body = [204, 205, 304].includes(entry.status) ? null : new Uint8Array(entry.body);
+      const result = new response.Response(body, {status: entry.status, statusText: entry.status_text, headers: entry.headers});
+      const inner = response.toInnerResponse(result);
+      inner.urlList = entry.url ? [entry.url] : [];
+      return response.fromInnerResponse(inner, "immutable");
+    } },
   });
   Object.defineProperty(globalThis, "__wega_install_web", {
     configurable: true,

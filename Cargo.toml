@@ -82,6 +82,9 @@ pkcs1 = { version = "=0.8.0-rc.4", optional = true }
 debug = 0
 incremental = false
 
+[dev-dependencies]
+accesskit_consumer = "=0.39.2"
+
 [patch.crates-io]
 # See vendor/README.md for the Servo/epaint vello_cpu feature-unification fix.
 epaint = { path = "vendor/epaint" }

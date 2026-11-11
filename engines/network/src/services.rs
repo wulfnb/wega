@@ -29,11 +29,15 @@ pub enum ResourceRequest {
         key: String,
         index: u32,
     },
+    Cache {
+        origin: String,
+    },
 }
 #[derive(Default)]
 pub(crate) struct StorageHub {
     persistent: HashMap<(PathBuf, String), Database>,
     transient: HashMap<([u8; 16], String), (Weak<Session>, Database)>,
+    caches: HashMap<(PathBuf, String), CacheStorage>,
 }
 struct StorageCall<'a> {
     origin: &'a str,
@@ -43,6 +47,23 @@ struct StorageCall<'a> {
     index: u32,
 }
 impl StorageHub {
+    fn cache(
+        &mut self,
+        session: &Session,
+        origin: &str,
+        operation: cache_api::CacheOperation,
+    ) -> Result<Value, String> {
+        let root = PathBuf::from(&session.scope);
+        let key = (root.clone(), origin.to_owned());
+        if !self.caches.contains_key(&key) {
+            if self.caches.len() >= 32 {
+                self.caches.clear();
+            }
+            self.caches
+                .insert(key.clone(), CacheStorage::open_origin(&root, origin)?);
+        }
+        self.caches.get_mut(&key).unwrap().api_call(operation)
+    }
     fn call(
         &mut self,
         session: &Arc<Session>,
@@ -207,6 +228,7 @@ impl StorageHub {
     ) -> Result<(), String> {
         let id = (root.to_path_buf(), origin.to_owned());
         self.persistent.remove(&id);
+        self.caches.remove(&id);
         let directory = root.join(
             Sha256::digest(origin.as_bytes())
                 .iter()
@@ -221,6 +243,7 @@ impl StorageHub {
     pub(crate) fn clear_all(&mut self, root: &std::path::Path) -> Result<(), String> {
         self.persistent.clear();
         self.transient.clear();
+        self.caches.clear();
         if root.exists()
             && let Ok(entries) = std::fs::read_dir(root)
         {
@@ -245,6 +268,34 @@ impl Broker {
             return Err("Revoked resource session".into());
         }
         match request {
+            ResourceRequest::Cache { origin } => {
+                let receipt = session
+                    .navigation
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let document = receipt
+                    .committed
+                    .as_ref()
+                    .or(receipt.last.as_ref())
+                    .ok_or("No committed cache storage grant")?;
+                if !cache_api::cache_allowed(document)
+                    || document.origin().ascii_serialization() != origin
+                {
+                    return Err("SecurityError: Cache storage document origin mismatch".into());
+                }
+                let operation: cache_api::CacheOperation =
+                    serde_json::from_slice(&body).map_err(|error| error.to_string())?;
+                let result = self
+                    .storage
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .cache(session, &origin, operation)?;
+                let bytes = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
+                if bytes.len() > MAX_BODY {
+                    return Err("QuotaExceededError: Cache result exceeds IPC budget".into());
+                }
+                Ok(bytes)
+            }
             ResourceRequest::WebSocketOpen { url, protocols } => {
                 if !body.is_empty() {
                     return Err("Unexpected upgrade body".into());
@@ -483,6 +534,58 @@ mod tests {
         assert!(storage(&a, origin, true, "get", "old", "").is_err());
         second.revoke();
         assert!(storage(&b, origin, true, "get", "shared", "").is_err());
+    }
+    #[test]
+    fn cache_resources_are_bound_to_committed_origin_and_cleared_with_site_data() {
+        use crate::cache_api::CacheOperation;
+        let broker = Broker::new().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let session = broker
+            .open_bound_session(root.path().into(), Policy::default())
+            .unwrap();
+        let remote = document(&session, "https://cache.test/");
+        let call =
+            |remote: &Remote, origin: &str, operation: CacheOperation| -> Result<Value, String> {
+                let response = remote.resource(
+                    ResourceRequest::Cache {
+                        origin: origin.into(),
+                    },
+                    &serde_json::to_vec(&operation).unwrap(),
+                )?;
+                serde_json::from_slice(&response).map_err(|error| error.to_string())
+            };
+        call(
+            &remote,
+            "https://cache.test",
+            CacheOperation::Open { name: "v1".into() },
+        )
+        .unwrap();
+        assert!(call(&remote, "https://foreign.test", CacheOperation::Names).is_err());
+        session.begin_navigation(&Url::parse("https://foreign.test/").unwrap());
+        assert!(call(&remote, "https://cache.test", CacheOperation::Names).is_err());
+        let remote = document(&session, "https://cache.test/");
+        assert_eq!(
+            call(&remote, "https://cache.test", CacheOperation::Names).unwrap(),
+            json!(["v1"])
+        );
+        session.clear_site_data("https://cache.test").unwrap();
+        assert_eq!(
+            call(&remote, "https://cache.test", CacheOperation::Names).unwrap(),
+            json!([])
+        );
+        call(
+            &remote,
+            "https://cache.test",
+            CacheOperation::Open { name: "v2".into() },
+        )
+        .unwrap();
+        session.clear_all_data().unwrap();
+        assert_eq!(
+            call(&remote, "https://cache.test", CacheOperation::Names).unwrap(),
+            json!([])
+        );
+        session.revoke();
+        assert!(call(&remote, "https://cache.test", CacheOperation::Names).is_err());
     }
     #[test]
     fn bound_cookie_calls_cannot_export_http_only_or_foreign_origin_credentials() {

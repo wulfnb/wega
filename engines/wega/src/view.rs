@@ -2351,6 +2351,16 @@ impl View {
             0,
         );
         self.dirty = another_frame || doc.is_animating();
+        if self.accessibility_enabled {
+            let update = doc.build_accessibility_tree();
+            if let Ok(json) = serde_json::to_string(&update) {
+                // Publish the newest complete tree; animations must not grow an
+                // unbounded queue of superseded accessibility snapshots.
+                self.events
+                    .retain(|event| !matches!(event, PageEvent::Accessibility(_)));
+                self.events.push_back(PageEvent::Accessibility(json));
+            }
+        }
         Ok(scene)
     }
     pub fn configure_shared_frames(&mut self, path: &std::path::Path) -> Result<(), String> {

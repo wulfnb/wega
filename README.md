@@ -411,11 +411,15 @@ It exports app-owned frame images and panel JSON into the isolated profile.
 ## Current limits
 
 This is a working browser implementation, not a claim of Firefox feature parity.
-Website compatibility follows Servo's implementation. Firefox extensions, account
-sync, password management, printing, DRM and WebGPU remain
-outstanding. Multiprocess is an optional experimental build. GStreamer media
-playback is enabled by default. HTTPS certificate verification remains enabled. The UI does not
-claim that an HTTPS page is trustworthy just because its URL uses HTTPS.
+The default standalone Wega engine still has gaps in visible iframe rendering,
+Shadow DOM styling/layout, IndexedDB page bindings, Service Worker execution,
+real media decoding and GPU graphics. Extensions, account sync, password
+management, printing, DRM, WebRTC, Web Audio and WebGPU remain outstanding.
+The page Cache API now uses persistent, origin-scoped SQLite storage, and content
+accessibility trees are connected to the native chrome through AccessKit grafts.
+See [implemented behavior, limits and remaining stages](docs/browser-completion.md).
+HTTPS certificate verification remains enabled; an HTTPS URL alone does not
+establish a site's trustworthiness.
 
 Servo 0.7 does not support `background-clip: text`. A small user stylesheet makes
 Tailwind `.bg-clip-text` and inline clipped text readable with a solid gradient-stop

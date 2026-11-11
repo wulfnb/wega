@@ -3,7 +3,8 @@
 //! Provides transactional Request/Response pair caching under an origin partition,
 //! with SQLite WAL crash recovery, quota checking and deletion semantics.
 
-use rusqlite::{Connection as Database, OptionalExtension, params};
+use crate::cache_api::{CacheOperation, CacheQuery, CacheRecord, CacheRequest};
+use rusqlite::{Connection as Database, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::Duration;
@@ -21,7 +22,7 @@ pub struct CacheEntry {
 }
 
 pub struct CacheStorage {
-    db: Database,
+    pub(crate) db: Database,
 }
 
 impl CacheStorage {
@@ -29,6 +30,14 @@ impl CacheStorage {
         std::fs::create_dir_all(partition_dir).map_err(|e| e.to_string())?;
         let db_path = partition_dir.join("cache_storage.db");
         let db = Database::open(&db_path).map_err(|e| e.to_string())?;
+        Self::from_connection(db)
+    }
+
+    pub fn in_memory() -> Result<Self, String> {
+        Self::from_connection(Database::open_in_memory().map_err(|error| error.to_string())?)
+    }
+
+    fn from_connection(db: Database) -> Result<Self, String> {
         db.busy_timeout(Duration::from_secs(2))
             .map_err(|e| e.to_string())?;
         db.execute_batch(
@@ -55,26 +64,15 @@ impl CacheStorage {
              );",
         )
         .map_err(|e| e.to_string())?;
-        Ok(Self { db })
+        let store = Self { db };
+        store.initialize_api()?;
+        Ok(store)
     }
 
     pub fn open_cache(&mut self, name: &str) -> Result<i64, String> {
-        let existing: Option<i64> = self
-            .db
-            .query_row("SELECT id FROM caches WHERE name = ?", [name], |row| {
-                row.get(0)
-            })
-            .optional()
-            .map_err(|e| e.to_string())?;
-
-        if let Some(id) = existing {
-            return Ok(id);
-        }
-
-        self.db
-            .execute("INSERT INTO caches (name) VALUES (?)", [name])
-            .map_err(|e| e.to_string())?;
-        Ok(self.db.last_insert_rowid())
+        self.api_call(CacheOperation::Open { name: name.into() })?
+            .as_i64()
+            .ok_or_else(|| "Invalid cache identity".into())
     }
 
     pub fn has_cache(&self, name: &str) -> bool {
@@ -117,105 +115,53 @@ impl CacheStorage {
         headers: &[(&str, &str)],
         body: &[u8],
     ) -> Result<(), String> {
-        let tx = self.db.transaction().map_err(|e| e.to_string())?;
-        let total_size: i64 = tx.query_row(
-            "SELECT COALESCE(SUM(length(body) + length(headers) + length(url)), 0) FROM entries",
-            [],
-            |row| row.get(0)
-        ).map_err(|e| e.to_string())?;
-
-        let old_size: Option<i64> = tx.query_row(
-            "SELECT length(body) + length(headers) + length(url) FROM entries WHERE cache_id = ? AND url = ?",
-            params![cache_id, url],
-            |row| row.get(0)
-        ).optional().map_err(|e| e.to_string())?;
-
-        let headers_json = serde_json::to_string(headers).map_err(|e| e.to_string())?;
-        let entry_size = body.len() + headers_json.len() + url.len();
-
-        let new_total = total_size
-            .saturating_sub(old_size.unwrap_or(0))
-            .saturating_add(entry_size as i64);
-
-        if new_total > CACHE_STORAGE_QUOTA as i64 {
-            return Err("QuotaExceededError: cache storage budget exceeded".into());
-        }
-
-        tx.execute(
-            "INSERT INTO entries (cache_id, url, method, status, status_text, headers, body)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(cache_id, url) DO UPDATE SET
-                 method=excluded.method,
-                 status=excluded.status,
-                 status_text=excluded.status_text,
-                 headers=excluded.headers,
-                 body=excluded.body",
-            params![
-                cache_id,
-                url,
-                method,
-                status as i32,
-                status_text,
-                headers_json,
-                body
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-        tx.commit().map_err(|e| e.to_string())?;
+        self.api_call(CacheOperation::Put {
+            id: cache_id,
+            records: vec![CacheRecord {
+                request: CacheRequest {
+                    url: url.into(),
+                    method: method.into(),
+                    headers: vec![],
+                },
+                response: CacheEntry {
+                    url: url.into(),
+                    method: method.into(),
+                    status,
+                    status_text: status_text.into(),
+                    headers: headers
+                        .iter()
+                        .map(|(name, value)| (name.to_string(), value.to_string()))
+                        .collect(),
+                    body: body.into(),
+                },
+            }],
+        })?;
         Ok(())
     }
 
     pub fn match_entry(&self, cache_id: i64, url: &str) -> Result<Option<CacheEntry>, String> {
-        let entry = self.db.query_row(
-            "SELECT method, status, status_text, headers, body FROM entries WHERE cache_id = ? AND url = ?",
-            params![cache_id, url],
-            |row| {
-                let method: String = row.get(0)?;
-                let status: i32 = row.get(1)?;
-                let status_text: String = row.get(2)?;
-                let headers_raw: String = row.get(3)?;
-                let body: Vec<u8> = row.get(4)?;
-                Ok((method, status, status_text, headers_raw, body))
-            }
-        ).optional().map_err(|e| e.to_string())?;
-
-        let Some((method, status, status_text, headers_raw, body)) = entry else {
-            return Ok(None);
-        };
-
-        let headers: Vec<(String, String)> = serde_json::from_str(&headers_raw).unwrap_or_default();
-        Ok(Some(CacheEntry {
-            url: url.to_string(),
-            method,
-            status: status as u16,
-            status_text,
-            headers,
-            body,
-        }))
+        crate::cache_api::lookup(&self.db, cache_id, url)
     }
 
     pub fn delete_entry(&mut self, cache_id: i64, url: &str) -> Result<bool, String> {
-        let affected = self
-            .db
-            .execute(
-                "DELETE FROM entries WHERE cache_id = ? AND url = ?",
-                params![cache_id, url],
-            )
-            .map_err(|e| e.to_string())?;
-        Ok(affected > 0)
+        self.api_call(CacheOperation::Delete {
+            id: cache_id,
+            request: CacheRequest {
+                url: url.into(),
+                method: "GET".into(),
+                headers: vec![],
+            },
+            options: CacheQuery::default(),
+        })?
+        .as_bool()
+        .ok_or_else(|| "Invalid cache deletion result".into())
     }
 
     pub fn entry_urls(&self, cache_id: i64) -> Result<Vec<String>, String> {
-        let mut stmt = self
-            .db
-            .prepare("SELECT url FROM entries WHERE cache_id = ? ORDER BY id")
-            .map_err(|e| e.to_string())?;
-        let urls = stmt
-            .query_map([cache_id], |row| row.get::<_, String>(0))
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
-        Ok(urls)
+        Ok(crate::cache_api::records(&self.db, cache_id)?
+            .into_iter()
+            .map(|(_, record)| record.request.url)
+            .collect())
     }
 }
 

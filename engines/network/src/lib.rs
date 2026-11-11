@@ -25,6 +25,7 @@ use wega_protocol::{
     authority::{Origin, Principal},
     identity::{PartitionId, ServiceIdentity, ServiceSessionId},
 };
+pub mod cache_api;
 pub mod cache_storage;
 mod cookies;
 pub mod indexeddb;

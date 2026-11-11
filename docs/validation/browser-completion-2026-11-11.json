@@ -1,0 +1,83 @@
+{
+  "date": "2026-11-11",
+  "platform": "macOS arm64",
+  "base_commit": "e58c5a8a8285adb051b2d4ec63586f913e7a88de",
+  "branch": "main",
+  "source_state": "uncommitted working tree",
+  "browser_features_complete": false,
+  "checks": {
+    "engine_workspace": {
+      "status": "passed",
+      "passed": 355,
+      "ignored": 2,
+      "command": "cargo test --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine --workspace --all-targets -- --test-threads=1"
+    },
+    "core_and_desktop": {
+      "status": "passed",
+      "core_passed": 113,
+      "desktop_passed": 53,
+      "command": "cargo test --locked --offline --bin wega --lib -- --test-threads=1"
+    },
+    "required_macos_worker": {
+      "status": "passed",
+      "passed": 1,
+      "test": "a_required_worker_runs_jit_storage_cookies_and_frames_through_grants",
+      "cache_api_included": true,
+      "helper": "target/browser-completion/Engine.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine"
+    },
+    "native_webdriver": {
+      "status": "passed",
+      "cache_persistence_across_native_page_transition": true,
+      "artifact": "target/browser-completion/native/results.json"
+    },
+    "desktop_cache_capture": {
+      "status": "passed",
+      "artifact": "target/browser-completion/desktop-cache-result.json"
+    },
+    "engine_clippy": {
+      "status": "passed",
+      "command": "cargo clippy --locked --offline --manifest-path engines/Cargo.toml --target-dir target/wega-engine --workspace --all-targets -- -D warnings"
+    },
+    "desktop_clippy": {
+      "status": "passed",
+      "command": "cargo clippy --locked --offline --bin wega --all-features -- -D warnings"
+    },
+    "formatting_and_diff_check": {
+      "status": "passed"
+    },
+    "debug_browser_and_worker_builds": {
+      "status": "passed",
+      "browser": "target/debug/wega",
+      "worker": "target/debug/wega-engine"
+    }
+  },
+  "not_validated": [
+    "Linux and Windows acceptance",
+    "Hosted CI",
+    "Manual VoiceOver, NVDA or Orca acceptance",
+    "Native ambient-authority denial probe (separate opt-in test)",
+    "Packaged release or distribution update"
+  ],
+  "source_sha256": {
+    "Cargo.lock": "3ccdaf1f04fc44f4d1828f9a559d88ff98f1271c43d9c20fc9ef811c792fc7dc",
+    "Cargo.toml": "634bd036db6c4d9ae7281db3c0f7ddc7d957dfa9a83874ea1d34f2065c4f4d6d",
+    "engines/network/src/cache_api.rs": "4f247538a24133504ee1606e2486da8bd64256945070fe4bc04049bee43c2fc9",
+    "engines/network/src/cache_storage.rs": "0da0bc028d3b63faa0a8747cf10b50fd0348a073a3d7df9d1aefcfb196c50968",
+    "engines/network/src/lib.rs": "a4042b3ef1f9b6678cfa6e8a515b9066e026e55883cb254e0e0b69a47016d036",
+    "engines/network/src/services.rs": "0c710259736c0749c4016e02b15978d01feda8249a67f2da200034e434c9b1ec",
+    "engines/wega/build.rs": "f37b3a5eacc40b5ce636716228267aeb9527c7c53f900838705be6931ec1c464",
+    "engines/wega/src/dom.rs": "38febb2718590a32ee5d14114fe22fb9666fecd561ebce77f5b58f3f7aeb113c",
+    "engines/wega/src/dom/bootstrap.js": "01572debffaaf51f3513fc3fa614db953f8ebce723e88828fc8746033bff6ee2",
+    "engines/wega/src/dom/cache.js": "1dee3e977893d64b28b0b45c06ce127ddcf8b01a2168aae3b52eebc281d7165c",
+    "engines/wega/src/dom/web.js": "ae4492ba8545884230e643426a2c85a75f5fcb577211310cdcd025d4ed49c350",
+    "engines/wega/src/view.rs": "43fd04e7c5dc752305865ae512a1e3b35cdd80a4aaa9962dfb11321d9f3496c6",
+    "engines/wega/tests/cache_api.rs": "78d23397e4cf0d37bd81c62524b24636b48cf8b6f9682b7028bae80f300b3b43",
+    "engines/wega/tests/inherited_broker.rs": "85ce135116ea93ff87b4436d24a22f09c4009a26fc1ee8f1f9eef0b8de3713d7",
+    "src/accessibility.rs": "6517f6447cd81b506f28d29bc4225d7cfd4be3ba209a6da2eb75ff1b132b682f",
+    "src/accessibility_tests.rs": "a7ea17634b281c0b154e49d2a1af16380d8f47dc9ee4751e220aa937c38c85ed",
+    "src/browser.rs": "f219efe570ff6aa3b1119a6acd9941180d966f0d70c11964ad034538b6869343",
+    "src/wega_page.rs": "19924f2ec7976d01b07d55a036fbea7a597ec9d635776006a2a7c46ed35981d7",
+    "src/wega_ui.rs": "47732bdfc9a8cd435bc17b338979e82cdbadbe954e903fc2121d94dba750c0ec",
+    "tests/webdriver_smoke.py": "3d7b4753ff41b18d749b72e56d18390e0a427b7538df09ccd3850aad2d51020d"
+  }
+}

@@ -225,11 +225,14 @@ impl Browser {
                     }
                 }
                 ContentEvent::Accessibility(json) => {
-                    if let Ok(update) = serde_json::from_str::<accesskit::TreeUpdate>(&json)
-                        && let Some(gui) = self.gui.as_mut()
-                        && let Some(adapter) = gui.egui_winit.accesskit.as_mut()
+                    if index == self.session().active()
+                        && let Err(error) = self.accessibility.queue_wega(owner, &requester, &json)
                     {
-                        adapter.update_if_active(|| update);
+                        self.notify(
+                            crate::ux::Severity::Warning,
+                            format!("Accessibility update unavailable: {error}"),
+                            None,
+                        );
                     }
                 }
                 ContentEvent::FileDialog {
