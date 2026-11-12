@@ -28,7 +28,7 @@ Existing functionality versus missing platform behaviour, measured by the probe 
 | `relatedTarget` on focus events | **null (gap)** |
 | `el.focus()` | dispatches only `focus` — no `blur` on the previous element, no `focusin` **(bug)** |
 | `el.blur()` | dispatches `blur`; `document.activeElement` is still the element **(bug)** |
-| click on a non-focusable element | focus is not moved to the body **(gap, Blitz default action)** |
+| click on a non-focusable element | **works**: Blitz clears focus (the first probe misread this because its click landed on a taller-than-expected `<input>`) |
 
 ## 2. Decision: three separate concerns, no single large trait
 

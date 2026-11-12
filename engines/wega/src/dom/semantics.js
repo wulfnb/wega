@@ -1102,6 +1102,23 @@
       );
     }
   }
+  // https://dom.spec.whatwg.org/#retarget : the node as seen from `scope`'s tree.
+  function shadowIncludingInclusiveAncestor(ancestor, node) {
+    for (let current = node; current; ) {
+      if (current === ancestor) return true;
+      current = current.parentNode || (current instanceof ShadowRoot ? current.host : null);
+    }
+    return false;
+  }
+  function retarget(node, scope) {
+    while (node) {
+      const root = node.getRootNode();
+      if (!(root instanceof ShadowRoot) || shadowIncludingInclusiveAncestor(root, scope))
+        return node;
+      node = root.host;
+    }
+    return null;
+  }
   class ShadowRoot extends DocumentFragment {
     constructor(token, descriptor) {
       if (token !== shadowToken) fail("TypeError", "Illegal constructor");
@@ -1110,6 +1127,11 @@
       this._owner = wrap(descriptor.host)?.ownerDocument || document;
     }
     get host() { return wrap(shadowDescriptors.get(this).host); }
+    get activeElement() {
+      const focused = wrap(host("active"), this.ownerDocument);
+      const candidate = focused && retarget(focused, this);
+      return candidate && candidate.getRootNode() === this ? candidate : null;
+    }
     get mode() { return shadowDescriptors.get(this).mode; }
     get delegatesFocus() { return shadowDescriptors.get(this).delegates_focus; }
     get innerHTML() {
@@ -1623,14 +1645,15 @@
       this.setAttribute("src", value);
     }
     focus() {
-      this.ownerDocument._active = this;
+      const previous = host("active");
+      if (previous === this._id) return;
       host("focus", this._id);
-      this.dispatchEvent(new Event("focus"));
+      globalThis.__wega_focus_events(previous, host("active"));
     }
     blur() {
-      if (this.ownerDocument._active === this)
-        this.ownerDocument._active = null;
-      this.dispatchEvent(new Event("blur"));
+      if (host("active") !== this._id) return;
+      host("blur");
+      globalThis.__wega_focus_events(this._id, null);
     }
     click() {
       if (this._clicking || this.hasAttribute("disabled")) return;
@@ -4382,7 +4405,8 @@
       return node;
     }
     get activeElement() {
-      return wrap(host("active"), this) || this.body;
+      const focused = wrap(host("active"), this);
+      return (focused && retarget(focused, this)) || this.body;
     }
     get currentScript() {
       return this === document ? currentScript : null;
@@ -4448,7 +4472,18 @@
     if (!Object.getOwnPropertyDescriptor(Element.prototype, "on" + name))
       defineHandler(Element.prototype, name);
   }
-  Object.defineProperty(globalThis, "__wega_node", { value: (id) => wrap(id) });
+  // Native input resolves its target by id. A node that no longer exists (dropped between the
+  // hit-test and the dispatch, e.g. by an earlier handler) is not an error: the event is ignored.
+  Object.defineProperty(globalThis, "__wega_node", {
+    value: (id) => {
+      try {
+        return wrap(id);
+      } catch (error) {
+        if (String(error?.message).includes("Node no longer exists")) return null;
+        throw error;
+      }
+    },
+  });
   defineHandler(Document.prototype, "visibilitychange");
   Object.defineProperty(Document.prototype, "cookie", {
     get() {

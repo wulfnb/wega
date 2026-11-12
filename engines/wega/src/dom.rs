@@ -946,6 +946,7 @@ impl Dom {
                 | "setAttrNS"
                 | "styleSet"
                 | "focus"
+                | "blur"
                 | "setChecked"
                 | "setText"
                 | "setAttr"
@@ -1180,7 +1181,7 @@ impl Dom {
             "scrollViewport"=>{let x=text(1).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.set_viewport_scroll(blitz_dom::Point{x,y});}Value::Null},
             "scrollNode"=>{let target=node_id()?;let x=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(3).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.scroll_to(target,x,y,blitz_dom::ScrollBehavior::Instant);}Value::Null},
             "scrollIntoView"=>{let target=node_id()?;doc.scroll_into_view(target,blitz_dom::ScrollBehavior::Instant,blitz_dom::ScrollLogicalPosition::Start,blitz_dom::ScrollLogicalPosition::Nearest);Value::Null},
-            "active"=>json!(wega_dom::input::FocusState::keyboard_target(&*doc).map(|key|key.to_string())),
+            "active"=>json!(wega_dom::input::FocusState::focused(&*doc).map(|key|key.to_string())),
             "history"=>{let url=doc.url().join(text(1)).map_err(|e|e.to_string())?;if url.origin()!=doc.url().origin()||!matches!(url.scheme(),"http"|"https"){return Err("SecurityError: history URL must have the same tuple origin".into());}doc.set_base_url(url.as_str());Value::Null},
             "media"=>{
                 let url_data=style::stylesheets::UrlExtraData(style::servo_arc::Arc::new(doc.url().clone()));
@@ -1299,6 +1300,7 @@ impl Dom {
             // newly inserted input before focus so immediate key/IME commands
             // cannot be silently dropped while waiting for the next paint.
             "focus"=>{let target=node_id()?;self.resolve(&mut doc);let _=wega_dom::input::InputControl::set_focus(&mut *doc,target.key());self.invalidate();Value::Null},
+            "blur"=>{wega_dom::input::InputControl::clear_focus(&mut *doc);self.invalidate();Value::Null},
             "serialize"=>{let mut html=String::new();Self::serialize(&doc,node_id()?,&mut html);json!(html)},
             "computed"=>{
                 let target=node_id()?;self.resolve(&mut doc);

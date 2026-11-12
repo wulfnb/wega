@@ -35,6 +35,7 @@ use url::Url;
 use wega_adapter_blitz::BlitzDocument;
 use wega_adapter_blitz::{ToKey, ToNodeId};
 use wega_dom::Mutator as _;
+use wega_dom::NodeKey;
 use wega_dom::input::{FocusState as _, InputControl as _, element_chain};
 use wega_protocol::identity::FrameId;
 
@@ -1118,7 +1119,9 @@ impl View {
         let target_node = NodeId::from_u64(target);
         match action.to_ascii_lowercase().as_str() {
             "focus" => {
+                let before = self.document.borrow().focused();
                 let _ = self.document.borrow_mut().set_focus(target_node.key());
+                self.focus_transition(before);
                 self.dirty = true;
             }
             "default" | "click" => {
@@ -1467,6 +1470,23 @@ impl View {
         self.activation
             .set(Some(Instant::now() + Duration::from_secs(5)));
     }
+    /// Focus has one owner, the document. After anything that can move it, compare with the
+    /// state before and dispatch the transition once: `blur` and `focusout` on the node that
+    /// lost focus, `focus` and `focusin` on the one that gained it, each with the other as
+    /// `relatedTarget`. Blitz's own focus events are not forwarded (see `generated_events`).
+    pub(crate) fn focus_transition(&mut self, before: Option<NodeKey>) {
+        let after = self.document.borrow().focused();
+        if before == after {
+            return;
+        }
+        let id = |key: Option<NodeKey>| match key {
+            Some(key) => serde_json::json!(key.to_string()),
+            None => serde_json::Value::Null,
+        };
+        let source = format!("__wega_focus_events({}, {})", id(before), id(after));
+        self.run(&source, "wega:focus");
+        self.dirty = true;
+    }
     /// Where keyboard input goes: the focused node, else the document's fallback target.
     fn keyboard_target(&self) -> NodeId {
         let doc = self.document.borrow();
@@ -1530,6 +1550,11 @@ impl View {
     /// Pointer input: hover, mouse/pointer events, Blitz defaults (focus, text
     /// selection, clicks), wheel scrolling and the cursor.
     pub fn pointer(&mut self, pointer: Pointer) {
+        let before = self.document.borrow().focused();
+        self.pointer_input(pointer);
+        self.focus_transition(before);
+    }
+    fn pointer_input(&mut self, pointer: Pointer) {
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
@@ -1897,6 +1922,9 @@ impl View {
                 _ => {}
             }
             let event_type = event.data.name();
+            if matches!(event_type, "focus" | "blur" | "focusin" | "focusout") {
+                continue;
+            }
             let init = if event_type == "input" {
                 input_options.clone()
             } else {
@@ -1933,6 +1961,11 @@ impl View {
     }
     /// Native editing goes through Blitz/Parley after cancelable DOM events.
     pub fn key(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+        let before = self.document.borrow().focused();
+        self.key_input(event);
+        self.focus_transition(before);
+    }
+    fn key_input(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
@@ -1951,8 +1984,16 @@ impl View {
             self.activate();
         }
         let options = serde_json::json!({"key":event.key.to_string(),"code":event.code.to_string(),"repeat":event.is_auto_repeating,"isComposing":event.is_composing,"shiftKey":event.modifiers.contains(Modifiers::SHIFT),"ctrlKey":event.modifiers.contains(Modifiers::CONTROL),"altKey":event.modifiers.contains(Modifiers::ALT),"metaKey":event.modifiers.contains(Modifiers::META)});
-        let keyboard =
-            NativeEvent::new(if pressed { "keydown" } else { "keyup" }, target.key()).init(options);
+        // Script sees key events on the focused element, else on <body>; Blitz's own editing
+        // and navigation defaults keep using the fallback target (the root element).
+        let script_target = {
+            let doc = self.document.borrow();
+            doc.focused()
+                .or_else(|| doc.query_selector("body").ok().flatten().map(ToKey::key))
+                .unwrap_or_else(|| target.key())
+        };
+        let keyboard = NativeEvent::new(if pressed { "keydown" } else { "keyup" }, script_target)
+            .init(options);
         if self.send(&keyboard) {
             return;
         }

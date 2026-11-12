@@ -261,6 +261,24 @@
       return !target.dispatchEvent(event);
     },
   });
+  // The one definition of a focus transition: `blur` and `focusout` on the node that lost
+  // focus, then `focus` and `focusin` on the node that gained it, each with the other node as
+  // `relatedTarget`. Rust calls this after native input moved focus; element.focus() and
+  // element.blur() call it too.
+  Object.defineProperty(globalThis, "__wega_focus_events", {
+    value: (fromId, toId) => {
+      const from = fromId == null ? null : __wega_node(fromId);
+      const to = toId == null ? null : __wega_node(toId);
+      if (from) {
+        globalThis.__wega_native_event("blur", fromId, { relatedTarget: toId });
+        globalThis.__wega_native_event("focusout", fromId, { relatedTarget: toId });
+      }
+      if (to) {
+        globalThis.__wega_native_event("focus", toId, { relatedTarget: fromId });
+        globalThis.__wega_native_event("focusin", toId, { relatedTarget: fromId });
+      }
+    },
+  });
   Object.defineProperty(globalThis, "__wega_native_file_input", {
     value: (id, fileNames) => {
       const target = __wega_node(id);
