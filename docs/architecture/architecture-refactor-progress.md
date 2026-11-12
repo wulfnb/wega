@@ -297,3 +297,26 @@ Full suite **371 passed, 0 failed, 4 ignored** (261 s on a quiet machine, 1.54 G
 ## 30. Remaining Blitz coupling and next step
 
 Remaining: ≈250 read sites on Blitz node fields, ≈70 mutation sites, events, layout and paint taking `BaseDocument`, `blitz_html` for XML/fragments. Recommended next step: the mutation contract (GAT mutator with commit-on-drop) validated on `parser.rs` and the DOM creation/removal ops, then a generic parser — see §10 of the DOM report.
+
+---
+
+# Round 5 — DOM mutation boundary and parser foundation
+
+Full report: [`dom-mutation-report.md`](./dom-mutation-report.md).
+
+## 31. Summary
+
+- **Contract:** `DocumentMutation`/`Mutator` in `dom_model` (static dispatch, `NodeKey`, no Blitz types; `html5ever::QualName` for names), implemented only by `dom_model/blitz.rs`.
+- **Semantics:** operations apply immediately and validate first (stale keys, node kinds, hierarchy cycles; never a panic, all-or-nothing per operation); Blitz's deferred side effects run at `finish()`/drop; no staging, no rollback, no Wega `Drop`; nested scopes are impossible by borrowing; unwinding keeps applied operations. Documented and tested.
+- **Consumers:** the incremental HTML parser (`Sink<D>`/`Parser<D>`, all 13 tree-construction operations) and the DOM `create`/`createText`/`append`/`insert`/`remove`/`setText`/`setAttr`/`removeAttr`/innerHTML-staging operations. Fragment and XML parsing still use `blitz_html`.
+- **Evidence:** parity with `blitz_html` on nine tree-construction cases; mutation tests for ordering, integrity, detached nodes, stale keys, rejected operations, panics and layout; overhead 0.8-1.5% on JavaScript mutation paths, none at the Rust operation level.
+- **Finding (pre-existing):** a document exceeding `dom_nodes` within one parse chunk panics in html5ever (reproduced before this change). Tracked by an ignored test; fix proposed for Round 6.
+- **Crate graph:** unchanged (10 members, 18 edges, 0 architecture violations); no manifest, lockfile or dependency changes.
+
+## 32. Commits (round 5)
+
+`524ea1c` benchmarks; `bc94041` mutation contract + DOM consumers; `498458a` parser integration; (this commit) report.
+
+## 33. Validation and remaining coupling
+
+Full suite **379 passed, 0 failed, 6 ignored**; broker mode, required-worker test, root checks, clippy, fmt, architecture checker pass. Remaining Blitz call sites outside `dom_model`: 514 over 98 methods (from 553/112), direct mutator sites ≈32 (from 62). Round 6 order: finish mutation migration and fragment parsing, fix the budget panic, read-path cleanup, events, then crate extraction (`wega-dom`, `wega-html`, `wega-adapter-blitz`).

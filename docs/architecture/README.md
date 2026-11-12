@@ -15,6 +15,7 @@ Holds architecture documentation for the planned modular engine layout.
 - [`wave2-gate-report.md`](./wave2-gate-report.md): Wave 2 architecture gate decisions (no implementation).
 - [`architecture-refactor-progress.md`](./architecture-refactor-progress.md): architecture-first refactoring progress (ownership model, V8/network/worker decoupling, `wega-adapter-skia`).
 - [`dom-migration-report.md`](./dom-migration-report.md): DOM ownership, Blitz call-site inventory and the `dom_model` boundary (Round 4).
+- [`dom-mutation-report.md`](./dom-mutation-report.md): the DOM mutation contract, commit semantics and parser integration (Round 5).
 - [`baseline/`](./baseline/): baseline and post-wave dependency graphs and architecture reports.
 
 ## Expected dependencies
