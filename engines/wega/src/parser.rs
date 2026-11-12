@@ -12,7 +12,7 @@ use blitz_dom::{BaseDocument, NodeId};
 use html5ever::{
     QualName,
     tendril::StrTendril,
-    tokenizer::{BufferQueue, Tokenizer, TokenizerOpts},
+    tokenizer::{BufferQueue, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts},
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeBuilder, TreeBuilderOpts, TreeSink},
 };
 use std::{
@@ -25,12 +25,15 @@ use std::{
 /// Each tree-construction operation uses its own mutation scope, as before.
 pub(crate) struct Sink<D: DocumentMutation = BaseDocument> {
     document: Rc<RefCell<D>>,
-    /// Nodes created so far, and the node budget. Past the budget the sink
-    /// stops building: new nodes become one detached placeholder.
+    /// Nodes created so far, and the node budget. Every node the tree builder is given is a
+    /// real, distinct node (html5ever identifies open elements by handle equality, so
+    /// placeholders would corrupt its stacks). Crossing the budget only sets `overflow`;
+    /// `BudgetedBuilder` then stops the tokenizer after the current token, so the overshoot
+    /// is bounded by one token's tree-construction work.
     created: Cell<usize>,
     limit: usize,
     line: Cell<u64>,
-    overflow: Cell<Option<NodeKey>>,
+    overflow: Cell<bool>,
 }
 fn attribute(attr: html5ever::Attribute) -> NewAttribute {
     NewAttribute {
@@ -59,29 +62,15 @@ impl<D: DocumentMutation> Sink<D> {
         }
     }
     fn overflowed(&self) -> bool {
-        self.overflow.get().is_some()
+        self.overflow.get()
     }
-    /// Count a new node; past the budget, return the placeholder instead.
-    fn admit(&self) -> Option<NodeKey> {
-        if let Some(placeholder) = self.overflow.get() {
-            return Some(placeholder);
+    /// Count a node about to be created; crossing the budget requests a stop.
+    fn count_node(&self) {
+        let created = self.created.get().saturating_add(1);
+        self.created.set(created);
+        if created > self.limit {
+            self.overflow.set(true);
         }
-        self.created.set(self.created.get() + 1);
-        if self.created.get() <= self.limit {
-            return None;
-        }
-        let placeholder = self.mutate(|m| {
-            m.create_element(
-                QualName::new(
-                    None,
-                    html5ever::ns!(html),
-                    html5ever::LocalName::from("template"),
-                ),
-                [],
-            )
-        });
-        self.overflow.set(Some(placeholder));
-        Some(placeholder)
     }
 }
 impl<D: DocumentMutation> TreeSink for Sink<D> {
@@ -121,24 +110,18 @@ impl<D: DocumentMutation> TreeSink for Sink<D> {
         attrs: Vec<html5ever::Attribute>,
         _flags: ElementFlags,
     ) -> NodeKey {
-        if let Some(placeholder) = self.admit() {
-            return placeholder;
-        }
+        self.count_node();
         self.mutate(|m| m.create_element(name, attrs.into_iter().map(attribute)))
     }
     fn create_comment(&self, text: StrTendril) -> NodeKey {
-        if let Some(placeholder) = self.admit() {
-            return placeholder;
-        }
+        self.count_node();
         self.mutate(|m| m.create_comment(&text))
     }
     fn create_pi(&self, _target: StrTendril, _data: StrTendril) -> NodeKey {
+        self.count_node();
         self.mutate(|m| m.create_comment(""))
     }
     fn append(&self, parent: &NodeKey, child: NodeOrText<NodeKey>) {
-        if self.overflowed() {
-            return;
-        }
         let result = self.mutate(|m| match child {
             NodeOrText::AppendNode(id) => m.append_children(*parent, &[id]),
             NodeOrText::AppendText(text) => {
@@ -148,6 +131,7 @@ impl<D: DocumentMutation> TreeSink for Sink<D> {
                 if appended {
                     Ok(())
                 } else {
+                    self.count_node();
                     let id = m.create_text(&text);
                     m.append_children(*parent, &[id])
                 }
@@ -156,9 +140,6 @@ impl<D: DocumentMutation> TreeSink for Sink<D> {
         self.applied(result);
     }
     fn append_before_sibling(&self, sibling: &NodeKey, new_node: NodeOrText<NodeKey>) {
-        if self.overflowed() {
-            return;
-        }
         let result = self.mutate(|m| match new_node {
             NodeOrText::AppendNode(id) => m.insert_before(*sibling, &[id]),
             NodeOrText::AppendText(text) => {
@@ -168,6 +149,7 @@ impl<D: DocumentMutation> TreeSink for Sink<D> {
                 if appended {
                     Ok(())
                 } else {
+                    self.count_node();
                     let id = m.create_text(&text);
                     m.insert_before(*sibling, &[id])
                 }
@@ -209,33 +191,21 @@ impl<D: DocumentMutation> TreeSink for Sink<D> {
     }
     fn set_quirks_mode(&self, _mode: QuirksMode) {}
     fn add_attrs_if_missing(&self, target: &NodeKey, attrs: Vec<html5ever::Attribute>) {
-        if self.overflowed() {
-            return;
-        }
         let result =
             self.mutate(|m| m.add_attributes_if_missing(*target, attrs.into_iter().map(attribute)));
         self.applied(result);
     }
     fn remove_from_parent(&self, target: &NodeKey) {
-        if self.overflowed() {
-            return;
-        }
         let result = self.mutate(|m| m.remove(*target));
         self.applied(result);
     }
     fn reparent_children(&self, old_parent: &NodeKey, new_parent: &NodeKey) {
-        if self.overflowed() {
-            return;
-        }
         let result = self.mutate(|m| m.reparent_children(*old_parent, *new_parent));
         self.applied(result);
     }
     /// A `<style>` element's text arrives after the element is inserted, and each
     /// operation uses its own mutation scope, so reprocess the sheet once it is closed.
     fn pop(&self, node: &NodeKey) {
-        if self.overflowed() {
-            return;
-        }
         let is_style = self
             .document
             .borrow()
@@ -258,9 +228,36 @@ pub(crate) enum Step {
     Finished,
 }
 
+/// The tree builder, plus the node budget: once the sink reports overflow, the unread input is
+/// discarded so the tokenizer runs dry after the current token and is never resumed. (A
+/// script pause would only be legal for tag tokens; draining the queue works for every token
+/// kind, including runs of comments.)
+struct BudgetedBuilder<D: DocumentMutation> {
+    builder: TreeBuilder<NodeKey, Sink<D>>,
+    input: Rc<BufferQueue>,
+}
+impl<D: DocumentMutation> TokenSink for BudgetedBuilder<D> {
+    type Handle = NodeKey;
+    fn process_token(&self, token: Token, line_number: u64) -> TokenSinkResult<NodeKey> {
+        let result = self.builder.process_token(token, line_number);
+        if self.builder.sink.overflowed() {
+            // `Parser::step` reports overflow before it looks at any script result.
+            self.input.replace_with(BufferQueue::default());
+        }
+        result
+    }
+    fn end(&self) {
+        self.builder.end();
+    }
+    fn adjusted_current_node_present_but_not_in_html_namespace(&self) -> bool {
+        self.builder
+            .adjusted_current_node_present_but_not_in_html_namespace()
+    }
+}
+
 pub(crate) struct Parser<D: DocumentMutation = BaseDocument> {
-    tokenizer: Tokenizer<TreeBuilder<NodeKey, Sink<D>>>,
-    input: BufferQueue,
+    tokenizer: Tokenizer<BudgetedBuilder<D>>,
+    input: Rc<BufferQueue>,
     finished: bool,
 }
 impl<D: DocumentMutation> Parser<D> {
@@ -271,7 +268,7 @@ impl<D: DocumentMutation> Parser<D> {
                 created: Cell::new(0),
                 line: Cell::new(1),
                 limit: node_limit,
-                overflow: Cell::new(None),
+                overflow: Cell::new(false),
             },
             TreeBuilderOpts {
                 // Scripts run, so <noscript> content is raw text.
@@ -280,14 +277,25 @@ impl<D: DocumentMutation> Parser<D> {
                 ..Default::default()
             },
         );
-        let tokenizer = Tokenizer::new(builder, TokenizerOpts::default());
-        let input = BufferQueue::default();
+        let input = Rc::new(BufferQueue::default());
+        let tokenizer = Tokenizer::new(
+            BudgetedBuilder {
+                builder,
+                input: input.clone(),
+            },
+            TokenizerOpts::default(),
+        );
         input.push_back(StrTendril::from_slice(html));
         Self {
             tokenizer,
             input,
             finished: false,
         }
+    }
+    /// Nodes the parser has asked the document to create.
+    #[cfg(test)]
+    pub fn created(&self) -> usize {
+        self.tokenizer.sink.builder.sink.created.get()
     }
     pub fn is_finished(&self) -> bool {
         self.finished
@@ -299,7 +307,7 @@ impl<D: DocumentMutation> Parser<D> {
         }
         loop {
             let result = self.tokenizer.feed(&self.input);
-            if self.tokenizer.sink.sink.overflowed() {
+            if self.tokenizer.sink.builder.sink.overflowed() {
                 self.finished = true;
                 return Step::Overflow;
             }
@@ -367,6 +375,7 @@ pub(crate) fn parse_fragment(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dom_model::DocumentView;
     use blitz_dom::DocumentConfig;
     use blitz_html::HtmlDocument;
 
@@ -427,20 +436,256 @@ mod tests {
         assert_eq!(kinds, vec![true, false, true, false, true]);
     }
 
-    /// KNOWN PRE-EXISTING BUG (identical before the mutation contract): once the node budget
-    /// is exceeded inside one chunk, every new node is the same placeholder handle and
-    /// html5ever's open-element bookkeeping underflows ("no current element") while the rest
-    /// of the chunk is processed. Tracked in docs/architecture/dom-mutation-report.md.
+    // ---- node budget -------------------------------------------------------------------
+    // Policy: crossing `Limits::dom_nodes` aborts the parse (`Step::Overflow`); the tokenizer
+    // stops after the token that crossed it, no script runs afterwards, and the document keeps
+    // the valid partial tree built so far. The engine then replaces it with the limit error page.
+
+    /// Everything a budget test needs to know about one parse.
+    struct Outcome {
+        document: Rc<RefCell<BaseDocument>>,
+        parser: Parser,
+        scripts: usize,
+        overflowed: bool,
+    }
+    fn budgeted(html: &str, limit: usize) -> Outcome {
+        let document = Rc::new(RefCell::new(BaseDocument::new(DocumentConfig::default())));
+        let mut parser = Parser::new(document.clone(), html, limit);
+        let (mut scripts, mut overflowed) = (0, false);
+        loop {
+            match parser.step() {
+                Step::Script(_) => scripts += 1,
+                Step::Overflow => {
+                    overflowed = true;
+                    break;
+                }
+                Step::Finished => break,
+            }
+        }
+        Outcome {
+            document,
+            parser,
+            scripts,
+            overflowed,
+        }
+    }
+    fn created(html: &str) -> usize {
+        budgeted(html, usize::MAX).parser.created()
+    }
+    /// Every reachable node is linked consistently: parent/child agree, no node appears twice.
+    fn assert_tree_is_consistent(document: &BaseDocument) -> usize {
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![document.root_node().id];
+        while let Some(id) = stack.pop() {
+            assert!(seen.insert(id), "node {id} is reachable twice");
+            for child in &document.get_node(id).unwrap().children {
+                assert_eq!(
+                    document.get_node(*child).unwrap().parent,
+                    Some(id),
+                    "child {child} does not point back at {id}"
+                );
+                stack.push(*child);
+            }
+        }
+        seen.len()
+    }
+    /// The partial document stays usable: it serialises, queries and takes further mutations.
+    fn assert_document_is_usable(document: &Rc<RefCell<BaseDocument>>) {
+        assert_tree_is_consistent(&document.borrow());
+        // `root_element()` needs an <html> element, which a comment-only prefix never made.
+        if document.borrow().try_root_element().is_some() {
+            let _ = serialized(&document.borrow());
+        }
+        let _ = document.borrow().query_selector_all("p");
+        let mut doc = document.borrow_mut();
+        let root = DocumentView::root(&*doc);
+        let mut mutator = crate::dom_model::mutate(&mut *doc);
+        let name = QualName::new(None, html5ever::ns!(html), html5ever::LocalName::from("i"));
+        let element = mutator.create_element(name, []);
+        mutator.append_children(root, &[element]).unwrap();
+        mutator.finish();
+        assert!(DocumentView::node(&*doc, element).is_some());
+        drop(doc);
+        assert_tree_is_consistent(&document.borrow());
+    }
+    /// One token may need several nodes (implied elements, re-opened formatting), so the
+    /// overshoot is small and bounded; it never scales with the input.
+    const OVERSHOOT: usize = 64;
+
     #[test]
-    #[ignore = "pre-existing: html5ever panics once the node budget is exceeded within one chunk"]
-    fn the_node_budget_stops_the_tree_growing() {
-        let html = format!("<body>{}", "<p>x</p>".repeat(50));
-        let (document, _) = wega_parse(&html, 20);
-        let doc = document.borrow();
-        let count = doc.query_selector_all("p").unwrap().len();
-        assert!(
-            count < 50,
-            "parsing stops growing the tree past the budget ({count})"
+    fn a_document_exactly_at_the_limit_parses_completely() {
+        let html = format!("<body>{}", "<p>x</p>".repeat(10));
+        let total = created(&html);
+        let outcome = budgeted(&html, total);
+        assert!(!outcome.overflowed);
+        assert!(outcome.parser.is_finished());
+        assert_eq!(
+            outcome
+                .document
+                .borrow()
+                .query_selector_all("p")
+                .unwrap()
+                .len(),
+            10
+        );
+        assert_document_is_usable(&outcome.document);
+    }
+
+    #[test]
+    fn a_document_one_node_over_the_limit_overflows() {
+        let html = format!("<body>{}", "<p>x</p>".repeat(10));
+        let total = created(&html);
+        let outcome = budgeted(&html, total - 1);
+        assert!(outcome.overflowed);
+        assert!(outcome.parser.is_finished(), "the parser is not resumable");
+        assert!(outcome.parser.created() <= total);
+        assert_document_is_usable(&outcome.document);
+    }
+
+    #[test]
+    fn the_original_400_paragraphs_with_a_budget_of_100_no_longer_panic() {
+        let html = format!("<body>{}", "<p>x</p>".repeat(400));
+        let outcome = budgeted(&html, 100);
+        assert!(outcome.overflowed);
+        let count = outcome
+            .document
+            .borrow()
+            .query_selector_all("p")
+            .unwrap()
+            .len();
+        assert!(count <= 100, "{count} paragraphs built");
+        assert!(outcome.parser.created() <= 100 + OVERSHOOT);
+        assert_document_is_usable(&outcome.document);
+    }
+
+    #[test]
+    fn a_huge_overflow_stops_early_and_allocates_only_the_budget() {
+        let html = format!("<body>{}", "<p>x</p>".repeat(200_000));
+        let outcome = budgeted(&html, 1_000);
+        assert!(outcome.overflowed);
+        assert!(outcome.parser.created() <= 1_000 + OVERSHOOT);
+        assert!(assert_tree_is_consistent(&outcome.document.borrow()) <= 1_000 + OVERSHOOT + 8);
+    }
+
+    #[test]
+    fn nested_elements_and_reopened_formatting_stay_bounded() {
+        let nested = "<div>".repeat(5_000);
+        let outcome = budgeted(&nested, 50);
+        assert!(outcome.overflowed);
+        assert!(outcome.parser.created() <= 50 + OVERSHOOT);
+        assert_document_is_usable(&outcome.document);
+
+        // Misnested formatting makes the tree builder re-open every active formatting element
+        // when text follows; those nodes are counted and the stop still comes next token.
+        let formatting = format!("<p>{}</p>tail<p>tail", "<b>".repeat(40));
+        for limit in [5, 20, 40, 45, 60, 85] {
+            let outcome = budgeted(&formatting, limit);
+            assert!(
+                outcome.parser.created() <= limit + OVERSHOOT,
+                "limit {limit}: {} nodes",
+                outcome.parser.created()
+            );
+            assert_document_is_usable(&outcome.document);
+        }
+    }
+
+    #[test]
+    fn floods_of_non_tag_tokens_stop_at_the_budget_too() {
+        // Comments and text are not tag tokens, so they cannot use a tokenizer script pause.
+        for html in [
+            "<!--c-->".repeat(100_000),
+            "a<!---->".repeat(100_000),
+            "<?pi?>".repeat(100_000),
+        ] {
+            let outcome = budgeted(&html, 100);
+            assert!(outcome.overflowed);
+            assert!(outcome.parser.created() <= 100 + OVERSHOOT);
+            assert_document_is_usable(&outcome.document);
+        }
+    }
+
+    #[test]
+    fn tables_and_templates_overflow_without_corrupting_the_tree() {
+        let table = format!("<table>{}</table>", "<tr><td>a<td>b".repeat(200));
+        let template = format!(
+            "<template>{}</template><p>after",
+            "<div><span>x</span></div>".repeat(200)
+        );
+        let foster = format!("<table>{}</table>", "text<b>x</b><tr><td>c".repeat(100));
+        for html in [table, template, foster] {
+            for limit in [1, 2, 7, 30, 101] {
+                let outcome = budgeted(&html, limit);
+                assert!(outcome.overflowed, "limit {limit}");
+                assert!(outcome.parser.created() <= limit + OVERSHOOT);
+                assert_document_is_usable(&outcome.document);
+            }
+        }
+    }
+
+    #[test]
+    fn scripts_stop_running_once_the_budget_is_crossed() {
+        // Two scripts fit; the third closes after the budget is already exceeded.
+        let html = "<script>1</script><script>2</script><p>a<p>b<p>c<p>d<script>3</script><script>4</script>";
+        let fits = created("<script>1</script><script>2</script>");
+        let outcome = budgeted(html, fits + 2);
+        assert!(outcome.overflowed);
+        assert_eq!(
+            outcome.scripts, 2,
+            "no script closes after the budget is crossed"
+        );
+        // A script whose own end tag crosses the budget does not run either.
+        let outcome = budgeted("<script>1</script>", 1);
+        assert!(outcome.overflowed);
+        assert_eq!(outcome.scripts, 0);
+        assert_document_is_usable(&outcome.document);
+    }
+
+    #[test]
+    fn chunked_input_and_document_write_respect_the_budget() {
+        let document = Rc::new(RefCell::new(BaseDocument::new(DocumentConfig::default())));
+        let mut parser = Parser::new(document.clone(), "<p>a</p><script>w</script>tail", 40);
+        assert!(matches!(parser.step(), Step::Script(_)));
+        // document.write puts a large chunk at the insertion point.
+        parser.write(&"<p>x</p>".repeat(500));
+        assert!(matches!(parser.step(), Step::Overflow));
+        assert!(parser.is_finished());
+        assert!(parser.created() <= 40 + OVERSHOOT);
+        // Writes after termination are ignored, and stepping again stays terminal.
+        let before = parser.created();
+        parser.write("<p>late</p>");
+        assert!(matches!(parser.step(), Step::Finished));
+        assert_eq!(parser.created(), before);
+        assert_document_is_usable(&document);
+    }
+
+    #[test]
+    fn every_budget_boundary_of_every_construction_case_is_safe() {
+        for html in CASES {
+            let total = created(html);
+            for limit in 0..=total + 1 {
+                let outcome = budgeted(html, limit);
+                assert_eq!(outcome.overflowed, limit < total, "{html} @ {limit}");
+                assert!(outcome.parser.created() <= limit.max(total) + OVERSHOOT);
+                assert_tree_is_consistent(&outcome.document.borrow());
+            }
+        }
+    }
+
+    #[test]
+    fn the_parser_recovers_for_the_next_document() {
+        let first = budgeted(&"<p>x</p>".repeat(100), 10);
+        assert!(first.overflowed);
+        drop(first);
+        let second = budgeted("<!doctype html><title>t</title><body><p>fine</p>", 100);
+        assert!(!second.overflowed);
+        assert_eq!(
+            second
+                .document
+                .borrow()
+                .query_selector_all("p")
+                .unwrap()
+                .len(),
+            1
         );
     }
 }

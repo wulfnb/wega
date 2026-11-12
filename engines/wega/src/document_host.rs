@@ -164,7 +164,7 @@ impl View {
                     self.parsed();
                 }
                 Step::Overflow => {
-                    if self.showing_error {
+                    if self.showing_error || self.building_error {
                         // Even the error page exceeds the budget; show what parsed.
                         self.host.parser = None;
                         break;
@@ -180,7 +180,7 @@ impl View {
     /// After parsing: enforce the node budget and read meta refresh.
     pub(super) fn parsed(&mut self) {
         let count = self.node_count();
-        if count > self.limits.dom_nodes {
+        if count > self.limits.dom_nodes && !(self.showing_error || self.building_error) {
             self.load_error("DOM node limit exceeded; use Servo for this page".into());
             return;
         }
