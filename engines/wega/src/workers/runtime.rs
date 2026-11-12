@@ -4,7 +4,6 @@
 
 use super::transfer::{PortId, SharedPortHub};
 use crate::network::{Destination, FetchContext, Network};
-use deno_core::JsRuntime;
 use serde_json::{Value, json};
 use std::{
     cell::{Cell, RefCell},
@@ -19,6 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+use wega_adapter_v8::{LoopStatus, WorkerRuntime, WorkerTerminator};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -77,7 +77,7 @@ pub(crate) enum Command {
 
 pub(crate) struct Handle {
     commands: mpsc::Sender<Command>,
-    isolate: Arc<Mutex<Option<deno_core::v8::IsolateHandle>>>,
+    isolate: Arc<Mutex<Option<WorkerTerminator>>>,
     stopped: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -142,7 +142,7 @@ impl Handle {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
         {
-            isolate.terminate_execution();
+            isolate.terminate();
         }
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -181,15 +181,9 @@ fn secret() -> String {
 fn run(
     spec: Spec,
     commands: mpsc::Receiver<Command>,
-    isolate: Arc<Mutex<Option<deno_core::v8::IsolateHandle>>>,
+    isolate: Arc<Mutex<Option<WorkerTerminator>>>,
     stopped: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    let executor = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .max_blocking_threads(4)
-        .build()
-        .map_err(|error| error.to_string())?;
-    let _entered = executor.enter();
     let secret = secret();
     let host = Rc::new(WorkerHost {
         kind: spec.kind,
@@ -214,7 +208,7 @@ fn run(
         start: Instant::now(),
     });
     let native: Rc<dyn wega_adapter_v8::NativeHost> = host.clone();
-    let mut runtime = wega_adapter_v8::create_runtime(wega_adapter_v8::RuntimeSpec {
+    let mut runtime = WorkerRuntime::new(wega_adapter_v8::RuntimeSpec {
         kind: wega_adapter_v8::RuntimeKind::Worker,
         url: spec.script_url.clone(),
         network: Arc::new(spec.network.clone()),
@@ -225,32 +219,24 @@ fn run(
         module_limit_bytes: spec.limits.resource_bytes,
     })
     .map_err(|error| format!("Failed to create worker isolate: {error}"))?;
-    let handle = runtime.v8_isolate().thread_safe_handle();
     *isolate
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(handle.clone());
-    let out_of_memory = Arc::new(AtomicBool::new(false));
-    let (flag, terminate) = (out_of_memory.clone(), handle);
-    runtime.add_near_heap_limit_callback(move |current, _initial| {
-        flag.store(true, Ordering::Relaxed);
-        terminate.terminate_execution();
-        current.saturating_mul(2)
-    });
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(runtime.terminator());
     runtime
-        .execute_script("ext:wega_dom/worker-bootstrap.js", BOOTSTRAP)
+        .execute("ext:wega_dom/worker-bootstrap.js", BOOTSTRAP.to_owned())
         .map_err(|error| format!("Worker bootstrap failed: {error}"))?;
     host.sealed.set(true);
-    wega_adapter_v8::configure_secure_context(&mut runtime, &spec.script_url)?;
+    runtime.configure_secure_context(&spec.script_url)?;
 
-    let dispatch = |runtime: &mut JsRuntime, name: &str, payload: &str| {
+    let dispatch = |runtime: &mut WorkerRuntime, name: &str, payload: &str| {
         let source = format!(
             "__wega_worker_dispatch({},{},{})",
             json!(secret),
             json!(name),
             json!(payload)
         );
-        if let Err(error) = runtime.execute_script("wega:worker-event", source) {
-            host.report(&error.to_string());
+        if let Err(error) = runtime.execute("wega:worker-event", source) {
+            host.report(&error);
         }
     };
 
@@ -277,29 +263,22 @@ fn run(
             return Ok(());
         }
     };
-    let mut evaluation = None;
     if spec.module {
-        let loaded =
-            executor.block_on(runtime.load_main_es_module_from_code(&spec.script_url, source));
-        match loaded {
-            Ok(id) => evaluation = Some(Box::pin(runtime.mod_evaluate(id))),
-            Err(error) => {
-                (host.sink)(
-                    "error",
-                    &json!({ "message": error.to_string(), "fatal": true, "load": true })
-                        .to_string(),
-                );
-                return Ok(());
-            }
+        if let Err(error) = runtime.load_main_module(&spec.script_url, source) {
+            (host.sink)(
+                "error",
+                &json!({ "message": error, "fatal": true, "load": true }).to_string(),
+            );
+            return Ok(());
         }
-    } else if let Err(error) = runtime.execute_script(spec.script_url.to_string(), source) {
+    } else if let Err(error) = runtime.execute(spec.script_url.as_str(), source) {
         if stopped.load(Ordering::Acquire) {
             return Ok(());
         }
         (host.sink)(
             "error",
             &json!({
-                "message": error.to_string(),
+                "message": error,
                 "filename": spec.script_url.as_str(),
                 "script": true,
             })
@@ -320,50 +299,27 @@ fn run(
                 Err(mpsc::TryRecvError::Empty) => break,
             }
         }
-        let turn = executor.block_on(async {
-            let work = async {
-                if let Some(pending) = evaluation.as_mut() {
-                    tokio::select! {
-                        biased;
-                        result = pending => (Some(result), Ok(())),
-                        result = runtime.run_event_loop(Default::default()) => (None, result),
-                    }
-                } else {
-                    (None, runtime.run_event_loop(Default::default()).await)
-                }
-            };
-            tokio::time::timeout(tick, work).await
-        });
-        if out_of_memory.load(Ordering::Relaxed) {
+        let turn = runtime.poll(tick);
+        if runtime.exceeded_heap_limit() {
             return Err("Worker exceeded its JavaScript heap limit".into());
         }
-        match turn {
-            Err(_elapsed) => {}
-            Ok((module, looped)) => {
-                if let Some(result) = module {
-                    evaluation = None;
-                    if let Err(error) = result {
-                        host.report(&error.to_string());
-                    }
+        if let Some(Err(error)) = turn.module {
+            host.report(&error);
+        }
+        match turn.status {
+            LoopStatus::Failed(error) => {
+                if stopped.load(Ordering::Acquire) {
+                    break;
                 }
-                match looped {
-                    Err(error) => {
-                        if stopped.load(Ordering::Acquire) {
-                            break;
-                        }
-                        host.report(&error.to_string());
-                    }
-                    // Nothing is pending: sleep until the owner has work.
-                    Ok(()) if evaluation.is_none() => match commands.recv_timeout(tick) {
-                        Ok(Command::Dispatch(name, payload)) => {
-                            dispatch(&mut runtime, &name, &payload)
-                        }
-                        Ok(Command::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    },
-                    Ok(()) => {}
-                }
+                host.report(&error);
             }
+            // Nothing is pending: sleep until the owner has work.
+            LoopStatus::Idle => match commands.recv_timeout(tick) {
+                Ok(Command::Dispatch(name, payload)) => dispatch(&mut runtime, &name, &payload),
+                Ok(Command::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            },
+            LoopStatus::TimedOut | LoopStatus::EvaluatingModule => {}
         }
     }
     Ok(())
