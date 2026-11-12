@@ -14,6 +14,10 @@ const LEGACY_PACKAGES: &[&str] = &[
     "wega",
 ];
 
+/// New crates with a documented, reviewed `unsafe` exception (denied crate-wide, allowed on
+/// one guard type with written safety invariants).
+const DOCUMENTED_UNSAFE: &[&str] = &["wega-adapter-v8"];
+
 /// Independent contract crates: none may depend on another.
 const CONTRACT_CRATES: &[&str] = &[
     "wega-dom",
@@ -217,7 +221,8 @@ pub fn check_graph(graph: &Graph) -> Vec<Finding> {
                 .unwrap_or(false)
         });
         if !forbids {
-            let legacy = LEGACY_PACKAGES.contains(&package.name.as_str());
+            let documented = DOCUMENTED_UNSAFE.contains(&package.name.as_str());
+            let legacy = documented || LEGACY_PACKAGES.contains(&package.name.as_str());
             findings.push(Finding {
                 rule: "ARCH-006 forbid(unsafe_code) by default",
                 severity: if legacy {
@@ -228,7 +233,9 @@ pub fn check_graph(graph: &Graph) -> Vec<Finding> {
                 message: format!(
                     "{} does not declare #![forbid(unsafe_code)]{}",
                     package.name,
-                    if legacy {
+                    if documented {
+                        " (documented unsafe exception)"
+                    } else if legacy {
                         " (legacy crate; documented exception/not yet reviewed)"
                     } else {
                         ""

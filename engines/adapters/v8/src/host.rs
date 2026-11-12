@@ -56,7 +56,7 @@ fn heap_bytes(runtime: &mut JsRuntime) -> usize {
 }
 /// Makes an isolate the thread's current isolate for the guard's lifetime.
 ///
-/// This is the engine's only `unsafe` code. Entering is needed because garbage
+/// This is the adapter's only `unsafe` code (the engine itself has none). Entering is needed because garbage
 /// collection, memory-pressure notifications and the watchdog-guarded script steps
 /// can run native/weak callbacks that allocate V8 handles, which requires a current
 /// isolate; `deno_core::scope!` does not enter the isolate itself.
