@@ -19,6 +19,8 @@
 //!   operation, never a panic on a stale key), and deferred side effects run when the mutator is
 //!   finished or dropped. There is no rollback and no staging.
 #![forbid(unsafe_code)]
+pub mod input;
+
 use html5ever::QualName;
 use url::Url;
 

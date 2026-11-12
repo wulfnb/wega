@@ -3,6 +3,7 @@
 use blitz_dom::{BaseDocument, DocumentMutator, Node, NodeId, node::Attribute, node::NodeData};
 use html5ever::QualName;
 use url::Url;
+use wega_dom::input::{FocusState, HoverChange, InputControl};
 use wega_dom::{
     DocumentMutation, DocumentView, MutationError, Mutator, NewAttribute, NodeKey, NodeKind,
     NodeView,
@@ -146,6 +147,52 @@ impl DocumentMutation for BlitzDocument {
         let id = key.node_id();
         if self.0.get_node(id).is_some() {
             self.0.process_style_element(id);
+        }
+    }
+}
+
+impl FocusState for BlitzDocument {
+    fn focused(&self) -> Option<NodeKey> {
+        // Blitz reports the root element when nothing is focused; that fallback is the
+        // keyboard target, not focus.
+        let focused = self.0.get_focussed_node_id()?;
+        let root = self.0.try_root_element().map(|element| element.id);
+        (Some(focused) != root).then(|| focused.key())
+    }
+    fn keyboard_target(&self) -> Option<NodeKey> {
+        self.0.get_focussed_node_id().map(ToKey::key)
+    }
+    fn hovered(&self) -> Option<NodeKey> {
+        self.0
+            .get_hover_node_id()
+            .filter(|id| self.0.get_node(*id).is_some())
+            .map(ToKey::key)
+    }
+}
+impl InputControl for BlitzDocument {
+    fn set_focus(&mut self, key: NodeKey) -> Result<bool, MutationError> {
+        if self.0.get_node(key.node_id()).is_none() {
+            return Err(MutationError::Stale(key));
+        }
+        Ok(self.0.set_focus_to(key.node_id()))
+    }
+    fn clear_focus(&mut self) {
+        self.0.clear_focus();
+    }
+    fn pointer_moved(&mut self, x: f32, y: f32) -> HoverChange {
+        let previous = self.hovered();
+        self.0.set_hover_to(x, y);
+        HoverChange {
+            previous,
+            current: self.hovered(),
+        }
+    }
+    fn pointer_left(&mut self) -> HoverChange {
+        let previous = self.hovered();
+        self.0.clear_hover();
+        HoverChange {
+            previous,
+            current: self.hovered(),
         }
     }
 }
