@@ -2,7 +2,8 @@
 //! Run: `cargo test -p wega-engine --test hot_path_bench -- --ignored --nocapture`
 //! (debug build; compare numbers only between runs of the same profile and machine state).
 use std::{sync::Arc, time::Instant};
-use wega_engine::{Engine, Limits, NetworkPolicy, Url, View};
+use wega_engine::events::{BlitzKeyEvent, KeyState};
+use wega_engine::{Engine, Limits, NetworkPolicy, Pointer, PointerKind, Url, View};
 
 fn view() -> View {
     let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
@@ -179,4 +180,128 @@ fn hot_paths() {
     println!("BENCH style.setProperty+removeProperty: {style:.2} us/pair");
     println!("BENCH parse 9000-node document (set_html): {parse:.2} ms");
     println!("BENCH create_view+set_html (document lifecycle): {lifecycle:.2} ms/document");
+}
+
+fn key_event() -> BlitzKeyEvent {
+    BlitzKeyEvent {
+        key: "F13"
+            .parse()
+            .unwrap_or(keyboard_types::Key::Character("a".into())),
+        code: keyboard_types::Code::F13,
+        modifiers: keyboard_types::Modifiers::empty(),
+        location: keyboard_types::Location::Standard,
+        is_auto_repeating: false,
+        is_composing: false,
+        state: KeyState::Pressed,
+        text: None,
+    }
+}
+fn input_page(html: &str) -> View {
+    let mut page = view();
+    page.set_html(html).unwrap();
+    page.poll();
+    page.paint(300, 200, 1.0, 1.0, false).unwrap();
+    page
+}
+const FIELDS: &str = "<style>body{margin:0}input{display:block;width:100px;height:30px;margin:0}</style><input id=a><input id=b><div id=plain style='height:40px'>x</div>";
+
+/// Event, input-routing and document-lifecycle paths (Round 8).
+#[test]
+#[ignore]
+fn event_paths() {
+    // Dispatch without and with listeners, and through a deep tree (script side).
+    let mut page = input_page("<div id=host></div>");
+    let no_listeners = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json("(()=>{const e=document.getElementById('host');for(let i=0;i<2000;i++)e.dispatchEvent(new Event('x'));return 1})()").unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 2_000.0
+    });
+    let with_listeners = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json("(()=>{const e=document.getElementById('host');let n=0;if(!globalThis.armed){globalThis.armed=1;for(const t of [e,document.body,document]){t.addEventListener('y',()=>n++,true);t.addEventListener('y',()=>n++)}}for(let i=0;i<1000;i++)e.dispatchEvent(new Event('y',{bubbles:true}));return n})()").unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 1_000.0
+    });
+    let deep = repeat(|| {
+        let mut page = input_page("<div id=top></div>");
+        page.evaluate_json("(()=>{let p=document.getElementById('top');for(let i=0;i<30;i++){const d=document.createElement('div');p.appendChild(d);d.addEventListener('z',()=>{},true);d.addEventListener('z',()=>{});p=d}globalThis.leaf=p;return 1})()").unwrap();
+        let start = Instant::now();
+        page.evaluate_json("(()=>{for(let i=0;i<10;i++)leaf.dispatchEvent(new Event('z',{bubbles:true}));return 1})()").unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 10.0
+    });
+    // Native routing: click targeting, hover targeting, keyboard delivery, focus transitions.
+    let mut fields = input_page(&format!(
+        "{FIELDS}<script>globalThis.n=0;for(const id of ['a','b','plain'])for(const t of ['click','mousedown','mouseup','keydown'])document.getElementById(id).addEventListener(t,()=>n++)</script>"
+    ));
+    let click = repeat(|| {
+        let start = Instant::now();
+        for i in 0..100 {
+            fields.click(20.0, if i % 2 == 0 { 10.0 } else { 100.0 });
+        }
+        start.elapsed().as_secs_f64() * 1e6 / 100.0
+    });
+    let hover = repeat(|| {
+        let start = Instant::now();
+        for i in 0..200 {
+            fields.pointer(Pointer::new(
+                PointerKind::Move,
+                20.0,
+                if i % 2 == 0 { 10.0 } else { 100.0 },
+            ));
+        }
+        start.elapsed().as_secs_f64() * 1e6 / 200.0
+    });
+    fields
+        .evaluate("document.getElementById('a').focus()")
+        .unwrap();
+    let keyboard = repeat(|| {
+        let start = Instant::now();
+        for _ in 0..200 {
+            fields.key(key_event());
+        }
+        start.elapsed().as_secs_f64() * 1e6 / 200.0
+    });
+    let focus_js = repeat(|| {
+        let start = Instant::now();
+        fields.evaluate_json("(()=>{const a=document.getElementById('a'),b=document.getElementById('b');for(let i=0;i<100;i++){a.focus();b.focus()}return 1})()").unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 200.0
+    });
+    let focus_native = repeat(|| {
+        let start = Instant::now();
+        for _ in 0..50 {
+            fields.click(20.0, 10.0);
+            fields.click(20.0, 50.0);
+        }
+        start.elapsed().as_secs_f64() * 1e6 / 100.0
+    });
+    // Document replacement on an existing view, and construction.
+    let mut replace = view();
+    let replacement = repeat(|| {
+        let start = Instant::now();
+        for _ in 0..30 {
+            replace
+                .set_html("<!doctype html><title>x</title><input id=i><p>text</p>")
+                .unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 30.0
+    });
+    let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+    let construction = repeat(|| {
+        let start = Instant::now();
+        for _ in 0..30 {
+            let _ = engine
+                .create_view(Url::parse("https://bench.test/").unwrap())
+                .unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 30.0
+    });
+    println!("BENCH dispatch, no listeners: {no_listeners:.2} us/event");
+    println!("BENCH dispatch, 6 listeners over 3 targets: {with_listeners:.2} us/event");
+    println!("BENCH dispatch through a 30-deep tree, 60 listeners: {deep:.2} us/event");
+    println!("BENCH native click (move+down+up, 2 targets): {click:.2} us/click");
+    println!("BENCH native pointer move between 2 targets: {hover:.2} us/move");
+    println!("BENCH native keydown to the focused input: {keyboard:.2} us/key");
+    println!("BENCH element.focus() transitions (script): {focus_js:.2} us/transition");
+    println!("BENCH native click focus transitions: {focus_native:.2} us/click");
+    println!("BENCH set_html document replacement: {replacement:.2} ms/document");
+    println!("BENCH create_view construction: {construction:.2} ms/view");
 }
