@@ -320,3 +320,16 @@ Full report: [`dom-mutation-report.md`](./dom-mutation-report.md).
 ## 33. Validation and remaining coupling
 
 Full suite **379 passed, 0 failed, 6 ignored**; broker mode, required-worker test, root checks, clippy, fmt, architecture checker pass. Remaining Blitz call sites outside `dom_model`: 514 over 98 methods (from 553/112), direct mutator sites ≈32 (from 62). Round 6 order: finish mutation migration and fragment parsing, fix the budget panic, read-path cleanup, events, then crate extraction (`wega-dom`, `wega-html`, `wega-adapter-blitz`).
+
+## 34. Round 6 (parser safety, DOM migration, crate readiness)
+
+Full report: [`dom-round6-report.md`](./dom-round6-report.md).
+
+- **Security/robustness:** the node-budget panic (shared placeholder handles corrupted html5ever's open-element stack) is fixed by counting only, draining input at the budget and never resuming; a second bug (limit page recursing when it exceeds the budget) is fixed. Enabled regression tests at parser and engine level, in normal and broker modes.
+- **Mutation:** direct `DocumentMutator` sites outside the contract 21 → 0; `clone_node` and `remove_style_property` added.
+- **Fragments:** `innerHTML`/`insertAdjacentHTML`/contextual fragments/template contents go through the generic sink, identical to the old Blitz sink across 23 fragments × 17 contexts; fragments stop at the remaining node budget.
+- **Reads:** `NodeView` gained `attributes`/`child_at`; names, traversal, liveness and attribute reads migrated; Blitz references outside `dom_model` 198 → 149 (same grep).
+- **Crates:** `wega-dom`, `wega-html`, `wega-adapter-blitz` all deferred (orphan rule, engine-owned diagnostics, ~150 remaining Blitz references). Dependency graph unchanged.
+- **Results:** 401 passed, 0 failed, 6 ignored; checker 0 violations; lockfiles unchanged. Benchmarks inconclusive on a loaded machine (see report).
+- **Commits:** `57a195f`, `156b5f2`, `1359d6d`, `f7c4a6b`, `132cdac`, `b585410`, report commit.
+
