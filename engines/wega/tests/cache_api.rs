@@ -195,6 +195,9 @@ fn cache_add_all_fetches_real_responses_atomically_and_reads_without_the_server(
         while !finished.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    // Accepted sockets inherit O_NONBLOCK from the listener on macOS/BSD; without this
+                    // the byte-wise read below sees WouldBlock and answers 404 before the request arrives.
+                    stream.set_nonblocking(false).unwrap();
                     stream
                         .set_read_timeout(Some(Duration::from_secs(2)))
                         .unwrap();
