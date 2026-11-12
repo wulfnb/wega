@@ -1,6 +1,6 @@
 # tools/architecture-check
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Wave 1, development tool, report-only)**
 
 ## Purpose
 
@@ -25,4 +25,15 @@ Development-only tool. `cargo_metadata` is permitted as a dependency here and in
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+IMPLEMENTED (Wave 1). Package `wega-architecture-check` is a member of the standalone tools workspace (`engines/tools/Cargo.toml`, own `Cargo.lock`), which is excluded from the `engines` workspace. See `docs/architecture/module-map.md`.
+
+## What it does
+
+Report-only checker for the rules in `docs/architecture/module-map.md`: dependency cycles, forbidden edges, independent contract crates, dev-tool isolation, `forbid(unsafe_code)` and third-party-engine confinement.
+
+## Usage
+
+```sh
+cargo run --manifest-path engines/tools/Cargo.toml -p wega-architecture-check -- --manifest-path engines/Cargo.toml
+```
+Repeat `--manifest-path` for several workspaces; add `--output FILE`. Exit status is always 0 on findings (report-only).

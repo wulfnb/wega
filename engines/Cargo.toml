@@ -1,6 +1,6 @@
 [workspace]
 members = ["wega", "network", "platform", "protocol"]
-exclude = ["vendor", "v8-spike"]
+exclude = ["vendor", "v8-spike", "tools"]
 resolver = "2"
 
 [profile.dev]

@@ -1,6 +1,6 @@
 # tools/dependency-graph
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Wave 1, development tool, report-only)**
 
 ## Purpose
 
@@ -25,4 +25,15 @@ Development-only tool; `cargo_metadata` permitted. Never a dependency of product
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+IMPLEMENTED (Wave 1). Package `wega-dependency-graph` is a member of the standalone tools workspace (`engines/tools/Cargo.toml`, own `Cargo.lock`), which is excluded from the `engines` workspace. See `docs/architecture/module-map.md`.
+
+## What it does
+
+Prints the workspace-internal dependency graph (text, Mermaid or JSON) from `cargo metadata --no-deps`, plus cross-workspace path dependencies and direct third-party engine dependencies.
+
+## Usage
+
+```sh
+cargo run --manifest-path engines/tools/Cargo.toml -p wega-dependency-graph -- --manifest-path engines/Cargo.toml
+```
+Add `--format mermaid|json` or `--output FILE`.

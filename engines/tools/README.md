@@ -2,7 +2,9 @@
 
 **Status: PLANNED — NOT IMPLEMENTED**
 
-Group directory. Planned leaf modules:
+Group directory. `dependency-graph` and `architecture-check` are implemented as members of the standalone tools workspace (`engines/tools/Cargo.toml`, own `Cargo.lock`, excluded from the `engines` workspace); the benchmark leaves are still planned.
+
+Leaf modules:
 
 - [`dependency-graph`](./dependency-graph/README.md) — Generate and visualize the crate dependency graph.
 - [`build-benchmark`](./build-benchmark/README.md) — Measure and track build times.
