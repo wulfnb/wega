@@ -1,0 +1,12 @@
+[package]
+name = "wega-security"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Wega's security policy primitives: Content Security Policy and trustworthy-origin checks (extracted from wega-engine)"
+
+[dependencies]
+url = "2.5"
+sha2 = "0.11"

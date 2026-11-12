@@ -6779,6 +6779,7 @@ dependencies = [
  "wega-network",
  "wega-platform",
  "wega-protocol",
+ "wega-security",
 ]
 
 [[package]]
@@ -6820,6 +6821,14 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "url",
+]
+
+[[package]]
+name = "wega-security"
+version = "0.1.0"
+dependencies = [
+ "sha2 0.11.1",
  "url",
 ]
 

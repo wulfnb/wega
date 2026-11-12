@@ -11,6 +11,7 @@ description = "Wega's experimental Blitz-based page engine"
 wega-protocol = { path = "../protocol" }
 deno_core = "=0.413.0"
 wega-network = {path="../network"}
+wega-security = { path = "../services/security" }
 wega-platform = {path="../platform"}
 deno_error = "=0.7.1"
 tokio = {version="1",features=["rt","time","net","sync"]}

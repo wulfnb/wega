@@ -1,6 +1,6 @@
 # services/security
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Wave 1) — package `wega-security`**
 
 ## Purpose
 
@@ -21,4 +21,4 @@ Security policy enforcement.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+IMPLEMENTED. Member of the `engines` workspace. Contains the Content Security Policy implementation (moved from `engines/wega/src/csp.rs`; `Csp` made `pub`) and the pure `trustworthy()` check (moved from `security_context.rs`). V8 secure-context configuration stays in `wega-engine`; CORS stays in `wega-network`. The engine keeps `crate::csp::Csp` and `crate::security_context::trustworthy` as re-exports. See `docs/architecture/module-map.md`.
