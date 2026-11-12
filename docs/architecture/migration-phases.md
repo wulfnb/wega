@@ -1,6 +1,6 @@
 # Migration Phases
 
-**Status: Phase 1 and Phase 2 Wave 1 are complete.** Phase 1: commit `d168b71`. Wave 1: see [`wave1-implementation-report.md`](./wave1-implementation-report.md). Plan: [`crate-initialization-plan.md`](./crate-initialization-plan.md). Waves 2 and 3 have not started.
+**Status: Phase 1 and Phase 2 Wave 1 are complete.** Phase 1: commit `d168b71`. Wave 1: see [`wave1-implementation-report.md`](./wave1-implementation-report.md). Plan: [`crate-initialization-plan.md`](./crate-initialization-plan.md). Wave 2 gates were evaluated in [`wave2-gate-report.md`](./wave2-gate-report.md) (only `wega-adapter-skia` approved, limited to raster); Wave 2 implementation and Wave 3 have not started.
 
 ## Phase 1 — Directory structure and documentation (complete)
 

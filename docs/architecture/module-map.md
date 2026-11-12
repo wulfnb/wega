@@ -1,6 +1,6 @@
 # Wega Engine Module Map
 
-**Status: PLANNED — NOT IMPLEMENTED** (Phase 1 structure; updated for Phase 2 decisions). 72 planned leaf modules. Per-module classification, package names and migration sources: [`crate-initialization-plan.md`](./crate-initialization-plan.md).
+**Status: PARTIALLY IMPLEMENTED** (Wave 1 crates exist; all other leaves are placeholders; Wave 2 decisions in [`wave2-gate-report.md`](./wave2-gate-report.md)). 72 planned leaf modules. Per-module classification, package names and migration sources: [`crate-initialization-plan.md`](./crate-initialization-plan.md).
 
 This map describes the modular layout of the Wega browser engine. **Implemented (Wave 1):** `services/cookies` (`wega-cookies`), `services/storage` (`wega-storage`), `services/security` (`wega-security`), `services/permissions` (`wega-permissions`) are members of the `engines` workspace; `tools/dependency-graph` and `tools/architecture-check` are members of the standalone `engines/tools` workspace. **Every other leaf is still a documentation-only placeholder** with no `Cargo.toml` or Rust source and is not a workspace member.
 

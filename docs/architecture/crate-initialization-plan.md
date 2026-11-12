@@ -1,6 +1,6 @@
 # Crate Initialization Plan (Phase 2 — finalized)
 
-**Status: APPROVED PLAN — NOTHING IMPLEMENTED.** No crate, Cargo manifest, workspace member or source move results from this document. It supersedes the draft of the same name, applies the ten review decisions, corrects the dependency graph, and adds the Phase 2 execution plan.
+**Status: Wave 1 IMPLEMENTED; Waves 2–3 NOT STARTED.** Wave 2 scope has been re-evaluated by the gates in [`wave2-gate-report.md`](./wave2-gate-report.md), which supersedes §7.3 where they differ (only `wega-adapter-skia` is approved as a limited raster extraction; the other Wave 2 packages are deferred). This document applies the ten review decisions, the corrected dependency graph and the Phase 2 execution plan.
 
 **Wave 1 implementation status: COMPLETE** — see [`wave1-implementation-report.md`](./wave1-implementation-report.md). Corrections discovered during implementation:
 
@@ -256,9 +256,6 @@ graph TD
   network --> protocol
   network --> cookies
   network --> storage
-  cookies --> protocol
-  storage --> protocol
-  security --> protocol
   permissions --> protocol
   permissions --> network
 
@@ -298,6 +295,7 @@ Notes:
 - `html`, `dom`, `css`, `layout`, `dlist` have **no arrows between them**.
 - `jsrt` currently has an unavoidable question: `NativeHost` names `wega_network::Request/Response`. Gate G2-JS must choose between (a) `wega-js-runtime → wega-network` or (b) host-callback signatures using plain types; the graph above assumes (b). This is the main unresolved boundary in Wave 2.
 - `permissions → network` is deliberate and temporary (§3.3 item 5).
+- As implemented in Wave 1, `wega-cookies`, `wega-storage` and `wega-security` have **no** workspace dependencies (the drafted `→ wega-protocol` edges were not needed and were removed from this graph).
 - Dotted line = build-time code generation, not a Cargo dependency.
 - `wega-storage` does **not** depend on `wega-platform` (draft did); nothing in the storage sources needs it.
 
