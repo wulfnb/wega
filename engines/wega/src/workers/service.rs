@@ -105,6 +105,11 @@ enum Outcome {
     Error(String),
 }
 
+struct PendingFetch {
+    worker: u64,
+    reply: mpsc::Sender<Outcome>,
+}
+
 /// What is written to disk for one activated registration.
 #[derive(Serialize, Deserialize)]
 struct Stored {
@@ -120,7 +125,9 @@ struct Stored {
 struct Inner {
     registrations: HashMap<String, Registration>,
     jobs: HashMap<u64, Job>,
-    fetches: HashMap<u64, mpsc::Sender<Outcome>>,
+    fetches: HashMap<u64, PendingFetch>,
+    /// Replaced workers finish fetch events already dispatched to them.
+    draining: HashMap<u64, Handle>,
     clients: HashMap<String, Client>,
     retired: Vec<(String, u64, Instant)>,
     restored: HashSet<String>,
@@ -143,7 +150,24 @@ impl Inner {
         worker.state = ServiceWorkerState::Redundant;
         self.retired
             .push((origin.to_owned(), worker.id, Instant::now()));
-        reap(worker.handle.take());
+        if self.fetches.values().any(|fetch| fetch.worker == worker.id) {
+            if let Some(handle) = worker.handle.take() {
+                self.draining.insert(worker.id, handle);
+            }
+        } else {
+            reap(worker.handle.take());
+        }
+    }
+    fn take_fetch(&mut self, id: u64) -> Option<mpsc::Sender<Outcome>> {
+        let fetch = self.fetches.remove(&id)?;
+        if !self
+            .fetches
+            .values()
+            .any(|pending| pending.worker == fetch.worker)
+        {
+            reap(self.draining.remove(&fetch.worker));
+        }
+        Some(fetch.reply)
     }
     fn live_clients(&self, scope: &str) -> bool {
         self.clients.values().any(|client| {
@@ -437,10 +461,17 @@ impl ServiceWorkerHub {
             let mut inner = self.lock();
             match kind {
                 "swFetch" => {
-                    let Some(reply) = detail["id"]
-                        .as_u64()
-                        .and_then(|id| inner.fetches.remove(&id))
-                    else {
+                    let Some(fetch_id) = detail["id"].as_u64() else {
+                        return;
+                    };
+                    if !inner
+                        .fetches
+                        .get(&fetch_id)
+                        .is_some_and(|fetch| fetch.worker == id)
+                    {
+                        return;
+                    }
+                    let Some(reply) = inner.take_fetch(fetch_id) else {
                         return;
                     };
                     let outcome = match detail["kind"].as_str() {
@@ -481,6 +512,20 @@ impl ServiceWorkerHub {
                 }
                 "swUpdate" => follow_up = Some("update"),
                 "swUnregister" => follow_up = Some("unregister"),
+                "closed" => {
+                    let pending: Vec<_> = inner
+                        .fetches
+                        .iter()
+                        .filter_map(|(fetch_id, fetch)| (fetch.worker == id).then_some(*fetch_id))
+                        .collect();
+                    for fetch_id in pending {
+                        if let Some(reply) = inner.take_fetch(fetch_id) {
+                            let _ = reply.send(Outcome::Error(
+                                "Service worker closed before answering the fetch event".into(),
+                            ));
+                        }
+                    }
+                }
                 _ => {}
             }
             let Some(registration) = inner.registrations.get_mut(scope) else {
@@ -1056,13 +1101,9 @@ impl ServiceWorkerHub {
         let id = {
             let mut inner = self.lock();
             let id = inner.id();
-            let handle = inner
-                .registrations
-                .get(&scope)?
-                .active
-                .as_ref()?
-                .handle
-                .as_ref()?;
+            let worker = inner.registrations.get(&scope)?.active.as_ref()?;
+            let worker_id = worker.id;
+            let handle = worker.handle.as_ref()?;
             use base64::Engine;
             handle
                 .dispatch(
@@ -1078,7 +1119,13 @@ impl ServiceWorkerHub {
                     .to_string(),
                 )
                 .ok()?;
-            inner.fetches.insert(id, sender);
+            inner.fetches.insert(
+                id,
+                PendingFetch {
+                    worker: worker_id,
+                    reply: sender,
+                },
+            );
             id
         };
         match receiver.recv_timeout(Duration::from_secs(30)) {
@@ -1086,7 +1133,7 @@ impl ServiceWorkerHub {
             Ok(Outcome::Fallback) => None,
             Ok(Outcome::Error(error)) => Some(Err(error)),
             Err(_) => {
-                self.lock().fetches.remove(&id);
+                self.lock().take_fetch(id);
                 Some(Err("Service worker did not answer the fetch event".into()))
             }
         }

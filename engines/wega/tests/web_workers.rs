@@ -474,6 +474,63 @@ fn service_worker_registration_rejects_bad_scripts_and_scopes() {
 }
 
 #[test]
+fn service_worker_update_keeps_in_flight_fetches_alive() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let version = Arc::new(Mutex::new(String::from("v1")));
+    let release = Arc::new(AtomicBool::new(false));
+    let (current, gate) = (version.clone(), release.clone());
+    let server = Server::new(move |seen| match seen.path.as_str() {
+        "/app/sw.js" => script(&format!(
+            r#"const version = '{}';
+            oninstall = () => skipWaiting();
+            onactivate = event => event.waitUntil(clients.claim());
+            onfetch = event => {{
+                const path = new URL(event.request.url).pathname;
+                if (path === '/app/slow')
+                    event.respondWith(fetch('/gate').then(() => new Response(version)));
+                else if (path === '/app/generated')
+                    event.respondWith(new Response(version));
+            }};"#,
+            current.lock().unwrap()
+        )),
+        "/gate" => {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !gate.load(Ordering::Acquire) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            Reply::ok("text/plain", b"released".to_vec())
+        }
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let engine = engine(None, online());
+    let mut view = page(&engine, &server.url("localhost", "/app/index.html"));
+    ok(&mut view, &format!("{ACTIVATE} return true;"));
+    view.evaluate("globalThis.inflight = fetch('/app/slow').then(response => response.text());")
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while server.requests("/gate").is_empty() {
+        view.poll();
+        assert!(
+            Instant::now() < deadline,
+            "old worker never began its fetch"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    *version.lock().unwrap() = "v2".into();
+    let updated = ok(
+        &mut view,
+        "const registration=await navigator.serviceWorker.getRegistration(); const old=registration.active;
+         await registration.update();
+         while(registration.active===old || registration.active.state!=='activated') await new Promise(r=>setTimeout(r,10));
+         return await (await fetch('/app/generated')).text();",
+    );
+    release.store(true, Ordering::Release);
+    assert_eq!(updated, "v2");
+    assert_eq!(ok(&mut view, "return await inflight;"), "v1");
+}
+
+#[test]
 fn service_worker_serves_offline_survives_restart_updates_and_unregisters() {
     let dir = tempfile::tempdir().unwrap();
     let version = Arc::new(Mutex::new(String::from("v1")));
