@@ -224,6 +224,11 @@
     "compositionend",
     "change",
   ]);
+  // Events the user agent dispatches for real input are trusted; events created by script
+  // (`new Event`, `el.click()`, `dispatchEvent`) stay untrusted. Deno keeps the flag private
+  // and exports a setter.
+  const markTrusted =
+    typeof __wega_web === "object" ? __wega_web.event?.setIsTrusted : null;
   Object.defineProperty(globalThis, "__wega_native_event", {
     value: (type, id, options = {}) => {
       const target = __wega_node(id);
@@ -252,6 +257,7 @@
                   ? new FocusEvent(type, init)
                   : new Event(type, init);
       if (type.startsWith("composition")) event.data = options.data || "";
+      markTrusted?.(event, true);
       return !target.dispatchEvent(event);
     },
   });
