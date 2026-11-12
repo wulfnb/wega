@@ -19,6 +19,10 @@ The wrapped third-party engine plus the Wega-owned trait it implements. Specific
 
 Leaking third-party types into non-adapter crates; reverse dependencies from the wrapped library into Wega internals.
 
+## Phase 2 decision
+
+Planned package `wega-adapter-v8` (`wega-adapter-*` naming).
+
 ## Current status
 
 PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.

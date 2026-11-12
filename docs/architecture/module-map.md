@@ -1,6 +1,6 @@
 # Wega Engine Module Map
 
-**Status: PLANNED — NOT IMPLEMENTED** (Phase 1: directory structure and documentation only)
+**Status: PLANNED — NOT IMPLEMENTED** (Phase 1 structure; updated for Phase 2 decisions). 72 planned leaf modules. Per-module classification, package names and migration sources: [`crate-initialization-plan.md`](./crate-initialization-plan.md).
 
 This map describes the planned modular layout of the Wega browser engine. Nothing listed here under a new directory exists as code yet. No new directory is a Cargo workspace member, and none contains a `Cargo.toml` or Rust source.
 
@@ -69,11 +69,28 @@ engines/
 │   ├── core/
 │   ├── fetch/
 │   ├── timers/
+│   ├── canvas/
+│   ├── webgl/
+│   ├── media/
+│   ├── storage/
+│   ├── workers/
+├── runtime/
+│   ├── dom-bindings/
+│   ├── events/
+│   ├── bindings/
+│   ├── webidl/
+├── webapi/
+│   ├── core/
+│   ├── fetch/
+│   ├── timers/
+│   ├── canvas/
+│   ├── webgl/
+│   ├── media/
 │   ├── storage/
 │   ├── workers/
 ├── services/
 │   ├── http/
-│   ├── cache/
+│   ├── storage/
 │   ├── cookies/
 │   ├── downloads/
 │   ├── security/
@@ -219,6 +236,9 @@ Avoid: `graphics/*` internals, `layout/*` internals, `adapters/*` directly.
 | [`core`](../../engines/webapi/core/README.md) | Shared Web API infrastructure. |
 | [`fetch`](../../engines/webapi/fetch/README.md) | Fetch API, Request/Response and CORS semantics. |
 | [`timers`](../../engines/webapi/timers/README.md) | Timers and scheduling APIs. |
+| [`canvas`](../../engines/webapi/canvas/README.md) | Canvas 2D API semantics (Skia stays in `adapters/skia`). |
+| [`webgl`](../../engines/webapi/webgl/README.md) | WebGL API semantics and resources. |
+| [`media`](../../engines/webapi/media/README.md) | Media API semantics. |
 | [`storage`](../../engines/webapi/storage/README.md) | Web Storage, IndexedDB and Cache API surfaces. |
 | [`workers`](../../engines/webapi/workers/README.md) | Dedicated, shared and service worker APIs. |
 
@@ -231,7 +251,7 @@ Avoid: `dom/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`.
 | Module | Purpose |
 |---|---|
 | [`http`](../../engines/services/http/README.md) | HTTP client service. |
-| [`cache`](../../engines/services/cache/README.md) | HTTP and resource cache service. |
+| [`storage`](../../engines/services/storage/README.md) | Persistent origin storage (Cache Storage, Cache API, IndexedDB). HTTP caching stays in `http`. |
 | [`cookies`](../../engines/services/cookies/README.md) | Cookie jar and cookie policy. |
 | [`downloads`](../../engines/services/downloads/README.md) | Download management. |
 | [`security`](../../engines/services/security/README.md) | Security policy enforcement. |
@@ -293,22 +313,26 @@ Avoid: Being depended on by production engine crates.
 | [`memory-benchmark`](../../engines/tools/memory-benchmark/README.md) | Measure and track memory use. |
 | [`architecture-check`](../../engines/tools/architecture-check/README.md) | Enforce architectural dependency rules. |
 
-## Layering rules (target)
+## Layering rules (target, updated for Phase 2)
 
-1. `foundation` depends on nothing else in the engine.
-2. `dom`, `html`, `css`, `layout`, `graphics` form a one-directional pipeline: `html → dom → css → layout → graphics`; later stages never import earlier-stage internals in reverse.
-3. `javascript` and `webapi` sit above `dom` and reach services only through traits.
-4. `services` are independent of the rendering pipeline.
-5. `runtime` orchestrates everything and is depended on by nothing in the lower layers.
-6. Third-party engines (Blitz, Stylo, Skia, V8) are only referenced from `adapters/*`.
-7. `tests` and `tools` are never dependencies of production crates.
+1. Only `wega-engine` (`runtime/orchestration`) may depend on adapters (composition root).
+2. `html`, `dom`, `css`, `layout` and `graphics/display-list` are **independent contracts** with no dependencies on one another. Integration happens in `adapters/*` (e.g. a Stylo adapter depends on both style and DOM contracts). The earlier draft chain `html → dom → css → layout → graphics` is withdrawn.
+3. A contract crate exists only if it passes its validation gate against existing code; otherwise the module stays documentation-only.
+4. Third-party engines (Blitz, Stylo, Skia, V8) appear only in `adapters/*`. `wega-adapter-skia` is the sole Skia backend owner; Canvas API semantics live in `webapi/canvas`.
+5. `services/*` are independent of the rendering pipeline. `services/storage` does not depend on `services/http`; HTTP caching stays in `services/http`.
+6. `wega-platform` is the OS process/IPC implementation and `wega-protocol` the wire contract; `runtime/process` is documentation-only.
+7. `foundation/*` crates are deferred until stable interfaces have multiple real consumers.
+8. New crates use `wega-adapter-*` / `wega-js-*` naming where applicable and default to `#![forbid(unsafe_code)]`.
+9. `tests` and `tools` are never dependencies of production crates; `cargo_metadata` is permitted only in development tools.
 
-These rules are intended to be enforced later by `engines/tools/architecture-check`.
+These rules are intended to be enforced by `engines/tools/architecture-check` (report-only until Phase 9).
 
 ## Naming notes
 
-- Planned `engines/tests` and `engines/tools` are distinct from the existing root `tests/` and `tools/` directories.
-- Planned `services/http` overlaps conceptually with the existing `engines/network`; the latter is expected to be consumed, not replaced.
-- Planned `runtime/process` overlaps with `engines/protocol` and `engines/platform`.
-- Planned `engines/adapters/*` overlaps with code under `engines/vendor/*`.
-- `docs/architecture.md` (existing file) coexists with the new `docs/architecture/` directory.
+- `engines/tests` and `engines/tools` are distinct from the root `tests/` and `tools/` directories.
+- `services/http` **is** the existing `engines/network` crate (`wega-network`).
+- `runtime/process` is documentation-only; `engines/platform` and `engines/protocol` keep their roles.
+- `adapters/*` hold Wega-owned wrapper code; `engines/vendor/*` holds patched third-party source and is never a migration target.
+- `graphics/raster-skia` is documentation-only and merged into `adapters/skia`.
+- `javascript/webidl` keeps its existing location (`tools/webidl`).
+- `docs/architecture.md` (existing file) coexists with the `docs/architecture/` directory.

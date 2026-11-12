@@ -19,6 +19,10 @@ Process model and sandbox supervision.
 
 Being imported by lower-level groups (`dom`, `css`, `layout`, `graphics`, `html`).
 
+## Phase 2 decision
+
+Documentation-only. `wega-platform` remains the OS process, sandbox, supervision and IPC implementation and `wega-protocol` the wire contract. No `wega-process` crate is planned unless a policy layer is later justified by real code.
+
 ## Current status
 
 PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.

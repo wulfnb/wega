@@ -13,7 +13,7 @@ Web Storage, IndexedDB and Cache API surfaces.
 
 ## Expected dependencies
 
-`foundation/*`, `javascript/bindings`, `services/*` through traits. Specifically: `webapi/core`, `services/cache`.
+`foundation/*`, `javascript/bindings`, `services/*` through traits. Specifically: `webapi/core`, `services/storage`.
 
 ## Dependencies to avoid
 

@@ -1,58 +1,49 @@
 # Migration Phases
 
-**Status: PLANNED — NOT IMPLEMENTED.** Only Phase 1 is in progress or complete. Later phases are proposals and may change.
+**Status: PLANNED.** Phase 1 is complete (commit `d168b71`). Phase 2 planning is finalized in [`crate-initialization-plan.md`](./crate-initialization-plan.md); no Phase 2 implementation has started.
 
-## Phase 1 — Directory structure and documentation (this change)
+## Phase 1 — Directory structure and documentation (complete)
 
-- Create planned directories under `engines/` with README placeholders.
-- Write the module map and this document.
-- No Cargo manifests, Rust source, workspace members, dependency versions, build profiles or CI are touched.
+Placeholder directories and READMEs under `engines/`, module map, migration phases. No manifests, source or CI changes.
 
-Exit criteria: all directories documented; `cargo metadata --no-deps` unchanged; existing manifests and sources unmodified.
+## Phase 2 — Crate boundaries and extractions (planned, in three waves)
 
-## Phase 2 — Architecture tooling
+Rules for every step: one reviewable commit; new crates join the `engines` workspace only; compatibility re-exports at old paths; `#![forbid(unsafe_code)]` by default; no dependency version changes; CI-equivalent tests green; revert-by-commit rollback.
 
-- Implement `tools/dependency-graph` and `tools/architecture-check` against the current crates.
-- Record a baseline of current dependency edges and build/memory benchmarks.
+### Wave 1 — tooling and clean service seams
+1. Architecture tooling (`wega-dependency-graph`, `wega-architecture-check`; report-only; `cargo_metadata` allowed).
+2. `wega-cookies` (from `network/src/cookies.rs`).
+3. `wega-storage` (Cache Storage, Cache API, IndexedDB from `wega-network`).
+4. `wega-security` (CSP and pure secure-context logic).
+5. `wega-permissions` (from `engines/wega/src/permissions`).
 
-Exit criteria: baseline graph and layering report committed; checks run in report-only mode.
+No gate beyond tests; seams were verified in the plan.
 
-## Phase 3 — Foundation extraction
+### Wave 2 — runtime, adapters, DOM/HTML contracts, bindings, workers
+Order: `wega-js-runtime` → `wega-adapter-v8` → `wega-adapter-skia` → `wega-dom` → `wega-html` → `wega-js-bindings` → `wega-workers`.
 
-- Create real crates for `foundation/*` and add them to the workspace.
-- Move shared types, IDs, errors, geometry and config out of `engines/wega` with re-exports to keep call sites stable.
+**Entry requires architecture gates G2-JS, G2-SKIA, G2-DOM and G2-ARCH** (inventory of real usage, no speculative abstractions, clean architecture-check report). A failed gate keeps the module documentation-only.
 
-Exit criteria: behavior unchanged; tests green.
+### Wave 3 — style, layout, display list, Blitz/Stylo adapters (conditional)
+`wega-css`, `wega-layout`, `wega-display-list` are created only if gates G3-CSS, G3-LAYOUT, G3-DL pass (independent of each other; integration through adapters). Then `wega-adapter-stylo` and `wega-adapter-blitz`, validated by parity gate G3-PARITY and G3-ARCH.
 
-## Phase 4 — Services and runtime boundaries
+## Phase 3 — Foundation extraction (deferred)
 
-- Introduce traits for `services/*` over `engines/network` and `engines/platform`.
-- Extract `runtime/*` (tab manager, process, scheduler, memory) behind these traits.
+Create `foundation/*` crates only when a stable shared interface has multiple real consumers (decision 4). May be empty.
 
-## Phase 5 — Adapter boundaries
+## Phase 4 — Services and runtime boundaries (as needed)
 
-- Define Wega-owned traits for DOM, style, layout, raster and JS runtime.
-- Wrap Blitz, Stylo, Skia and V8 in `adapters/*`; stop leaking their types into other crates.
+Narrow traits for navigation, history, downloads, bookmarks, tab management once Servo-coupled root code is retired or abstracted. `runtime/process` stays documentation-only; `wega-platform`/`wega-protocol` remain the implementation.
 
-## Phase 6 — DOM, HTML and JavaScript/Web API split
+## Phase 5 — Replace Blitz components incrementally
 
-- Extract `dom/*`, `html/*`, `javascript/*` and `webapi/*` with WebIDL generation in `javascript/webidl`.
+Implement Wega-owned components per subsystem behind the adapter boundaries; retire a Blitz-backed path only after parity and performance criteria are met (`tests/compatibility`, `tests/performance`).
 
-## Phase 7 — CSS, layout and graphics split
+## Phase 6 — Enforcement and cleanup
 
-- Extract `css/*`, `layout/*` and `graphics/*` behind the adapter traits, with invalidation and caching leaves.
-
-## Phase 8 — Replace Blitz components incrementally
-
-- Implement Wega-owned components per subsystem, switchable against the adapter, validated by `tests/compatibility` and `tests/performance`.
-- Retire each Blitz-backed adapter only after parity and performance criteria are met.
-
-## Phase 9 — Enforcement and cleanup
-
-- Turn `architecture-check` into a blocking CI gate.
-- Remove superseded code and update documentation.
+Make `architecture-check` blocking in CI; remove compatibility re-export shims and superseded duplicates (e.g. an unused second `public_suffix_list.dat`); update documentation.
 
 ## General rules
 
-- One phase per reviewable change set; each keeps the build and tests green.
 - No phase changes dependency versions or build profiles unless explicitly scoped.
+- `engines/vendor/*` is never a migration source or destination.

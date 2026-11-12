@@ -19,6 +19,10 @@ Engine-neutral JavaScript runtime abstraction.
 
 Direct use of V8 types outside `adapters/v8`, `graphics/*`, `services/*`. Also: V8 types in the public API.
 
+## Phase 2 decision
+
+Planned package `wega-js-runtime` (`wega-js-*` naming). Must be validated against `v8.rs`/`script.rs` before creation.
+
 ## Current status
 
 PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.

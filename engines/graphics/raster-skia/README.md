@@ -19,6 +19,10 @@ Skia-based rasterization of display lists.
 
 `dom/*`, `css/*`, `javascript/*`, `services/*`, direct Skia/GPU types outside the dedicated leaves. Also: Layout, DOM or CSS types.
 
+## Phase 2 decision
+
+Documentation-only and merged into `adapters/skia` (`wega-adapter-skia`), which is the sole Skia backend owner. Canvas API semantics live in `webapi/canvas`, not here.
+
 ## Current status
 
 PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
