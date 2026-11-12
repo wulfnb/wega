@@ -69,8 +69,18 @@ impl<'a> NodeView<'a> for &'a Node {
         self.parent.map(NodeKey::from)
     }
     #[inline]
-    fn children(self) -> impl ExactSizeIterator<Item = NodeKey> + 'a {
+    fn children(self) -> impl ExactSizeIterator<Item = NodeKey> + DoubleEndedIterator + 'a {
         self.children.iter().copied().map(NodeKey::from)
+    }
+    #[inline]
+    fn child_at(self, index: usize) -> Option<NodeKey> {
+        self.children.get(index).copied().map(NodeKey::from)
+    }
+    fn attributes(self) -> impl Iterator<Item = (&'a QualName, &'a str)> + 'a {
+        self.element_data()
+            .into_iter()
+            .flat_map(|element| element.attrs.iter())
+            .map(|attr| (&attr.name, &*attr.value))
     }
 }
 

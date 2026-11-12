@@ -1613,13 +1613,15 @@ impl View {
         let (old_chain, new_chain) = {
             let doc = self.document.borrow();
             let chain = |id: Option<NodeId>| {
-                id.filter(|id| doc.get_node(*id).is_some())
+                id.filter(|id| crate::dom_model::DocumentView::node(&*doc, (*id).into()).is_some())
                     .map(|id| doc.node_chain(id))
                     .unwrap_or_default()
             };
             (chain(previous), chain(hovered))
         };
-        if let Some(target) = previous.filter(|id| self.document.borrow().get_node(*id).is_some()) {
+        if let Some(target) = previous.filter(|id| {
+            crate::dom_model::DocumentView::node(&*self.document.borrow(), (*id).into()).is_some()
+        }) {
             self.dispatch_pointer("pointerout", target, pointer, hovered);
             self.dispatch_pointer("mouseout", target, pointer, hovered);
             for node in old_chain.iter().filter(|n| !new_chain.contains(n)) {

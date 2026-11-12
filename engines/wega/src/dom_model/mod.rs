@@ -76,7 +76,13 @@ pub trait NodeView<'a>: Copy {
     /// The value of the attribute whose local name is `name`.
     fn attr(self, name: &str) -> Option<&'a str>;
     fn parent(self) -> Option<NodeKey>;
-    fn children(self) -> impl ExactSizeIterator<Item = NodeKey> + 'a;
+    fn children(self) -> impl ExactSizeIterator<Item = NodeKey> + DoubleEndedIterator + 'a;
+    /// The child at `index`; engines override this with direct indexing (`NodeList.item`).
+    fn child_at(self, index: usize) -> Option<NodeKey> {
+        self.children().nth(index)
+    }
+    /// All attributes with their qualified names, in document order; empty for non-elements.
+    fn attributes(self) -> impl Iterator<Item = (&'a QualName, &'a str)> + 'a;
 }
 
 /// A document that can be inspected. Implemented once per document engine.
@@ -110,6 +116,38 @@ impl<D: DocumentView> DocumentView for &mut D {
     }
     fn base_url(&self) -> &Url {
         (**self).base_url()
+    }
+}
+
+/// The value of the attribute with this namespace and local name.
+pub fn attribute_ns<D: DocumentView>(
+    doc: &D,
+    key: NodeKey,
+    namespace: &str,
+    local: &str,
+) -> Option<String> {
+    doc.node(key)?
+        .attributes()
+        .find(|(name, _)| &*name.ns == namespace && &*name.local == local)
+        .map(|(_, value)| value.to_owned())
+}
+
+/// The next (`forward`) or previous sibling of `key` among its parent's children.
+pub fn sibling<D: DocumentView>(doc: &D, key: NodeKey, forward: bool) -> Option<NodeKey> {
+    let parent = doc.node(key)?.parent()?;
+    let mut children = doc.node(parent)?.children();
+    if forward {
+        children.by_ref().find(|child| *child == key)?;
+        children.next()
+    } else {
+        let mut previous = None;
+        for child in children {
+            if child == key {
+                return previous;
+            }
+            previous = Some(child);
+        }
+        None
     }
 }
 
@@ -591,6 +629,62 @@ mod tests {
         // Replaced-out nodes are detached, not dropped.
         assert_eq!(doc.node(b).unwrap().parent(), None);
         assert_integrity(&doc);
+    }
+
+    #[test]
+    fn traversal_and_attribute_helpers_agree_with_direct_blitz_access() {
+        let doc = doc();
+        let mut all = Vec::new();
+        let mut stack = vec![root_key(&doc)];
+        while let Some(key) = stack.pop() {
+            all.push(key);
+            stack.extend(doc.node(key).unwrap().children());
+        }
+        for key in all {
+            let direct = doc.get_node(NodeId::from(key)).unwrap();
+            let view = doc.node(key).unwrap();
+            let children: Vec<NodeKey> =
+                direct.children.iter().copied().map(NodeKey::from).collect();
+            assert_eq!(
+                view.children().rev().collect::<Vec<_>>(),
+                children.iter().rev().copied().collect::<Vec<_>>()
+            );
+            for index in 0..=children.len() {
+                assert_eq!(view.child_at(index), children.get(index).copied());
+            }
+            let attrs: Vec<_> = direct
+                .attrs()
+                .unwrap_or_default()
+                .iter()
+                .map(|a| (a.name.clone(), a.value.clone()))
+                .collect();
+            let seen: Vec<_> = view
+                .attributes()
+                .map(|(n, v)| (n.clone(), v.to_owned()))
+                .collect();
+            assert_eq!(seen, attrs);
+            for (name, value) in &attrs {
+                assert_eq!(
+                    attribute_ns(&doc, key, &name.ns, &name.local).as_deref(),
+                    Some(value.as_str())
+                );
+            }
+            let parent_children: Vec<NodeKey> = view
+                .parent()
+                .map(|p| doc.node(p).unwrap().children().collect())
+                .unwrap_or_default();
+            let index = parent_children.iter().position(|c| *c == key);
+            assert_eq!(
+                sibling(&doc, key, true),
+                index.and_then(|i| parent_children.get(i + 1).copied())
+            );
+            assert_eq!(
+                sibling(&doc, key, false),
+                index
+                    .and_then(|i| i.checked_sub(1))
+                    .map(|i| parent_children[i])
+            );
+        }
     }
 
     #[test]
