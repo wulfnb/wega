@@ -2,6 +2,7 @@ use crate::{
     Limits,
     csp::Csp,
     encoding::{self, DocumentKind},
+    native_event::{NativeEvent, script_all},
     network::{Destination, FetchContext, Network, Response},
     script::{DynScriptHost, HostContext},
 };
@@ -32,7 +33,7 @@ use std::{
 };
 use url::Url;
 use wega_adapter_blitz::BlitzDocument;
-use wega_adapter_blitz::{ToKey as _, ToNodeId as _};
+use wega_adapter_blitz::{ToKey, ToNodeId as _};
 use wega_dom::Mutator as _;
 use wega_protocol::identity::FrameId;
 
@@ -1149,13 +1150,11 @@ impl View {
                         val,
                     );
                     drop(doc);
-                    let source = format!(
-                        "__wega_native_event('input', {}, {{data:{}}}); __wega_native_event('change', {}, {{data:{}}});",
-                        serde_json::json!(target_node.as_u64().to_string()),
-                        serde_json::json!(val),
-                        serde_json::json!(target_node.as_u64().to_string()),
-                        serde_json::json!(val)
-                    );
+                    let init = serde_json::json!({"data": val});
+                    let source = script_all(&[
+                        NativeEvent::new("input", target_node.key()).init(init.clone()),
+                        NativeEvent::new("change", target_node.key()).init(init),
+                    ]);
                     self.run(&source, "wega:accessibility-action");
                     self.dirty = true;
                 }
@@ -1505,22 +1504,22 @@ impl View {
         pointer: &Pointer,
         related: Option<NodeId>,
     ) -> bool {
-        let options = serde_json::json!({
+        let init = serde_json::json!({
             "clientX": pointer.x, "clientY": pointer.y,
             "screenX": pointer.x, "screenY": pointer.y,
             "button": pointer.button, "buttons": pointer.buttons,
             "shiftKey": pointer.modifiers & 1 != 0, "ctrlKey": pointer.modifiers & 2 != 0,
             "altKey": pointer.modifiers & 4 != 0, "metaKey": pointer.modifiers & 8 != 0,
             "deltaX": pointer.delta_x, "deltaY": pointer.delta_y,
-            "relatedTarget": related.map(|id| id.as_u64().to_string()),
         });
-        let source = format!(
-            "__wega_native_event({}, {}, {})",
-            serde_json::json!(kind),
-            serde_json::json!(target.as_u64().to_string()),
-            options
-        );
-        self.evaluate_json(&source).as_deref() == Ok("true")
+        let event = NativeEvent::new(kind.to_owned(), target.key())
+            .init(init)
+            .related(related.map(ToKey::key));
+        self.send(&event)
+    }
+    /// Dispatch one native event to script; true when it was cancelled.
+    fn send(&mut self, event: &NativeEvent) -> bool {
+        self.evaluate_json(&event.script()).as_deref() == Ok("true")
     }
     /// Pointer input: hover, mouse/pointer events, Blitz defaults (focus, text
     /// selection, clicks), wheel scrolling and the cursor.
@@ -1816,13 +1815,7 @@ impl View {
         match action {
             None => false,
             Some(Action::Reset(form)) => {
-                let cancelled = self
-                    .evaluate_json(&format!(
-                        "__wega_native_event('reset', {}, {{}})",
-                        serde_json::json!(form.as_u64().to_string())
-                    ))
-                    .as_deref()
-                    == Ok("true");
+                let cancelled = self.send(&NativeEvent::new("reset", form.key()));
                 if !cancelled {
                     self.reset_form(form);
                 }
@@ -1894,16 +1887,14 @@ impl View {
                 _ => {}
             }
             let event_type = event.data.name();
-            let source = format!(
-                "__wega_native_event({}, {}, {})",
-                serde_json::json!(event_type),
-                serde_json::json!(target.as_u64().to_string()),
-                if event_type == "input" {
-                    input_options.clone()
-                } else {
-                    serde_json::json!({})
-                }
-            );
+            let init = if event_type == "input" {
+                input_options.clone()
+            } else {
+                serde_json::json!({})
+            };
+            let source = NativeEvent::new(event_type, target.key())
+                .init(init)
+                .script();
             self.run(&source, "wega:native-event");
             if event_type == "input" {
                 let is_checkable = {
@@ -1922,11 +1913,9 @@ impl View {
                         })
                 };
                 if is_checkable {
-                    let source = format!(
-                        "__wega_native_event('change', {}, {})",
-                        serde_json::json!(target.as_u64().to_string()),
-                        input_options
-                    );
+                    let source = NativeEvent::new("change", target.key())
+                        .init(input_options.clone())
+                        .script();
                     self.run(&source, "wega:native-event");
                 }
             }
@@ -1956,13 +1945,9 @@ impl View {
             self.activate();
         }
         let options = serde_json::json!({"key":event.key.to_string(),"code":event.code.to_string(),"repeat":event.is_auto_repeating,"isComposing":event.is_composing,"shiftKey":event.modifiers.contains(Modifiers::SHIFT),"ctrlKey":event.modifiers.contains(Modifiers::CONTROL),"altKey":event.modifiers.contains(Modifiers::ALT),"metaKey":event.modifiers.contains(Modifiers::META)});
-        let source = format!(
-            "__wega_native_event({}, {}, {})",
-            serde_json::json!(if pressed { "keydown" } else { "keyup" }),
-            serde_json::json!(target.as_u64().to_string()),
-            options
-        );
-        if self.evaluate_json(&source).as_deref() == Ok("true") {
+        let keyboard =
+            NativeEvent::new(if pressed { "keydown" } else { "keyup" }, target.key()).init(options);
+        if self.send(&keyboard) {
             return;
         }
         if pressed {
@@ -2041,11 +2026,10 @@ impl View {
                             blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
                         }
                     }
-                    let source = format!(
-                        "__wega_native_event('input', {}, {{}}); __wega_native_event('change', {}, {{}});",
-                        serde_json::json!(target.as_u64().to_string()),
-                        serde_json::json!(target.as_u64().to_string())
-                    );
+                    let source = script_all(&[
+                        NativeEvent::new("input", target.key()),
+                        NativeEvent::new("change", target.key()),
+                    ]);
                     self.run(&source, "wega:native-toggle");
                     self.dirty = true;
                     return;
@@ -2069,12 +2053,9 @@ impl View {
             };
             let input_options = serde_json::json!({"inputType":input_type,"data":event.text.as_ref().map(|text|text.as_str()),"isComposing":event.is_composing});
             if !input_type.is_empty() {
-                let source = format!(
-                    "__wega_native_event('beforeinput',{}, {})",
-                    serde_json::json!(target.as_u64().to_string()),
-                    input_options
-                );
-                if self.evaluate_json(&source).as_deref() == Ok("true") {
+                let before =
+                    NativeEvent::new("beforeinput", target.key()).init(input_options.clone());
+                if self.send(&before) {
                     return;
                 }
             }
@@ -2219,39 +2200,22 @@ impl View {
         };
         if matches!(&event,BlitzImeEvent::Preedit(text,_) if !text.is_empty()) && !self.composing {
             self.composing = true;
-            self.run(
-                &format!(
-                    "__wega_native_event('compositionstart',{},{{data:''}})",
-                    serde_json::json!(target.as_u64().to_string())
-                ),
-                "wega:composition",
-            );
+            let start = NativeEvent::new("compositionstart", target.key())
+                .init(serde_json::json!({"data": ""}));
+            self.run(&start.script(), "wega:composition");
         }
         let commit = matches!(event, BlitzImeEvent::Commit(_));
         let input_options = serde_json::json!({"inputType":if commit{"insertText"}else{"insertCompositionText"},"data":text,"isComposing":!commit});
         if commit {
             self.composing = false;
-            if self
-                .evaluate_json(&format!(
-                    "__wega_native_event('beforeinput',{}, {})",
-                    serde_json::json!(target.as_u64().to_string()),
-                    input_options
-                ))
-                .as_deref()
-                == Ok("true")
-            {
+            let before = NativeEvent::new("beforeinput", target.key()).init(input_options.clone());
+            if self.send(&before) {
                 return;
             }
         }
-        self.run(
-            &format!(
-                "__wega_native_event({}, {},{{data:{}}})",
-                serde_json::json!(kind),
-                serde_json::json!(target.as_u64().to_string()),
-                serde_json::json!(text)
-            ),
-            "wega:composition",
-        );
+        let composition =
+            NativeEvent::new(kind, target.key()).init(serde_json::json!({"data": text}));
+        self.run(&composition.script(), "wega:composition");
         let generated = {
             let mut generated = Vec::new();
             self.document.borrow_mut().handle_dom_event(

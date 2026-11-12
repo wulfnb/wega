@@ -26,6 +26,7 @@ mod encoding;
 mod event_loop;
 mod html_report;
 pub mod media;
+mod native_event;
 mod network;
 pub mod permissions;
 mod script;
