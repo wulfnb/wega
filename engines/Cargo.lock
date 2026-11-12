@@ -6777,6 +6777,7 @@ dependencies = [
  "tokio",
  "url",
  "wega-network",
+ "wega-permissions",
  "wega-platform",
  "wega-protocol",
  "wega-security",
@@ -6802,6 +6803,15 @@ dependencies = [
  "wega-platform",
  "wega-protocol",
  "wega-storage",
+]
+
+[[package]]
+name = "wega-permissions"
+version = "0.1.0"
+dependencies = [
+ "url",
+ "wega-network",
+ "wega-protocol",
 ]
 
 [[package]]

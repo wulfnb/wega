@@ -1,6 +1,6 @@
 # services/permissions
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Wave 1) — package `wega-permissions`**
 
 ## Purpose
 
@@ -21,4 +21,4 @@ Permission model and prompts.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+IMPLEMENTED. Member of the `engines` workspace. Moved from `engines/wega/src/permissions/{registry,device}.rs`. It depends on `wega-network::Policy` (the registry reads `blocked_hosts`) and `wega-protocol`; this temporary coupling is intentional and no new policy abstraction was introduced. The engine re-exports the previous `permissions::*` paths. One behaviour-preserving `if let` chain was collapsed to satisfy `clippy::collapsible_if`, which the engine crate had allowed crate-wide. See `docs/architecture/module-map.md`.

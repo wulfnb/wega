@@ -1,0 +1,13 @@
+[package]
+name = "wega-permissions"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Wega's permission registry and device-capability tracking (extracted from wega-engine)"
+
+[dependencies]
+wega-protocol = { path = "../../protocol" }
+wega-network = { path = "../../network" }
+url = "2.5"

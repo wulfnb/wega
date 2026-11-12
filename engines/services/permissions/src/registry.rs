@@ -35,7 +35,7 @@ impl PermissionRegistry {
         &self,
         origin: &Origin,
         feature: PermissionFeature,
-        policy: &crate::network::NetworkPolicy,
+        policy: &wega_network::Policy,
     ) -> PermissionState {
         let origin_str = match origin {
             Origin::Tuple(s) => s,
@@ -43,18 +43,18 @@ impl PermissionRegistry {
         };
 
         // Check if origin host is blocked in policy
-        if let Ok(url) = url::Url::parse(origin_str) {
-            if let Some(host) = url.host_str() {
-                let matches_blocked = policy.blocked_hosts.split_whitespace().any(|rule| {
-                    let rule = rule
-                        .trim_start_matches("*.")
-                        .trim_end_matches('.')
-                        .to_ascii_lowercase();
-                    !rule.is_empty() && (host == rule || host.ends_with(&format!(".{rule}")))
-                });
-                if matches_blocked {
-                    return PermissionState::Denied;
-                }
+        if let Ok(url) = url::Url::parse(origin_str)
+            && let Some(host) = url.host_str()
+        {
+            let matches_blocked = policy.blocked_hosts.split_whitespace().any(|rule| {
+                let rule = rule
+                    .trim_start_matches("*.")
+                    .trim_end_matches('.')
+                    .to_ascii_lowercase();
+                !rule.is_empty() && (host == rule || host.ends_with(&format!(".{rule}")))
+            });
+            if matches_blocked {
+                return PermissionState::Denied;
             }
         }
 
@@ -72,7 +72,7 @@ impl PermissionRegistry {
         origin: &Origin,
         document: DocumentContext,
         feature: PermissionFeature,
-        policy: &crate::network::NetworkPolicy,
+        policy: &wega_network::Policy,
     ) -> (PermissionState, Option<u64>) {
         let state = self.query(origin, feature, policy);
         match state {
