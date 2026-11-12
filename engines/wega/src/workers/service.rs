@@ -166,14 +166,17 @@ fn origin_of(url: &Url) -> String {
     url.origin().ascii_serialization()
 }
 
-#[derive(Default)]
 pub struct ServiceWorkerHub {
     inner: Mutex<Inner>,
+    ports: super::SharedPortHub,
 }
 
 impl ServiceWorkerHub {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(ports: super::SharedPortHub) -> Self {
+        Self {
+            inner: Default::default(),
+            ports,
+        }
     }
     /// Resource limits for worker realms the hub starts on its own.
     pub(crate) fn configure(&self, limits: &crate::Limits) {
@@ -331,7 +334,8 @@ impl ServiceWorkerHub {
             network: network.clone(),
             csp: Default::default(),
             limits: limits.clone(),
-            port_hub: network.port_hub.clone(),
+            port_hub: self.ports.clone(),
+            service: self.clone(),
             port: None,
             frames: Default::default(),
             scope: scope.to_owned(),
@@ -1086,6 +1090,17 @@ impl ServiceWorkerHub {
                 Some(Err("Service worker did not answer the fetch event".into()))
             }
         }
+    }
+}
+
+impl crate::network::FetchInterceptor for Arc<ServiceWorkerHub> {
+    fn intercept(
+        &self,
+        network: &Network,
+        client: Option<&Url>,
+        request: &wega_network::Request,
+    ) -> Option<Result<wega_network::Response, String>> {
+        ServiceWorkerHub::intercept(self, network, client, request)
     }
 }
 

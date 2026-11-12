@@ -44,6 +44,7 @@ pub(crate) struct Requests {
 
 pub(crate) struct Dom {
     pub network: crate::network::Network,
+    pub hubs: crate::workers::Hubs,
     pub document: Rc<RefCell<BaseDocument>>,
     pub limits: Limits,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
@@ -99,14 +100,14 @@ impl Dom {
             Cell::new(blitz_dom::traversal::TreeTraverser::new(&document.borrow()).count());
         let doc_url = document.borrow().url().clone();
         context.network.mark_navigated();
-        context.network.service_workers.configure(limits);
-        let workers = RefCell::new(crate::workers::WorkerManager::with_shared(
+        context.hubs.service.configure(limits);
+        let workers = RefCell::new(crate::workers::WorkerManager::with_hubs(
             doc_url,
-            context.network.shared_workers.clone(),
-            context.network.port_hub.clone(),
+            context.hubs.clone(),
         ));
         Self {
             network: context.network,
+            hubs: context.hubs,
             document,
             limits: limits.clone(),
             navigate: context.navigate,
@@ -143,8 +144,8 @@ impl Dom {
         }
     }
     fn port_hub(&self) -> std::sync::MutexGuard<'_, crate::workers::MessagePortHub> {
-        self.network
-            .port_hub
+        self.hubs
+            .ports
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
@@ -758,7 +759,7 @@ impl Dom {
                         "SecurityError: Service worker blocked by Content Security Policy".into(),
                     );
                 }
-                let job = self.network.service_workers.register(
+                let job = self.hubs.service.register(
                     &self.network,
                     &self.limits,
                     &document,
@@ -773,15 +774,11 @@ impl Dom {
                 if !text(1).starts_with(&document.origin().ascii_serialization()) {
                     return Err("SecurityError: Registration belongs to another origin".into());
                 }
-                return Ok(json!(
-                    self.network
-                        .service_workers
-                        .update(&self.network, text(1))?
-                ));
+                return Ok(json!(self.hubs.service.update(&self.network, text(1))?));
             }
             "serviceWorkerUnregister" => {
                 let document = self.document.borrow().url().clone();
-                return Ok(json!(self.network.service_workers.unregister(
+                return Ok(json!(self.hubs.service.unregister(
                     &self.network,
                     &document,
                     text(1)
@@ -789,7 +786,7 @@ impl Dom {
             }
             "serviceWorkerPoll" => {
                 let document = self.document.borrow().url().clone();
-                return Ok(self.network.service_workers.poll(
+                return Ok(self.hubs.service.poll(
                     &self.network,
                     &self.client_id,
                     &document,
@@ -798,22 +795,14 @@ impl Dom {
             }
             "serviceWorkerControlled" => {
                 let document = self.document.borrow().url().clone();
-                return Ok(json!(
-                    self.network
-                        .service_workers
-                        .controls(&self.network, &document)
-                ));
+                return Ok(json!(self.hubs.service.controls(&self.network, &document)));
             }
             "serviceWorkerPost" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
                 let document = self.document.borrow().url().clone();
-                self.network.service_workers.post(
-                    &self.network,
-                    id,
-                    &self.client_id,
-                    &document,
-                    text(2),
-                )?;
+                self.hubs
+                    .service
+                    .post(&self.network, id, &self.client_id, &document, text(2))?;
                 return Ok(Value::Null);
             }
             "channelCreate" => {

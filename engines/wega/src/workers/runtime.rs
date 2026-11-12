@@ -61,6 +61,7 @@ pub(crate) struct Spec {
     pub csp: Arc<RwLock<crate::csp::Csp>>,
     pub limits: crate::Limits,
     pub port_hub: SharedPortHub,
+    pub service: Arc<super::ServiceWorkerHub>,
     /// A dedicated worker's implicit port.
     pub port: Option<PortId>,
     pub frames: CanvasFrames,
@@ -199,6 +200,7 @@ fn run(
         csp: spec.csp,
         limits: spec.limits.clone(),
         port_hub: spec.port_hub,
+        service: spec.service,
         port: spec.port,
         frames: spec.frames,
         scope: spec.scope,
@@ -493,6 +495,7 @@ struct WorkerHost {
     csp: Arc<RwLock<crate::csp::Csp>>,
     limits: crate::Limits,
     port_hub: SharedPortHub,
+    service: Arc<super::ServiceWorkerHub>,
     port: Option<PortId>,
     frames: CanvasFrames,
     scope: String,
@@ -650,13 +653,12 @@ impl crate::native_ops::NativeHost for WorkerHost {
             "portPoll" => Ok(json!(self.hub().poll_messages(port(1)?))),
             "cacheAllowed" => Ok(json!(wega_network::cache_api::cache_allowed(self.base()))),
             "cacheCall" => self.network.cache_call(self.base(), text(1)),
-            "swClients" if self.kind == Kind::Service => Ok(self
-                .network
-                .service_workers
-                .clients(&self.document_origin())),
+            "swClients" if self.kind == Kind::Service => {
+                Ok(self.service.clients(&self.document_origin()))
+            }
             "swControls" if self.kind == Kind::Service => {
                 Ok(json!(Url::parse(text(1)).is_ok_and(|url| {
-                    self.network.service_workers.controls(&self.network, &url)
+                    self.service.controls(&self.network, &url)
                 })))
             }
             "frameCommit" => {
@@ -746,12 +748,7 @@ impl crate::native_ops::NativeHost for WorkerHost {
                 .permits(&policy_url)
         {
             // A controlling service worker may still answer from its caches.
-            if self.kind == Kind::Service
-                || !self
-                    .network
-                    .service_workers
-                    .controls(&self.network, &self.creator)
-            {
+            if self.kind == Kind::Service || !self.service.controls(&self.network, &self.creator) {
                 return "Network request blocked by browsing policy".into();
             }
         }

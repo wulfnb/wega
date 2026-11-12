@@ -158,6 +158,17 @@ pub(crate) fn referrer(initiator: &Url, target: &Url, policy: Option<&str>) -> O
 }
 
 type Task = Box<dyn FnOnce(&Client) + Send>;
+/// Offers a request to something that may answer it before the network does
+/// (service workers). Implemented by the worker layer; `Network` does not depend on it.
+pub(crate) trait FetchInterceptor: Send + Sync {
+    /// `None` means the request continues to the network.
+    fn intercept(
+        &self,
+        network: &Network,
+        client: Option<&Url>,
+        request: &wega_network::Request,
+    ) -> Option<Result<wega_network::Response, String>>;
+}
 #[derive(Clone)]
 pub(crate) struct Network {
     jobs: mpsc::SyncSender<Task>,
@@ -167,9 +178,8 @@ pub(crate) struct Network {
     pub storage_dir: Option<std::path::PathBuf>,
     pub remote: Option<wega_network::Remote>,
     pub fonts: Option<Arc<Vec<Vec<u8>>>>,
-    pub shared_workers: Arc<Mutex<crate::workers::SharedWorkerHub>>,
-    pub port_hub: crate::workers::SharedPortHub,
-    pub service_workers: Arc<crate::workers::ServiceWorkerHub>,
+    /// Offers requests to service workers; wired by the engine (see `workers::Hubs`).
+    interceptor: Arc<std::sync::OnceLock<Arc<dyn FetchInterceptor>>>,
     /// Cache API stores for documents and workers when no broker owns them.
     cache_stores: Arc<Mutex<std::collections::HashMap<String, wega_network::CacheStorage>>>,
     /// When the current document was created; a service worker activated
@@ -179,6 +189,16 @@ pub(crate) struct Network {
     detached: Arc<std::sync::atomic::AtomicUsize>,
 }
 impl Network {
+    pub(crate) fn set_interceptor(&self, interceptor: Arc<dyn FetchInterceptor>) {
+        let _ = self.interceptor.set(interceptor);
+    }
+    fn intercept(
+        &self,
+        client: Option<&Url>,
+        request: &wega_network::Request,
+    ) -> Option<Result<wega_network::Response, String>> {
+        self.interceptor.get()?.intercept(self, client, request)
+    }
     pub fn new(policy: NetworkPolicy, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
         Self::create(policy, wake, None)
     }
@@ -197,8 +217,6 @@ impl Network {
         let policy = Arc::new(std::sync::RwLock::new(policy));
         let brokered = remote.is_some();
         let broker = remote.clone();
-        let shared_workers = Arc::new(Mutex::new(crate::workers::SharedWorkerHub::new()));
-        let port_hub = Arc::new(Mutex::new(crate::workers::MessagePortHub::new()));
         let fonts = remote
             .as_ref()
             .filter(|remote| remote.is_bound())
@@ -269,9 +287,7 @@ impl Network {
             remote: broker,
             fonts,
             cookies,
-            shared_workers,
-            port_hub,
-            service_workers: Default::default(),
+            interceptor: Default::default(),
             cache_stores: Default::default(),
             navigated: Arc::new(Mutex::new(std::time::Instant::now())),
             client: detached_client,
@@ -320,8 +336,7 @@ impl Network {
         let detached = client.is_none();
         let task = move |http: &Client| {
             let result = network
-                .service_workers
-                .intercept(&network, client.as_ref(), &request)
+                .intercept(client.as_ref(), &request)
                 .unwrap_or_else(|| http.response(&request));
             let _ = sender.send(result);
         };
@@ -408,9 +423,7 @@ impl Network {
         if let Some(kind) = &context.content_type {
             request.headers.push(("content-type".into(), kind.clone()));
         }
-        let answer = self
-            .service_workers
-            .intercept(self, context.initiator.as_ref(), &request)?;
+        let answer = self.intercept(context.initiator.as_ref(), &request)?;
         Some(answer.and_then(|response| {
             let mut headers = reqwest::header::HeaderMap::new();
             for (name, value) in response.headers {

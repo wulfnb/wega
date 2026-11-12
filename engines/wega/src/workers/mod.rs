@@ -45,12 +45,37 @@ struct Dedicated {
     events: Arc<Mutex<VecDeque<WorkerEvent>>>,
 }
 
+/// Worker state shared by every view of one engine: shared workers, message ports
+/// and service workers. Owned by the engine; `Network` knows nothing about it.
+#[derive(Clone)]
+pub(crate) struct Hubs {
+    pub shared: Arc<Mutex<SharedWorkerHub>>,
+    pub ports: SharedPortHub,
+    pub service: Arc<ServiceWorkerHub>,
+}
+impl Hubs {
+    pub fn new() -> Self {
+        let ports: SharedPortHub = Arc::new(Mutex::new(MessagePortHub::new()));
+        Self {
+            shared: Arc::new(Mutex::new(SharedWorkerHub::new())),
+            service: Arc::new(ServiceWorkerHub::new(ports.clone())),
+            ports,
+        }
+    }
+}
+impl Default for Hubs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The workers one document owns.
 pub struct WorkerManager {
     document_url: Url,
     dedicated: HashMap<WorkerId, Dedicated>,
     shared: Arc<Mutex<SharedWorkerHub>>,
     port_hub: SharedPortHub,
+    service: Arc<ServiceWorkerHub>,
     frames: CanvasFrames,
     next_worker_id: u64,
 }
@@ -63,16 +88,13 @@ pub(crate) struct Environment<'a> {
 }
 
 impl WorkerManager {
-    pub fn with_shared(
-        document_url: Url,
-        shared: Arc<Mutex<SharedWorkerHub>>,
-        port_hub: SharedPortHub,
-    ) -> Self {
+    pub(crate) fn with_hubs(document_url: Url, hubs: Hubs) -> Self {
         Self {
             document_url,
             dedicated: HashMap::new(),
-            shared,
-            port_hub,
+            shared: hubs.shared,
+            port_hub: hubs.ports,
+            service: hubs.service,
             frames: Default::default(),
             next_worker_id: 0,
         }
@@ -143,6 +165,7 @@ impl WorkerManager {
             csp: environment.csp.clone(),
             limits: environment.limits.clone(),
             port_hub: self.port_hub.clone(),
+            service: self.service.clone(),
             port: (kind == Kind::Dedicated).then_some(PortId(config.port)),
             frames: if kind == Kind::Dedicated {
                 self.frames.clone()

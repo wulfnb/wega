@@ -23,6 +23,7 @@ pub(crate) struct HostContext {
     pub document: Rc<RefCell<BaseDocument>>,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
     pub network: crate::network::Network,
+    pub hubs: crate::workers::Hubs,
     pub csp: std::sync::Arc<std::sync::RwLock<crate::csp::Csp>>,
     pub dialog: Rc<RefCell<Option<crate::dom::DocumentDialogHandler>>>,
     pub document_generation: Rc<Cell<u64>>,

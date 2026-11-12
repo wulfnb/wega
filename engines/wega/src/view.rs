@@ -311,6 +311,7 @@ pub struct View {
     document_generation: Rc<Cell<u64>>,
     script: Option<Box<dyn ScriptHost>>,
     network: Network,
+    hubs: crate::workers::Hubs,
     limits: Limits,
     abort: Option<AbortController>,
     pending: Option<mpsc::Receiver<FetchResult>>,
@@ -350,7 +351,12 @@ pub struct View {
     pub fullscreen: bool,
 }
 impl View {
-    pub(crate) fn new(url: Url, network: Network, limits: Limits) -> Result<Self, String> {
+    pub(crate) fn new(
+        url: Url,
+        network: Network,
+        hubs: crate::workers::Hubs,
+        limits: Limits,
+    ) -> Result<Self, String> {
         let document = HtmlDocument::from_html(
             "<!doctype html><title>Wega</title>",
             DocumentConfig {
@@ -374,6 +380,7 @@ impl View {
             document_generation: Rc::new(Cell::new(0)),
             script: None,
             network,
+            hubs,
             limits,
             abort: None,
             pending: None,
@@ -641,6 +648,7 @@ impl View {
                 document: self.document.clone(),
                 navigate: self.navigate.clone(),
                 network: self.network.clone(),
+                hubs: self.hubs.clone(),
                 csp: self.csp.clone(),
                 dialog: self.dialog.clone(),
                 document_generation: self.document_generation.clone(),
@@ -2654,6 +2662,7 @@ mod tests {
         let mut view = View::new(
             Url::parse("data:text/html,<button>Click me</button>").unwrap(),
             network,
+            Default::default(),
             limits,
         )
         .unwrap();
@@ -2672,6 +2681,7 @@ mod tests {
         let mut view = View::new(
             Url::parse("data:text/html,<input type='file' id='f'>").unwrap(),
             network,
+            Default::default(),
             limits,
         )
         .unwrap();
@@ -2684,7 +2694,13 @@ mod tests {
     fn range_and_selection_dom_apis() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            limits,
+        )
+        .unwrap();
         view.set_html("<!doctype html><div id='test'>Hello <b>beautiful</b> world</div>")
             .unwrap();
         let js = r#"
@@ -2709,7 +2725,13 @@ mod tests {
     fn content_editable_and_exec_command() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            limits,
+        )
+        .unwrap();
         view.set_html("<!doctype html><div id='ed' contenteditable='true'>Initial text</div>")
             .unwrap();
         let js = r#"
@@ -2733,7 +2755,13 @@ mod tests {
     fn find_in_page_and_tree_walker() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            limits,
+        )
+        .unwrap();
         view.set_html(
             "<!doctype html><p>The quick brown fox jumps over the lazy dog. The fox was quick.</p>",
         )
@@ -2763,7 +2791,13 @@ mod tests {
     fn clipboard_and_datatransfer_apis() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            limits,
+        )
+        .unwrap();
         view.set_html("<!doctype html><div>Test</div>").unwrap();
         let js = r#"
             navigator.clipboard.writeText('clipboard test payload');
@@ -2783,6 +2817,7 @@ mod tests {
         let mut view = View::new(
             Url::parse("about:blank").unwrap(),
             network,
+            Default::default(),
             Limits::default(),
         )
         .unwrap();

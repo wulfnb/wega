@@ -78,6 +78,8 @@ impl Default for Limits {
 /// Shared bounded networking; each View owns its DOM, VM and render surfaces.
 pub struct Engine {
     network: network::Network,
+    /// Worker state shared by all of this engine's views.
+    hubs: workers::Hubs,
     limits: Limits,
 }
 impl Engine {
@@ -86,10 +88,7 @@ impl Engine {
         policy: NetworkPolicy,
         wake: std::sync::Arc<dyn Fn() + Send + Sync>,
     ) -> Result<Self, String> {
-        Ok(Self {
-            network: network::Network::new(policy, wake)?,
-            limits,
-        })
+        Self::assemble(network::Network::new(policy, wake)?, limits)
     }
     /// Private tab workers delegate HTTP and cookies to the browser's shared broker.
     pub fn brokered(
@@ -112,8 +111,14 @@ impl Engine {
         wake: std::sync::Arc<dyn Fn() + Send + Sync>,
         remote: wega_network::Remote,
     ) -> Result<Self, String> {
+        Self::assemble(network::Network::brokered(policy, wake, remote)?, limits)
+    }
+    fn assemble(network: network::Network, limits: Limits) -> Result<Self, String> {
+        let hubs = workers::Hubs::new();
+        network.set_interceptor(std::sync::Arc::new(hubs.service.clone()));
         Ok(Self {
-            network: network::Network::brokered(policy, wake, remote)?,
+            network,
+            hubs,
             limits,
         })
     }
@@ -127,7 +132,12 @@ impl Engine {
     /// views on one thread must be destroyed/reset in reverse creation order.
     /// Native browser tabs each have their own worker process and DOM thread.
     pub fn create_view(&self, url: Url) -> Result<View, String> {
-        View::new(url, self.network.clone(), self.limits.clone())
+        View::new(
+            url,
+            self.network.clone(),
+            self.hubs.clone(),
+            self.limits.clone(),
+        )
     }
     pub fn set_policy(&self, policy: NetworkPolicy) {
         *self

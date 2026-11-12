@@ -105,11 +105,7 @@ impl crate::native_ops::NativeHost for Dom {
         {
             // A controlling service worker may still answer from its caches.
             let document = self.document.borrow().url().clone();
-            if !self
-                .network
-                .service_workers
-                .controls(&self.network, &document)
-            {
+            if !self.hubs.service.controls(&self.network, &document) {
                 return "Network request blocked by browsing policy".into();
             }
         }
