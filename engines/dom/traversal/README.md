@@ -13,11 +13,11 @@ DOM traversal and querying utilities.
 
 ## Expected dependencies
 
-`foundation/*`. Specifically: `dom/core`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `html/*`, `css/*`, `layout/*` or `graphics/*`. Within this group: `dom/core`.
 
 ## Dependencies to avoid
 
-`css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, V8.
+`html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`.
 
 ## Current status
 

@@ -13,11 +13,11 @@ DOM tree data model (nodes, documents, elements, attributes).
 
 ## Expected dependencies
 
-`foundation/*`. Specifically: `foundation/types`, `foundation/ids`, `foundation/errors`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `html/*`, `css/*`, `layout/*` or `graphics/*`.
 
 ## Dependencies to avoid
 
-`css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, V8.
+`html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`.
 
 ## Current status
 

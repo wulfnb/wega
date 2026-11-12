@@ -13,11 +13,11 @@ GPU abstraction and resource management.
 
 ## Expected dependencies
 
-`foundation/*`, `foundation/geometry`; `layout/core` fragments only for display-list building. Specifically: `foundation/*`.
+`std` only for now (`foundation/*` deferred). The display-list contract is independent of `layout/*`, `dom/*` and `css/*` (it may mirror `anyrender::PaintScene`).
 
 ## Dependencies to avoid
 
-`dom/*`, `css/*`, `javascript/*`, `services/*`, direct Skia/GPU types outside the dedicated leaves. Also: DOM, CSS or layout types.
+`dom/*`, `css/*`, `layout/*`, `javascript/*`, `services/*`; Skia/GPU types outside `adapters/skia` and the dedicated GPU leaf. Also: DOM, CSS or layout types.
 
 ## Current status
 

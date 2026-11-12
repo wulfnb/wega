@@ -13,11 +13,11 @@ HTML tokenizer and input-stream handling.
 
 ## Expected dependencies
 
-`foundation/*`, `dom/core`. Specifically: `foundation/errors`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `dom/*`, `css/*` or `layout/*`; tree construction targets a sink trait that an adapter implements.
 
 ## Dependencies to avoid
 
-`css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`. Also: Tree construction logic (belongs in `treebuilder`).
+`dom/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz types in public APIs. Also: Tree construction logic (belongs in `treebuilder`).
 
 ## Current status
 

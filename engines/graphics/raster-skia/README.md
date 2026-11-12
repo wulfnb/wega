@@ -13,11 +13,11 @@ Skia-based rasterization of display lists.
 
 ## Expected dependencies
 
-`foundation/*`, `foundation/geometry`; `layout/core` fragments only for display-list building. Specifically: `graphics/display-list`, `adapters/skia`.
+`std` only for now (`foundation/*` deferred). The display-list contract is independent of `layout/*`, `dom/*` and `css/*` (it may mirror `anyrender::PaintScene`). Within this group: `graphics/display-list`.
 
 ## Dependencies to avoid
 
-`dom/*`, `css/*`, `javascript/*`, `services/*`, direct Skia/GPU types outside the dedicated leaves. Also: Layout, DOM or CSS types.
+`dom/*`, `css/*`, `layout/*`, `javascript/*`, `services/*`; Skia/GPU types outside `adapters/skia` and the dedicated GPU leaf. Also: Layout, DOM or CSS types.
 
 ## Phase 2 decision
 

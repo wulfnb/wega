@@ -13,11 +13,11 @@ Text shaping, measurement and line breaking.
 
 ## Expected dependencies
 
-`foundation/*`, `css/values`, `css/style-engine` (computed style input), `dom/core`. Specifically: `layout/core`, `foundation/geometry`.
+`std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz). Within this group: `layout/core`.
 
 ## Dependencies to avoid
 
-`graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, Taffy-specific types in public APIs, V8. Also: Concrete font rasterization (belongs in `graphics/fonts`).
+`css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs. Also: Concrete font rasterization (belongs in `graphics/fonts`).
 
 ## Current status
 

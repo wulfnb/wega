@@ -13,11 +13,11 @@ DOM mutation tracking and observation.
 
 ## Expected dependencies
 
-`foundation/*`. Specifically: `dom/core`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `html/*`, `css/*`, `layout/*` or `graphics/*`. Within this group: `dom/core`.
 
 ## Dependencies to avoid
 
-`css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, V8. Also: Direct calls into `css/*` or `layout/*` (use notifications).
+`html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`. Also: Direct calls into `css/*` or `layout/*` (use notifications).
 
 ## Current status
 

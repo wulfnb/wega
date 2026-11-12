@@ -13,11 +13,11 @@ DOM event model (dispatch, propagation, listeners).
 
 ## Expected dependencies
 
-`foundation/*`. Specifically: `dom/core`, `foundation/events`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `html/*`, `css/*`, `layout/*` or `graphics/*`. Within this group: `dom/core`.
 
 ## Dependencies to avoid
 
-`css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, V8. Also: Script-engine types (listeners are abstract callbacks).
+`html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`. Also: Script-engine types (listeners are abstract callbacks).
 
 ## Current status
 

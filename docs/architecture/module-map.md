@@ -74,20 +74,6 @@ engines/
 │   ├── media/
 │   ├── storage/
 │   ├── workers/
-├── runtime/
-│   ├── dom-bindings/
-│   ├── events/
-│   ├── bindings/
-│   ├── webidl/
-├── webapi/
-│   ├── core/
-│   ├── fetch/
-│   ├── timers/
-│   ├── canvas/
-│   ├── webgl/
-│   ├── media/
-│   ├── storage/
-│   ├── workers/
 ├── services/
 │   ├── http/
 │   ├── storage/
@@ -142,9 +128,9 @@ Avoid: Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI t
 
 ### DOM (`engines/dom`)
 
-Default dependencies: `foundation/*`.
+Default dependencies: `std` only for now (`foundation/*` deferred). Independent contract: no dependency on `html/*`, `css/*`, `layout/*` or `graphics/*`.
 
-Avoid: `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, V8.
+Avoid: `html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`.
 
 | Module | Purpose |
 |---|---|
@@ -155,9 +141,9 @@ Avoid: `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapter
 
 ### HTML (`engines/html`)
 
-Default dependencies: `foundation/*`, `dom/core`.
+Default dependencies: `std` only for now (`foundation/*` deferred). Independent contract: no dependency on `dom/*`, `css/*` or `layout/*`; tree construction targets a sink trait that an adapter implements.
 
-Avoid: `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`.
+Avoid: `dom/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz types in public APIs.
 
 | Module | Purpose |
 |---|---|
@@ -166,9 +152,9 @@ Avoid: `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapter
 
 ### CSS (`engines/css`)
 
-Default dependencies: `foundation/*`, `dom/core` where selectors and style need the tree.
+Default dependencies: `std` only for now (`foundation/*` deferred). Independent contract: no dependency on `dom/*` or `layout/*`; element access goes through an abstract view that an adapter implements.
 
-Avoid: `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (including Stylo directly), Blitz, V8.
+Avoid: `dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8.
 
 | Module | Purpose |
 |---|---|
@@ -181,9 +167,9 @@ Avoid: `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (inc
 
 ### Layout (`engines/layout`)
 
-Default dependencies: `foundation/*`, `css/values`, `css/style-engine` (computed style input), `dom/core`.
+Default dependencies: `std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz).
 
-Avoid: `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, Taffy-specific types in public APIs, V8.
+Avoid: `css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs.
 
 | Module | Purpose |
 |---|---|
@@ -197,9 +183,9 @@ Avoid: `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, Taffy-sp
 
 ### Graphics (`engines/graphics`)
 
-Default dependencies: `foundation/*`, `foundation/geometry`; `layout/core` fragments only for display-list building.
+Default dependencies: `std` only for now (`foundation/*` deferred). The display-list contract is independent of `layout/*`, `dom/*` and `css/*` (it may mirror `anyrender::PaintScene`).
 
-Avoid: `dom/*`, `css/*`, `javascript/*`, `services/*`, direct Skia/GPU types outside the dedicated leaves.
+Avoid: `dom/*`, `css/*`, `layout/*`, `javascript/*`, `services/*`; Skia/GPU types outside `adapters/skia` and the dedicated GPU leaf.
 
 | Module | Purpose |
 |---|---|
@@ -312,6 +298,20 @@ Avoid: Being depended on by production engine crates.
 | [`build-benchmark`](../../engines/tools/build-benchmark/README.md) | Measure and track build times. |
 | [`memory-benchmark`](../../engines/tools/memory-benchmark/README.md) | Measure and track memory use. |
 | [`architecture-check`](../../engines/tools/architecture-check/README.md) | Enforce architectural dependency rules. |
+
+## Third-party engines: current state vs adapter-only target
+
+Today `wega-engine` depends **directly** on third-party engines; the adapter-only arrangement is a *future target*, not the current state.
+
+| Engine | Current (direct deps of `wega-engine`) | Future target |
+|---|---|---|
+| Blitz (`blitz-dom`, `blitz-html`, `blitz-paint`, `blitz-traits`) | `engines/wega/src/{dom,view,parser,script,raster}.rs` | only in `adapters/blitz` |
+| Stylo (`style`) | `dom.rs` (media-query parsing) | only in `adapters/stylo` |
+| Skia (`skia-safe`, `anyrender_skia`, `anyrender`) | `raster.rs`, `canvas/*`, `webgl/context.rs` | only in `adapters/skia` |
+| V8 / Deno (`deno_core`, `deno_*`) | `v8.rs`, `native_ops.rs`, `script.rs`, `module_loader.rs`, `web*.rs`, `workers/runtime.rs` | only in `adapters/v8` |
+| `html5ever` | `parser.rs` | `html/parser` or an adapter (decided at gate G2-HTML) |
+
+The independent-contract rule (`html`, `dom`, `css`, `layout`, `graphics/display-list` do not depend on one another) applies to **planned** crates; the current monolith does not satisfy it and is not expected to until Waves 2–3 complete.
 
 ## Layering rules (target, updated for Phase 2)
 

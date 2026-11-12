@@ -13,11 +13,11 @@ Cascade, inheritance and computed style resolution.
 
 ## Expected dependencies
 
-`foundation/*`, `dom/core` where selectors and style need the tree. Specifically: `css/parser`, `css/selectors`, `css/values`, `dom/core`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `dom/*` or `layout/*`; element access goes through an abstract view that an adapter implements. Within this group: `css/parser`, `css/selectors`, `css/values`.
 
 ## Dependencies to avoid
 
-`layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (including Stylo directly), Blitz, V8. Also: `layout/*`.
+`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8. Also: `layout/*`.
 
 ## Current status
 

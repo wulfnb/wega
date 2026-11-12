@@ -12,6 +12,6 @@ Group directory. Planned leaf modules:
 - [`image`](./image/README.md) — Image decoding, resizing and caching.
 - [`fonts`](./fonts/README.md) — Font discovery, loading and glyph data.
 
-Default dependencies for this group: `foundation/*`, `foundation/geometry`; `layout/core` fragments only for display-list building.
+Default dependencies for this group: `std` only for now (`foundation/*` deferred). The display-list contract is independent of `layout/*`, `dom/*` and `css/*` (it may mirror `anyrender::PaintScene`).
 
-Dependencies to avoid: `dom/*`, `css/*`, `javascript/*`, `services/*`, direct Skia/GPU types outside the dedicated leaves.
+Dependencies to avoid: `dom/*`, `css/*`, `layout/*`, `javascript/*`, `services/*`; Skia/GPU types outside `adapters/skia` and the dedicated GPU leaf.

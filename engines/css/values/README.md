@@ -13,11 +13,11 @@ CSS value types, units and computed-value representations.
 
 ## Expected dependencies
 
-`foundation/*`, `dom/core` where selectors and style need the tree. Specifically: `foundation/geometry`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `dom/*` or `layout/*`; element access goes through an abstract view that an adapter implements.
 
 ## Dependencies to avoid
 
-`layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (including Stylo directly), Blitz, V8.
+`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8.
 
 ## Current status
 

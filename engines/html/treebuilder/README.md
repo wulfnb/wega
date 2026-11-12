@@ -13,11 +13,11 @@ HTML tree construction (insertion modes, fragment parsing).
 
 ## Expected dependencies
 
-`foundation/*`, `dom/core`. Specifically: `html/parser`, `dom/core`, `dom/mutation`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `dom/*`, `css/*` or `layout/*`; tree construction targets a sink trait that an adapter implements. Within this group: `html/parser`.
 
 ## Dependencies to avoid
 
-`css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`. Also: Network or resource loading.
+`dom/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz types in public APIs. Also: Network or resource loading.
 
 ## Current status
 

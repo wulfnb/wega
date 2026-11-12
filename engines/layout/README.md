@@ -12,6 +12,6 @@ Group directory. Planned leaf modules:
 - [`text`](./text/README.md) — Text shaping, measurement and line breaking.
 - [`invalidation`](./invalidation/README.md) — Layout invalidation and incremental relayout.
 
-Default dependencies for this group: `foundation/*`, `css/values`, `css/style-engine` (computed style input), `dom/core`.
+Default dependencies for this group: `std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz).
 
-Dependencies to avoid: `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, Taffy-specific types in public APIs, V8.
+Dependencies to avoid: `css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs.

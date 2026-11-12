@@ -13,11 +13,11 @@ Style invalidation from DOM and stylesheet changes.
 
 ## Expected dependencies
 
-`foundation/*`, `dom/core` where selectors and style need the tree. Specifically: `css/selectors`, `css/style-engine`, `dom/mutation`.
+`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `dom/*` or `layout/*`; element access goes through an abstract view that an adapter implements. Within this group: `css/selectors`, `css/style-engine`.
 
 ## Dependencies to avoid
 
-`layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (including Stylo directly), Blitz, V8. Also: `layout/invalidation` (coordinate via events, not imports).
+`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8. Also: `layout/invalidation` (coordinate via events, not imports).
 
 ## Current status
 

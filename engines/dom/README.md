@@ -9,6 +9,6 @@ Group directory. Planned leaf modules:
 - [`mutation`](./mutation/README.md) — DOM mutation tracking and observation.
 - [`traversal`](./traversal/README.md) — DOM traversal and querying utilities.
 
-Default dependencies for this group: `foundation/*`.
+Default dependencies for this group: `std` only for now (`foundation/*` deferred). Independent contract: no dependency on `html/*`, `css/*`, `layout/*` or `graphics/*`.
 
-Dependencies to avoid: `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`, Blitz, V8.
+Dependencies to avoid: `html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`.
