@@ -2,7 +2,7 @@
 
 **Status: PLANNED — NOT IMPLEMENTED** (Phase 1 structure; updated for Phase 2 decisions). 72 planned leaf modules. Per-module classification, package names and migration sources: [`crate-initialization-plan.md`](./crate-initialization-plan.md).
 
-This map describes the planned modular layout of the Wega browser engine. Nothing listed here under a new directory exists as code yet. No new directory is a Cargo workspace member, and none contains a `Cargo.toml` or Rust source.
+This map describes the modular layout of the Wega browser engine. **Implemented (Wave 1):** `services/cookies` (`wega-cookies`), `services/storage` (`wega-storage`), `services/security` (`wega-security`), `services/permissions` (`wega-permissions`) are members of the `engines` workspace; `tools/dependency-graph` and `tools/architecture-check` are members of the standalone `engines/tools` workspace. **Every other leaf is still a documentation-only placeholder** with no `Cargo.toml` or Rust source and is not a workspace member.
 
 ## Existing components (unchanged)
 
@@ -12,6 +12,8 @@ This map describes the planned modular layout of the Wega browser engine. Nothin
 | `engines/network` | Network stack |
 | `engines/platform` | Platform abstraction |
 | `engines/protocol` | Process/IPC protocol |
+| `engines/services/{cookies,storage,security,permissions}` | Wave 1 crates (`wega-cookies`, `wega-storage`, `wega-security`, `wega-permissions`) |
+| `engines/tools` | Standalone dev-tools workspace (`wega-dependency-graph`, `wega-architecture-check`), excluded from `engines` |
 | `engines/vendor` | Vendored third-party code (Blitz, Stylo, Skia bindings, Deno/V8) |
 | `engines/v8-spike` | V8 experiment (excluded from workspace) |
 | `src/`, `tests/`, `tools/`, `vendor/` | Root `wega` application crate and its tests, tools and vendored Servo crates |

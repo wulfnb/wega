@@ -2,6 +2,15 @@
 
 **Status: APPROVED PLAN — NOTHING IMPLEMENTED.** No crate, Cargo manifest, workspace member or source move results from this document. It supersedes the draft of the same name, applies the ten review decisions, corrects the dependency graph, and adds the Phase 2 execution plan.
 
+**Wave 1 implementation status: COMPLETE** — see [`wave1-implementation-report.md`](./wave1-implementation-report.md). Corrections discovered during implementation:
+
+- `cargo fmt` for the engines workspace needs `--all`: `cargo fmt --manifest-path engines/Cargo.toml --all --check`.
+- `wega-security` uses `sha2 0.11` (the engine's version) and exposes modules `csp` and `secure_context`; `Csp` became `pub`.
+- `wega-permissions` also needs `url 2.5` and depends on `wega-network` (for `Policy`) as planned.
+- `wega-storage` and `wega-cookies` carry the same dependency versions as `wega-network` (`rusqlite 0.41.1`, `sha2 0.10`, `cookie_store =0.22.1`, `publicsuffix =2.3.0`). `wega-network` kept `rusqlite`/`sha2` (still used by `services.rs`) and dropped `cookie_store`/`publicsuffix`.
+- Tools workspace placement decided: standalone `engines/tools/` workspace with its own lockfile, excluded from `engines` (`exclude = [..., "tools"]`).
+- `engines/wega/src/public_suffix_list.dat` remains in place (unreferenced; not deleted).
+
 Related: [`module-map.md`](./module-map.md), [`migration-phases.md`](./migration-phases.md).
 
 ## 1. Decisions applied

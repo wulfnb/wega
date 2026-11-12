@@ -1,6 +1,6 @@
 # Migration Phases
 
-**Status: PLANNED.** Phase 1 is complete (commit `d168b71`). Phase 2 planning is finalized in [`crate-initialization-plan.md`](./crate-initialization-plan.md); no Phase 2 implementation has started.
+**Status: Phase 1 and Phase 2 Wave 1 are complete.** Phase 1: commit `d168b71`. Wave 1: see [`wave1-implementation-report.md`](./wave1-implementation-report.md). Plan: [`crate-initialization-plan.md`](./crate-initialization-plan.md). Waves 2 and 3 have not started.
 
 ## Phase 1 — Directory structure and documentation (complete)
 
@@ -10,7 +10,7 @@ Placeholder directories and READMEs under `engines/`, module map, migration phas
 
 Rules for every step: one reviewable commit; new crates join the `engines` workspace only; compatibility re-exports at old paths; `#![forbid(unsafe_code)]` by default; no dependency version changes; CI-equivalent tests green; revert-by-commit rollback.
 
-### Wave 1 — tooling and clean service seams
+### Wave 1 — tooling and clean service seams (COMPLETE)
 1. Architecture tooling (`wega-dependency-graph`, `wega-architecture-check`; report-only; `cargo_metadata` allowed).
 2. `wega-cookies` (from `network/src/cookies.rs`).
 3. `wega-storage` (Cache Storage, Cache API, IndexedDB from `wega-network`).
