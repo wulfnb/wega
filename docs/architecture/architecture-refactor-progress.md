@@ -345,3 +345,16 @@ Full report: [`dom-round7-report.md`](./dom-round7-report.md).
 - **Results:** 406 passed, 0 failed, 6 ignored; broker mode, required-worker test, clippy, fmt, metadata, root check pass; `Cargo.lock` +32/−0 lines, no external change. Engine Blitz references 149 → 100 lines.
 - **Commits:** `48b5881`, `377f723`, `5c4b3b2`, `c65c5b2`, `794aead`, `e3e5b38`, report commit.
 - **Next:** events, layout geometry, style, paint and form-state contracts; move document construction/configuration into the adapter so `Deref` can be retired.
+
+## 36. Round 8 (event routing, focus, input and document lifecycle)
+
+Full report: [`dom-round8-report.md`](./dom-round8-report.md); audit and design: [`dom-round8-design.md`](./dom-round8-design.md).
+
+- **Audit:** event dispatch semantics are owned by Deno's `deno_web` (Wega's JS fallback dispatcher is dead code); Blitz owns hit-testing, hover, focus, active/mousedown and selection; default actions are mixed (engine, then Blitz).
+- **Contracts:** `wega_dom::input` (`FocusState`, `InputControl`, `HoverChange`, `element_chain`) implemented once by `BlitzDocument`; engine-side `NativeEvent` replaces 11 hand-formatted JS calls. No new crate (same two dependents as `wega-dom`). Focus has one owner (the document); the engine derives transitions from before/after state and calls a single JS definition, which `element.focus()/blur()` share.
+- **Bugs fixed (tested):** native events were untrusted; no `relatedTarget` on focus events; `element.focus()` dispatched only `focus`; `blur()` left `activeElement`; `activeElement` was `<html>`; key events targeted `<html>`; no shadow-root `activeElement` retargeting; native events for dropped nodes threw.
+- **Lifecycle:** `DocumentSetup` + `BlitzDocument::{from_html, from_xml, empty}` in the adapter; the engine no longer builds a `DocumentConfig` or constructs documents; replacement, navigation, reload, error page and parser teardown pinned by tests. `Deref` stays.
+- **Shadow DOM:** composed/non-composed, slotted, closed-root and focus retargeting verified; `delegatesFocus`, `slotchange`, pointer capture and non-focusable `focus()` remain gaps.
+- **Numbers:** 433 passed, 0 failed, 7 ignored; graph unchanged (13 members, 24 edges, 0 violations); Blitz reference lines 100 → 96; one regression found by A/B measurement and fixed; script `focus()` +228% by design (four events instead of one); other paths within noise at load ≈ 10.
+- **Commits:** `0406e51`, `9db9112`, `3f55e74`, `6162279`, `221a0fa`, `c777548`, `22dbc5a`, `6cab08f`, `fa1a5c5`, report commit.
+- **Next:** a default-action/click-synthesis contract, engine-owned input event types (drop `blitz-traits` events from `view.rs`), then layout geometry, style and form state.

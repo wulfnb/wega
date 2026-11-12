@@ -18,6 +18,7 @@ Holds architecture documentation for the planned modular engine layout.
 - [`dom-mutation-report.md`](./dom-mutation-report.md): the DOM mutation contract, commit semantics and parser integration (Round 5).
 - [`dom-round6-report.md`](./dom-round6-report.md): node-budget panic fix, mutation/fragment/read-path migration and crate-extraction readiness (Round 6).
 - [`dom-round7-report.md`](./dom-round7-report.md): `wega-dom`, `wega-html` and `wega-adapter-blitz` extraction and the Blitz adapter ownership decision (Round 7).
+- [`dom-round8-report.md`](./dom-round8-report.md): event routing, focus and input boundaries, document construction in the adapter and the lifecycle tests (Round 8); [`dom-round8-design.md`](./dom-round8-design.md) is the audit and design decision.
 - [`baseline/`](./baseline/): baseline and post-wave dependency graphs and architecture reports.
 
 ## Expected dependencies
