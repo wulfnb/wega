@@ -119,24 +119,27 @@ pub(crate) fn permissions(policy: Arc<RwLock<crate::NetworkPolicy>>) -> Permissi
     .expect("static network grant");
     PermissionsContainer::new(Arc::new(parser), permissions)
 }
-pub(crate) fn extensions(dom: &crate::dom::Dom) -> Vec<deno_core::Extension> {
+pub(crate) fn extensions(
+    document: &url::Url,
+    network: &dyn crate::script_net::ScriptNetwork,
+) -> Vec<deno_core::Extension> {
     use sha2::{Digest, Sha256};
     // reqwest and Deno enable different Rustls providers; select one explicitly.
     let _ = deno_tls::rustls::crypto::aws_lc_rs::default_provider().install_default();
-    let url = dom.document.borrow().url().clone();
-    let directory =
-        if dom.network.remote.is_none() && matches!(url.origin(), url::Origin::Tuple(..)) {
-            dom.network.storage_dir.as_ref().map(|root| {
-                root.join(
-                    Sha256::digest(url.origin().ascii_serialization().as_bytes())
-                        .iter()
-                        .map(|byte| format!("{byte:02x}"))
-                        .collect::<String>(),
-                )
-            })
-        } else {
-            None
-        };
+    let url = document.clone();
+    let directory = if network.remote().is_none() && matches!(url.origin(), url::Origin::Tuple(..))
+    {
+        network.storage_dir().map(|root| {
+            root.join(
+                Sha256::digest(url.origin().ascii_serialization().as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>(),
+            )
+        })
+    } else {
+        None
+    };
     crate::web_extensions::extensions(url, directory)
 }
 

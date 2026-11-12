@@ -211,12 +211,13 @@ fn run(
         webgl: RefCell::new(crate::webgl::WebGLEngine::new(spec.limits.max_pixels * 8)),
         start: Instant::now(),
     });
+    let script_network: Arc<dyn crate::script_net::ScriptNetwork> = Arc::new(spec.network.clone());
     let mut extensions = crate::web_extensions::extensions(spec.script_url.clone(), None);
     extensions.push(crate::native_ops::wega_dom::init());
     let mut runtime = JsRuntime::try_new(RuntimeOptions {
         startup_snapshot: Some(crate::v8::STARTUP_SNAPSHOT),
         module_loader: Some(Rc::new(crate::module_loader::Loader::new(
-            spec.network.clone(),
+            script_network.clone(),
             &spec.script_url,
             spec.limits.resource_bytes,
         ))),
@@ -246,7 +247,7 @@ fn run(
             deno_websocket::set_broker(
                 &mut state,
                 Arc::new(crate::broker_socket::Connector {
-                    network: spec.network.clone(),
+                    network: script_network.clone(),
                 }),
             );
         }

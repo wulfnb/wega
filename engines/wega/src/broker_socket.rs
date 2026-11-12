@@ -1,26 +1,31 @@
 //! Async byte transport over the existing bounded host-service dispatcher.
 //! Deno owns WebSocket framing; the host owns dialing, TLS, cookies and grants.
-use crate::network::Network;
+use crate::script_net::ScriptNetwork;
 use std::{
     io,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use wega_network::ResourceRequest;
 type Operation = Pin<Box<dyn Future<Output = Result<Vec<u8>, String>> + Send>>;
-fn operation(network: Network, request: ResourceRequest, body: Vec<u8>) -> Operation {
+fn operation(
+    network: Arc<dyn ScriptNetwork>,
+    request: ResourceRequest,
+    body: Vec<u8>,
+) -> Operation {
     Box::pin(async move {
-        let remote = network.remote.clone().ok_or("Missing WebSocket service")?;
+        let remote = network.remote().ok_or("Missing WebSocket service")?;
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        network.spawn(move |_| {
+        network.queue(Box::new(move || {
             let _ = sender.send(remote.resource(request, &body));
-        })?;
+        }))?;
         receiver.await.map_err(|_| "WebSocket dispatcher stopped")?
     })
 }
 pub(crate) struct Connector {
-    pub network: Network,
+    pub network: Arc<dyn ScriptNetwork>,
 }
 impl deno_websocket::BrokerConnector for Connector {
     fn connect(
@@ -35,9 +40,9 @@ impl deno_websocket::BrokerConnector for Connector {
     > {
         let network = self.network.clone();
         Box::pin(async move {
-            let remote = network.remote.clone().ok_or("Missing WebSocket service")?;
+            let remote = network.remote().ok_or("Missing WebSocket service")?;
             let (sender, receiver) = tokio::sync::oneshot::channel();
-            network.spawn(move |_| {
+            network.queue(Box::new(move || {
                 let result =
                     remote.resource(ResourceRequest::WebSocketOpen { url, protocols }, &[]);
                 // Cancellation while the host connects must not leak a socket.
@@ -53,7 +58,7 @@ impl deno_websocket::BrokerConnector for Connector {
                         &[],
                     );
                 }
-            })?;
+            }))?;
             let reply = receiver
                 .await
                 .map_err(|_| "WebSocket connect dispatcher stopped")??;
@@ -87,7 +92,7 @@ impl deno_websocket::BrokerConnector for Connector {
     }
 }
 struct Stream {
-    network: Network,
+    network: Arc<dyn ScriptNetwork>,
     id: String,
     reading: Option<Operation>,
     writing: Option<Operation>,
@@ -109,7 +114,11 @@ impl Stream {
         )
     }
 }
-fn operation_fn(network: Network, request: ResourceRequest, body: Vec<u8>) -> Operation {
+fn operation_fn(
+    network: Arc<dyn ScriptNetwork>,
+    request: ResourceRequest,
+    body: Vec<u8>,
+) -> Operation {
     operation(network, request, body)
 }
 impl AsyncRead for Stream {
@@ -190,9 +199,9 @@ impl AsyncWrite for Stream {
 }
 impl Drop for Stream {
     fn drop(&mut self) {
-        if let Some(remote) = self.network.remote.clone() {
+        if let Some(remote) = self.network.remote() {
             let id = self.id.clone();
-            let _ = self.network.spawn(move |_| {
+            let _ = self.network.queue(Box::new(move || {
                 let _ = remote.resource(
                     ResourceRequest::WebSocketIo {
                         id,
@@ -200,7 +209,7 @@ impl Drop for Stream {
                     },
                     &[],
                 );
-            });
+            }));
         }
     }
 }

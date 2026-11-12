@@ -619,6 +619,39 @@ impl Network {
     }
 }
 
+impl crate::script_net::ScriptNetwork for Network {
+    fn remote(&self) -> Option<wega_network::Remote> {
+        self.remote.clone()
+    }
+    fn storage_dir(&self) -> Option<std::path::PathBuf> {
+        self.storage_dir.clone()
+    }
+    fn queue(&self, task: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+        self.spawn(move |_| task())
+    }
+    fn fetch_module(
+        &self,
+        document: &Url,
+        url: Url,
+        limit: usize,
+        local: Option<std::path::PathBuf>,
+    ) -> crate::script_net::BoxFuture<Result<(Url, Vec<u8>), String>> {
+        let network = self.clone();
+        let context = FetchContext::subresource(document, Destination::Module);
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let spawned = self.spawn(move |client| {
+            let result = network
+                .fetch(client, &url, &context, limit, local.as_deref())
+                .map(|response| (response.url, response.bytes));
+            let _ = sender.send(result);
+        });
+        Box::pin(async move {
+            spawned?;
+            receiver.await.map_err(|error| error.to_string())?
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

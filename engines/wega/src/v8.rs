@@ -311,7 +311,9 @@ impl V8Host {
         // Do not enable lite mode per isolate: V8 flags are process-wide. Workers receive
         // their per-view option before initializing the platform.
         let document_url = dom.document.borrow().url().clone();
-        let mut extensions = crate::web::extensions(&dom);
+        let script_network: Arc<dyn crate::script_net::ScriptNetwork> =
+            Arc::new(dom.network.clone());
+        let mut extensions = crate::web::extensions(&document_url, &*script_network);
         extensions.push(wega_dom::init());
         for extension in &extensions {
             for source in extension
@@ -332,7 +334,7 @@ impl V8Host {
         let mut runtime = JsRuntime::try_new(RuntimeOptions {
             startup_snapshot: Some(STARTUP_SNAPSHOT),
             module_loader: Some(Rc::new(crate::module_loader::Loader::new(
-                dom.network.clone(),
+                script_network.clone(),
                 &document_url,
                 limits.resource_bytes,
             ))),
@@ -363,7 +365,7 @@ impl V8Host {
             deno_websocket::set_broker(
                 &mut runtime.op_state().borrow_mut(),
                 Arc::new(crate::broker_socket::Connector {
-                    network: dom.network.clone(),
+                    network: script_network.clone(),
                 }),
             );
             deno_webstorage::set_backend(

@@ -33,6 +33,7 @@ mod parser;
 pub mod permissions;
 mod raster;
 mod script;
+mod script_net;
 mod security_context;
 mod v8;
 mod view;
