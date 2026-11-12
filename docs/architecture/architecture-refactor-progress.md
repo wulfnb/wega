@@ -192,3 +192,77 @@ No measurable change. (Two earlier pairs on the same loaded machine also overlap
 ## 18. Recommended next step
 
 Move worker realm creation behind the adapter (a `WorkerRuntime` wrapper that owns `JsRuntime`, the dispatch/execute calls and the isolate handle), then drop `deno_core` from `wega-engine`; separately decide whether `canvas`/`webgl` hosts stay in the engine (they are needed by `WorkerHost`). After that, the first candidate for the DOM work is a measured look at the ≈86 `get_node`/40 `mutate()` Blitz call sites, not a new crate.
+
+---
+
+# Round 3 — worker runtime isolation
+
+## 19. Audit of worker runtime dependencies (before)
+
+`wega-engine` used Deno/V8 in exactly one production file, `workers/runtime.rs`, plus one test macro:
+
+| Use | Where | Belongs to |
+|---|---|---|
+| `JsRuntime` (execute_script, load_main_es_module_from_code, mod_evaluate, run_event_loop, v8_isolate, add_near_heap_limit_callback) | `run()` | adapter (runtime implementation) |
+| `deno_core::v8::IsolateHandle` (stored in `Handle`, `terminate_execution`) | `Handle`, `run()` | adapter, exposed as an opaque `WorkerTerminator` |
+| tokio executor owned by the worker thread (`block_on`, `enter`, `timeout`) | `run()` | adapter (runtime implementation detail) |
+| `create_runtime(RuntimeSpec)` call | `run()` | already adapter (round 2) |
+| `include_js_files!` macro in the asset packaging test | `dom_host.rs` tests | engine test only |
+| `WorkerHost` (`NativeHost` impl), Canvas/WebGL `host_call`, hubs, `Spec`, `Handle`/`Command` channel, message and transfer code, script fetching, bootstrap JS and dispatch protocol | `workers/*` | **engine** (orchestration and shared host contracts) |
+
+Dependency graph before: `wega-engine → deno_core` (normal) plus build-time use of the adapter; workspace edges unchanged by this round (18 edges, [`baseline/dependency-graph-after-workers.md`](./baseline/dependency-graph-after-workers.md)); the difference is in the external graph: engine direct Deno dependencies went from 1 (`deno_core`, normal) to **0** normal/build (1 dev-dependency).
+
+## 20. Worker boundary design
+
+`WorkerRuntime` (adapter, `worker.rs`) extends the existing adapter; it reuses `create_runtime(RuntimeKind::Worker)` (now crate-internal) and adds no second runtime implementation:
+
+| Operation | API |
+|---|---|
+| Creation/initialisation | `WorkerRuntime::new(RuntimeSpec)`, then `execute(...)` for the engine's bootstrap, `configure_secure_context(url)` (so the engine can seal its host in between, as before) |
+| Script/module execution | `execute(name, source)`, `load_main_module(url, source)` (blocks during imports) |
+| Event-loop polling | `poll(budget) -> Turn { module: Option<Result>, status: LoopStatus }` with `TimedOut`, `Idle`, `EvaluatingModule`, `Failed(String)` |
+| Termination/cancellation | `terminator() -> WorkerTerminator` (`Clone`, thread-safe, `terminate()`); the engine's existing `Command::Stop` and `stopped` flag are unchanged |
+| Error propagation | plain `String`s (the engine's `host.report`/sink protocol is unchanged) |
+| Resource cleanup | `Drop` |
+| Heap limit | `exceeded_heap_limit()` |
+
+No `deno_core` type, V8 handle or `Dom` type crosses the public boundary. The message payload path is unchanged: payloads are passed as `String`s into `execute` once (no additional copies beyond the previous `format!`). **Thread affinity:** a `WorkerRuntime` is created, used and dropped on one thread (`!Send`); only `WorkerTerminator` is shared. **Reentrancy:** `NativeHost` callbacks run inside `execute`/`load_main_module`/`poll` and must not call back into the same runtime or wait for that thread's event loop (documented in `worker.rs`). **Lifetime:** `Drop` enters the executor, drops the pending module evaluation, then the runtime/isolate, then the executor, the same order as the previous `run()` locals.
+
+## 21. Canvas and WebGL
+
+No boundary was needed. Worker Canvas/WebGL operations are reached through `NativeHost::call`, which `WorkerHost` implements in the engine (it owns `CanvasEngine`/`WebGLEngine`, frames and GPU/thread affinity); the adapter only invokes that trait object and never names Canvas or WebGL. Nothing was moved and no graphics trait was introduced.
+
+## 22. Commits (round 3)
+
+| Commit | Change |
+|---|---|
+| `e78062e` | adapter: `WorkerRuntime`, `WorkerTerminator`, `Turn`/`LoopStatus` |
+| `c65cbcc` | engine: worker realm construction migrated; `workers/runtime.rs` no longer uses Deno/V8 types |
+| `bd7b94f` | `deno_core` becomes a dev-dependency of `wega-engine` (packaging-test macro only) |
+| (this commit) | report, post-worker graph and architecture report |
+
+## 23. Safety review
+
+- **Termination with pending async work:** `Handle::stop` sets `stopped`, sends `Stop`, calls `WorkerTerminator::terminate` (interrupts script) and joins; `poll` is time-bounded (the 4 ms tick), so the flag is observed; pending ops are dropped with the runtime. Unchanged behaviour, covered by the worker lifecycle tests.
+- **Destruction order:** as above; `WorkerTerminator` may outlive the isolate (the underlying handle is a no-op after teardown, as before).
+- **Message ordering/structured cloning/transfer:** command channel, `workers/transfer.rs` and the JS dispatch protocol are untouched.
+- **Origin/security context and enforcement:** same `create_runtime` path (permissions container from the network policy, broker connector, `configure_secure_context` after the host is sealed); no change to ordering of seal and secure-context.
+- **Deadlocks/reentrancy:** the engine holds no lock across `execute`/`poll`; the documented constraints match existing practice.
+- **Unsafe:** none added. `RawIsolateGuard` is untouched and remains the adapter's only `unsafe`; worker runtimes did not use it before and still do not.
+- **Behavioural nuance:** the tokio executor context is now entered per adapter call instead of once around the whole worker thread body. Everything that needs it (script, module load, polling, drop) runs inside adapter calls; all worker tests pass.
+
+## 24. Validation (round 3)
+
+- Full engines suite: **360 passed, 0 failed, 3 ignored**; 385 s wall, 1.45 GB max RSS, 178 MB peak footprint.
+- Worker lifecycle/messaging (`web_workers` 11, `worker` 8), Canvas/WebGL (`canvas2d`, `webgl`), `inherited_broker`, `web`, `scripts`: pass. Broker mode (security, forms, scripts, documents, history): pass. Required-worker test with a CI-style content helper: pass.
+- Root `cargo check --locked`, both `cargo metadata --locked`, `fmt --check`, Clippy `-D warnings`: pass. Architecture checker: **0 violations**. `engines/Cargo.lock` and root `Cargo.lock`: no change.
+- Performance (debug build, load average ≈ 20, noise ±30%): `evaluate_json` 13.8-14.2 µs, DOM ops 421-424 µs, document lifecycle 212-216 ms (round 2: 13-15 µs, 361-587 µs, 187-298 ms); `web_workers` suite 5.0-5.2 s (before: ≈5.0 s). No measurable change.
+- **Not run:** Windows and Linux builds/tests, MSVC Skia cache jobs, native-sandbox ignored tests.
+
+## 25. Remaining direct Deno/V8 dependencies
+
+`wega-engine` has **no** normal or build dependency on any `deno_*` crate (verified with `cargo tree -e normal,build`). The single remaining reason for a direct dependency is `deno_core` as a **dev-dependency** for the packaging test `dom_host::packaging_tests` (uses the `include_js_files!` macro to assert the DOM JS assets embed without a build tree). The engine still depends on the adapter for the startup snapshot (built in `build.rs` from the engine's DOM assets). Remaining non-Deno blockers are unchanged: Blitz (≈86 `get_node`/40 `mutate()` call sites), Stylo/html5ever, Skia in Canvas/WebGL, root `tools/webidl`/`vendor` paths in `build.rs`.
+
+## 26. Next step
+
+The JavaScript runtime is isolated. The next architectural question is the DOM boundary: measure the actual Blitz call sites in `dom.rs`/`view.rs` and decide, from data, whether a Wega-owned interface exists that Blitz can satisfy without wrappers; do not begin it without that measurement.
