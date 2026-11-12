@@ -2038,7 +2038,7 @@ impl View {
                             .and_then(|el| el.attr(LocalName::from("name")).map(str::to_string));
                         if let Some(name) = name {
                             let mut doc = self.document.borrow_mut();
-                            blitz_dom::BaseDocument::toggle_radio(&mut *doc, name, target);
+                            blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
                         }
                     }
                     let source = format!(

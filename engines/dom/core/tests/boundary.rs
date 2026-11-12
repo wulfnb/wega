@@ -12,10 +12,12 @@ fn dependencies(manifest: &str, tables: &[&str]) -> Vec<String> {
     for line in manifest.lines().map(str::trim) {
         if let Some(header) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
             current = header.to_owned();
-        } else if tables.contains(&current.as_str()) && !line.is_empty() && !line.starts_with('#') {
-            if let Some((name, _)) = line.split_once('=') {
-                names.push(name.trim().to_owned());
-            }
+        } else if tables.contains(&current.as_str())
+            && !line.is_empty()
+            && !line.starts_with('#')
+            && let Some((name, _)) = line.split_once('=')
+        {
+            names.push(name.trim().to_owned());
         }
     }
     names

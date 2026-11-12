@@ -546,7 +546,7 @@ fn mutation_overhead_against_direct_access() {
     let direct = || {
         let mut doc = empty_doc();
         let root = doc.root_node().id;
-        let mut m = BaseDocument::mutate(&mut *doc);
+        let mut m = BaseDocument::mutate(&mut doc);
         let host = m.create_element(qn("div"), vec![]);
         m.append_children(root, &[host]);
         let mut kids = Vec::with_capacity(N);
