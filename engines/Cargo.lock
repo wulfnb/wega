@@ -6726,6 +6726,7 @@ version = "0.1.0"
 dependencies = [
  "blitz-dom",
  "blitz-html",
+ "blitz-traits",
  "html5ever",
  "url",
  "wega-dom",

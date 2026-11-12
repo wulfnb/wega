@@ -6,8 +6,7 @@ use crate::{
     network::{Destination, FetchContext, Network, Response},
     script::{DynScriptHost, HostContext},
 };
-use blitz_dom::{DocumentConfig, NodeId, traversal::TreeTraverser};
-use blitz_html::HtmlDocument;
+use blitz_dom::{NodeId, traversal::TreeTraverser};
 use blitz_traits::{
     events::{
         BlitzPointerEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
@@ -32,7 +31,7 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
-use wega_adapter_blitz::BlitzDocument;
+use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
 use wega_adapter_blitz::{ToKey, ToNodeId};
 use wega_dom::Mutator as _;
 use wega_dom::NodeKey;
@@ -367,24 +366,20 @@ impl View {
         hubs: crate::workers::Hubs,
         limits: Limits,
     ) -> Result<Self, String> {
-        let document = HtmlDocument::from_html(
+        let document = BlitzDocument::from_html(
             "<!doctype html><title>Wega</title>",
-            DocumentConfig {
-                font_ctx: network
-                    .fonts
-                    .as_ref()
-                    .map(|font| blitz_dom::build_broker_font_ctx(font)),
+            DocumentSetup {
+                fonts: network.fonts.clone(),
                 ..Default::default()
             },
-        )
-        .into_inner();
+        );
         let (_tx, navigation_rx) = mpsc::channel();
         let raster = wega_adapter_skia::Raster::new(network.wake.clone())?;
         let csp = Arc::new(RwLock::new(Csp::default()));
         let mut view = Self {
             host: document_host::DocumentHost::default(),
             scheduler: crate::event_loop::Scheduler::default(),
-            document: Rc::new(RefCell::new(BlitzDocument::new(document))),
+            document: Rc::new(RefCell::new(document)),
             document_revision: 0,
             navigation_generation: 0,
             document_generation: Rc::new(Cell::new(0)),
@@ -606,12 +601,8 @@ impl View {
         self.csp = Arc::new(RwLock::new(csp));
         self.in_flight = Arc::new(AtomicUsize::new(0));
         self.completed = Arc::new(Mutex::new(Vec::new()));
-        let config = DocumentConfig {
-            font_ctx: self
-                .network
-                .fonts
-                .as_ref()
-                .map(|font| blitz_dom::build_broker_font_ctx(font)),
+        let setup = DocumentSetup {
+            fonts: self.network.fonts.clone(),
             base_url: Some(self.url.to_string()),
             abort_signal: Some(abort.signal.clone()),
             net_provider: Some(Arc::new(Resources {
@@ -626,7 +617,6 @@ impl View {
                 completed: self.completed.clone(),
             })),
             navigation_provider: Some(Arc::new(Navigation(sender, self.network.wake.clone()))),
-            ..Default::default()
         };
         self.script = None;
         self.host.parser = None;
@@ -639,11 +629,11 @@ impl View {
         self.host.script_count = 0;
         self.host.encoding = encoding;
         let document = if xml {
-            HtmlDocument::from_xml(html, config).into_inner()
+            BlitzDocument::from_xml(html, setup)
         } else {
-            blitz_dom::BaseDocument::new(config)
+            BlitzDocument::empty(setup)
         };
-        self.document = Rc::new(RefCell::new(BlitzDocument::new(document)));
+        self.document = Rc::new(RefCell::new(document));
         self.script_failure = None;
         self.document_revision = document_revision;
         self.scheduler.replace(document_revision);

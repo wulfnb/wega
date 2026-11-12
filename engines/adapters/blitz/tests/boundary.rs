@@ -2,8 +2,15 @@
 //! dependency (above all `wega-engine`, another adapter or a second document engine) fails
 //! this test, so the boundary is enforced by `cargo test` and not only by the report-only
 //! architecture checker. Extend the lists deliberately, with the architecture docs.
-const ALLOWED: &[&str] = &["wega-dom", "blitz-dom", "html5ever", "url"];
-const ALLOWED_DEV: &[&str] = &["wega-html", "blitz-html"];
+const ALLOWED: &[&str] = &[
+    "wega-dom",
+    "blitz-dom",
+    "blitz-html",
+    "blitz-traits",
+    "html5ever",
+    "url",
+];
+const ALLOWED_DEV: &[&str] = &["wega-html"];
 
 /// Dependency names declared in the given Cargo.toml tables.
 fn dependencies(manifest: &str, tables: &[&str]) -> Vec<String> {

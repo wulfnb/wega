@@ -1,6 +1,13 @@
 //! The only mapping from Blitz's document onto the Wega document contract (`wega-dom`).
 #![forbid(unsafe_code)]
-use blitz_dom::{BaseDocument, DocumentMutator, Node, NodeId, node::Attribute, node::NodeData};
+use blitz_dom::{
+    BaseDocument, DocumentConfig, DocumentMutator, Node, NodeId, node::Attribute, node::NodeData,
+};
+use blitz_html::HtmlDocument;
+use blitz_traits::{
+    navigation::NavigationProvider,
+    net::{AbortSignal, NetProvider},
+};
 use html5ever::QualName;
 use url::Url;
 use wega_dom::input::{FocusState, HoverChange, InputControl};
@@ -60,6 +67,51 @@ impl std::ops::DerefMut for BlitzDocument {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut BaseDocument {
         &mut self.0
+    }
+}
+
+/// What the engine decides about a new document. The adapter turns it into Blitz's own
+/// configuration, so the engine neither builds a `DocumentConfig` nor chooses how a
+/// `BaseDocument` is constructed.
+#[derive(Default)]
+pub struct DocumentSetup {
+    /// The URL relative references resolve against.
+    pub base_url: Option<String>,
+    /// Font file bytes supplied by the browser process (brokered fonts). `None` uses the
+    /// system fonts.
+    pub fonts: Option<std::sync::Arc<Vec<Vec<u8>>>>,
+    /// Cancelled when the document is replaced, to stop its in-flight resource loads.
+    pub abort_signal: Option<AbortSignal>,
+    pub net_provider: Option<std::sync::Arc<dyn NetProvider>>,
+    pub navigation_provider: Option<std::sync::Arc<dyn NavigationProvider>>,
+}
+impl DocumentSetup {
+    fn config(self) -> DocumentConfig {
+        DocumentConfig {
+            font_ctx: self
+                .fonts
+                .as_ref()
+                .map(|fonts| blitz_dom::build_broker_font_ctx(fonts)),
+            base_url: self.base_url,
+            abort_signal: self.abort_signal,
+            net_provider: self.net_provider,
+            navigation_provider: self.navigation_provider,
+            ..Default::default()
+        }
+    }
+}
+impl BlitzDocument {
+    /// A document parsed from `html` in one pass (the engine's initial blank page).
+    pub fn from_html(html: &str, setup: DocumentSetup) -> Self {
+        Self(HtmlDocument::from_html(html, setup.config()).into_inner())
+    }
+    /// A document parsed from XML in one pass.
+    pub fn from_xml(xml: &str, setup: DocumentSetup) -> Self {
+        Self(HtmlDocument::from_xml(xml, setup.config()).into_inner())
+    }
+    /// An empty document that the incremental HTML parser then fills.
+    pub fn empty(setup: DocumentSetup) -> Self {
+        Self(BaseDocument::new(setup.config()))
     }
 }
 
