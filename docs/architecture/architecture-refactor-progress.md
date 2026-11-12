@@ -333,3 +333,15 @@ Full report: [`dom-round6-report.md`](./dom-round6-report.md).
 - **Results:** 401 passed, 0 failed, 6 ignored; checker 0 violations; lockfiles unchanged. Benchmarks inconclusive on a loaded machine (see report).
 - **Commits:** `57a195f`, `156b5f2`, `1359d6d`, `f7c4a6b`, `132cdac`, `b585410`, report commit.
 
+
+## 35. Round 7 (DOM/HTML crate extraction, Blitz adapter ownership)
+
+Full report: [`dom-round7-report.md`](./dom-round7-report.md).
+
+- **Orphan rule:** two problems, not one: trait impls for `BaseDocument`/`&Node`, and `From<NodeId> for NodeKey` (foreign trait, both types foreign). Compared co-location, an owning newtype, a borrowed wrapper and a marker "family" trait; prototyped in a scratch workspace. The borrowed wrapper cannot back a long-lived parser (E0515). **Chosen: an owning `BlitzDocument` newtype (value, `Deref` to `BaseDocument`, no extra allocation), a local `BlitzNode` view, and explicit `.key()`/`.node_id()` conversions** (~150 mechanical edits).
+- **Parser diagnostics:** parser-owned `HtmlDiagnostic` + `ParseReport` type parameter; same category/message/line/URL, same emission order.
+- **Extracted:** `wega-dom` (`engines/dom/core`), `wega-html` (`engines/html/parser`), `wega-adapter-blitz` (`engines/adapters/blitz`). None depends on `wega-engine`; the contract and the parser name no Blitz. XML parsing, form state, layout, events stay in the engine.
+- **Graph:** 10 → 13 members, 18 → 24 edges, no cycles, 0 checker violations; boundary tests (`tests/boundary.rs`) enforce the dependency lists under `cargo test`; the checker allows only `wega-html → wega-dom` among contract crates.
+- **Results:** 406 passed, 0 failed, 6 ignored; broker mode, required-worker test, clippy, fmt, metadata, root check pass; `Cargo.lock` +32/−0 lines, no external change. Engine Blitz references 149 → 100 lines.
+- **Commits:** `48b5881`, `377f723`, `5c4b3b2`, `c65c5b2`, `794aead`, `e3e5b38`, report commit.
+- **Next:** events, layout geometry, style, paint and form-state contracts; move document construction/configuration into the adapter so `Deref` can be retired.
