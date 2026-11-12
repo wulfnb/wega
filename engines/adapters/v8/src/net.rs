@@ -4,9 +4,9 @@
 use std::{future::Future, path::PathBuf, pin::Pin};
 use url::Url;
 
-pub(crate) type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-pub(crate) trait ScriptNetwork: Send + Sync {
+pub trait ScriptNetwork: Send + Sync {
     /// The browser broker, when this engine delegates HTTP, cookies and storage to it.
     fn remote(&self) -> Option<wega_network::Remote>;
     /// Local per-origin storage root when no broker owns storage.

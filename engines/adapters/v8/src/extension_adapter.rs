@@ -1,7 +1,7 @@
 /// Deno's EventTarget already implements the DOM path, but its embedder has no
 /// Document/Window types. Supply HTML's Document -> Window parent rule.
 /// Modified by Wega contributors, 2026 (Deno's original MIT source stays intact).
-pub(crate) fn adapt_extension(
+pub fn adapt_extension(
     name: deno_core::ModuleName,
     source: deno_core::ModuleCodeString,
 ) -> Result<

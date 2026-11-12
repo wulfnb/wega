@@ -11,10 +11,10 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-WEB = 'engines/wega/src/v8/extension_adapter.rs'
+WEB = 'engines/adapters/v8/src/extension_adapter.rs'
 VIEW = 'engines/wega/src/view.rs'
 DOM = 'engines/wega/src/dom.rs'
-V8 = 'engines/wega/src/v8/mod.rs'
+V8 = 'engines/adapters/v8/src/host.rs'
 BINDINGS = 'engines/wega/src/dom/bindings.js'
 OBSERVERS = 'engines/wega/src/dom/observers.js'
 
@@ -147,7 +147,7 @@ MUTATIONS = [
      [(V8, '                            watch.fired = true;', '                            watch.fired = false;')],
      'errors', 'deadline_remains_fatal_and_a_new_document_recovers'),
     ('broker-live-local-policy', [('engines/wega/src/dom_host.rs', 'return "Network request blocked by browsing policy".into();', 'return String::new();')], "security", 'broker_honors_fetch_cache_modes_and_live_engine_policy_without_reloading'),
-    ('fetch-cache-mode', [('engines/wega/src/v8/extension_adapter.rs', 'req.cacheMode ?? \\"default\\"', '\\"default\\"')], "security", 'broker_honors_fetch_cache_modes_and_live_engine_policy_without_reloading'),
+    ('fetch-cache-mode', [('engines/adapters/v8/src/extension_adapter.rs', 'req.cacheMode ?? \\"default\\"', '\\"default\\"')], "security", 'broker_honors_fetch_cache_modes_and_live_engine_policy_without_reloading'),
     ('html-fragment-context', [(BINDINGS, '    insertAdjacentHTML(position, html) {\n      position = String(position).toLowerCase();\n      const outside = position === "beforebegin" || position === "afterend";\n      if (!outside && position !== "afterbegin" && position !== "beforeend")\n        fail("SyntaxError", "Invalid insertion position");\n      let context = outside ? this.parentNode : this;\n      if (!context || context.nodeType === 9)\n        fail("NoModificationAllowedError", "Insertion needs a parent element");\n      if (\n        context.nodeType !== 1 ||\n        (context.namespaceURI === "http://www.w3.org/1999/xhtml" &&\n          context.localName === "html")\n      )\n        context = this.ownerDocument.createElement("body");\n      const fragment = this.ownerDocument.createElementNS(\n        context.namespaceURI,\n        context.localName,\n      );\n      fragment.innerHTML = String(html);\n      this.insertAdjacentElementList(position, [...fragment.childNodes]);\n    }\n', '    insertAdjacentHTML(position, html) {\n      const context = this.ownerDocument.createElement(\n        this.parentElement?.localName || "body",\n      );\n      context.innerHTML = String(html);\n      this.insertAdjacentElementList(position, [...context.childNodes]);\n    }\n')], 'dom', 'adjacent_html_uses_the_insertion_position_and_namespace_context'),
     ('fragment-body-padding', [(BINDINGS, '    insertAdjacentHTML(position, html) {\n      position = String(position).toLowerCase();\n      const outside = position === "beforebegin" || position === "afterend";\n      if (!outside && position !== "afterbegin" && position !== "beforeend")\n        fail("SyntaxError", "Invalid insertion position");\n      let context = outside ? this.parentNode : this;\n      if (!context || context.nodeType === 9)\n        fail("NoModificationAllowedError", "Insertion needs a parent element");\n      if (\n        context.nodeType !== 1 ||\n        (context.namespaceURI === "http://www.w3.org/1999/xhtml" &&\n          context.localName === "html")\n      )\n        context = this.ownerDocument.createElement("body");\n      const fragment = this.ownerDocument.createElementNS(\n        context.namespaceURI,\n        context.localName,\n      );\n      fragment.innerHTML = String(html);\n      this.insertAdjacentElementList(position, [...fragment.childNodes]);\n    }\n', '    insertAdjacentHTML(position, html) {\n      const context = this.ownerDocument.createElement(\n        this.parentElement?.localName || "body",\n      );\n      context.innerHTML = String(html);\n      this.insertAdjacentElementList(position, [...context.childNodes]);\n    }\n')], 'css', 'inserted_svg_does_not_duplicate_the_body_or_its_padding'),
 ]

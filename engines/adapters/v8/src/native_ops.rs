@@ -4,24 +4,6 @@ use deno_error::JsErrorBox;
 use serde_json::{Value, json};
 use std::rc::Rc;
 
-fn generated_hooks() -> &'static std::collections::HashSet<String> {
-    static HOOKS: std::sync::OnceLock<std::collections::HashSet<String>> =
-        std::sync::OnceLock::new();
-    HOOKS.get_or_init(|| {
-        let manifest: Vec<Value> =
-            serde_json::from_str(include_str!("../dom/generated/hooks.json"))
-                .expect("checked generated hook registry");
-        let mut hooks = std::collections::HashSet::new();
-        for hook in manifest {
-            assert!(
-                hooks.insert(hook["name"].as_str().expect("hook name").to_owned()),
-                "duplicate generated hook"
-            );
-        }
-        hooks
-    })
-}
-
 /// Typed JS adapters keep callbacks and wrappers in their realm. Validate the
 /// exact generated dispatch name and every native identity after conversion,
 /// before entering semantic algorithms. No DOM borrow survives a JS callback.
@@ -31,18 +13,19 @@ fn op_dom_hook(
     #[string] hook: &str,
     #[serde] identities: Vec<String>,
 ) -> Result<(), JsErrorBox> {
-    if !generated_hooks().contains(hook) || identities.len() > 1024 {
+    let host = state.borrow::<Rc<dyn NativeHost>>();
+    if !host.is_generated_hook(hook) || identities.len() > 1024 {
         return Err(JsErrorBox::type_error(
             "Unknown generated hook or excessive node arguments",
         ));
     }
-    state
-        .borrow::<Rc<dyn NativeHost>>()
-        .call(&[json!("bindingCheck"), json!(hook), json!(identities)])
+    host.call(&[json!("bindingCheck"), json!(hook), json!(identities)])
         .map(|_| ())
         .map_err(JsErrorBox::generic)
 }
-pub(crate) trait NativeHost {
+pub trait NativeHost {
+    /// Whether `name` is a generated DOM binding hook (the embedder owns the registry).
+    fn is_generated_hook(&self, name: &str) -> bool;
     fn fetch(
         &self,
         request: wega_network::Request,

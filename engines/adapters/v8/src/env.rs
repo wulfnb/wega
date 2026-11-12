@@ -16,7 +16,7 @@ use super::{native_ops::NativeHost, net::ScriptNetwork};
 use std::sync::{Arc, RwLock};
 use url::Url;
 
-pub(crate) trait ScriptEnvironment: NativeHost + 'static {
+pub trait ScriptEnvironment: NativeHost + 'static {
     /// Requests the page queued for the host (popups, history, dynamic scripts, …).
     type Requests: Default;
 

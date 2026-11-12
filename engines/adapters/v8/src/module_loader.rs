@@ -1,5 +1,5 @@
 //! Module graphs use the same bounded network queue and live policy as page resources.
-use crate::v8::net::ScriptNetwork;
+use crate::net::ScriptNetwork;
 use deno_core::error::ModuleLoaderError;
 use deno_core::{
     ModuleLoadOptions, ModuleLoadReferrer, ModuleLoadResponse, ModuleLoader, ModuleSource,
@@ -7,7 +7,7 @@ use deno_core::{
 };
 use deno_error::JsErrorBox;
 use std::{path::PathBuf, sync::Arc};
-pub(crate) struct Loader {
+pub struct Loader {
     network: Arc<dyn ScriptNetwork>,
     local: Option<PathBuf>,
     limit: usize,

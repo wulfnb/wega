@@ -957,7 +957,7 @@ impl View {
         self.showing_error = true;
         self.notice(error);
     }
-    fn script_error(&mut self, error: crate::script::ScriptError) {
+    fn script_error(&mut self, error: wega_adapter_v8::ScriptError) {
         crate::diagnostics::Diagnostic::error(
             crate::diagnostics::Category::Javascript,
             error.to_string(),

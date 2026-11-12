@@ -1,6 +1,6 @@
 //! Async byte transport over the existing bounded host-service dispatcher.
 //! Deno owns WebSocket framing; the host owns dialing, TLS, cookies and grants.
-use crate::v8::net::ScriptNetwork;
+use crate::net::ScriptNetwork;
 use std::{
     io,
     pin::Pin,
@@ -24,7 +24,7 @@ fn operation(
         receiver.await.map_err(|_| "WebSocket dispatcher stopped")?
     })
 }
-pub(crate) struct Connector {
+pub struct Connector {
     pub network: Arc<dyn ScriptNetwork>,
 }
 impl deno_websocket::BrokerConnector for Connector {

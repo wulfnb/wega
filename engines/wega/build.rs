@@ -1,13 +1,6 @@
 //! Compile trusted bootstrap factories into a V8 snapshot without profile/DOM data.
-use deno_core::{JsRuntimeForSnapshot, RuntimeOptions, v8};
 use std::path::PathBuf;
-#[path = "src/v8/extension_adapter.rs"]
-mod extension_adapter;
-#[path = "src/v8/native_ops.rs"]
-mod native_ops;
-#[path = "src/v8/web_extensions.rs"]
-mod web_extensions;
-
+use wega_adapter_v8::{SnapshotScript, build_startup_snapshot};
 #[path = "../../tools/webidl/ast.rs"]
 #[allow(dead_code)]
 mod ast;
@@ -71,18 +64,8 @@ fn generated_bindings() -> String {
 
 fn main() {
     let generated = generated_bindings();
-    let executor = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let _entered = executor.enter();
-    let mut extensions = web_extensions::extensions(url::Url::parse("about:blank").unwrap(), None);
-    extensions.push(native_ops::wega_dom::init());
-    let mut runtime = JsRuntimeForSnapshot::new(RuntimeOptions {
-        extensions,
-        extension_transpiler: Some(std::rc::Rc::new(extension_adapter::adapt_extension)),
-        ..Default::default()
-    });
+    // Trusted bootstrap factories, compiled into the startup snapshot by the V8 adapter.
+    let mut scripts = Vec::new();
     for (key, file) in [
         ("web", "web.js"),
         ("bridge", "v8-bridge.js"),
@@ -104,44 +87,13 @@ fn main() {
         } else {
             std::fs::read_to_string(path).unwrap()
         };
-        deno_core::scope!(scope, &mut runtime);
-        let code = v8::String::new(scope, &source).unwrap();
-        let name = v8::String::new(scope, &format!("ext:wega_dom/{file}")).unwrap();
-        let origin = v8::ScriptOrigin::new(
-            scope,
-            name.into(),
-            0,
-            0,
-            false,
-            0,
-            None,
-            false,
-            false,
-            false,
-            None,
-        );
-        let mut source = v8::script_compiler::Source::new(code, Some(&origin));
-        let function = v8::script_compiler::compile_function(
-            scope,
-            &mut source,
-            &[],
-            &[],
-            v8::script_compiler::CompileOptions::EagerCompile,
-            v8::script_compiler::NoCacheReason::NoReason,
-        )
-        .expect("compile trusted binding factory");
-        let global = scope.get_current_context().global(scope);
-        let key = v8::String::new(scope, &format!("__wega_bootstrap_{key}")).unwrap();
-        assert_eq!(global.set(scope, key.into(), function.into()), Some(true));
+        scripts.push((key, file, source));
     }
+    let scripts: Vec<_> = scripts
+        .iter()
+        .map(|(key, file, source)| SnapshotScript { key, file, source })
+        .collect();
     let output = PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("wega-startup.bin");
-    std::fs::write(output, runtime.snapshot()).unwrap();
-    for file in [
-        "build.rs",
-        "src/v8/native_ops.rs",
-        "src/v8/web_extensions.rs",
-        "src/v8/extension_adapter.rs",
-    ] {
-        println!("cargo:rerun-if-changed={file}");
-    }
+    std::fs::write(output, build_startup_snapshot(&scripts)).unwrap();
+    println!("cargo:rerun-if-changed=build.rs");
 }

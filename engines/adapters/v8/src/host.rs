@@ -1,20 +1,10 @@
 //! V8 isolates are confined to the owning DOM thread; only termination crosses threads.
-pub(crate) mod broker_socket;
-pub(crate) mod env;
-pub(crate) mod extension_adapter;
-pub(crate) mod module_loader;
-pub(crate) mod native_ops;
-pub(crate) mod net;
-pub(crate) mod security_context;
-pub(crate) mod web;
-pub(crate) mod web_extensions;
-
 use crate::{
-    Limits,
+    env::ScriptEnvironment,
+    runtime::{RuntimeKind, RuntimeSpec, configure_secure_context, create_runtime},
     script::{ScriptError, ScriptHost},
 };
-use deno_core::{JsRuntime, RuntimeOptions};
-use env::ScriptEnvironment;
+use deno_core::JsRuntime;
 use serde_json::json;
 use std::{
     rc::Rc,
@@ -26,10 +16,26 @@ use std::{
     time::{Duration, Instant},
 };
 
-use native_ops::wega_dom;
-/// Trusted bootstrap factories shared by document and worker realms.
-pub(crate) static STARTUP_SNAPSHOT: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/wega-startup.bin"));
+/// Limits the script host enforces (a subset of the embedder's limits).
+#[derive(Clone, Debug)]
+pub struct RuntimeLimits {
+    pub js_heap_bytes: usize,
+    /// Hard limit for one script task; exceeding it tears the page's VM down.
+    pub script_time: Duration,
+    /// Tasks longer than this are reported as slow but keep running.
+    pub slow_script: Duration,
+    /// Bound for module subresources.
+    pub resource_bytes: usize,
+}
+
+/// Embedder-supplied inputs for a document host.
+pub struct HostConfig {
+    pub limits: RuntimeLimits,
+    /// Snapshot produced by `build_startup_snapshot`.
+    pub snapshot: &'static [u8],
+    /// Trusted bootstrap script run in the restored runtime before page code.
+    pub bootstrap: &'static str,
+}
 type ModuleLoad = std::pin::Pin<
     Box<
         dyn std::future::Future<
@@ -203,7 +209,7 @@ impl Drop for Watchdog {
     }
 }
 
-pub(crate) struct V8Host<E: ScriptEnvironment> {
+pub struct V8Host<E: ScriptEnvironment> {
     runtime: Option<JsRuntime>,
     loading_module: Option<ModuleLoad>,
     evaluating_modules: Vec<ModuleEvaluation>,
@@ -225,7 +231,8 @@ pub(crate) struct V8Host<E: ScriptEnvironment> {
 impl<E: ScriptEnvironment> V8Host<E> {
     /// The document environment is created and owned by the view and injected here;
     /// the V8 host only runs script against it.
-    pub fn new(env: Rc<E>, limits: &Limits) -> Result<Self, String> {
+    pub fn new(env: Rc<E>, config: &HostConfig) -> Result<Self, String> {
+        let limits = &config.limits;
         let executor = Rc::new(
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -238,73 +245,23 @@ impl<E: ScriptEnvironment> V8Host<E> {
         // their per-view option before initializing the platform.
         let document_url = env.document_url();
         let script_network = env.network();
-        let mut extensions = crate::v8::web::extensions(&document_url, &*script_network);
-        extensions.push(wega_dom::init());
-        for extension in &extensions {
-            for source in extension
-                .js_files
-                .iter()
-                .chain(extension.esm_files.iter())
-                .chain(extension.lazy_loaded_js_files.iter())
-                .chain(extension.lazy_loaded_esm_files.iter())
-            {
-                if !source.is_runtime_loadable() {
-                    return Err(format!(
-                        "Extension {} must be embedded in the worker binary",
-                        source.specifier
-                    ));
-                }
-            }
-        }
-        let mut runtime = JsRuntime::try_new(RuntimeOptions {
-            startup_snapshot: Some(STARTUP_SNAPSHOT),
-            module_loader: Some(Rc::new(crate::v8::module_loader::Loader::new(
-                script_network.clone(),
-                &document_url,
-                limits.resource_bytes,
-            ))),
-            extension_transpiler: Some(Rc::new(crate::v8::web::adapt_extension)),
-            // Per-document ownership: the store is never shared across origins.
-            shared_array_buffer_store: Some(Default::default()),
-            create_params: Some(
-                deno_core::v8::CreateParams::default()
-                    .heap_limits(0, limits.js_heap_bytes.saturating_add(32 * 1024 * 1024)),
-            ),
-            extensions,
-            ..Default::default()
-        })
-        .map_err(|e| e.to_string())?;
-        // Deno's trusted bootstrap needs its own heap before page code starts.
-        let host: Rc<dyn crate::v8::native_ops::NativeHost> = env.clone();
-        runtime.op_state().borrow_mut().put(host);
-        runtime
-            .op_state()
-            .borrow_mut()
-            .put(crate::v8::web::permissions(env.network_policy()));
-        if let Some(remote) = script_network.remote().filter(|remote| remote.is_bound()) {
-            deno_websocket::set_broker(
-                &mut runtime.op_state().borrow_mut(),
-                Arc::new(crate::v8::broker_socket::Connector {
-                    network: script_network.clone(),
-                }),
-            );
-            deno_webstorage::set_backend(
-                &mut runtime.op_state().borrow_mut(),
-                Arc::new(crate::v8::web::BrokerStorage {
-                    remote,
-                    origin: document_url.origin().ascii_serialization(),
-                }),
-            );
-        }
+        let host: Rc<dyn crate::native_ops::NativeHost> = env.clone();
+        let mut runtime = create_runtime(RuntimeSpec {
+            kind: RuntimeKind::Document,
+            url: document_url.clone(),
+            network: script_network,
+            policy: env.network_policy(),
+            host,
+            snapshot: config.snapshot,
+            js_heap_bytes: limits.js_heap_bytes,
+            module_limit_bytes: limits.resource_bytes,
+        })?;
         runtime.op_state().borrow_mut().put(String::new());
         runtime
-            .execute_script(
-                "ext:wega_dom/bootstrap.js",
-                include_str!("../dom/bootstrap.js"),
-            )
+            .execute_script("ext:wega_dom/bootstrap.js", config.bootstrap)
             .map_err(|error| error.to_string())?;
         runtime.op_state().borrow_mut().put(String::new());
-        crate::v8::security_context::configure(&mut runtime, &document_url)?;
+        configure_secure_context(&mut runtime, &document_url)?;
         let bootstrap_heap = heap_bytes(&mut runtime);
         let oom = Arc::new(AtomicBool::new(false));
         let flag = oom.clone();
@@ -735,22 +692,6 @@ impl<E: ScriptEnvironment> ScriptHost for V8Host<E> {
             let _guard = RawIsolateGuard::new(runtime.v8_isolate());
             collect_garbage(runtime, true);
             self.heap = heap_bytes(runtime);
-        }
-    }
-}
-
-#[cfg(test)]
-mod packaging_tests {
-    #[test]
-    fn eager_and_lazy_sources_are_embedded_without_a_build_tree() {
-        let eager = deno_core::include_js_files!(wega_dom dir "src/dom", "bindings.js");
-        let lazy = deno_core::include_lazy_loaded_js_files!(wega_dom dir "src/dom", "web.js");
-        for source in eager.iter().chain(lazy.iter()) {
-            assert!(
-                source.is_runtime_loadable(),
-                "{} requires a build-machine path",
-                source.specifier
-            );
         }
     }
 }

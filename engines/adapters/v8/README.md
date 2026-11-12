@@ -1,6 +1,6 @@
 # adapters/v8
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED — package `wega-adapter-v8`**
 
 ## Purpose
 
@@ -25,4 +25,4 @@ Planned package `wega-adapter-v8` (`wega-adapter-*` naming).
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+IMPLEMENTED. Owns the Deno/V8 integration extracted from `wega-engine`: `V8Host` (generic over `ScriptEnvironment`), the op table and extension setup, module loader, WebSocket broker connector, `create_runtime` (shared by documents and workers), startup-snapshot generation and the `RawIsolateGuard` unsafe exception. It does not depend on `wega-engine`; the engine supplies the snapshot sources, bootstrap script and environment. See `docs/architecture/module-map.md`.

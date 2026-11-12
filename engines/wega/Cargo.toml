@@ -14,8 +14,8 @@ wega-network = {path="../network"}
 wega-security = { path = "../services/security" }
 wega-permissions = { path = "../services/permissions" }
 wega-adapter-skia = { path = "../adapters/skia" }
+wega-adapter-v8 = { path = "../adapters/v8" }
 wega-platform = {path="../platform"}
-deno_error = "=0.7.1"
 tokio = {version="1",features=["rt","time","net","sync"]}
 base64 = "0.23"
 blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars", "floats", "error-diagnostics", "accessibility", "file-input"] }
@@ -33,19 +33,9 @@ url = "2.5"
 data-url = "0.3"
 encoding_rs = "0.8.35"
 
-deno_webidl = "=0.260.0"
-deno_web = "=0.291.0"
-deno_fetch = "=0.284.0"
-deno_websocket = "=0.265.0"
-deno_webstorage = "=0.255.0"
-deno_crypto = "=0.274.0"
-deno_permissions = "=0.119.0"
-sys_traits = {version="=0.1.29",features=["real","libc","winapi"]}
 sha2 = "0.11"
 
-deno_net = "=0.252.0"
 
-deno_tls = "=0.247.0"
 
 style = {package="stylo",version="=0.22.0"}
 
@@ -60,22 +50,10 @@ keyboard-types = "=0.8.3"
 
 [build-dependencies]
 sha2 = "0.11"
-wega-network = {path="../network"}
+wega-adapter-v8 = { path = "../adapters/v8" }
 serde = {version="1",features=["derive"]}
-deno_core = "=0.413.0"
-deno_error = "=0.7.1"
 serde_json = "1"
 url = "2.5"
-deno_webidl = "=0.260.0"
-deno_web = "=0.291.0"
-deno_fetch = "=0.284.0"
-deno_websocket = "=0.265.0"
-deno_webstorage = "=0.255.0"
-deno_crypto = "=0.274.0"
-deno_permissions = "=0.119.0"
-deno_net = "=0.252.0"
-deno_tls = "=0.247.0"
-tokio = {version="1",features=["rt","time","net","sync"]}
 
 [dev-dependencies]
 sha1 = "0.11"

@@ -6732,6 +6732,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "wega-adapter-v8"
+version = "0.1.0"
+dependencies = [
+ "deno_core",
+ "deno_crypto",
+ "deno_error",
+ "deno_fetch",
+ "deno_net",
+ "deno_permissions",
+ "deno_tls",
+ "deno_web",
+ "deno_webidl",
+ "deno_websocket",
+ "deno_webstorage",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sys_traits",
+ "tokio",
+ "url",
+ "wega-network",
+ "wega-protocol",
+ "wega-security",
+]
+
+[[package]]
 name = "wega-cookies"
 version = "0.1.0"
 dependencies = [
@@ -6757,16 +6783,6 @@ dependencies = [
  "cssparser 0.38.0",
  "data-url",
  "deno_core",
- "deno_crypto",
- "deno_error",
- "deno_fetch",
- "deno_net",
- "deno_permissions",
- "deno_tls",
- "deno_web",
- "deno_webidl",
- "deno_websocket",
- "deno_webstorage",
  "encoding_rs",
  "html5ever",
  "keyboard-types",
@@ -6781,11 +6797,11 @@ dependencies = [
  "stylo",
  "stylo_dom",
  "stylo_traits",
- "sys_traits",
  "tempfile",
  "tokio",
  "url",
  "wega-adapter-skia",
+ "wega-adapter-v8",
  "wega-network",
  "wega-permissions",
  "wega-platform",

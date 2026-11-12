@@ -1,7 +1,31 @@
 //! The document host's implementation of the script runtime's host callbacks.
 use crate::dom::Dom;
 
-impl crate::v8::native_ops::NativeHost for Dom {
+/// The generated DOM binding hooks (`dom/generated/hooks.json`) the script runtime may dispatch.
+pub(crate) fn is_generated_hook(name: &str) -> bool {
+    static HOOKS: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
+    HOOKS
+        .get_or_init(|| {
+            let manifest: Vec<serde_json::Value> =
+                serde_json::from_str(include_str!("dom/generated/hooks.json"))
+                    .expect("checked generated hook registry");
+            let mut hooks = std::collections::HashSet::new();
+            for hook in manifest {
+                assert!(
+                    hooks.insert(hook["name"].as_str().expect("hook name").to_owned()),
+                    "duplicate generated hook"
+                );
+            }
+            hooks
+        })
+        .contains(name)
+}
+
+impl wega_adapter_v8::NativeHost for Dom {
+    fn is_generated_hook(&self, name: &str) -> bool {
+        is_generated_hook(name)
+    }
     fn fetch(
         &self,
         mut request: wega_network::Request,
@@ -110,7 +134,7 @@ impl crate::v8::native_ops::NativeHost for Dom {
     }
 }
 
-impl crate::v8::env::ScriptEnvironment for Dom {
+impl wega_adapter_v8::ScriptEnvironment for Dom {
     type Requests = crate::dom::Requests;
 
     fn begin_task(&self) {
@@ -119,7 +143,7 @@ impl crate::v8::env::ScriptEnvironment for Dom {
     fn document_url(&self) -> url::Url {
         self.document.borrow().url().clone()
     }
-    fn network(&self) -> std::sync::Arc<dyn crate::v8::net::ScriptNetwork> {
+    fn network(&self) -> std::sync::Arc<dyn wega_adapter_v8::ScriptNetwork> {
         std::sync::Arc::new(self.network.clone())
     }
     fn network_policy(&self) -> std::sync::Arc<std::sync::RwLock<wega_network::Policy>> {
@@ -148,5 +172,21 @@ impl crate::v8::env::ScriptEnvironment for Dom {
     }
     fn take_requests(&self) -> Self::Requests {
         std::mem::take(&mut *self.requests.borrow_mut())
+    }
+}
+
+#[cfg(test)]
+mod packaging_tests {
+    #[test]
+    fn eager_and_lazy_sources_are_embedded_without_a_build_tree() {
+        let eager = deno_core::include_js_files!(wega_dom dir "src/dom", "bindings.js");
+        let lazy = deno_core::include_lazy_loaded_js_files!(wega_dom dir "src/dom", "web.js");
+        for source in eager.iter().chain(lazy.iter()) {
+            assert!(
+                source.is_runtime_loadable(),
+                "{} requires a build-machine path",
+                source.specifier
+            );
+        }
     }
 }

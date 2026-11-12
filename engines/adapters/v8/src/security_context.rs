@@ -1,7 +1,7 @@
 //! Secure-context exposure belongs to the document, not the host's permissions.
 use url::Url;
-pub(crate) use wega_security::secure_context::trustworthy;
-pub(crate) fn configure(runtime: &mut deno_core::JsRuntime, url: &Url) -> Result<(), String> {
+pub use wega_security::secure_context::trustworthy;
+pub fn configure(runtime: &mut deno_core::JsRuntime, url: &Url) -> Result<(), String> {
     use deno_core::v8;
     deno_core::scope!(scope, runtime);
     let global = scope.get_current_context().global(scope);

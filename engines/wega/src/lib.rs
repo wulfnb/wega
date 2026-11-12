@@ -29,7 +29,6 @@ mod network;
 mod parser;
 pub mod permissions;
 mod script;
-mod v8;
 mod view;
 pub mod webgl;
 pub mod workers;

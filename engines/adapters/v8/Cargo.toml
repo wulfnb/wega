@@ -1,0 +1,30 @@
+[package]
+name = "wega-adapter-v8"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Wega's V8/Deno script runtime adapter: script host, ops, extensions, module loader, snapshot generation"
+
+[dependencies]
+wega-network = { path = "../../network" }
+wega-protocol = { path = "../../protocol" }
+wega-security = { path = "../../services/security" }
+deno_core = "=0.413.0"
+deno_error = "=0.7.1"
+tokio = {version="1",features=["rt","time","net","sync"]}
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+url = "2.5"
+sha2 = "0.11"
+deno_webidl = "=0.260.0"
+deno_web = "=0.291.0"
+deno_fetch = "=0.284.0"
+deno_websocket = "=0.265.0"
+deno_webstorage = "=0.255.0"
+deno_crypto = "=0.274.0"
+deno_permissions = "=0.119.0"
+sys_traits = {version="=0.1.29",features=["real","libc","winapi"]}
+deno_net = "=0.252.0"
+deno_tls = "=0.247.0"

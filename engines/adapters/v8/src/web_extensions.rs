@@ -1,5 +1,5 @@
 //! Identical native Web API extension order at snapshot build and restore time.
-pub(crate) fn extensions(
+pub fn extensions(
     url: url::Url,
     directory: Option<std::path::PathBuf>,
 ) -> Vec<deno_core::Extension> {

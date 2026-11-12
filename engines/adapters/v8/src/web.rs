@@ -103,7 +103,7 @@ impl PermissionDescriptorParser for PolicyParser {
         self.inner.parse_run_query(t)
     }
 }
-pub(crate) fn permissions(policy: Arc<RwLock<wega_network::Policy>>) -> PermissionsContainer {
+pub fn permissions(policy: Arc<RwLock<wega_network::Policy>>) -> PermissionsContainer {
     let parser = PolicyParser {
         inner: RuntimePermissionDescriptorParser::new(sys_traits::impls::RealSys),
         policy,
@@ -119,9 +119,9 @@ pub(crate) fn permissions(policy: Arc<RwLock<wega_network::Policy>>) -> Permissi
     .expect("static network grant");
     PermissionsContainer::new(Arc::new(parser), permissions)
 }
-pub(crate) fn extensions(
+pub fn extensions(
     document: &url::Url,
-    network: &dyn crate::v8::net::ScriptNetwork,
+    network: &dyn crate::net::ScriptNetwork,
 ) -> Vec<deno_core::Extension> {
     use sha2::{Digest, Sha256};
     // reqwest and Deno enable different Rustls providers; select one explicitly.
@@ -140,14 +140,14 @@ pub(crate) fn extensions(
     } else {
         None
     };
-    crate::v8::web_extensions::extensions(url, directory)
+    crate::web_extensions::extensions(url, directory)
 }
 
-pub(crate) use crate::v8::extension_adapter::adapt_extension;
+pub use crate::extension_adapter::adapt_extension;
 
 /// Storage operations stay in Rust; Deno's Web Storage bindings retain their
 /// conversion/proxy semantics while the browser owns the SQLite connection.
-pub(crate) struct BrokerStorage {
+pub struct BrokerStorage {
     pub remote: wega_network::Remote,
     pub origin: String,
 }

@@ -3,20 +3,9 @@ use blitz_dom::{BaseDocument, NodeId};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
-    time::{Duration, Instant},
+    time::Instant,
 };
-#[derive(Clone, Debug)]
-pub(crate) struct ScriptError {
-    pub fatal: bool,
-    pub message: String,
-}
-impl std::fmt::Display for ScriptError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-impl std::error::Error for ScriptError {}
-
+use wega_adapter_v8::{HostConfig, RuntimeLimits, ScriptError, ScriptHost, V8Host};
 /// Everything a script host shares with its view.
 #[derive(Clone)]
 pub(crate) struct HostContext {
@@ -34,44 +23,29 @@ pub(crate) struct HostContext {
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
 }
 
-pub(crate) trait ScriptHost {
-    /// The page's queued host requests; an associated type so the script host does not
-    /// name the engine's document types.
-    type Requests;
-    fn run(&mut self, source: &str, name: &str) -> Result<String, ScriptError>;
-    fn run_module(&mut self, source: &str, name: &str) -> Result<String, ScriptError>;
-    fn modules_pending(&self) -> bool;
-    fn evaluate_json(&mut self, source: &str) -> Result<String, ScriptError>;
-    fn checkpoint(&mut self) -> Result<(), ScriptError>;
-    fn tick(&mut self) -> Result<(), ScriptError>;
-    fn next_timer(&self) -> Option<Duration>;
-    fn heap_bytes(&self) -> usize;
-    fn take_errors(&mut self) -> Vec<String>;
-    fn freeze(&mut self, frozen: bool);
-    /// Page requests (dynamic scripts, document.write, popups, history).
-    fn take_requests(&mut self) -> Self::Requests;
-    /// CSP without 'unsafe-eval' disables eval and `new Function`.
-    fn allow_eval(&mut self, allowed: bool);
-    /// Allocated nodes and charged text bytes.
-    fn budget(&self) -> (usize, usize);
-    /// The parser created nodes outside the script budget; count them once parsed.
-    fn sync_nodes(&mut self, count: usize);
-    /// The document's own session history: (index, length).
-    fn history(&self) -> (usize, usize);
-    fn frame(&mut self, _timestamp: f64) -> Result<bool, ScriptError> {
-        self.run("__wega_frame(performance.now())", "wega:animation-frame")?;
-        self.checkpoint()?;
-        Ok(self.evaluate_json("__wega_has_frame()")? == "true")
-    }
-}
-/// Creates the V8 script host for a document host built by the view.
+/// Trusted bootstrap factories shared by document and worker realms, built by `build.rs`.
+pub(crate) static STARTUP_SNAPSHOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/wega-startup.bin"));
+
 pub(crate) type DynScriptHost = dyn ScriptHost<Requests = crate::dom::Requests>;
 
 pub(crate) fn create(
     dom: std::rc::Rc<crate::dom::Dom>,
     limits: &crate::Limits,
 ) -> Result<Box<DynScriptHost>, String> {
-    Ok(Box::new(crate::v8::V8Host::new(dom, limits)?))
+    Ok(Box::new(V8Host::new(
+        dom,
+        &HostConfig {
+            limits: RuntimeLimits {
+                js_heap_bytes: limits.js_heap_bytes,
+                script_time: limits.script_time,
+                slow_script: limits.slow_script,
+                resource_bytes: limits.resource_bytes,
+            },
+            snapshot: STARTUP_SNAPSHOT,
+            bootstrap: include_str!("dom/bootstrap.js"),
+        },
+    )?))
 }
 
 /// HTML performs a checkpoint after an ordinary exception too. A fatal limit
