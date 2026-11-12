@@ -1,6 +1,3 @@
-use crate::dom_model::BlitzDocument;
-use crate::dom_model::Mutator as _;
-use crate::dom_model::{ToKey as _, ToNodeId as _};
 use crate::{
     Limits,
     csp::Csp,
@@ -35,6 +32,9 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+use wega_adapter_blitz::BlitzDocument;
+use wega_adapter_blitz::{ToKey as _, ToNodeId as _};
+use wega_dom::Mutator as _;
 use wega_protocol::identity::FrameId;
 
 pub struct Frame {
@@ -1143,7 +1143,7 @@ impl View {
                         node.mark_ancestors_dirty();
                     }
                     // The element can only vanish between the click and now; nothing to update then.
-                    let _ = crate::dom_model::mutate(&mut *doc).set_attribute(
+                    let _ = wega_dom::mutate(&mut *doc).set_attribute(
                         target_node.key(),
                         QualName::new(None, ns!(), LocalName::from("value")),
                         val,
@@ -1193,7 +1193,7 @@ impl View {
                         node.mark_ancestors_dirty();
                     }
                     let val = format!("C:\\fakepath\\{display_val}");
-                    let _ = crate::dom_model::mutate(&mut *doc).set_attribute(
+                    let _ = wega_dom::mutate(&mut *doc).set_attribute(
                         target.key(),
                         QualName::new(None, ns!(), LocalName::from("value")),
                         &val,
@@ -1617,14 +1617,14 @@ impl View {
         let (old_chain, new_chain) = {
             let doc = self.document.borrow();
             let chain = |id: Option<NodeId>| {
-                id.filter(|id| crate::dom_model::DocumentView::node(&*doc, (*id).key()).is_some())
+                id.filter(|id| wega_dom::DocumentView::node(&*doc, (*id).key()).is_some())
                     .map(|id| doc.node_chain(id))
                     .unwrap_or_default()
             };
             (chain(previous), chain(hovered))
         };
         if let Some(target) = previous.filter(|id| {
-            crate::dom_model::DocumentView::node(&*self.document.borrow(), (*id).key()).is_some()
+            wega_dom::DocumentView::node(&*self.document.borrow(), (*id).key()).is_some()
         }) {
             self.dispatch_pointer("pointerout", target, pointer, hovered);
             self.dispatch_pointer("mouseout", target, pointer, hovered);

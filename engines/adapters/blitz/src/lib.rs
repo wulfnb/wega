@@ -1,11 +1,11 @@
-//! The only mapping from Blitz's document onto the Wega document view.
-use super::{
-    DocumentMutation, DocumentView, MutationError, Mutator, NewAttribute, NodeKey, NodeKind,
-    NodeView,
-};
+//! The only mapping from Blitz's document onto the Wega document contract (`wega-dom`).
 use blitz_dom::{BaseDocument, DocumentMutator, Node, NodeId, node::Attribute, node::NodeData};
 use html5ever::QualName;
 use url::Url;
+use wega_dom::{
+    DocumentMutation, DocumentView, MutationError, Mutator, NewAttribute, NodeKey, NodeKind,
+    NodeView,
+};
 
 /// `NodeKey` and Blitz's `NodeId` are both foreign to this module's eventual crate, so they
 /// cannot implement `From` for each other; these explicit conversions replace that. Both are

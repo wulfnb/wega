@@ -1,8 +1,5 @@
 //! Checked native operations over Blitz's single DOM, used by the V8 host.
 use crate::Limits;
-use crate::dom_model::BlitzDocument;
-use crate::dom_model::{DocumentView, Mutator, NodeKind, NodeView};
-use crate::dom_model::{ToKey, ToNodeId};
 use blitz_dom::NodeId;
 use blitz_dom::node::NodeData;
 use html5ever::{LocalName, QualName, ns};
@@ -13,6 +10,9 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
+use wega_adapter_blitz::BlitzDocument;
+use wega_adapter_blitz::{ToKey, ToNodeId};
+use wega_dom::{DocumentView, Mutator, NodeKind, NodeView};
 
 /// A `<script>` element that script inserted into the document.
 #[derive(Clone, Copy, Debug)]
@@ -206,13 +206,13 @@ impl Dom {
                 .try_borrow()
                 .map_err(|_| "InvalidStateError: reentrant native DOM borrow")?;
             for identity in identities {
-                let key = crate::dom_model::NodeKey::from_u64(
+                let key = wega_dom::NodeKey::from_u64(
                     identity
                         .as_str()
                         .and_then(|id| id.parse::<u64>().ok())
                         .ok_or("TypeError: invalid binding node identity")?,
                 );
-                if crate::dom_model::DocumentView::node(&*document, key).is_none() {
+                if wega_dom::DocumentView::node(&*document, key).is_none() {
                     return Err("InvalidStateError: binding node no longer exists".into());
                 }
             }
@@ -1114,7 +1114,7 @@ impl Dom {
                 let definition: u64 = text(1).parse().map_err(|_| "Invalid definition ID")?;
                 let name = self.components.borrow().by_id(definition).ok_or("TypeError: Illegal constructor")?.name.clone();
                 if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
-                let created = (crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from(name)), [])).node_id();
+                let created = (wega_dom::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from(name)), [])).node_id();
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 let mut registry = self.components.borrow_mut(); registry.begin(created.as_u64(), definition)?; registry.complete(created.as_u64(), true)?;
                 json!(created.as_u64().to_string())
@@ -1133,9 +1133,9 @@ impl Dom {
                 if self.shadows.borrow().root(target.as_u64(), true).is_some() { return Err("NotSupportedError: shadow root already attached".into()); }
                 let tag = doc.node(target.key()).and_then(NodeView::element_name).ok_or("NotSupportedError: invalid shadow host")?.local.to_string();
                 if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
-                let root = (crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), [])).node_id();
+                let root = (wega_dom::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), [])).node_id();
                 let entry = match self.shadows.borrow_mut().attach(target.as_u64(), root.as_u64(), text(2), text(3) == "true", &tag) {
-                    Ok(entry) => entry, Err(error) => { let _ = crate::dom_model::mutate(&mut *doc).remove_and_drop(root.key()); return Err(error); }
+                    Ok(entry) => entry, Err(error) => { let _ = wega_dom::mutate(&mut *doc).remove_and_drop(root.key()); return Err(error); }
                 };
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 self.requests.borrow_mut().compatibility = Some("Shadow DOM scoped style and flattened layout are not implemented by Wega".into());
@@ -1147,14 +1147,14 @@ impl Dom {
             "eventParent" => {
                 let target = node_id()?;
                 if let Some(slot) = self.assigned_slot(&doc, target) { json!(slot.as_u64().to_string()) }
-                else if let Some(parent) = crate::dom_model::DocumentView::node(&*doc, target.key()).and_then(crate::dom_model::NodeView::parent) { json!(parent.to_string()) }
+                else if let Some(parent) = wega_dom::DocumentView::node(&*doc, target.key()).and_then(wega_dom::NodeView::parent) { json!(parent.to_string()) }
                 else if text(2) != "true" && text(3) == text(1) { Value::Null }
                 else { json!(self.shadows.borrow().host(target.as_u64()).map(|id|id.to_string())) }
             },
             "assignedSlot" | "assignedSlotInternal" => {
                 let mut assigned = self.assigned_slot(&doc, node_id()?);
                 if text(0) == "assignedSlot" && let Some(slot) = assigned {
-                        let root = crate::dom_model::tree_root(&*doc, slot.key());
+                        let root = wega_dom::tree_root(&*doc, slot.key());
                         if let Some(host) = self.shadows.borrow().host(root.as_u64()) && self.shadows.borrow().root(host, false).is_none() { assigned = None; }
                 }
                 json!(assigned.map(|id|id.as_u64().to_string()))
@@ -1174,7 +1174,7 @@ impl Dom {
             },
             "cookie"=>json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite)),
             "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);Value::Null},
-            "templateContent"=>{let target=node_id()?;let content=crate::dom_model::mutate(&mut *doc).template_contents(target.key()).map_err(Self::mutation_error)?;json!(content.node_id().as_u64().to_string())},
+            "templateContent"=>{let target=node_id()?;let content=wega_dom::mutate(&mut *doc).template_contents(target.key()).map_err(Self::mutation_error)?;json!(content.node_id().as_u64().to_string())},
             "viewport"=>{let viewport=doc.viewport();let scale=(viewport.hidpi_scale*viewport.zoom) as f64;let scroll=doc.viewport_scroll();json!({"width":viewport.window_size.0 as f64/scale,"height":viewport.window_size.1 as f64/scale,"dpr":scale,"scrollX":scroll.x,"scrollY":scroll.y})},
             "scroll"=>{let node=doc.get_node(node_id()?).unwrap();let scroll=node.scroll_offset();json!({"x":scroll.x,"y":scroll.y})},
             "scrollViewport"=>{let x=text(1).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.set_viewport_scroll(blitz_dom::Point{x,y});}Value::Null},
@@ -1198,7 +1198,7 @@ impl Dom {
             "retain" => {let id=node_id()?;self.retained.borrow_mut().insert(id);Value::Null},
             "release" => {let id=id(1)?;self.retained.borrow_mut().remove(&id);self.collect_detached(&mut doc,id);Value::Null},
             "info"=>{
-                let info=crate::dom_model::node_info(&*doc,node_id()?.key()).ok_or("InvalidStateError: node no longer exists")?;
+                let info=wega_dom::node_info(&*doc,node_id()?.key()).ok_or("InvalidStateError: node no longer exists")?;
                 json!({"nodeType":info.node_type,"nodeName":info.node_name,"localName":info.local_name,"namespaceURI":info.namespace,"prefix":info.prefix})
             },
             "attributes"=>json!(doc.node(node_id()?.key()).into_iter().flat_map(NodeView::attributes).map(|(name,value)|json!({"name":name.prefix.as_ref().map_or_else(||name.local.to_string(),|p|format!("{p}:{}",name.local)),"localName":name.local.to_string(),"namespaceURI":if name.ns==ns!(){None}else{Some(name.ns.to_string())},"value":value})).collect::<Vec<_>>()),
@@ -1206,31 +1206,31 @@ impl Dom {
             "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "matches"=>json!(doc.matches_selector(node_id()?,text(2)).map_err(|_|"Invalid selector")?),
             "closest"=>json!(doc.closest(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
-            "getById"=>json!(crate::dom_model::DocumentView::element_by_id(&*doc,text(1)).map(|key|key.to_string())),
+            "getById"=>json!(wega_dom::DocumentView::element_by_id(&*doc,text(1)).map(|key|key.to_string())),
             "outerHTML"=>json!(doc.get_node(node_id()?).unwrap().outer_html()),
             "innerHTML" | "contextualFragment"=>{
                 let mut target=node_id()?;
-                if doc.node(target.key()).and_then(NodeView::element_name).is_some_and(|name|name.local=="template") { target=crate::dom_model::mutate(&mut *doc).template_contents(target.key()).map(ToNodeId::node_id).map_err(Self::mutation_error)?; }
+                if doc.node(target.key()).and_then(NodeView::element_name).is_some_and(|name|name.local=="template") { target=wega_dom::mutate(&mut *doc).template_contents(target.key()).map(ToNodeId::node_id).map_err(Self::mutation_error)?; }
                 if text(2).len()>self.limits.html_bytes{return Err("HTML fragment exceeds the size limit".into());}
                 // Parse into a detached same-context element first; reject budgets before
                 // replacing live children, and retain removed nodes held by JS wrappers.
                 let element=doc.node(target.key()).and_then(NodeView::qual_name).ok_or("innerHTML needs an element")?;
-                let name=if &*element.local=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.clone()};let staging:NodeId=crate::dom_model::mutate(&mut *doc).create_element(name,[]).node_id();
+                let name=if &*element.local=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.clone()};let staging:NodeId=wega_dom::mutate(&mut *doc).create_element(name,[]).node_id();
                 let remaining=self.limits.dom_nodes.saturating_sub(self.allocated.get()).saturating_add(2);
-                if crate::parser::parse_fragment(&mut *doc,staging.key(),remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=crate::dom_model::mutate(&mut *doc).remove_and_drop(staging.key());return Err("DOM node limit exceeded".into());}
+                if crate::parser::parse_fragment(&mut *doc,staging.key(),remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=wega_dom::mutate(&mut *doc).remove_and_drop(staging.key());return Err("DOM node limit exceeded".into());}
                 let parsed=Self::subtree(&doc,staging);
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
                 if text(0)=="innerHTML" {for id in &parsed {if doc.node((*id).key()).and_then(NodeView::element_name).is_some_and(|name|name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
-                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {crate::dom_model::mutate(&mut *doc).remove_and_drop(staging.key()).map_err(Self::mutation_error)?;return Err("DOM node limit exceeded".into());}
-                let children:Vec<crate::dom_model::NodeKey>=doc.node(staging.key()).map(|node|node.children().collect()).unwrap_or_default();
+                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {wega_dom::mutate(&mut *doc).remove_and_drop(staging.key()).map_err(Self::mutation_error)?;return Err("DOM node limit exceeded".into());}
+                let children:Vec<wega_dom::NodeKey>=doc.node(staging.key()).map(|node|node.children().collect()).unwrap_or_default();
                 if text(0)=="contextualFragment" {
-                    let mut mutation=crate::dom_model::mutate(&mut *doc);let fragment=mutation.create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[]);
+                    let mut mutation=wega_dom::mutate(&mut *doc);let fragment=mutation.create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[]);
                     mutation.replace_children(fragment,&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.key()).map_err(Self::mutation_error)?;mutation.finish();let fragment:NodeId=fragment.node_id();
                     self.allocated.set(self.allocated.get()+parsed.len());
                     return Ok(json!(fragment.as_u64().to_string()));
                 }
                 let old:Vec<NodeId>=doc.node(target.key()).map(|node|node.children().map(ToNodeId::node_id).collect()).unwrap_or_default();
-                {let mut mutation=crate::dom_model::mutate(&mut *doc);mutation.replace_children(target.key(),&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.key()).map_err(Self::mutation_error)?;}
+                {let mut mutation=wega_dom::mutate(&mut *doc);mutation.replace_children(target.key(),&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.key()).map_err(Self::mutation_error)?;}
                 self.allocated.set(self.allocated.get()+parsed.len()-1);
                 for id in old {self.collect_detached(&mut doc,id);}
                 Value::Null
@@ -1240,7 +1240,7 @@ impl Dom {
                 if self.allocated.get().saturating_add(count)>self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
                 let bytes=doc.get_node(source).unwrap().outer_html().len();
                 if self.used.get().saturating_add(bytes)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}
-                let cloned=(crate::dom_model::mutate(&mut *doc).clone_node(source.key(),deep).map_err(|error|match error{crate::dom_model::MutationError::NotCloneable(_)=>"This node cannot be cloned".to_string(),other=>Self::mutation_error(other)})?).node_id();
+                let cloned=(wega_dom::mutate(&mut *doc).clone_node(source.key(),deep).map_err(|error|match error{wega_dom::MutationError::NotCloneable(_)=>"This node cannot be cloned".to_string(),other=>Self::mutation_error(other)})?).node_id();
                 self.allocated.set(self.allocated.get()+count);self.used.set(self.used.get()+bytes);json!(cloned.as_u64().to_string())
             },
             "insert"=>{
@@ -1250,25 +1250,25 @@ impl Dom {
                 if anchor.is_some_and(|id|doc.get_node(id).is_none_or(|n|n.parent!=Some(parent))){return Err("NotFoundError: reference is not a child".into());}
                 let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.node(id.key()).and_then(NodeView::parent).map(ToNodeId::node_id).or_else(||self.shadows.borrow().host(id.as_u64()).map(NodeId::from_u64));}
                 if anchor==Some(child){return Ok(json!(child.as_u64().to_string()));}
-                {let mut mutation=crate::dom_model::mutate(&mut *doc);if let Some(anchor)=anchor{mutation.insert_before(anchor.key(),&[child.key()]).map_err(Self::mutation_error)?;}else{mutation.append_children(parent.key(),&[child.key()]).map_err(Self::mutation_error)?;}}
+                {let mut mutation=wega_dom::mutate(&mut *doc);if let Some(anchor)=anchor{mutation.insert_before(anchor.key(),&[child.key()]).map_err(Self::mutation_error)?;}else{mutation.append_children(parent.key(),&[child.key()]).map_err(Self::mutation_error)?;}}
                 json!(child.as_u64().to_string())
             },
             "createNS"|"createComment"|"createFragment"|"createDocument"=>{
                 if self.allocated.get()>=self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
                 let created=match text(0){
                     "createDocument"=>doc.create_node(NodeData::Document(Box::default())),
-                    "createComment"=>(crate::dom_model::mutate(&mut *doc).create_comment(text(1))).node_id(),
-                    "createFragment"=>(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[])).node_id(),
-                    _=>{let parts=text(2).split_once(':');let (prefix,local)=parts.map_or((None,text(2)),|(p,l)|(Some(html5ever::Prefix::from(p)),l));(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(prefix,html5ever::Namespace::from(text(1)),LocalName::from(local)),[])).node_id()}
+                    "createComment"=>(wega_dom::mutate(&mut *doc).create_comment(text(1))).node_id(),
+                    "createFragment"=>(wega_dom::mutate(&mut *doc).create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[])).node_id(),
+                    _=>{let parts=text(2).split_once(':');let (prefix,local)=parts.map_or((None,text(2)),|(p,l)|(Some(html5ever::Prefix::from(p)),l));(wega_dom::mutate(&mut *doc).create_element(QualName::new(prefix,html5ever::Namespace::from(text(1)),LocalName::from(local)),[])).node_id()}
                 };self.allocated.set(self.allocated.get()+1);json!(created.as_u64().to_string())
             },
-            "attrNS"=>json!(crate::dom_model::attribute_ns(&*doc,node_id()?.key(),text(2),text(3))),
+            "attrNS"=>json!(wega_dom::attribute_ns(&*doc,node_id()?.key(),text(2),text(3))),
             "setAttrNS"=>{
                 let target=node_id()?;let payload=[text(3).to_owned(),text(4).to_owned()];
                 let (prefix,local)=payload[0].split_once(':').map_or((None,payload[0].as_str()),|(p,l)|(Some(html5ever::Prefix::from(p)),l));
                 let charge=payload[0].len()+payload[1].len();if self.used.get().saturating_add(charge)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}self.used.set(self.used.get()+charge);
-                let old = crate::dom_model::attribute_ns(&*doc,target.key(),text(2),local);
-                crate::dom_model::mutate(&mut *doc).set_attribute(target.key(),QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]).map_err(Self::mutation_error)?;
+                let old = wega_dom::attribute_ns(&*doc,target.key(),text(2),local);
+                wega_dom::mutate(&mut *doc).set_attribute(target.key(),QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]).map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(target.as_u64(), local, old.as_deref(), Some(&payload[1]), (!text(2).is_empty()).then_some(text(2)));
                 Value::Null
             },
@@ -1277,10 +1277,10 @@ impl Dom {
             "inlineCSS"=>{let target=node_id()?;let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}json!(css)},
             "inlineProperty"=>{let target=node_id()?;let mut css=String::new();if let Ok(property)=style::properties::PropertyId::parse_enabled_for_all_content(text(2)) && let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).property_value_to_css(&property,&mut css);}json!(css)},
             "styleSet"=>{
-                let target=node_id()?;let old=Self::attribute(&doc,target,"style");crate::dom_model::mutate(&mut *doc).remove_style_property(target.key(),text(2)).map_err(Self::mutation_error)?;
+                let target=node_id()?;let old=Self::attribute(&doc,target,"style");wega_dom::mutate(&mut *doc).remove_style_property(target.key(),text(2)).map_err(Self::mutation_error)?;
                 let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}
                 if !text(3).is_empty(){css.push_str(&format!("{}: {};",text(2),text(3)));}
-                crate::dom_model::mutate(&mut *doc).set_attribute(target.key(),QualName::new(None,ns!(),LocalName::from("style")),&css).map_err(Self::mutation_error)?;
+                wega_dom::mutate(&mut *doc).set_attribute(target.key(),QualName::new(None,ns!(),LocalName::from("style")),&css).map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),Some(&css),None);Value::Null
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
@@ -1328,11 +1328,11 @@ impl Dom {
                 doc.node(node_id()?.key()).and_then(NodeView::element_name).map(|name| name.local.to_uppercase())
             ),
             "firstChild" | "lastChild" | "nextSibling" | "previousSibling" => {
-                let target=crate::dom_model::NodeKey::from_u64(node_id()?.as_u64());
+                let target=wega_dom::NodeKey::from_u64(node_id()?.as_u64());
                 let related=match text(0) {
                     "firstChild"=>doc.node(target).and_then(|node|node.children().next()),
                     "lastChild"=>doc.node(target).and_then(|node|node.children().next_back()),
-                    other=>crate::dom_model::sibling(&*doc,target,other=="nextSibling")
+                    other=>wega_dom::sibling(&*doc,target,other=="nextSibling")
                 };
                 json!(related.map(|key| key.to_string()))
             },
@@ -1385,7 +1385,7 @@ impl Dom {
                     NodeData::Document(_) => return Ok(Value::Null),
                     NodeData::Text(data) => {
                         credit(data.content.len());
-                        crate::dom_model::mutate(&mut *doc)
+                        wega_dom::mutate(&mut *doc)
                             .set_text(id.key(), text(2))
                             .map_err(Self::mutation_error)?;
                         return Ok(Value::Null);
@@ -1397,7 +1397,7 @@ impl Dom {
                 // script still holds them.
                 let old: Vec<NodeId> = doc.node(id.key()).map(|node| node.children().map(ToNodeId::node_id).collect()).unwrap_or_default();
                 if text(2).is_empty() {
-                    crate::dom_model::mutate(&mut *doc)
+                    wega_dom::mutate(&mut *doc)
                         .replace_children(id.key(), &[])
                         .map_err(Self::mutation_error)?;
                 } else {
@@ -1405,7 +1405,7 @@ impl Dom {
                         return Err("DOM text or node budget exceeded".into());
                     }
                     self.allocated.set(self.allocated.get() + 1);
-                    let mut mutation = crate::dom_model::mutate(&mut *doc);
+                    let mut mutation = wega_dom::mutate(&mut *doc);
                     let child = mutation.create_text(text(2));
                     mutation
                         .replace_children(id.key(), &[child])
@@ -1422,7 +1422,7 @@ impl Dom {
                 if text(3).len() > 1024 * 1024 {
                     return Err("DOM attribute budget exceeded".into());
                 }
-                crate::dom_model::mutate(&mut *doc)
+                wega_dom::mutate(&mut *doc)
                     .set_attribute(
                         id.key(),
                         QualName::new(None, ns!(), LocalName::from(text(2))),
@@ -1435,7 +1435,7 @@ impl Dom {
             "removeAttr" => {
                 let id = node_id()?;
                 let old = Self::attribute(&doc, id, text(2));
-                crate::dom_model::mutate(&mut *doc)
+                wega_dom::mutate(&mut *doc)
                     .clear_attribute(id.key(), QualName::new(None, ns!(), LocalName::from(text(2))))
                     .map_err(Self::mutation_error)?;
                 if old.is_some() { self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), None, None); }
@@ -1447,7 +1447,7 @@ impl Dom {
                     .find(|(name, _)| name.ns.as_str() == text(2) && name.local.as_str() == text(3))
                     .map(|(name, value)| (name.clone(), value.to_owned()));
                 if let Some((name, old)) = name {
-                    crate::dom_model::mutate(&mut *doc).clear_attribute(target.key(), name).map_err(Self::mutation_error)?;
+                    wega_dom::mutate(&mut *doc).clear_attribute(target.key(), name).map_err(Self::mutation_error)?;
                     self.components.borrow_mut().attribute(target.as_u64(), text(3), Some(&old), None, (!text(2).is_empty()).then_some(text(2)));
                 }
                 Value::Null
@@ -1457,7 +1457,7 @@ impl Dom {
                     return Err("DOM node budget exceeded".into());
                 }
                 self.allocated.set(self.allocated.get() + 1);
-                let mut mutation = crate::dom_model::mutate(&mut *doc);
+                let mut mutation = wega_dom::mutate(&mut *doc);
                 let id = if text(0) == "create" {
                     mutation.create_element(
                         QualName::new(None, ns!(html), LocalName::from(text(1))),
@@ -1482,14 +1482,14 @@ impl Dom {
                     }
                     ancestor = doc.node(id.key()).and_then(NodeView::parent).map(ToNodeId::node_id);
                 }
-                crate::dom_model::mutate(&mut *doc)
+                wega_dom::mutate(&mut *doc)
                     .append_children(parent.key(), &[child.key()])
                     .map_err(Self::mutation_error)?;
                 json!(child.as_u64().to_string())
             }
             "remove" => {
                 let id = node_id()?;
-                crate::dom_model::mutate(&mut *doc)
+                wega_dom::mutate(&mut *doc)
                     .remove(id.key())
                     .map_err(Self::mutation_error)?;
                 Value::Null
@@ -1610,20 +1610,18 @@ impl Dom {
         Ok(value)
     }
     /// The JS-facing message for a rejected mutation (kept from the pre-contract checks).
-    fn mutation_error(error: crate::dom_model::MutationError) -> String {
+    fn mutation_error(error: wega_dom::MutationError) -> String {
         match error {
-            crate::dom_model::MutationError::Stale(_) => "Node no longer exists".into(),
-            crate::dom_model::MutationError::HierarchyCycle { .. } => {
-                "Cannot create a DOM cycle".into()
-            }
+            wega_dom::MutationError::Stale(_) => "Node no longer exists".into(),
+            wega_dom::MutationError::HierarchyCycle { .. } => "Cannot create a DOM cycle".into(),
             other => other.to_string(),
         }
     }
     fn subtree(doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
-        crate::dom_model::subtree(doc, root.key(), ToNodeId::node_id)
+        wega_dom::subtree(doc, root.key(), ToNodeId::node_id)
     }
     fn attribute(doc: &BlitzDocument, id: NodeId, name: &str) -> Option<String> {
-        crate::dom_model::attribute(doc, id.key(), name)
+        wega_dom::attribute(doc, id.key(), name)
     }
     fn component_subtree(&self, doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
         let mut nodes = Vec::new();
@@ -1702,7 +1700,7 @@ impl Dom {
         if !seen.insert(slot) {
             return vec![];
         }
-        let root = crate::dom_model::tree_root(doc, slot.key());
+        let root = wega_dom::tree_root(doc, slot.key());
         let Some(host) = self
             .shadows
             .borrow()
@@ -1780,11 +1778,10 @@ impl Dom {
             if let Some(shadow) = self.shadows.borrow_mut().release(id.as_u64())
                 && let Ok(id) = shadow.root.parse()
             {
-                let _ =
-                    crate::dom_model::mutate(&mut *doc).remove_and_drop(NodeId::from_u64(id).key());
+                let _ = wega_dom::mutate(&mut *doc).remove_and_drop(NodeId::from_u64(id).key());
             }
         }
-        let _ = crate::dom_model::mutate(&mut *doc).remove_and_drop(root.key());
+        let _ = wega_dom::mutate(&mut *doc).remove_and_drop(root.key());
         self.allocated
             .set(self.allocated.get().saturating_sub(nodes.len()));
         self.used.set(self.used.get().saturating_sub(bytes));

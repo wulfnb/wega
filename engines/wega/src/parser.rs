@@ -7,7 +7,6 @@
 //! (MIT OR Apache-2.0, DioxusLabs); modified by Wega contributors, 2026, to
 //! borrow the shared document per operation instead of holding one mutator for
 //! the whole parse.
-use crate::dom_model::{DocumentMutation, MutationError, Mutator, NewAttribute, NodeKey, NodeView};
 use html5ever::{
     QualName,
     tendril::StrTendril,
@@ -19,6 +18,7 @@ use std::{
     cell::{Cell, Ref, RefCell},
     rc::Rc,
 };
+use wega_dom::{DocumentMutation, MutationError, Mutator, NewAttribute, NodeKey, NodeView};
 
 /// One HTML parse warning (tokenizer or tree-construction error, or a parser limit). The
 /// parser owns this value and knows nothing about who consumes it.
@@ -40,7 +40,7 @@ impl<T: ParseReport + ?Sized> ParseReport for &T {
     }
 }
 
-/// The tree sink, generic over the document it builds into (`dom_model::DocumentMutation`).
+/// The tree sink, generic over the document it builds into (`wega_dom::DocumentMutation`).
 /// Each tree-construction operation uses its own mutation scope, as before.
 pub(crate) struct Sink<D: DocumentMutation, W: ParseReport> {
     document: Rc<RefCell<D>>,
@@ -443,15 +443,15 @@ pub(crate) fn parse_fragment<D: DocumentMutation, W: ParseReport>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dom_model::DocumentView;
+    use wega_dom::DocumentView;
 
     struct Silent;
     impl ParseReport for Silent {
         fn warning(&self, _: HtmlDiagnostic<'_>) {}
     }
-    use crate::dom_model::{BlitzDocument, ToKey, ToNodeId};
     use blitz_dom::{BaseDocument, DocumentConfig};
     use blitz_html::HtmlDocument;
+    use wega_adapter_blitz::{BlitzDocument, ToNodeId};
 
     fn wega_parse(html: &str, limit: usize) -> (Rc<RefCell<BlitzDocument>>, usize) {
         let document = Rc::new(RefCell::new(BlitzDocument::new(BaseDocument::new(
@@ -556,7 +556,7 @@ mod tests {
         name: &str,
     ) -> NodeKey {
         let root = DocumentView::root(document);
-        let mut mutator = crate::dom_model::mutate(document);
+        let mut mutator = wega_dom::mutate(document);
         let context = mutator.create_element(
             QualName::new(None, namespace, html5ever::LocalName::from(name)),
             [],
@@ -803,7 +803,7 @@ mod tests {
         let _ = document.borrow().query_selector_all("p");
         let mut doc = document.borrow_mut();
         let root = DocumentView::root(&*doc);
-        let mut mutator = crate::dom_model::mutate(&mut *doc);
+        let mut mutator = wega_dom::mutate(&mut *doc);
         let name = QualName::new(None, html5ever::ns!(html), html5ever::LocalName::from("i"));
         let element = mutator.create_element(name, []);
         mutator.append_children(root, &[element]).unwrap();

@@ -1,11 +1,11 @@
 //! Script host contract. Fatal limits tear down a host; ordinary exceptions do not.
-use crate::dom_model::BlitzDocument;
 use blitz_dom::NodeId;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     time::Instant,
 };
+use wega_adapter_blitz::BlitzDocument;
 use wega_adapter_v8::{HostConfig, RuntimeLimits, ScriptError, ScriptHost, V8Host};
 /// Everything a script host shares with its view.
 #[derive(Clone)]

@@ -22,7 +22,6 @@ mod csp;
 pub mod diagnostics;
 mod dom;
 mod dom_host;
-mod dom_model;
 mod encoding;
 mod event_loop;
 mod html_report;

@@ -6721,6 +6721,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
+name = "wega-adapter-blitz"
+version = "0.1.0"
+dependencies = [
+ "blitz-dom",
+ "blitz-html",
+ "html5ever",
+ "url",
+ "wega-dom",
+]
+
+[[package]]
 name = "wega-adapter-skia"
 version = "0.1.0"
 dependencies = [
@@ -6769,6 +6780,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wega-dom"
+version = "0.1.0"
+dependencies = [
+ "html5ever",
+ "url",
+]
+
+[[package]]
 name = "wega-engine"
 version = "0.1.0"
 dependencies = [
@@ -6800,8 +6819,10 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "wega-adapter-blitz",
  "wega-adapter-skia",
  "wega-adapter-v8",
+ "wega-dom",
  "wega-network",
  "wega-permissions",
  "wega-platform",
