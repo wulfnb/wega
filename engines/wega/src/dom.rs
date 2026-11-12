@@ -203,11 +203,13 @@ impl Dom {
                 .try_borrow()
                 .map_err(|_| "InvalidStateError: reentrant native DOM borrow")?;
             for identity in identities {
-                let id = identity
-                    .as_str()
-                    .and_then(|id| id.parse::<u64>().ok())
-                    .ok_or("TypeError: invalid binding node identity")?;
-                if document.get_node(NodeId::from_u64(id)).is_none() {
+                let key = crate::dom_model::NodeKey::from_u64(
+                    identity
+                        .as_str()
+                        .and_then(|id| id.parse::<u64>().ok())
+                        .ok_or("TypeError: invalid binding node identity")?,
+                );
+                if crate::dom_model::DocumentView::node(&*document, key).is_none() {
                     return Err("InvalidStateError: binding node no longer exists".into());
                 }
             }
@@ -1142,14 +1144,14 @@ impl Dom {
             "eventParent" => {
                 let target = node_id()?;
                 if let Some(slot) = self.assigned_slot(&doc, target) { json!(slot.as_u64().to_string()) }
-                else if let Some(parent) = doc.get_node(target).unwrap().parent { json!(parent.as_u64().to_string()) }
+                else if let Some(parent) = crate::dom_model::DocumentView::node(&*doc, target.into()).and_then(crate::dom_model::NodeView::parent) { json!(parent.to_string()) }
                 else if text(2) != "true" && text(3) == text(1) { Value::Null }
                 else { json!(self.shadows.borrow().host(target.as_u64()).map(|id|id.to_string())) }
             },
             "assignedSlot" | "assignedSlotInternal" => {
                 let mut assigned = self.assigned_slot(&doc, node_id()?);
                 if text(0) == "assignedSlot" && let Some(slot) = assigned {
-                        let mut root = slot; while let Some(parent) = doc.get_node(root).and_then(|node|node.parent) { root = parent; }
+                        let root = crate::dom_model::tree_root(&*doc, slot.into());
                         if let Some(host) = self.shadows.borrow().host(root.as_u64()) && self.shadows.borrow().root(host, false).is_none() { assigned = None; }
                 }
                 json!(assigned.map(|id|id.as_u64().to_string()))
@@ -1193,25 +1195,15 @@ impl Dom {
             "retain" => {let id=node_id()?;self.retained.borrow_mut().insert(id);Value::Null},
             "release" => {let id=id(1)?;self.retained.borrow_mut().remove(&id);self.collect_detached(&mut doc,id);Value::Null},
             "info"=>{
-                let node=doc.get_node(node_id()?).unwrap();
-                let (kind,name,local,namespace,prefix)=match &node.data {
-                    NodeData::Document(_)=>(9,"#document".to_owned(),None,None,None),
-                    NodeData::Text(_)=>(3,"#text".to_owned(),None,None,None),
-                    NodeData::Comment{..}=>(8,"#comment".to_owned(),None,None,None),
-                    NodeData::Element(e)|NodeData::AnonymousBlock(e)=>{
-                        let local=e.name.local.to_string();let fragment=local=="#document-fragment";
-                        let name=if e.name.ns==ns!(html)&&!fragment {local.to_uppercase()}else{local.clone()};
-                        (if fragment{11}else{1},name,Some(local),Some(e.name.ns.to_string()),e.name.prefix.as_ref().map(|p|p.to_string()))
-                    }
-                };
-                json!({"nodeType":kind,"nodeName":name,"localName":local,"namespaceURI":namespace,"prefix":prefix})
+                let info=crate::dom_model::node_info(&*doc,node_id()?.into()).ok_or("InvalidStateError: node no longer exists")?;
+                json!({"nodeType":info.node_type,"nodeName":info.node_name,"localName":info.local_name,"namespaceURI":info.namespace,"prefix":info.prefix})
             },
             "attributes"=>json!(doc.get_node(node_id()?).unwrap().attrs().unwrap_or_default().iter().map(|a|json!({"name":a.name.prefix.as_ref().map_or_else(||a.name.local.to_string(),|p|format!("{p}:{}",a.name.local)),"localName":a.name.local.to_string(),"namespaceURI":if a.name.ns==ns!(){None}else{Some(a.name.ns.to_string())},"value":a.value})).collect::<Vec<_>>()),
             "queryIn"=>json!(doc.query_selector_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
             "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "matches"=>json!(doc.matches_selector(node_id()?,text(2)).map_err(|_|"Invalid selector")?),
             "closest"=>json!(doc.closest(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
-            "getById"=>json!(doc.get_element_by_id(text(1)).map(|id|id.as_u64().to_string())),
+            "getById"=>json!(crate::dom_model::DocumentView::element_by_id(&*doc,text(1)).map(|key|key.to_string())),
             "outerHTML"=>json!(doc.get_node(node_id()?).unwrap().outer_html()),
             "innerHTML" | "contextualFragment"=>{
                 let mut target=node_id()?;
@@ -1626,21 +1618,10 @@ impl Dom {
         Ok(value)
     }
     fn subtree(doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
-        let mut nodes = vec![];
-        let mut pending = vec![root];
-        while let Some(id) = pending.pop() {
-            if let Some(node) = doc.get_node(id) {
-                nodes.push(id);
-                pending.extend(node.children.iter().copied());
-            }
-        }
-        nodes
+        crate::dom_model::subtree(doc, root.into())
     }
     fn attribute(doc: &BaseDocument, id: NodeId, name: &str) -> Option<String> {
-        doc.get_node(id)?
-            .element_data()?
-            .attr(LocalName::from(name))
-            .map(str::to_owned)
+        crate::dom_model::attribute(doc, id.into(), name)
     }
     fn component_subtree(&self, doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
         let mut nodes = Vec::new();
@@ -1714,10 +1695,7 @@ impl Dom {
         if !seen.insert(slot) {
             return vec![];
         }
-        let mut root = slot;
-        while let Some(parent) = doc.get_node(root).and_then(|node| node.parent) {
-            root = parent;
-        }
+        let root = crate::dom_model::tree_root(doc, slot.into());
         let Some(host) = self
             .shadows
             .borrow()

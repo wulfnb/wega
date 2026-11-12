@@ -39,6 +39,33 @@ fn hot_paths() {
         .unwrap();
         start.elapsed().as_secs_f64() * 1e6 / 2_000.0
     });
+    // Node lookup, node info and subtree walks (getElementById, nodeType/nodeName, deep clone).
+    let lookups = repeat(|| {
+        page.evaluate_json(
+            "(()=>{const r=document.getElementById('root');r.textContent='';for(let i=0;i<200;i++){const d=document.createElement('div');d.id='n'+i;d.appendChild(document.createElement('span'));r.appendChild(d);}return r.childNodes.length})()",
+        )
+        .unwrap();
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{let n=0;for(let i=0;i<2000;i++){const e=document.getElementById('n'+(i%200));n+=e.nodeType+e.nodeName.length+(e.parentNode?1:0);}return n})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 2_000.0
+    });
+    let clone = repeat(|| {
+        // A fresh 51-node subtree per sample keeps the clones within the node budget.
+        let mut page = view();
+        page.evaluate_json(
+            "(()=>{const r=document.getElementById('root');for(let i=0;i<25;i++){const d=document.createElement('div');d.appendChild(document.createElement('span'));r.appendChild(d);}return r.childNodes.length})()",
+        )
+        .unwrap();
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{const r=document.getElementById('root');let n=0;for(let i=0;i<10;i++){n+=r.cloneNode(true).childNodes.length}return n})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 10.0
+    });
     let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
     let lifecycle = repeat(|| {
         let start = Instant::now();
@@ -55,5 +82,7 @@ fn hot_paths() {
     println!(
         "BENCH dom ops (createElement+setAttribute+appendChild+getAttribute): {dom_ops:.2} us/iteration"
     );
+    println!("BENCH lookup+nodeType+nodeName+parentNode: {lookups:.2} us/iteration");
+    println!("BENCH deep clone of a 51-node subtree: {clone:.2} us/clone");
     println!("BENCH create_view+set_html (document lifecycle): {lifecycle:.2} ms/document");
 }
