@@ -1,4 +1,5 @@
-//! An owned display list crosses threads; the DOM and V8 isolate never do.
+//! Skia raster backend. An owned display list crosses threads; the DOM and V8 isolate never do.
+#![forbid(unsafe_code)]
 use anyrender::{ImageRenderer, PaintScene, Scene};
 use anyrender_skia::SkiaImageRenderer;
 use std::sync::{Arc, mpsc};
@@ -23,7 +24,7 @@ enum Job {
     Store(wega_platform::FrameStore),
     Release,
 }
-pub(crate) struct Raster {
+pub struct Raster {
     jobs: mpsc::SyncSender<Job>,
     results: mpsc::Receiver<Result<Painted, String>>,
     pending: bool,

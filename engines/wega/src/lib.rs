@@ -28,7 +28,6 @@ pub mod media;
 mod network;
 mod parser;
 pub mod permissions;
-mod raster;
 mod script;
 mod v8;
 mod view;
@@ -36,9 +35,9 @@ pub mod webgl;
 pub mod workers;
 pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use network::NetworkPolicy;
-pub use raster::{Painted, Pixels};
 pub use view::{Frame, View};
 pub use view::{PageEvent, Pointer, PointerKind};
+pub use wega_adapter_skia::{Painted, Pixels};
 
 #[derive(Clone, Debug)]
 pub struct Limits {

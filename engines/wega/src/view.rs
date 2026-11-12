@@ -323,7 +323,7 @@ pub struct View {
     navigation_rx: mpsc::Receiver<NavigationOptions>,
     revision: Arc<AtomicU64>,
     last_revision: u64,
-    raster: crate::raster::Raster,
+    raster: wega_adapter_skia::Raster,
     pub compatibility: Option<String>,
     script_failure: Option<String>,
     in_flight: Arc<AtomicUsize>,
@@ -369,7 +369,7 @@ impl View {
         )
         .into_inner();
         let (_tx, navigation_rx) = mpsc::channel();
-        let raster = crate::raster::Raster::new(network.wake.clone())?;
+        let raster = wega_adapter_skia::Raster::new(network.wake.clone())?;
         let csp = Arc::new(RwLock::new(Csp::default()));
         let mut view = Self {
             host: document_host::DocumentHost::default(),

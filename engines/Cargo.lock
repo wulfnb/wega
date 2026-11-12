@@ -6721,6 +6721,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
+name = "wega-adapter-skia"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_skia",
+ "kurbo",
+ "skia-safe",
+ "wega-platform",
+]
+
+[[package]]
 name = "wega-cookies"
 version = "0.1.0"
 dependencies = [
@@ -6737,7 +6748,6 @@ version = "0.1.0"
 dependencies = [
  "accesskit",
  "anyrender",
- "anyrender_skia",
  "base64 0.23.1",
  "blitz-dom",
  "blitz-html",
@@ -6760,7 +6770,6 @@ dependencies = [
  "encoding_rs",
  "html5ever",
  "keyboard-types",
- "kurbo",
  "publicsuffix",
  "reqwest",
  "selectors 0.42.0",
@@ -6776,6 +6785,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "wega-adapter-skia",
  "wega-network",
  "wega-permissions",
  "wega-platform",
