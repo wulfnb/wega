@@ -196,6 +196,8 @@ pub enum MutationError {
     NotText(NodeKey),
     /// The insertion would put a node below itself.
     HierarchyCycle { parent: NodeKey, child: NodeKey },
+    /// A shallow copy of this kind of node (document, doctype, ...) is not defined.
+    NotCloneable(NodeKey),
 }
 impl std::fmt::Display for MutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -205,6 +207,7 @@ impl std::fmt::Display for MutationError {
             Self::InvalidParent(key) => write!(f, "node {key} cannot have children"),
             Self::NotElement(key) => write!(f, "node {key} is not an element"),
             Self::NotText(key) => write!(f, "node {key} is not a text node"),
+            Self::NotCloneable(key) => write!(f, "node {key} cannot be cloned"),
             Self::HierarchyCycle { parent, child } => {
                 write!(
                     f,
@@ -269,6 +272,9 @@ pub trait Mutator {
     fn create_comment(&mut self, text: &str) -> NodeKey;
     /// The `<template>` contents fragment, created on first use.
     fn template_contents(&mut self, template: NodeKey) -> Result<NodeKey, MutationError>;
+    /// A detached copy of `key`: element (name and attributes), text or comment when
+    /// `deep` is false; the whole subtree when it is true. Backs `cloneNode`/`importNode`.
+    fn clone_node(&mut self, key: NodeKey, deep: bool) -> Result<NodeKey, MutationError>;
 
     // Structure. Children already in the tree are moved (detached from their old parent first).
     fn append_children(
@@ -299,6 +305,8 @@ pub trait Mutator {
         value: &str,
     ) -> Result<(), MutationError>;
     fn clear_attribute(&mut self, node: NodeKey, name: QualName) -> Result<(), MutationError>;
+    /// Removes one declaration from the element's inline `style` (`element.style`).
+    fn remove_style_property(&mut self, node: NodeKey, name: &str) -> Result<(), MutationError>;
     fn add_attributes_if_missing(
         &mut self,
         node: NodeKey,
@@ -549,6 +557,75 @@ mod tests {
         // Replaced-out nodes are detached, not dropped.
         assert_eq!(doc.node(b).unwrap().parent(), None);
         assert_integrity(&doc);
+    }
+
+    #[test]
+    fn clone_node_copies_shallow_or_deep_and_rejects_stale_and_unclonable_nodes() {
+        let (mut doc, host, a, _b, _c) = tree();
+        let text = {
+            let mut m = mutate(&mut doc);
+            let text = m.create_text("hello");
+            m.append_children(a, &[text]).unwrap();
+            m.finish();
+            text
+        };
+        let root = root_key(&doc);
+        let mut m = mutate(&mut doc);
+        let shallow = m.clone_node(host, false).unwrap();
+        let deep = m.clone_node(host, true).unwrap();
+        let text_copy = m.clone_node(text, false).unwrap();
+        assert_eq!(
+            m.clone_node(root, false),
+            Err(MutationError::NotCloneable(root))
+        );
+        m.finish();
+        assert_eq!(dump(&doc, shallow), "div#host[]");
+        assert_eq!(dump(&doc, deep), dump(&doc, host));
+        assert_ne!(deep, host, "a deep clone has its own identity");
+        assert_eq!(
+            doc.node(deep).unwrap().parent(),
+            None,
+            "clones are detached"
+        );
+        assert_eq!(doc.node(text_copy).unwrap().kind(), NodeKind::Text);
+        assert_integrity(&doc);
+        let mut m = mutate(&mut doc);
+        m.remove_and_drop(shallow).unwrap();
+        assert_eq!(
+            m.clone_node(shallow, true),
+            Err(MutationError::Stale(shallow))
+        );
+    }
+
+    #[test]
+    fn remove_style_property_edits_the_inline_style_and_validates_the_target() {
+        let (mut doc, _host, a, _b, _c) = tree();
+        let mut m = mutate(&mut doc);
+        m.set_attribute(
+            a,
+            QualName::new(None, ns!(), LocalName::from("style")),
+            "color:red;margin:1px",
+        )
+        .unwrap();
+        m.remove_style_property(a, "color").unwrap();
+        let text = m.create_text("t");
+        assert_eq!(
+            m.remove_style_property(text, "color"),
+            Err(MutationError::NotElement(text))
+        );
+        m.finish();
+        let block = doc
+            .get_node(NodeId::from(a))
+            .unwrap()
+            .element_data()
+            .unwrap()
+            .style_attribute
+            .clone()
+            .unwrap();
+        let guard = doc.guard().read();
+        let mut css = String::new();
+        let _ = block.read_with(&guard).to_css(&mut css);
+        assert!(css.contains("margin") && !css.contains("color"), "{css}");
     }
 
     #[test]

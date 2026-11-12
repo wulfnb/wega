@@ -1,3 +1,4 @@
+use crate::dom_model::Mutator as _;
 use crate::{
     Limits,
     csp::Csp,
@@ -1137,8 +1138,9 @@ impl View {
                         }
                         node.mark_ancestors_dirty();
                     }
-                    doc.mutate().set_attribute(
-                        target_node,
+                    // The element can only vanish between the click and now; nothing to update then.
+                    let _ = crate::dom_model::mutate(&mut *doc).set_attribute(
+                        target_node.into(),
                         QualName::new(None, ns!(), LocalName::from("value")),
                         val,
                     );
@@ -1187,8 +1189,8 @@ impl View {
                         node.mark_ancestors_dirty();
                     }
                     let val = format!("C:\\fakepath\\{display_val}");
-                    doc.mutate().set_attribute(
-                        target,
+                    let _ = crate::dom_model::mutate(&mut *doc).set_attribute(
+                        target.into(),
                         QualName::new(None, ns!(), LocalName::from("value")),
                         &val,
                     );

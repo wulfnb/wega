@@ -1112,7 +1112,7 @@ impl Dom {
                 let definition: u64 = text(1).parse().map_err(|_| "Invalid definition ID")?;
                 let name = self.components.borrow().by_id(definition).ok_or("TypeError: Illegal constructor")?.name.clone();
                 if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
-                let created = doc.mutate().create_element(QualName::new(None, ns!(html), LocalName::from(name)), vec![]);
+                let created = NodeId::from(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from(name)), []));
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 let mut registry = self.components.borrow_mut(); registry.begin(created.as_u64(), definition)?; registry.complete(created.as_u64(), true)?;
                 json!(created.as_u64().to_string())
@@ -1131,9 +1131,9 @@ impl Dom {
                 if self.shadows.borrow().root(target.as_u64(), true).is_some() { return Err("NotSupportedError: shadow root already attached".into()); }
                 let tag = doc.get_node(target).and_then(|node| node.element_data()).ok_or("NotSupportedError: invalid shadow host")?.name.local.to_string();
                 if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
-                let root = doc.mutate().create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), vec![]);
+                let root = NodeId::from(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), []));
                 let entry = match self.shadows.borrow_mut().attach(target.as_u64(), root.as_u64(), text(2), text(3) == "true", &tag) {
-                    Ok(entry) => entry, Err(error) => { doc.mutate().remove_and_drop_node(root); return Err(error); }
+                    Ok(entry) => entry, Err(error) => { let _ = crate::dom_model::mutate(&mut *doc).remove_and_drop(root.into()); return Err(error); }
                 };
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 self.requests.borrow_mut().compatibility = Some("Shadow DOM scoped style and flattened layout are not implemented by Wega".into());
@@ -1172,7 +1172,7 @@ impl Dom {
             },
             "cookie"=>json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite)),
             "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);Value::Null},
-            "templateContent"=>{let target=node_id()?;let content=doc.mutate().template_contents(target);json!(content.as_u64().to_string())},
+            "templateContent"=>{let target=node_id()?;let content=crate::dom_model::mutate(&mut *doc).template_contents(target.into()).map_err(Self::mutation_error)?;json!(NodeId::from(content).as_u64().to_string())},
             "viewport"=>{let viewport=doc.viewport();let scale=(viewport.hidpi_scale*viewport.zoom) as f64;let scroll=doc.viewport_scroll();json!({"width":viewport.window_size.0 as f64/scale,"height":viewport.window_size.1 as f64/scale,"dpr":scale,"scrollX":scroll.x,"scrollY":scroll.y})},
             "scroll"=>{let node=doc.get_node(node_id()?).unwrap();let scroll=node.scroll_offset();json!({"x":scroll.x,"y":scroll.y})},
             "scrollViewport"=>{let x=text(1).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.set_viewport_scroll(blitz_dom::Point{x,y});}Value::Null},
@@ -1208,7 +1208,7 @@ impl Dom {
             "outerHTML"=>json!(doc.get_node(node_id()?).unwrap().outer_html()),
             "innerHTML" | "contextualFragment"=>{
                 let mut target=node_id()?;
-                if doc.get_node(target).and_then(|node|node.element_data()).is_some_and(|element|element.name.local.as_str()=="template") { target=doc.mutate().template_contents(target); }
+                if doc.get_node(target).and_then(|node|node.element_data()).is_some_and(|element|element.name.local.as_str()=="template") { target=crate::dom_model::mutate(&mut *doc).template_contents(target.into()).map(NodeId::from).map_err(Self::mutation_error)?; }
                 if text(2).len()>self.limits.html_bytes{return Err("HTML fragment exceeds the size limit".into());}
                 // Parse into a detached same-context element first; reject budgets before
                 // replacing live children, and retain removed nodes held by JS wrappers.
@@ -1237,14 +1237,7 @@ impl Dom {
                 if self.allocated.get().saturating_add(count)>self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
                 let bytes=doc.get_node(source).unwrap().outer_html().len();
                 if self.used.get().saturating_add(bytes)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}
-                let cloned=if deep{doc.mutate().deep_clone_node(source)}else{
-                    match &doc.get_node(source).unwrap().data {
-                        NodeData::Element(e)|NodeData::AnonymousBlock(e)=>{let name=e.name.clone();let attrs=e.attrs.to_vec();doc.mutate().create_element(name,attrs)},
-                        NodeData::Text(t)=>{let text=t.content.to_string();doc.mutate().create_text_node(&text)},
-                        NodeData::Comment{contents}=>{let text=contents.clone();doc.mutate().create_comment_node(&text)},
-                        _=>return Err("This node cannot be cloned".into())
-                    }
-                };
+                let cloned=NodeId::from(crate::dom_model::mutate(&mut *doc).clone_node(source.into(),deep).map_err(|error|match error{crate::dom_model::MutationError::NotCloneable(_)=>"This node cannot be cloned".to_string(),other=>Self::mutation_error(other)})?);
                 self.allocated.set(self.allocated.get()+count);self.used.set(self.used.get()+bytes);json!(cloned.as_u64().to_string())
             },
             "insert"=>{
@@ -1261,9 +1254,9 @@ impl Dom {
                 if self.allocated.get()>=self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
                 let created=match text(0){
                     "createDocument"=>doc.create_node(NodeData::Document(Box::default())),
-                    "createComment"=>doc.mutate().create_comment_node(text(1)),
-                    "createFragment"=>doc.mutate().create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),vec![]),
-                    _=>{let parts=text(2).split_once(':');let (prefix,local)=parts.map_or((None,text(2)),|(p,l)|(Some(html5ever::Prefix::from(p)),l));doc.mutate().create_element(QualName::new(prefix,html5ever::Namespace::from(text(1)),LocalName::from(local)),vec![])}
+                    "createComment"=>NodeId::from(crate::dom_model::mutate(&mut *doc).create_comment(text(1))),
+                    "createFragment"=>NodeId::from(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[])),
+                    _=>{let parts=text(2).split_once(':');let (prefix,local)=parts.map_or((None,text(2)),|(p,l)|(Some(html5ever::Prefix::from(p)),l));NodeId::from(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(prefix,html5ever::Namespace::from(text(1)),LocalName::from(local)),[]))}
                 };self.allocated.set(self.allocated.get()+1);json!(created.as_u64().to_string())
             },
             "attrNS"=>json!(doc.get_node(node_id()?).unwrap().attrs().unwrap_or_default().iter().find(|a|a.name.ns.as_str()==text(2)&&a.name.local.as_str()==text(3)).map(|a|a.value.clone())),
@@ -1272,7 +1265,7 @@ impl Dom {
                 let (prefix,local)=payload[0].split_once(':').map_or((None,payload[0].as_str()),|(p,l)|(Some(html5ever::Prefix::from(p)),l));
                 let charge=payload[0].len()+payload[1].len();if self.used.get().saturating_add(charge)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}self.used.set(self.used.get()+charge);
                 let old = doc.get_node(target).unwrap().attrs().unwrap_or_default().iter().find(|a|a.name.ns.as_str()==text(2)&&a.name.local.as_str()==local).map(|a|a.value.clone());
-                doc.mutate().set_attribute(target,QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]);
+                crate::dom_model::mutate(&mut *doc).set_attribute(target.into(),QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]).map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(target.as_u64(), local, old.as_deref(), Some(&payload[1]), (!text(2).is_empty()).then_some(text(2)));
                 Value::Null
             },
@@ -1281,10 +1274,10 @@ impl Dom {
             "inlineCSS"=>{let target=node_id()?;let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}json!(css)},
             "inlineProperty"=>{let target=node_id()?;let mut css=String::new();if let Ok(property)=style::properties::PropertyId::parse_enabled_for_all_content(text(2)) && let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).property_value_to_css(&property,&mut css);}json!(css)},
             "styleSet"=>{
-                let target=node_id()?;let old=Self::attribute(&doc,target,"style");doc.mutate().remove_style_property(target,text(2));
+                let target=node_id()?;let old=Self::attribute(&doc,target,"style");crate::dom_model::mutate(&mut *doc).remove_style_property(target.into(),text(2)).map_err(Self::mutation_error)?;
                 let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}
                 if !text(3).is_empty(){css.push_str(&format!("{}: {};",text(2),text(3)));}
-                doc.mutate().set_attribute(target,QualName::new(None,ns!(),LocalName::from("style")),&css);
+                crate::dom_model::mutate(&mut *doc).set_attribute(target.into(),QualName::new(None,ns!(),LocalName::from("style")),&css).map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),Some(&css),None);Value::Null
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
@@ -1470,7 +1463,7 @@ impl Dom {
                     .find(|attribute| attribute.name.ns.as_str() == text(2) && attribute.name.local.as_str() == text(3))
                     .map(|attribute| (attribute.name.clone(), attribute.value.clone()));
                 if let Some((name, old)) = name {
-                    doc.mutate().clear_attribute(target, name);
+                    crate::dom_model::mutate(&mut *doc).clear_attribute(target.into(), name).map_err(Self::mutation_error)?;
                     self.components.borrow_mut().attribute(target.as_u64(), text(3), Some(&old), None, (!text(2).is_empty()).then_some(text(2)));
                 }
                 Value::Null
@@ -1798,10 +1791,11 @@ impl Dom {
             if let Some(shadow) = self.shadows.borrow_mut().release(id.as_u64())
                 && let Ok(id) = shadow.root.parse()
             {
-                doc.mutate().remove_and_drop_node(NodeId::from_u64(id));
+                let _ = crate::dom_model::mutate(&mut *doc)
+                    .remove_and_drop(NodeId::from_u64(id).into());
             }
         }
-        doc.mutate().remove_and_drop_node(root);
+        let _ = crate::dom_model::mutate(&mut *doc).remove_and_drop(root.into());
         self.allocated
             .set(self.allocated.get().saturating_sub(nodes.len()));
         self.used.set(self.used.get().saturating_sub(bytes));

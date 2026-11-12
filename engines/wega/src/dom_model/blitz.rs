@@ -234,6 +234,29 @@ impl Mutator for BlitzMutator<'_> {
         with_ids(children, |ids| self.0.replace_children(parent_id, ids));
         Ok(())
     }
+    fn clone_node(&mut self, key: NodeKey, deep: bool) -> Result<NodeKey, MutationError> {
+        use blitz_dom::node::NodeData;
+        let id = self.live(key)?;
+        if deep {
+            return Ok(NodeKey::from(self.0.deep_clone_node(id)));
+        }
+        let cloned = match &self.node(key)?.data {
+            NodeData::Element(e) | NodeData::AnonymousBlock(e) => {
+                let (name, attrs) = (e.name.clone(), e.attrs.to_vec());
+                self.0.create_element(name, attrs)
+            }
+            NodeData::Text(t) => {
+                let text = t.content.to_string();
+                self.0.create_text_node(&text)
+            }
+            NodeData::Comment { contents } => {
+                let text = contents.clone();
+                self.0.create_comment_node(&text)
+            }
+            _ => return Err(MutationError::NotCloneable(key)),
+        };
+        Ok(NodeKey::from(cloned))
+    }
     fn remove(&mut self, key: NodeKey) -> Result<(), MutationError> {
         let id = self.live(key)?;
         self.0.remove_node(id);
@@ -287,6 +310,11 @@ impl Mutator for BlitzMutator<'_> {
     fn clear_attribute(&mut self, node: NodeKey, name: QualName) -> Result<(), MutationError> {
         let id = self.element(node)?;
         self.0.clear_attribute(id, name);
+        Ok(())
+    }
+    fn remove_style_property(&mut self, node: NodeKey, name: &str) -> Result<(), MutationError> {
+        let id = self.element(node)?;
+        self.0.remove_style_property(id, name);
         Ok(())
     }
     fn add_attributes_if_missing(
