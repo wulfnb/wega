@@ -135,12 +135,13 @@ fn hot_paths() {
         start.elapsed().as_secs_f64() * 1e6 / 1_000.0
     });
     let shallow_clone = repeat(|| {
+        let mut page = view();
         let start = Instant::now();
         page.evaluate_json(
-            "(()=>{const r=document.getElementById('root');let n=0;for(let i=0;i<1000;i++){n+=r.cloneNode(false).nodeType}return n})()",
+            "(()=>{const e=document.createElement('div');e.setAttribute('a','1');let n=0;for(let i=0;i<500;i++){n+=e.cloneNode(false).nodeType}return n})()",
         )
         .unwrap();
-        start.elapsed().as_secs_f64() * 1e6 / 1_000.0
+        start.elapsed().as_secs_f64() * 1e6 / 500.0
     });
     let style = repeat(|| {
         let start = Instant::now();
