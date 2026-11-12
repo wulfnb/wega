@@ -297,11 +297,9 @@ pub(crate) struct V8Host {
     polled_at: Instant,
 }
 impl V8Host {
-    pub fn new(
-        context: crate::script::HostContext,
-        limits: &Limits,
-        initial_bytes: usize,
-    ) -> Result<Self, String> {
+    /// The document's host (`Dom`) is created and owned by the view and injected here;
+    /// the V8 host only runs script against it.
+    pub fn new(dom: Rc<Dom>, limits: &Limits) -> Result<Self, String> {
         let executor = Rc::new(
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -310,7 +308,6 @@ impl V8Host {
                 .map_err(|e| e.to_string())?,
         );
         let entered = executor.enter();
-        let dom = Rc::new(Dom::new(context, limits, initial_bytes));
         // Do not enable lite mode per isolate: V8 flags are process-wide. Workers receive
         // their per-view option before initializing the platform.
         let document_url = dom.document.borrow().url().clone();

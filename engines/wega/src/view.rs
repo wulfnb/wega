@@ -636,7 +636,7 @@ impl View {
             .and_then(|r| r.header("refresh"))
             .and_then(|value| self.parse_refresh(value));
         self.abort = Some(abort);
-        let mut host = crate::script::create(
+        let dom = Rc::new(crate::dom::Dom::new(
             HostContext {
                 document: self.document.clone(),
                 navigate: self.navigate.clone(),
@@ -651,7 +651,8 @@ impl View {
             },
             &self.limits,
             html.len(),
-        )?;
+        ));
+        let mut host = crate::script::create(dom, &self.limits)?;
         host.allow_eval(self.csp().allows_eval());
         host.run(
             include_str!("../../../src/page_state.js"),

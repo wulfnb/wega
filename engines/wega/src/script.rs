@@ -60,16 +60,12 @@ pub(crate) trait ScriptHost {
         Ok(self.evaluate_json("__wega_has_frame()")? == "true")
     }
 }
+/// Creates the V8 script host for a document host built by the view.
 pub(crate) fn create(
-    context: HostContext,
+    dom: std::rc::Rc<crate::dom::Dom>,
     limits: &crate::Limits,
-    initial_bytes: usize,
 ) -> Result<Box<dyn ScriptHost>, String> {
-    Ok(Box::new(crate::v8::V8Host::new(
-        context,
-        limits,
-        initial_bytes,
-    )?))
+    Ok(Box::new(crate::v8::V8Host::new(dom, limits)?))
 }
 
 /// HTML performs a checkpoint after an ordinary exception too. A fatal limit
