@@ -1,4 +1,6 @@
+use crate::dom_model::BlitzDocument;
 use crate::dom_model::Mutator as _;
+use crate::dom_model::{ToKey as _, ToNodeId as _};
 use crate::{
     Limits,
     csp::Csp,
@@ -7,7 +9,7 @@ use crate::{
     parser::Step,
     script::{DynScriptHost, HostContext},
 };
-use blitz_dom::{BaseDocument, DocumentConfig, NodeId, traversal::TreeTraverser};
+use blitz_dom::{DocumentConfig, NodeId, traversal::TreeTraverser};
 use blitz_html::HtmlDocument;
 use blitz_traits::{
     events::{
@@ -307,7 +309,7 @@ use document_host::script_kind;
 pub struct View {
     host: document_host::DocumentHost,
     scheduler: crate::event_loop::Scheduler,
-    document: Rc<RefCell<BaseDocument>>,
+    document: Rc<RefCell<BlitzDocument>>,
     document_revision: u64,
     navigation_generation: u64,
     document_generation: Rc<Cell<u64>>,
@@ -379,7 +381,7 @@ impl View {
         let mut view = Self {
             host: document_host::DocumentHost::default(),
             scheduler: crate::event_loop::Scheduler::default(),
-            document: Rc::new(RefCell::new(document)),
+            document: Rc::new(RefCell::new(BlitzDocument::new(document))),
             document_revision: 0,
             navigation_generation: 0,
             document_generation: Rc::new(Cell::new(0)),
@@ -638,7 +640,7 @@ impl View {
         } else {
             blitz_dom::BaseDocument::new(config)
         };
-        self.document = Rc::new(RefCell::new(document));
+        self.document = Rc::new(RefCell::new(BlitzDocument::new(document)));
         self.script_failure = None;
         self.document_revision = document_revision;
         self.scheduler.replace(document_revision);
@@ -1142,7 +1144,7 @@ impl View {
                     }
                     // The element can only vanish between the click and now; nothing to update then.
                     let _ = crate::dom_model::mutate(&mut *doc).set_attribute(
-                        target_node.into(),
+                        target_node.key(),
                         QualName::new(None, ns!(), LocalName::from("value")),
                         val,
                     );
@@ -1192,7 +1194,7 @@ impl View {
                     }
                     let val = format!("C:\\fakepath\\{display_val}");
                     let _ = crate::dom_model::mutate(&mut *doc).set_attribute(
-                        target.into(),
+                        target.key(),
                         QualName::new(None, ns!(), LocalName::from("value")),
                         &val,
                     );
@@ -1615,14 +1617,14 @@ impl View {
         let (old_chain, new_chain) = {
             let doc = self.document.borrow();
             let chain = |id: Option<NodeId>| {
-                id.filter(|id| crate::dom_model::DocumentView::node(&*doc, (*id).into()).is_some())
+                id.filter(|id| crate::dom_model::DocumentView::node(&*doc, (*id).key()).is_some())
                     .map(|id| doc.node_chain(id))
                     .unwrap_or_default()
             };
             (chain(previous), chain(hovered))
         };
         if let Some(target) = previous.filter(|id| {
-            crate::dom_model::DocumentView::node(&*self.document.borrow(), (*id).into()).is_some()
+            crate::dom_model::DocumentView::node(&*self.document.borrow(), (*id).key()).is_some()
         }) {
             self.dispatch_pointer("pointerout", target, pointer, hovered);
             self.dispatch_pointer("mouseout", target, pointer, hovered);
@@ -2036,7 +2038,7 @@ impl View {
                             .and_then(|el| el.attr(LocalName::from("name")).map(str::to_string));
                         if let Some(name) = name {
                             let mut doc = self.document.borrow_mut();
-                            blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
+                            blitz_dom::BaseDocument::toggle_radio(&mut *doc, name, target);
                         }
                     }
                     let source = format!(

@@ -157,7 +157,7 @@ impl View {
             match parser.step() {
                 Step::Script(node) => {
                     self.apply_meta();
-                    self.prepare_script(node.into(), true, false);
+                    self.prepare_script(node.node_id(), true, false);
                 }
                 Step::Finished => {
                     self.apply_meta();

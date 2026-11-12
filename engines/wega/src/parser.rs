@@ -449,11 +449,14 @@ mod tests {
     impl ParseReport for Silent {
         fn warning(&self, _: HtmlDiagnostic<'_>) {}
     }
+    use crate::dom_model::{BlitzDocument, ToKey, ToNodeId};
     use blitz_dom::{BaseDocument, DocumentConfig};
     use blitz_html::HtmlDocument;
 
-    fn wega_parse(html: &str, limit: usize) -> (Rc<RefCell<BaseDocument>>, usize) {
-        let document = Rc::new(RefCell::new(BaseDocument::new(DocumentConfig::default())));
+    fn wega_parse(html: &str, limit: usize) -> (Rc<RefCell<BlitzDocument>>, usize) {
+        let document = Rc::new(RefCell::new(BlitzDocument::new(BaseDocument::new(
+            DocumentConfig::default(),
+        ))));
         let mut parser = Parser::new(document.clone(), html, limit, Silent);
         let mut scripts = 0;
         while let Step::Script(_) = parser.step() {
@@ -461,7 +464,7 @@ mod tests {
         }
         (document, scripts)
     }
-    fn serialized(doc: &BaseDocument) -> String {
+    fn serialized(doc: &BlitzDocument) -> String {
         doc.root_element().outer_html()
     }
 
@@ -484,7 +487,9 @@ mod tests {
     fn contract_based_parser_builds_the_same_trees_as_blitz_html() {
         for html in CASES {
             let (document, _) = wega_parse(html, 100_000);
-            let blitz = HtmlDocument::from_html(html, DocumentConfig::default()).into_inner();
+            let blitz = BlitzDocument::new(
+                HtmlDocument::from_html(html, DocumentConfig::default()).into_inner(),
+            );
             assert_eq!(
                 serialized(&document.borrow()),
                 serialized(&blitz),
@@ -512,9 +517,9 @@ mod tests {
     // ---- fragment parsing ----------------------------------------------------------------
 
     /// The previous implementation (blitz-html's fragment sink), kept as the oracle.
-    fn blitz_fragment(document: &mut BaseDocument, element: blitz_dom::NodeId, html: &str) {
+    fn blitz_fragment(document: &mut BlitzDocument, element: blitz_dom::NodeId, html: &str) {
         use html5ever::{ParseOpts, tendril::TendrilSink};
-        let mut mutation = document.mutate();
+        let mut mutation = BaseDocument::mutate(&mut *document);
         let sink = blitz_html::DocumentHtmlParser::new(&mut mutation);
         let options = ParseOpts {
             tree_builder: TreeBuilderOpts {
@@ -538,15 +543,15 @@ mod tests {
             mutation.remove_and_drop_node(fragment);
         }
     }
-    fn new_document() -> BaseDocument {
-        BaseDocument::new(DocumentConfig {
+    fn new_document() -> BlitzDocument {
+        BlitzDocument::new(BaseDocument::new(DocumentConfig {
             base_url: Some("http://example.test/".into()),
             ..Default::default()
-        })
+        }))
     }
     /// Adds a detached-from-nothing context element under the document node.
     fn add_context(
-        document: &mut BaseDocument,
+        document: &mut BlitzDocument,
         namespace: html5ever::Namespace,
         name: &str,
     ) -> NodeKey {
@@ -560,14 +565,14 @@ mod tests {
         mutator.finish();
         context
     }
-    fn context_document(namespace: html5ever::Namespace, name: &str) -> (BaseDocument, NodeKey) {
+    fn context_document(namespace: html5ever::Namespace, name: &str) -> (BlitzDocument, NodeKey) {
         let mut document = new_document();
         let context = add_context(&mut document, namespace, name);
         (document, context)
     }
-    fn inner(document: &BaseDocument, context: NodeKey) -> String {
+    fn inner(document: &BlitzDocument, context: NodeKey) -> String {
         document
-            .get_node(blitz_dom::NodeId::from(context))
+            .get_node(blitz_dom::NodeId::from_u64(context.as_u64()))
             .unwrap()
             .outer_html()
     }
@@ -624,7 +629,7 @@ mod tests {
             for html in FRAGMENTS {
                 let expected_context =
                     add_context(&mut expected, html5ever::Namespace::from(*namespace), name);
-                blitz_fragment(&mut expected, expected_context.into(), html);
+                blitz_fragment(&mut expected, expected_context.node_id(), html);
                 let context =
                     add_context(&mut actual, html5ever::Namespace::from(*namespace), name);
                 parse_fragment(&mut actual, context, usize::MAX, html, &Silent).unwrap();
@@ -740,13 +745,15 @@ mod tests {
 
     /// Everything a budget test needs to know about one parse.
     struct Outcome {
-        document: Rc<RefCell<BaseDocument>>,
-        parser: Parser<BaseDocument, Silent>,
+        document: Rc<RefCell<BlitzDocument>>,
+        parser: Parser<BlitzDocument, Silent>,
         scripts: usize,
         overflowed: bool,
     }
     fn budgeted(html: &str, limit: usize) -> Outcome {
-        let document = Rc::new(RefCell::new(BaseDocument::new(DocumentConfig::default())));
+        let document = Rc::new(RefCell::new(BlitzDocument::new(BaseDocument::new(
+            DocumentConfig::default(),
+        ))));
         let mut parser = Parser::new(document.clone(), html, limit, Silent);
         let (mut scripts, mut overflowed) = (0, false);
         loop {
@@ -770,7 +777,7 @@ mod tests {
         budgeted(html, usize::MAX).parser.created()
     }
     /// Every reachable node is linked consistently: parent/child agree, no node appears twice.
-    fn assert_tree_is_consistent(document: &BaseDocument) -> usize {
+    fn assert_tree_is_consistent(document: &BlitzDocument) -> usize {
         let mut seen = std::collections::HashSet::new();
         let mut stack = vec![document.root_node().id];
         while let Some(id) = stack.pop() {
@@ -787,7 +794,7 @@ mod tests {
         seen.len()
     }
     /// The partial document stays usable: it serialises, queries and takes further mutations.
-    fn assert_document_is_usable(document: &Rc<RefCell<BaseDocument>>) {
+    fn assert_document_is_usable(document: &Rc<RefCell<BlitzDocument>>) {
         assert_tree_is_consistent(&document.borrow());
         // `root_element()` needs an <html> element, which a comment-only prefix never made.
         if document.borrow().try_root_element().is_some() {
@@ -939,7 +946,9 @@ mod tests {
 
     #[test]
     fn chunked_input_and_document_write_respect_the_budget() {
-        let document = Rc::new(RefCell::new(BaseDocument::new(DocumentConfig::default())));
+        let document = Rc::new(RefCell::new(BlitzDocument::new(BaseDocument::new(
+            DocumentConfig::default(),
+        ))));
         let mut parser = Parser::new(
             document.clone(),
             "<p>a</p><script>w</script>tail",

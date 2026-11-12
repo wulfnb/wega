@@ -19,6 +19,7 @@
 //!   operation, never a panic on a stale key), and deferred side effects run when the mutator is
 //!   finished or dropped. There is no rollback and no staging.
 mod blitz;
+pub use blitz::{BlitzDocument, ToKey, ToNodeId};
 
 use html5ever::QualName;
 use url::Url;
@@ -168,12 +169,16 @@ pub fn attribute<D: DocumentView>(doc: &D, key: NodeKey, name: &str) -> Option<S
 
 /// `root` and all its descendants, depth-first with the same (stack) order the DOM ops
 /// have always used. Keys that no longer resolve are skipped.
-pub fn subtree<D: DocumentView, K: From<NodeKey>>(doc: &D, root: NodeKey) -> Vec<K> {
+pub fn subtree<D: DocumentView, K>(
+    doc: &D,
+    root: NodeKey,
+    convert: impl Fn(NodeKey) -> K,
+) -> Vec<K> {
     let mut nodes = Vec::new();
     let mut pending = vec![root];
     while let Some(key) = pending.pop() {
         if let Some(node) = doc.node(key) {
-            nodes.push(K::from(key));
+            nodes.push(convert(key));
             pending.extend(node.children());
         }
     }
@@ -396,6 +401,7 @@ pub trait Mutator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::{BlitzDocument, ToKey, ToNodeId};
     use blitz_dom::{BaseDocument, DocumentConfig, NodeId, node::NodeData};
     use blitz_html::HtmlDocument;
     use html5ever::{LocalName, QualName, ns};
@@ -405,11 +411,11 @@ mod tests {
         <p id=p1 data-x=1>text<b>bold</b><!--c--></p><svg id=s><circle r=1 /></svg>\
         <template id=t><i>in</i></template><span id=sp></span></div></body>";
 
-    fn doc() -> BaseDocument {
-        HtmlDocument::from_html(HTML, DocumentConfig::default()).into_inner()
+    fn doc() -> BlitzDocument {
+        BlitzDocument::new(HtmlDocument::from_html(HTML, DocumentConfig::default()).into_inner())
     }
-    fn root_key(doc: &BaseDocument) -> NodeKey {
-        NodeKey::from(doc.root_node().id)
+    fn root_key(doc: &BlitzDocument) -> NodeKey {
+        (doc.root_node().id).key()
     }
 
     #[test]
@@ -428,7 +434,7 @@ mod tests {
     }
 
     // The pre-model implementations, kept verbatim as the reference.
-    fn legacy_subtree(doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
+    fn legacy_subtree(doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
         let mut nodes = vec![];
         let mut pending = vec![root];
         while let Some(id) = pending.pop() {
@@ -439,13 +445,13 @@ mod tests {
         }
         nodes
     }
-    fn legacy_attribute(doc: &BaseDocument, id: NodeId, name: &str) -> Option<String> {
+    fn legacy_attribute(doc: &BlitzDocument, id: NodeId, name: &str) -> Option<String> {
         doc.get_node(id)?
             .element_data()?
             .attr(LocalName::from(name))
             .map(str::to_owned)
     }
-    fn legacy_info(doc: &BaseDocument, id: NodeId) -> NodeInfo {
+    fn legacy_info(doc: &BlitzDocument, id: NodeId) -> NodeInfo {
         let node = doc.get_node(id).unwrap();
         let (kind, name, local, namespace, prefix) = match &node.data {
             NodeData::Document(_) => (9, "#document".to_owned(), None, None, None),
@@ -480,16 +486,16 @@ mod tests {
     #[test]
     fn model_matches_direct_blitz_access_for_every_node() {
         let doc = doc();
-        let root: NodeId = root_key(&doc).into();
+        let root: NodeId = root_key(&doc).node_id();
         let legacy = legacy_subtree(&doc, root);
-        let model: Vec<NodeId> = subtree(&doc, root.into());
+        let model: Vec<NodeId> = subtree(&doc, root.key(), ToNodeId::node_id);
         assert_eq!(model, legacy, "same nodes in the same order");
         assert!(legacy.len() > 10);
         for id in legacy {
-            assert_eq!(node_info(&doc, id.into()), Some(legacy_info(&doc, id)));
+            assert_eq!(node_info(&doc, id.key()), Some(legacy_info(&doc, id)));
             for name in ["id", "class", "data-x", "r", "missing"] {
                 assert_eq!(
-                    attribute(&doc, id.into(), name),
+                    attribute(&doc, id.key(), name),
                     legacy_attribute(&doc, id, name),
                     "{name}"
                 );
@@ -513,7 +519,7 @@ mod tests {
         );
         // Every node's tree root is the document root.
         for id in legacy_subtree(&doc, doc.root_node().id) {
-            assert_eq!(tree_root(&doc, id.into()), root_key(&doc));
+            assert_eq!(tree_root(&doc, id.key()), root_key(&doc));
         }
     }
 
@@ -523,16 +529,16 @@ mod tests {
         let sp = doc.element_by_id("sp").unwrap();
         assert_eq!(NodeKey::from_u64(sp.as_u64()), sp);
         assert_eq!(sp.to_string(), sp.as_u64().to_string());
-        assert_eq!(NodeId::from(sp).as_u64(), sp.as_u64());
-        let id: NodeId = sp.into();
-        doc.mutate().remove_and_drop_node(id);
+        assert_eq!(sp.node_id().as_u64(), sp.as_u64());
+        let id: NodeId = sp.node_id();
+        BaseDocument::mutate(&mut doc).remove_and_drop_node(id);
         assert!(doc.node(sp).is_none(), "dropped node");
         // Reusing the slot must not make the stale key alias the new node.
         let fresh = doc.mutate().create_element(
             QualName::new(None, ns!(html), LocalName::from("em")),
             vec![],
         );
-        assert_ne!(NodeKey::from(fresh), sp);
+        assert_ne!(fresh, sp);
         assert!(doc.node(sp).is_none(), "stale key still unresolved");
         assert!(doc.node(root_key(&doc)).is_some());
     }
@@ -542,8 +548,8 @@ mod tests {
     fn qn(local: &str) -> QualName {
         QualName::new(None, ns!(html), LocalName::from(local))
     }
-    fn empty_doc() -> BaseDocument {
-        BaseDocument::new(DocumentConfig::default())
+    fn empty_doc() -> BlitzDocument {
+        BlitzDocument::new(BaseDocument::new(DocumentConfig::default()))
     }
     /// A compact structural dump: `name(child,child)` / `#text:..` for the subtree.
     fn dump<D: DocumentView>(doc: &D, key: NodeKey) -> String {
@@ -569,7 +575,7 @@ mod tests {
             .join(",")
     }
     /// Every child's parent link points back and no node appears twice.
-    fn assert_integrity(doc: &BaseDocument) {
+    fn assert_integrity(doc: &BlitzDocument) {
         let mut seen = std::collections::HashSet::new();
         let mut pending = vec![doc.root()];
         while let Some(key) = pending.pop() {
@@ -584,7 +590,7 @@ mod tests {
             }
         }
     }
-    fn element(doc: &mut BaseDocument, name: &str, id: &str) -> NodeKey {
+    fn element(doc: &mut BlitzDocument, name: &str, id: &str) -> NodeKey {
         let mut m = mutate(doc);
         m.create_element(
             qn(name),
@@ -594,7 +600,7 @@ mod tests {
             }],
         )
     }
-    fn tree() -> (BaseDocument, NodeKey, NodeKey, NodeKey, NodeKey) {
+    fn tree() -> (BlitzDocument, NodeKey, NodeKey, NodeKey, NodeKey) {
         let mut doc = empty_doc();
         let root = doc.root();
         let host = element(&mut doc, "div", "host");
@@ -641,10 +647,9 @@ mod tests {
             stack.extend(doc.node(key).unwrap().children());
         }
         for key in all {
-            let direct = doc.get_node(NodeId::from(key)).unwrap();
+            let direct = doc.get_node(key.node_id()).unwrap();
             let view = doc.node(key).unwrap();
-            let children: Vec<NodeKey> =
-                direct.children.iter().copied().map(NodeKey::from).collect();
+            let children: Vec<NodeKey> = direct.children.iter().copied().map(ToKey::key).collect();
             assert_eq!(
                 view.children().rev().collect::<Vec<_>>(),
                 children.iter().rev().copied().collect::<Vec<_>>()
@@ -743,7 +748,7 @@ mod tests {
         );
         m.finish();
         let block = doc
-            .get_node(NodeId::from(a))
+            .get_node(a.node_id())
             .unwrap()
             .element_data()
             .unwrap()
@@ -913,9 +918,9 @@ mod tests {
             m.finish();
             first
         };
-        let height = |doc: &mut BaseDocument| {
+        let height = |doc: &mut BlitzDocument| {
             doc.resolve(0.0);
-            doc.node(outer).unwrap().final_layout().size.height
+            doc.node(outer).unwrap().blitz().final_layout().size.height
         };
         let before = height(&mut doc);
         assert_eq!(before, 10.0);
@@ -957,7 +962,7 @@ mod tests {
         let direct = || {
             let mut doc = empty_doc();
             let root = doc.root_node().id;
-            let mut m = doc.mutate();
+            let mut m = BaseDocument::mutate(&mut *doc);
             let host = m.create_element(qn("div"), vec![]);
             m.append_children(root, &[host]);
             let mut kids = Vec::with_capacity(N);
@@ -1018,8 +1023,10 @@ mod tests {
             html.push_str(&format!("<div id=n{i} data-i={i}><span>x</span></div>"));
         }
         html.push_str("</div></body>");
-        let doc = HtmlDocument::from_html(&html, DocumentConfig::default()).into_inner();
-        let root: NodeId = doc.element_by_id("root").unwrap().into();
+        let doc = BlitzDocument::new(
+            HtmlDocument::from_html(&html, DocumentConfig::default()).into_inner(),
+        );
+        let root: NodeId = doc.element_by_id("root").unwrap().node_id();
         let median = |mut v: Vec<f64>| {
             v.sort_by(|a, b| a.partial_cmp(b).unwrap());
             v[v.len() / 2]
@@ -1037,7 +1044,7 @@ mod tests {
         };
         let ids = legacy_subtree(&doc, root);
         let a = time(&|| legacy_subtree(&doc, root).len());
-        let b = time(&|| subtree::<_, NodeId>(&doc, root.into()).len());
+        let b = time(&|| subtree(&doc, root.key(), ToNodeId::node_id).len());
         let c = time(&|| {
             ids.iter()
                 .filter(|id| legacy_attribute(&doc, **id, "data-i").is_some())
@@ -1045,7 +1052,7 @@ mod tests {
         });
         let d = time(&|| {
             ids.iter()
-                .filter(|id| attribute(&doc, NodeKey::from(**id), "data-i").is_some())
+                .filter(|id| attribute(&doc, (**id).key(), "data-i").is_some())
                 .count()
         });
         println!(

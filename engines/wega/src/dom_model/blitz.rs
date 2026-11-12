@@ -7,40 +7,91 @@ use blitz_dom::{BaseDocument, DocumentMutator, Node, NodeId, node::Attribute, no
 use html5ever::QualName;
 use url::Url;
 
-impl From<NodeId> for NodeKey {
+/// `NodeKey` and Blitz's `NodeId` are both foreign to this module's eventual crate, so they
+/// cannot implement `From` for each other; these explicit conversions replace that. Both are
+/// the same `u64`, so they compile to nothing.
+pub trait ToKey {
+    fn key(self) -> NodeKey;
+}
+pub trait ToNodeId {
+    fn node_id(self) -> NodeId;
+}
+impl ToKey for NodeId {
     #[inline(always)]
-    fn from(id: NodeId) -> Self {
-        NodeKey::from_u64(id.as_u64())
+    fn key(self) -> NodeKey {
+        NodeKey::from_u64(self.as_u64())
     }
 }
-impl From<NodeKey> for NodeId {
+impl ToNodeId for NodeKey {
     #[inline(always)]
-    fn from(key: NodeKey) -> Self {
-        NodeId::from_u64(key.as_u64())
+    fn node_id(self) -> NodeId {
+        NodeId::from_u64(self.as_u64())
     }
 }
 
-impl DocumentView for BaseDocument {
-    type Node<'a> = &'a Node;
+/// The document the engine owns: Blitz's `BaseDocument`, held by value (no second tree, no
+/// extra allocation or indirection) in a local type so the Wega contract can be implemented
+/// for it. It dereferences to `BaseDocument`, so the layout, paint, style and form APIs that
+/// are not behind the contract yet stay reachable.
+pub struct BlitzDocument(BaseDocument);
+impl BlitzDocument {
+    pub fn new(document: BaseDocument) -> Self {
+        Self(document)
+    }
+    pub fn into_inner(self) -> BaseDocument {
+        self.0
+    }
+}
+impl From<BaseDocument> for BlitzDocument {
+    fn from(document: BaseDocument) -> Self {
+        Self(document)
+    }
+}
+impl std::ops::Deref for BlitzDocument {
+    type Target = BaseDocument;
+    #[inline(always)]
+    fn deref(&self) -> &BaseDocument {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for BlitzDocument {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut BaseDocument {
+        &mut self.0
+    }
+}
+
+/// A borrowed node of a [`BlitzDocument`].
+#[derive(Clone, Copy)]
+pub struct BlitzNode<'a>(&'a Node);
+impl<'a> BlitzNode<'a> {
+    /// The underlying Blitz node, for the properties that are not behind the contract yet.
+    pub fn blitz(self) -> &'a Node {
+        self.0
+    }
+}
+
+impl DocumentView for BlitzDocument {
+    type Node<'a> = BlitzNode<'a>;
     #[inline]
-    fn node(&self, key: NodeKey) -> Option<&Node> {
-        self.get_node(NodeId::from(key))
+    fn node(&self, key: NodeKey) -> Option<BlitzNode<'_>> {
+        self.0.get_node(key.node_id()).map(BlitzNode)
     }
     fn element_by_id(&self, id: &str) -> Option<NodeKey> {
-        self.get_element_by_id(id).map(NodeKey::from)
+        self.0.get_element_by_id(id).map(ToKey::key)
     }
     fn root(&self) -> NodeKey {
-        NodeKey::from(self.root_node().id)
+        self.0.root_node().id.key()
     }
     fn base_url(&self) -> &Url {
-        self.url()
+        self.0.url()
     }
 }
 
-impl<'a> NodeView<'a> for &'a Node {
+impl<'a> NodeView<'a> for BlitzNode<'a> {
     #[inline]
     fn kind(self) -> NodeKind {
-        match &self.data {
+        match &self.0.data {
             NodeData::Document(_) => NodeKind::Document,
             NodeData::Element(_) => NodeKind::Element,
             NodeData::AnonymousBlock(_) => NodeKind::AnonymousBlock,
@@ -50,14 +101,14 @@ impl<'a> NodeView<'a> for &'a Node {
     }
     #[inline]
     fn qual_name(self) -> Option<&'a QualName> {
-        match &self.data {
+        match &self.0.data {
             NodeData::Element(e) | NodeData::AnonymousBlock(e) => Some(&e.name),
             _ => None,
         }
     }
     #[inline]
     fn attr(self, name: &str) -> Option<&'a str> {
-        let element = self.element_data()?;
+        let element = self.0.element_data()?;
         element
             .attrs
             .iter()
@@ -66,33 +117,34 @@ impl<'a> NodeView<'a> for &'a Node {
     }
     #[inline(always)]
     fn parent(self) -> Option<NodeKey> {
-        self.parent.map(NodeKey::from)
+        self.0.parent.map(ToKey::key)
     }
     #[inline]
     fn children(self) -> impl ExactSizeIterator<Item = NodeKey> + DoubleEndedIterator + 'a {
-        self.children.iter().copied().map(NodeKey::from)
+        self.0.children.iter().copied().map(ToKey::key)
     }
     #[inline]
     fn child_at(self, index: usize) -> Option<NodeKey> {
-        self.children.get(index).copied().map(NodeKey::from)
+        self.0.children.get(index).copied().map(ToKey::key)
     }
     fn attributes(self) -> impl Iterator<Item = (&'a QualName, &'a str)> + 'a {
-        self.element_data()
+        self.0
+            .element_data()
             .into_iter()
             .flat_map(|element| element.attrs.iter())
             .map(|attr| (&attr.name, &*attr.value))
     }
 }
 
-impl DocumentMutation for BaseDocument {
+impl DocumentMutation for BlitzDocument {
     type Mutator<'a> = BlitzMutator<'a>;
     fn mutate(&mut self) -> BlitzMutator<'_> {
-        BlitzMutator(BaseDocument::mutate(self))
+        BlitzMutator(BaseDocument::mutate(&mut self.0))
     }
     fn refresh_style_element(&mut self, key: NodeKey) {
-        let id = NodeId::from(key);
-        if self.get_node(id).is_some() {
-            self.process_style_element(id);
+        let id = key.node_id();
+        if self.0.get_node(id).is_some() {
+            self.0.process_style_element(id);
         }
     }
 }
@@ -115,22 +167,22 @@ impl BlitzMutator<'_> {
     fn node(&self, key: NodeKey) -> Result<&Node, MutationError> {
         self.0
             .doc
-            .get_node(NodeId::from(key))
+            .get_node(key.node_id())
             .ok_or(MutationError::Stale(key))
     }
     fn live(&self, key: NodeKey) -> Result<NodeId, MutationError> {
-        self.node(key).map(|_| NodeId::from(key))
+        self.node(key).map(|_| key.node_id())
     }
     fn element(&self, key: NodeKey) -> Result<NodeId, MutationError> {
-        match self.node(key)?.kind() {
-            NodeKind::Element | NodeKind::AnonymousBlock => Ok(NodeId::from(key)),
+        match BlitzNode(self.node(key)?).kind() {
+            NodeKind::Element | NodeKind::AnonymousBlock => Ok(key.node_id()),
             _ => Err(MutationError::NotElement(key)),
         }
     }
     fn container(&self, key: NodeKey) -> Result<NodeId, MutationError> {
-        match self.node(key)?.kind() {
+        match BlitzNode(self.node(key)?).kind() {
             NodeKind::Text | NodeKind::Comment => Err(MutationError::InvalidParent(key)),
-            _ => Ok(NodeId::from(key)),
+            _ => Ok(key.node_id()),
         }
     }
     /// Rejects stale children and any child that is `parent` or one of its ancestors.
@@ -149,13 +201,9 @@ impl BlitzMutator<'_> {
     }
     /// Whether `ancestor` is a proper ancestor of `node`.
     fn is_ancestor(&self, ancestor: NodeKey, node: NodeKey) -> bool {
-        let mut current = self
-            .0
-            .doc
-            .get_node(NodeId::from(node))
-            .and_then(|n| n.parent);
+        let mut current = self.0.doc.get_node(node.node_id()).and_then(|n| n.parent);
         while let Some(id) = current {
-            if NodeKey::from(id) == ancestor {
+            if id.key() == ancestor {
                 return true;
             }
             current = self.0.doc.get_node(id).and_then(|n| n.parent);
@@ -168,9 +216,9 @@ impl BlitzMutator<'_> {
 fn with_ids<R>(children: &[NodeKey], f: impl FnOnce(&[NodeId]) -> R) -> R {
     match children {
         [] => f(&[]),
-        [one] => f(&[NodeId::from(*one)]),
+        [one] => f(&[one.node_id()]),
         many => {
-            let ids: Vec<NodeId> = many.iter().copied().map(NodeId::from).collect();
+            let ids: Vec<NodeId> = many.iter().copied().map(ToNodeId::node_id).collect();
             f(&ids)
         }
     }
@@ -178,7 +226,7 @@ fn with_ids<R>(children: &[NodeKey], f: impl FnOnce(&[NodeId]) -> R) -> R {
 
 impl Mutator for BlitzMutator<'_> {
     fn parent(&self, key: NodeKey) -> Option<NodeKey> {
-        self.node(key).ok()?.parent.map(NodeKey::from)
+        self.node(key).ok()?.parent.map(ToKey::key)
     }
     fn last_child(&self, key: NodeKey) -> Option<NodeKey> {
         self.node(key)
@@ -186,13 +234,11 @@ impl Mutator for BlitzMutator<'_> {
             .children
             .last()
             .copied()
-            .map(NodeKey::from)
+            .map(ToKey::key)
     }
     fn previous_sibling(&self, key: NodeKey) -> Option<NodeKey> {
         self.node(key).ok()?;
-        self.0
-            .previous_sibling_id(NodeId::from(key))
-            .map(NodeKey::from)
+        self.0.previous_sibling_id(key.node_id()).map(ToKey::key)
     }
 
     fn create_element(
@@ -200,17 +246,17 @@ impl Mutator for BlitzMutator<'_> {
         name: QualName,
         attrs: impl IntoIterator<Item = NewAttribute>,
     ) -> NodeKey {
-        NodeKey::from(self.0.create_element(name, attributes(attrs)))
+        (self.0.create_element(name, attributes(attrs))).key()
     }
     fn create_text(&mut self, text: &str) -> NodeKey {
-        NodeKey::from(self.0.create_text_node(text))
+        (self.0.create_text_node(text)).key()
     }
     fn create_comment(&mut self, text: &str) -> NodeKey {
-        NodeKey::from(self.0.create_comment_node(text))
+        (self.0.create_comment_node(text)).key()
     }
     fn template_contents(&mut self, template: NodeKey) -> Result<NodeKey, MutationError> {
         let id = self.element(template)?;
-        Ok(NodeKey::from(self.0.template_contents(id)))
+        Ok((self.0.template_contents(id)).key())
     }
 
     fn append_children(
@@ -248,7 +294,7 @@ impl Mutator for BlitzMutator<'_> {
         use blitz_dom::node::NodeData;
         let id = self.live(key)?;
         if deep {
-            return Ok(NodeKey::from(self.0.deep_clone_node(id)));
+            return Ok((self.0.deep_clone_node(id)).key());
         }
         let cloned = match &self.node(key)?.data {
             NodeData::Element(e) | NodeData::AnonymousBlock(e) => {
@@ -265,7 +311,7 @@ impl Mutator for BlitzMutator<'_> {
             }
             _ => return Err(MutationError::NotCloneable(key)),
         };
-        Ok(NodeKey::from(cloned))
+        Ok(cloned.key())
     }
     fn remove(&mut self, key: NodeKey) -> Result<(), MutationError> {
         let id = self.live(key)?;
@@ -292,7 +338,7 @@ impl Mutator for BlitzMutator<'_> {
 
     fn set_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError> {
         let id = self.live(node)?;
-        if self.node(node)?.kind() != NodeKind::Text {
+        if BlitzNode(self.node(node)?).kind() != NodeKind::Text {
             return Err(MutationError::NotText(node));
         }
         self.0.set_node_text(id, text);
@@ -300,7 +346,7 @@ impl Mutator for BlitzMutator<'_> {
     }
     fn append_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError> {
         let id = self.live(node)?;
-        if self.node(node)?.kind() != NodeKind::Text {
+        if BlitzNode(self.node(node)?).kind() != NodeKind::Text {
             return Err(MutationError::NotText(node));
         }
         self.0

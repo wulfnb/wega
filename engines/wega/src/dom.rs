@@ -1,8 +1,10 @@
 //! Checked native operations over Blitz's single DOM, used by the V8 host.
 use crate::Limits;
+use crate::dom_model::BlitzDocument;
 use crate::dom_model::{DocumentView, Mutator, NodeKind, NodeView};
+use crate::dom_model::{ToKey, ToNodeId};
+use blitz_dom::NodeId;
 use blitz_dom::node::NodeData;
-use blitz_dom::{BaseDocument, NodeId};
 use html5ever::{LocalName, QualName, ns};
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
@@ -46,7 +48,7 @@ pub(crate) struct Requests {
 pub(crate) struct Dom {
     pub network: crate::network::Network,
     pub hubs: crate::workers::Hubs,
-    pub document: Rc<RefCell<BaseDocument>>,
+    pub document: Rc<RefCell<BlitzDocument>>,
     pub limits: Limits,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
     pub errors: Rc<RefCell<Vec<String>>>,
@@ -185,7 +187,7 @@ impl Dom {
         self.revision.set(self.revision.get().wrapping_add(1));
         self.layout_dirty.set(true);
     }
-    fn resolve(&self, doc: &mut BaseDocument) {
+    fn resolve(&self, doc: &mut BlitzDocument) {
         if self.layout_dirty.replace(false) {
             doc.resolve(self.start.elapsed().as_secs_f64());
         }
@@ -1068,7 +1070,7 @@ impl Dom {
             .map_err(|_| "DOM is currently busy".to_string())?;
         let node_id = || -> Result<NodeId, String> {
             let id = id(1)?;
-            if doc.node(id.into()).is_none() {
+            if doc.node(id.key()).is_none() {
                 Err("Node no longer exists".into())
             } else {
                 Ok(id)
@@ -1077,7 +1079,7 @@ impl Dom {
         let value = match text(0) {
             "customUpgrade" => {
                 let target = node_id()?;
-                let name = doc.node(target.into()).and_then(NodeView::element_name).map_or("", |name| name.local);
+                let name = doc.node(target.key()).and_then(NodeView::element_name).map_or("", |name| name.local);
                 json!(self.components.borrow().needs_upgrade(target.as_u64(), name))
             },
             "customCandidates" => {
@@ -1085,7 +1087,7 @@ impl Dom {
                 let definition: u64 = text(2).parse().map_err(|_| "Invalid definition ID")?;
                 let registry = self.components.borrow();
                 let candidates: Vec<_> = self.component_subtree(&doc, root).into_iter().filter(|id| {
-                    let name = doc.node((*id).into()).and_then(NodeView::element_name).map_or("", |name| name.local);
+                    let name = doc.node((*id).key()).and_then(NodeView::element_name).map_or("", |name| name.local);
                     registry.needs_upgrade(id.as_u64(), name) == Some(definition)
                 }).map(|id| id.as_u64().to_string()).collect();
                 json!(candidates)
@@ -1094,11 +1096,11 @@ impl Dom {
                 let target = node_id()?;
                 let definition: u64 = text(2).parse().map_err(|_| "Invalid definition ID")?;
                 let mut registry = self.components.borrow_mut();
-                let name = doc.node(target.into()).and_then(NodeView::element_name).map(|name| name.local).ok_or("Custom element must be an element")?;
+                let name = doc.node(target.key()).and_then(NodeView::element_name).map(|name| name.local).ok_or("Custom element must be an element")?;
                 if registry.get(name).is_none_or(|entry| entry.id != definition) { return Err("Custom element definition does not match its node".into()); }
                 let began = registry.begin(target.as_u64(), definition)?;
                 if began {
-                    for (name, value) in doc.node(target.into()).into_iter().flat_map(NodeView::attributes) {
+                    for (name, value) in doc.node(target.key()).into_iter().flat_map(NodeView::attributes) {
                         registry.attribute(target.as_u64(), name.local.as_ref(), None, Some(value), (!name.ns.as_str().is_empty()).then_some(name.ns.as_str()));
                     }
                     if self.component_connected(&doc, target) { registry.lifecycle(target.as_u64(), true); }
@@ -1112,7 +1114,7 @@ impl Dom {
                 let definition: u64 = text(1).parse().map_err(|_| "Invalid definition ID")?;
                 let name = self.components.borrow().by_id(definition).ok_or("TypeError: Illegal constructor")?.name.clone();
                 if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
-                let created = NodeId::from(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from(name)), []));
+                let created = (crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from(name)), [])).node_id();
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 let mut registry = self.components.borrow_mut(); registry.begin(created.as_u64(), definition)?; registry.complete(created.as_u64(), true)?;
                 json!(created.as_u64().to_string())
@@ -1123,17 +1125,17 @@ impl Dom {
             },
             "customAdopt" => {
                 let target = node_id()?; let old = id(2)?; let new = id(3)?;
-                if !doc.node(old.into()).is_some_and(|node|node.kind()==NodeKind::Document) || !doc.node(new.into()).is_some_and(|node|node.kind()==NodeKind::Document) { return Err("Invalid adoption documents".into()); }
+                if !doc.node(old.key()).is_some_and(|node|node.kind()==NodeKind::Document) || !doc.node(new.key()).is_some_and(|node|node.kind()==NodeKind::Document) { return Err("Invalid adoption documents".into()); }
                 let mut registry = self.components.borrow_mut(); for child in self.component_subtree(&doc, target) { registry.adopted(child.as_u64(), old.as_u64(), new.as_u64()); } Value::Null
             },
             "shadowAttach" => {
                 let target = node_id()?;
                 if self.shadows.borrow().root(target.as_u64(), true).is_some() { return Err("NotSupportedError: shadow root already attached".into()); }
-                let tag = doc.node(target.into()).and_then(NodeView::element_name).ok_or("NotSupportedError: invalid shadow host")?.local.to_string();
+                let tag = doc.node(target.key()).and_then(NodeView::element_name).ok_or("NotSupportedError: invalid shadow host")?.local.to_string();
                 if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
-                let root = NodeId::from(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), []));
+                let root = (crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), [])).node_id();
                 let entry = match self.shadows.borrow_mut().attach(target.as_u64(), root.as_u64(), text(2), text(3) == "true", &tag) {
-                    Ok(entry) => entry, Err(error) => { let _ = crate::dom_model::mutate(&mut *doc).remove_and_drop(root.into()); return Err(error); }
+                    Ok(entry) => entry, Err(error) => { let _ = crate::dom_model::mutate(&mut *doc).remove_and_drop(root.key()); return Err(error); }
                 };
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 self.requests.borrow_mut().compatibility = Some("Shadow DOM scoped style and flattened layout are not implemented by Wega".into());
@@ -1145,14 +1147,14 @@ impl Dom {
             "eventParent" => {
                 let target = node_id()?;
                 if let Some(slot) = self.assigned_slot(&doc, target) { json!(slot.as_u64().to_string()) }
-                else if let Some(parent) = crate::dom_model::DocumentView::node(&*doc, target.into()).and_then(crate::dom_model::NodeView::parent) { json!(parent.to_string()) }
+                else if let Some(parent) = crate::dom_model::DocumentView::node(&*doc, target.key()).and_then(crate::dom_model::NodeView::parent) { json!(parent.to_string()) }
                 else if text(2) != "true" && text(3) == text(1) { Value::Null }
                 else { json!(self.shadows.borrow().host(target.as_u64()).map(|id|id.to_string())) }
             },
             "assignedSlot" | "assignedSlotInternal" => {
                 let mut assigned = self.assigned_slot(&doc, node_id()?);
                 if text(0) == "assignedSlot" && let Some(slot) = assigned {
-                        let root = crate::dom_model::tree_root(&*doc, slot.into());
+                        let root = crate::dom_model::tree_root(&*doc, slot.key());
                         if let Some(host) = self.shadows.borrow().host(root.as_u64()) && self.shadows.borrow().root(host, false).is_none() { assigned = None; }
                 }
                 json!(assigned.map(|id|id.as_u64().to_string()))
@@ -1160,7 +1162,7 @@ impl Dom {
             "componentRoot" => {
                 let mut root = node_id()?;
                 loop {
-                    if let Some(parent) = doc.node(root.into()).and_then(NodeView::parent) { root = parent.into(); }
+                    if let Some(parent) = doc.node(root.key()).and_then(NodeView::parent) { root = parent.node_id(); }
                     else if text(2) == "true" && let Some(host) = self.shadows.borrow().host(root.as_u64()) { root = NodeId::from_u64(host); }
                     else { break; }
                 }
@@ -1172,7 +1174,7 @@ impl Dom {
             },
             "cookie"=>json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite)),
             "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);Value::Null},
-            "templateContent"=>{let target=node_id()?;let content=crate::dom_model::mutate(&mut *doc).template_contents(target.into()).map_err(Self::mutation_error)?;json!(NodeId::from(content).as_u64().to_string())},
+            "templateContent"=>{let target=node_id()?;let content=crate::dom_model::mutate(&mut *doc).template_contents(target.key()).map_err(Self::mutation_error)?;json!(content.node_id().as_u64().to_string())},
             "viewport"=>{let viewport=doc.viewport();let scale=(viewport.hidpi_scale*viewport.zoom) as f64;let scroll=doc.viewport_scroll();json!({"width":viewport.window_size.0 as f64/scale,"height":viewport.window_size.1 as f64/scale,"dpr":scale,"scrollX":scroll.x,"scrollY":scroll.y})},
             "scroll"=>{let node=doc.get_node(node_id()?).unwrap();let scroll=node.scroll_offset();json!({"x":scroll.x,"y":scroll.y})},
             "scrollViewport"=>{let x=text(1).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.set_viewport_scroll(blitz_dom::Point{x,y});}Value::Null},
@@ -1196,10 +1198,10 @@ impl Dom {
             "retain" => {let id=node_id()?;self.retained.borrow_mut().insert(id);Value::Null},
             "release" => {let id=id(1)?;self.retained.borrow_mut().remove(&id);self.collect_detached(&mut doc,id);Value::Null},
             "info"=>{
-                let info=crate::dom_model::node_info(&*doc,node_id()?.into()).ok_or("InvalidStateError: node no longer exists")?;
+                let info=crate::dom_model::node_info(&*doc,node_id()?.key()).ok_or("InvalidStateError: node no longer exists")?;
                 json!({"nodeType":info.node_type,"nodeName":info.node_name,"localName":info.local_name,"namespaceURI":info.namespace,"prefix":info.prefix})
             },
-            "attributes"=>json!(doc.node(node_id()?.into()).into_iter().flat_map(NodeView::attributes).map(|(name,value)|json!({"name":name.prefix.as_ref().map_or_else(||name.local.to_string(),|p|format!("{p}:{}",name.local)),"localName":name.local.to_string(),"namespaceURI":if name.ns==ns!(){None}else{Some(name.ns.to_string())},"value":value})).collect::<Vec<_>>()),
+            "attributes"=>json!(doc.node(node_id()?.key()).into_iter().flat_map(NodeView::attributes).map(|(name,value)|json!({"name":name.prefix.as_ref().map_or_else(||name.local.to_string(),|p|format!("{p}:{}",name.local)),"localName":name.local.to_string(),"namespaceURI":if name.ns==ns!(){None}else{Some(name.ns.to_string())},"value":value})).collect::<Vec<_>>()),
             "queryIn"=>json!(doc.query_selector_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
             "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "matches"=>json!(doc.matches_selector(node_id()?,text(2)).map_err(|_|"Invalid selector")?),
@@ -1208,27 +1210,27 @@ impl Dom {
             "outerHTML"=>json!(doc.get_node(node_id()?).unwrap().outer_html()),
             "innerHTML" | "contextualFragment"=>{
                 let mut target=node_id()?;
-                if doc.node(target.into()).and_then(NodeView::element_name).is_some_and(|name|name.local=="template") { target=crate::dom_model::mutate(&mut *doc).template_contents(target.into()).map(NodeId::from).map_err(Self::mutation_error)?; }
+                if doc.node(target.key()).and_then(NodeView::element_name).is_some_and(|name|name.local=="template") { target=crate::dom_model::mutate(&mut *doc).template_contents(target.key()).map(ToNodeId::node_id).map_err(Self::mutation_error)?; }
                 if text(2).len()>self.limits.html_bytes{return Err("HTML fragment exceeds the size limit".into());}
                 // Parse into a detached same-context element first; reject budgets before
                 // replacing live children, and retain removed nodes held by JS wrappers.
-                let element=doc.node(target.into()).and_then(NodeView::qual_name).ok_or("innerHTML needs an element")?;
-                let name=if &*element.local=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.clone()};let staging:NodeId=crate::dom_model::mutate(&mut *doc).create_element(name,[]).into();
+                let element=doc.node(target.key()).and_then(NodeView::qual_name).ok_or("innerHTML needs an element")?;
+                let name=if &*element.local=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.clone()};let staging:NodeId=crate::dom_model::mutate(&mut *doc).create_element(name,[]).node_id();
                 let remaining=self.limits.dom_nodes.saturating_sub(self.allocated.get()).saturating_add(2);
-                if crate::parser::parse_fragment(&mut *doc,staging.into(),remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=crate::dom_model::mutate(&mut *doc).remove_and_drop(staging.into());return Err("DOM node limit exceeded".into());}
+                if crate::parser::parse_fragment(&mut *doc,staging.key(),remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=crate::dom_model::mutate(&mut *doc).remove_and_drop(staging.key());return Err("DOM node limit exceeded".into());}
                 let parsed=Self::subtree(&doc,staging);
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
-                if text(0)=="innerHTML" {for id in &parsed {if doc.node((*id).into()).and_then(NodeView::element_name).is_some_and(|name|name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
-                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {crate::dom_model::mutate(&mut *doc).remove_and_drop(staging.into()).map_err(Self::mutation_error)?;return Err("DOM node limit exceeded".into());}
-                let children:Vec<crate::dom_model::NodeKey>=doc.node(staging.into()).map(|node|node.children().collect()).unwrap_or_default();
+                if text(0)=="innerHTML" {for id in &parsed {if doc.node((*id).key()).and_then(NodeView::element_name).is_some_and(|name|name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
+                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {crate::dom_model::mutate(&mut *doc).remove_and_drop(staging.key()).map_err(Self::mutation_error)?;return Err("DOM node limit exceeded".into());}
+                let children:Vec<crate::dom_model::NodeKey>=doc.node(staging.key()).map(|node|node.children().collect()).unwrap_or_default();
                 if text(0)=="contextualFragment" {
                     let mut mutation=crate::dom_model::mutate(&mut *doc);let fragment=mutation.create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[]);
-                    mutation.replace_children(fragment,&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.into()).map_err(Self::mutation_error)?;mutation.finish();let fragment:NodeId=fragment.into();
+                    mutation.replace_children(fragment,&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.key()).map_err(Self::mutation_error)?;mutation.finish();let fragment:NodeId=fragment.node_id();
                     self.allocated.set(self.allocated.get()+parsed.len());
                     return Ok(json!(fragment.as_u64().to_string()));
                 }
-                let old:Vec<NodeId>=doc.node(target.into()).map(|node|node.children().map(NodeId::from).collect()).unwrap_or_default();
-                {let mut mutation=crate::dom_model::mutate(&mut *doc);mutation.replace_children(target.into(),&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.into()).map_err(Self::mutation_error)?;}
+                let old:Vec<NodeId>=doc.node(target.key()).map(|node|node.children().map(ToNodeId::node_id).collect()).unwrap_or_default();
+                {let mut mutation=crate::dom_model::mutate(&mut *doc);mutation.replace_children(target.key(),&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.key()).map_err(Self::mutation_error)?;}
                 self.allocated.set(self.allocated.get()+parsed.len()-1);
                 for id in old {self.collect_detached(&mut doc,id);}
                 Value::Null
@@ -1238,35 +1240,35 @@ impl Dom {
                 if self.allocated.get().saturating_add(count)>self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
                 let bytes=doc.get_node(source).unwrap().outer_html().len();
                 if self.used.get().saturating_add(bytes)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}
-                let cloned=NodeId::from(crate::dom_model::mutate(&mut *doc).clone_node(source.into(),deep).map_err(|error|match error{crate::dom_model::MutationError::NotCloneable(_)=>"This node cannot be cloned".to_string(),other=>Self::mutation_error(other)})?);
+                let cloned=(crate::dom_model::mutate(&mut *doc).clone_node(source.key(),deep).map_err(|error|match error{crate::dom_model::MutationError::NotCloneable(_)=>"This node cannot be cloned".to_string(),other=>Self::mutation_error(other)})?).node_id();
                 self.allocated.set(self.allocated.get()+count);self.used.set(self.used.get()+bytes);json!(cloned.as_u64().to_string())
             },
             "insert"=>{
                 let parent=node_id()?;let child=id(2)?;
-                if doc.node(child.into()).is_none(){return Err("Node no longer exists".into());}
+                if doc.node(child.key()).is_none(){return Err("Node no longer exists".into());}
                 let anchor=if text(3).is_empty(){None}else{Some(id(3)?)};
                 if anchor.is_some_and(|id|doc.get_node(id).is_none_or(|n|n.parent!=Some(parent))){return Err("NotFoundError: reference is not a child".into());}
-                let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.node(id.into()).and_then(NodeView::parent).map(NodeId::from).or_else(||self.shadows.borrow().host(id.as_u64()).map(NodeId::from_u64));}
+                let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.node(id.key()).and_then(NodeView::parent).map(ToNodeId::node_id).or_else(||self.shadows.borrow().host(id.as_u64()).map(NodeId::from_u64));}
                 if anchor==Some(child){return Ok(json!(child.as_u64().to_string()));}
-                {let mut mutation=crate::dom_model::mutate(&mut *doc);if let Some(anchor)=anchor{mutation.insert_before(anchor.into(),&[child.into()]).map_err(Self::mutation_error)?;}else{mutation.append_children(parent.into(),&[child.into()]).map_err(Self::mutation_error)?;}}
+                {let mut mutation=crate::dom_model::mutate(&mut *doc);if let Some(anchor)=anchor{mutation.insert_before(anchor.key(),&[child.key()]).map_err(Self::mutation_error)?;}else{mutation.append_children(parent.key(),&[child.key()]).map_err(Self::mutation_error)?;}}
                 json!(child.as_u64().to_string())
             },
             "createNS"|"createComment"|"createFragment"|"createDocument"=>{
                 if self.allocated.get()>=self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
                 let created=match text(0){
                     "createDocument"=>doc.create_node(NodeData::Document(Box::default())),
-                    "createComment"=>NodeId::from(crate::dom_model::mutate(&mut *doc).create_comment(text(1))),
-                    "createFragment"=>NodeId::from(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[])),
-                    _=>{let parts=text(2).split_once(':');let (prefix,local)=parts.map_or((None,text(2)),|(p,l)|(Some(html5ever::Prefix::from(p)),l));NodeId::from(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(prefix,html5ever::Namespace::from(text(1)),LocalName::from(local)),[]))}
+                    "createComment"=>(crate::dom_model::mutate(&mut *doc).create_comment(text(1))).node_id(),
+                    "createFragment"=>(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[])).node_id(),
+                    _=>{let parts=text(2).split_once(':');let (prefix,local)=parts.map_or((None,text(2)),|(p,l)|(Some(html5ever::Prefix::from(p)),l));(crate::dom_model::mutate(&mut *doc).create_element(QualName::new(prefix,html5ever::Namespace::from(text(1)),LocalName::from(local)),[])).node_id()}
                 };self.allocated.set(self.allocated.get()+1);json!(created.as_u64().to_string())
             },
-            "attrNS"=>json!(crate::dom_model::attribute_ns(&*doc,node_id()?.into(),text(2),text(3))),
+            "attrNS"=>json!(crate::dom_model::attribute_ns(&*doc,node_id()?.key(),text(2),text(3))),
             "setAttrNS"=>{
                 let target=node_id()?;let payload=[text(3).to_owned(),text(4).to_owned()];
                 let (prefix,local)=payload[0].split_once(':').map_or((None,payload[0].as_str()),|(p,l)|(Some(html5ever::Prefix::from(p)),l));
                 let charge=payload[0].len()+payload[1].len();if self.used.get().saturating_add(charge)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}self.used.set(self.used.get()+charge);
-                let old = crate::dom_model::attribute_ns(&*doc,target.into(),text(2),local);
-                crate::dom_model::mutate(&mut *doc).set_attribute(target.into(),QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]).map_err(Self::mutation_error)?;
+                let old = crate::dom_model::attribute_ns(&*doc,target.key(),text(2),local);
+                crate::dom_model::mutate(&mut *doc).set_attribute(target.key(),QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]).map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(target.as_u64(), local, old.as_deref(), Some(&payload[1]), (!text(2).is_empty()).then_some(text(2)));
                 Value::Null
             },
@@ -1275,10 +1277,10 @@ impl Dom {
             "inlineCSS"=>{let target=node_id()?;let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}json!(css)},
             "inlineProperty"=>{let target=node_id()?;let mut css=String::new();if let Ok(property)=style::properties::PropertyId::parse_enabled_for_all_content(text(2)) && let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).property_value_to_css(&property,&mut css);}json!(css)},
             "styleSet"=>{
-                let target=node_id()?;let old=Self::attribute(&doc,target,"style");crate::dom_model::mutate(&mut *doc).remove_style_property(target.into(),text(2)).map_err(Self::mutation_error)?;
+                let target=node_id()?;let old=Self::attribute(&doc,target,"style");crate::dom_model::mutate(&mut *doc).remove_style_property(target.key(),text(2)).map_err(Self::mutation_error)?;
                 let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}
                 if !text(3).is_empty(){css.push_str(&format!("{}: {};",text(2),text(3)));}
-                crate::dom_model::mutate(&mut *doc).set_attribute(target.into(),QualName::new(None,ns!(),LocalName::from("style")),&css).map_err(Self::mutation_error)?;
+                crate::dom_model::mutate(&mut *doc).set_attribute(target.key(),QualName::new(None,ns!(),LocalName::from("style")),&css).map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),Some(&css),None);Value::Null
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
@@ -1304,7 +1306,7 @@ impl Dom {
             },
             "limits" => json!({"resourceBytes":self.limits.resource_bytes}),
             "windowNamed" => json!(blitz_dom::traversal::TreeTraverser::new(&doc).filter(|id| {
-                doc.node((*id).into()).is_some_and(|node| node.element_name().is_some_and(|element| {
+                doc.node((*id).key()).is_some_and(|node| node.element_name().is_some_and(|element| {
                     NodeView::attr(node,"id")==Some(text(1)) || (matches!(element.local,"form"|"img"|"embed"|"object") && NodeView::attr(node,"name")==Some(text(1)))
                 }))
             }).map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
@@ -1323,10 +1325,10 @@ impl Dom {
             ),
             "text" => {let node=doc.get_node(node_id()?).unwrap();match &node.data {NodeData::Document(_)=>Value::Null,NodeData::Comment{contents}=>json!(contents),_=>json!(node.text_content())}},
             "tag" => json!(
-                doc.node(node_id()?.into()).and_then(NodeView::element_name).map(|name| name.local.to_uppercase())
+                doc.node(node_id()?.key()).and_then(NodeView::element_name).map(|name| name.local.to_uppercase())
             ),
             "firstChild" | "lastChild" | "nextSibling" | "previousSibling" => {
-                let target=crate::dom_model::NodeKey::from(node_id()?);
+                let target=crate::dom_model::NodeKey::from_u64(node_id()?.as_u64());
                 let related=match text(0) {
                     "firstChild"=>doc.node(target).and_then(|node|node.children().next()),
                     "lastChild"=>doc.node(target).and_then(|node|node.children().next_back()),
@@ -1334,17 +1336,17 @@ impl Dom {
                 };
                 json!(related.map(|key| key.to_string()))
             },
-            "childCount" => json!(doc.node(node_id()?.into()).map_or(0, |node| node.children().len())),
+            "childCount" => json!(doc.node(node_id()?.key()).map_or(0, |node| node.children().len())),
             "childAt" => {
                 let index=text(2).parse::<usize>().unwrap_or(usize::MAX);
-                json!(doc.node(node_id()?.into()).and_then(|node| node.child_at(index)).map(|key| key.to_string()))
+                json!(doc.node(node_id()?.key()).and_then(|node| node.child_at(index)).map(|key| key.to_string()))
             },
             "children" => json!(
-                doc.node(node_id()?.into())
+                doc.node(node_id()?.key())
                     .map(|node| node.children().map(|key| key.to_string()).collect::<Vec<_>>())
                     .unwrap_or_default()
             ),
-            "parent" => json!(doc.node(node_id()?.into()).and_then(NodeView::parent).map(|key| key.to_string())),
+            "parent" => json!(doc.node(node_id()?.key()).and_then(NodeView::parent).map(|key| key.to_string())),
             "box"=>{
                 let target=node_id()?;self.resolve(&mut doc);let node=doc.get_node(target).unwrap();let layout=node.final_layout();let offset=doc.offset_rect(target).unwrap_or(blitz_dom::BoundingRect{x:0.0,y:0.0,width:0.0,height:0.0});
                 json!({"hasBoxes":node.has_boxes(),"clientWidth":node.client_width(),"clientHeight":node.client_height(),"clientLeft":layout.border.left,"clientTop":layout.border.top,"offsetWidth":offset.width,"offsetHeight":offset.height,"offsetLeft":offset.x,"offsetTop":offset.y,"offsetParent":node.offset_parent().map(|node|node.id.as_u64().to_string()),"scrollWidth":node.scroll_width(),"scrollHeight":node.scroll_height(),"contentWidth":layout.content_box_width(),"contentHeight":layout.content_box_height(),"paddingLeft":layout.padding.left,"paddingTop":layout.padding.top})
@@ -1384,7 +1386,7 @@ impl Dom {
                     NodeData::Text(data) => {
                         credit(data.content.len());
                         crate::dom_model::mutate(&mut *doc)
-                            .set_text(id.into(), text(2))
+                            .set_text(id.key(), text(2))
                             .map_err(Self::mutation_error)?;
                         return Ok(Value::Null);
                     }
@@ -1393,10 +1395,10 @@ impl Dom {
                 // Replacing an element's children: only a new text child is a new node,
                 // and the old children are collected (crediting their budget) unless
                 // script still holds them.
-                let old: Vec<NodeId> = doc.node(id.into()).map(|node| node.children().map(NodeId::from).collect()).unwrap_or_default();
+                let old: Vec<NodeId> = doc.node(id.key()).map(|node| node.children().map(ToNodeId::node_id).collect()).unwrap_or_default();
                 if text(2).is_empty() {
                     crate::dom_model::mutate(&mut *doc)
-                        .replace_children(id.into(), &[])
+                        .replace_children(id.key(), &[])
                         .map_err(Self::mutation_error)?;
                 } else {
                     if self.allocated.get() >= self.limits.dom_nodes {
@@ -1406,7 +1408,7 @@ impl Dom {
                     let mut mutation = crate::dom_model::mutate(&mut *doc);
                     let child = mutation.create_text(text(2));
                     mutation
-                        .replace_children(id.into(), &[child])
+                        .replace_children(id.key(), &[child])
                         .map_err(Self::mutation_error)?;
                 }
                 for child in old {
@@ -1422,7 +1424,7 @@ impl Dom {
                 }
                 crate::dom_model::mutate(&mut *doc)
                     .set_attribute(
-                        id.into(),
+                        id.key(),
                         QualName::new(None, ns!(), LocalName::from(text(2))),
                         text(3),
                     )
@@ -1434,18 +1436,18 @@ impl Dom {
                 let id = node_id()?;
                 let old = Self::attribute(&doc, id, text(2));
                 crate::dom_model::mutate(&mut *doc)
-                    .clear_attribute(id.into(), QualName::new(None, ns!(), LocalName::from(text(2))))
+                    .clear_attribute(id.key(), QualName::new(None, ns!(), LocalName::from(text(2))))
                     .map_err(Self::mutation_error)?;
                 if old.is_some() { self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), None, None); }
                 Value::Null
             }
             "removeAttrNS" => {
                 let target = node_id()?;
-                let name = doc.node(target.into()).into_iter().flat_map(NodeView::attributes)
+                let name = doc.node(target.key()).into_iter().flat_map(NodeView::attributes)
                     .find(|(name, _)| name.ns.as_str() == text(2) && name.local.as_str() == text(3))
                     .map(|(name, value)| (name.clone(), value.to_owned()));
                 if let Some((name, old)) = name {
-                    crate::dom_model::mutate(&mut *doc).clear_attribute(target.into(), name).map_err(Self::mutation_error)?;
+                    crate::dom_model::mutate(&mut *doc).clear_attribute(target.key(), name).map_err(Self::mutation_error)?;
                     self.components.borrow_mut().attribute(target.as_u64(), text(3), Some(&old), None, (!text(2).is_empty()).then_some(text(2)));
                 }
                 Value::Null
@@ -1469,7 +1471,7 @@ impl Dom {
             "append" => {
                 let parent = node_id()?;
                 let child = id(2)?;
-                if doc.node(child.into()).is_none() {
+                if doc.node(child.key()).is_none() {
                     return Err("Node no longer exists".into());
                 }
                 // Reject cycles, including putting a node below itself.
@@ -1478,23 +1480,23 @@ impl Dom {
                     if id == child {
                         return Err("Cannot create a DOM cycle".into());
                     }
-                    ancestor = doc.node(id.into()).and_then(NodeView::parent).map(NodeId::from);
+                    ancestor = doc.node(id.key()).and_then(NodeView::parent).map(ToNodeId::node_id);
                 }
                 crate::dom_model::mutate(&mut *doc)
-                    .append_children(parent.into(), &[child.into()])
+                    .append_children(parent.key(), &[child.key()])
                     .map_err(Self::mutation_error)?;
                 json!(child.as_u64().to_string())
             }
             "remove" => {
                 let id = node_id()?;
                 crate::dom_model::mutate(&mut *doc)
-                    .remove(id.into())
+                    .remove(id.key())
                     .map_err(Self::mutation_error)?;
                 Value::Null
             }
             "scriptInserted" => {
                 let node = node_id()?;
-                let is_script = doc.node(node.into()).and_then(NodeView::element_name).is_some_and(|name| name.local == "script");
+                let is_script = doc.node(node.key()).and_then(NodeView::element_name).is_some_and(|name| name.local == "script");
                 let mut requests = self.requests.borrow_mut();
                 if is_script && requests.scripts.len() < 1024 {
                     requests.scripts.push_back(ScriptRequest { node, force_async: text(2) != "false" });
@@ -1558,7 +1560,7 @@ impl Dom {
             "submitForm" => {
                 let form = node_id()?;
                 let submitter = if text(2).is_empty() { form } else { id(2)? };
-                if doc.node(submitter.into()).is_none() {
+                if doc.node(submitter.key()).is_none() {
                     return Err("Node no longer exists".into());
                 }
                 doc.submit_form(form, submitter);
@@ -1617,13 +1619,13 @@ impl Dom {
             other => other.to_string(),
         }
     }
-    fn subtree(doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
-        crate::dom_model::subtree(doc, root.into())
+    fn subtree(doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
+        crate::dom_model::subtree(doc, root.key(), ToNodeId::node_id)
     }
-    fn attribute(doc: &BaseDocument, id: NodeId, name: &str) -> Option<String> {
-        crate::dom_model::attribute(doc, id.into(), name)
+    fn attribute(doc: &BlitzDocument, id: NodeId, name: &str) -> Option<String> {
+        crate::dom_model::attribute(doc, id.key(), name)
     }
-    fn component_subtree(&self, doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
+    fn component_subtree(&self, doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
         let mut nodes = Vec::new();
         let mut pending = vec![root];
         let mut seen = HashSet::new();
@@ -1631,11 +1633,11 @@ impl Dom {
             if !seen.insert(id) {
                 continue;
             }
-            let Some(node) = doc.node(id.into()) else {
+            let Some(node) = doc.node(id.key()) else {
                 continue;
             };
             nodes.push(id);
-            pending.extend(node.children().rev().map(NodeId::from));
+            pending.extend(node.children().rev().map(ToNodeId::node_id));
             if let Some(root) = self.shadows.borrow().root(id.as_u64(), true)
                 && let Ok(root) = root.root.parse()
             {
@@ -1644,16 +1646,16 @@ impl Dom {
         }
         nodes
     }
-    fn component_connected(&self, doc: &BaseDocument, mut node: NodeId) -> bool {
+    fn component_connected(&self, doc: &BlitzDocument, mut node: NodeId) -> bool {
         let mut seen = HashSet::new();
         while seen.insert(node) {
             if node == doc.root_node().id {
                 return true;
             }
             let Some(next) = doc
-                .node(node.into())
+                .node(node.key())
                 .and_then(NodeView::parent)
-                .map(NodeId::from)
+                .map(ToNodeId::node_id)
                 .or_else(|| {
                     self.shadows
                         .borrow()
@@ -1667,12 +1669,12 @@ impl Dom {
         }
         false
     }
-    fn assigned_slot(&self, doc: &BaseDocument, target: NodeId) -> Option<NodeId> {
-        let node = doc.node(target.into())?;
+    fn assigned_slot(&self, doc: &BlitzDocument, target: NodeId) -> Option<NodeId> {
+        let node = doc.node(target.key())?;
         if !matches!(node.kind(), NodeKind::Element | NodeKind::Text) {
             return None;
         }
-        let parent = NodeId::from(node.parent()?);
+        let parent = (node.parent()?).node_id();
         let root = self
             .shadows
             .borrow()
@@ -1684,7 +1686,7 @@ impl Dom {
         Self::subtree(doc, NodeId::from_u64(root))
             .into_iter()
             .find(|id| {
-                doc.node((*id).into())
+                doc.node((*id).key())
                     .and_then(NodeView::element_name)
                     .is_some_and(|name| name.local == "slot")
                     && Self::attribute(doc, *id, "name").unwrap_or_default() == name
@@ -1692,7 +1694,7 @@ impl Dom {
     }
     fn assigned_nodes(
         &self,
-        doc: &BaseDocument,
+        doc: &BlitzDocument,
         slot: NodeId,
         flatten: bool,
         seen: &mut HashSet<NodeId>,
@@ -1700,7 +1702,7 @@ impl Dom {
         if !seen.insert(slot) {
             return vec![];
         }
-        let root = crate::dom_model::tree_root(doc, slot.into());
+        let root = crate::dom_model::tree_root(doc, slot.key());
         let Some(host) = self
             .shadows
             .borrow()
@@ -1710,16 +1712,16 @@ impl Dom {
             return vec![];
         };
         let mut assigned: Vec<_> = doc
-            .node(host.into())
+            .node(host.key())
             .into_iter()
-            .flat_map(|node| node.children().map(NodeId::from))
+            .flat_map(|node| node.children().map(ToNodeId::node_id))
             .filter(|id| self.assigned_slot(doc, *id) == Some(slot))
             .collect();
         if flatten {
             if assigned.is_empty() {
                 assigned = doc
-                    .node(slot.into())
-                    .map(|node| node.children().map(NodeId::from).collect())
+                    .node(slot.key())
+                    .map(|node| node.children().map(ToNodeId::node_id).collect())
                     .unwrap_or_default();
             }
             assigned
@@ -1740,7 +1742,7 @@ impl Dom {
             assigned
         }
     }
-    fn collect_detached(&self, doc: &mut BaseDocument, id: NodeId) {
+    fn collect_detached(&self, doc: &mut BlitzDocument, id: NodeId) {
         let mut root = id;
         while let Some(parent) = doc.get_node(root).and_then(|n| n.parent).or_else(|| {
             self.shadows
@@ -1778,11 +1780,11 @@ impl Dom {
             if let Some(shadow) = self.shadows.borrow_mut().release(id.as_u64())
                 && let Ok(id) = shadow.root.parse()
             {
-                let _ = crate::dom_model::mutate(&mut *doc)
-                    .remove_and_drop(NodeId::from_u64(id).into());
+                let _ =
+                    crate::dom_model::mutate(&mut *doc).remove_and_drop(NodeId::from_u64(id).key());
             }
         }
-        let _ = crate::dom_model::mutate(&mut *doc).remove_and_drop(root.into());
+        let _ = crate::dom_model::mutate(&mut *doc).remove_and_drop(root.key());
         self.allocated
             .set(self.allocated.get().saturating_sub(nodes.len()));
         self.used.set(self.used.get().saturating_sub(bytes));
@@ -1795,7 +1797,7 @@ impl Dom {
         (self.allocated.get(), self.used.get())
     }
     /// The form owner of a control: its `form` attribute, else the nearest ancestor form.
-    pub fn form_owner(doc: &BaseDocument, control: NodeId) -> Option<NodeId> {
+    pub fn form_owner(doc: &BlitzDocument, control: NodeId) -> Option<NodeId> {
         let element = doc.get_node(control)?.element_data()?;
         if let Some(owner) = element.attr(LocalName::from("form")) {
             return doc.get_element_by_id(owner).filter(|id| {
@@ -1818,7 +1820,7 @@ impl Dom {
         None
     }
     /// Resets all controls owned by `form` to their default state (defaultValue / defaultChecked).
-    pub fn reset_form_controls(doc: &mut BaseDocument, form: NodeId) {
+    pub fn reset_form_controls(doc: &mut BlitzDocument, form: NodeId) {
         let controls: Vec<NodeId> = blitz_dom::traversal::TreeTraverser::new(doc)
             .filter(|id| Self::form_owner(doc, *id) == Some(form))
             .collect();
@@ -1861,7 +1863,7 @@ impl Dom {
     /// The form data set of a form (HTML "constructing the entry list"), for
     /// `new FormData(form)`. File inputs contribute empty entries.
     fn form_entries(
-        doc: &BaseDocument,
+        doc: &BlitzDocument,
         form: NodeId,
         submitter: Option<NodeId>,
     ) -> Vec<(String, String)> {
@@ -1944,7 +1946,7 @@ impl Dom {
         }
         entries
     }
-    fn serialize(doc: &BaseDocument, id: NodeId, out: &mut String) {
+    fn serialize(doc: &BlitzDocument, id: NodeId, out: &mut String) {
         let Some(node) = doc.get_node(id) else {
             return;
         };
