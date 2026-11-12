@@ -1,24 +1,15 @@
-# dom/core
+# dom/core — `wega-dom`
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Round 7)** — the engine-neutral document contract.
 
-## Purpose
+## What it is
 
-DOM tree data model (nodes, documents, elements, attributes).
+`NodeKey` (stable node identity), `NodeView`/`DocumentView` (borrowed, `Copy` read-only views with static dispatch), `DocumentMutation`/`Mutator` (mutation scopes: immediate application, validate-then-apply, deferred finalization on `finish`/drop, stale keys never alias) and the helper functions built on them. It is **not** a DOM tree: there is no node storage here, so there is no second document. A document engine supplies the storage through an adapter.
 
-## Intended responsibilities
+## Dependencies
 
-- Node and document storage and tree structure
-- Attribute, text, comment and fragment node types
+`html5ever` (for `QualName`) and `url`. Nothing else: no `wega-engine`, no Blitz, no adapter. `#![forbid(unsafe_code)]`. `tests/boundary.rs` fails the build if a dependency outside this list appears or if a source file names Blitz or the engine.
 
-## Expected dependencies
+## Not here
 
-`std` only for now (`foundation/*` deferred). Independent contract: no dependency on `html/*`, `css/*`, `layout/*` or `graphics/*`.
-
-## Dependencies to avoid
-
-`html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`.
-
-## Current status
-
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Node storage, events (`dom/events`), mutation observers (`dom/mutation`), traversal/query (`dom/traversal`), form state, layout. Those leaves remain planned. See `docs/architecture/dom-round7-report.md`.

@@ -1,4 +1,5 @@
 //! The only mapping from Blitz's document onto the Wega document contract (`wega-dom`).
+#![forbid(unsafe_code)]
 use blitz_dom::{BaseDocument, DocumentMutator, Node, NodeId, node::Attribute, node::NodeData};
 use html5ever::QualName;
 use url::Url;

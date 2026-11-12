@@ -1,28 +1,11 @@
-# adapters/blitz
+# adapters/blitz — `wega-adapter-blitz`
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: PARTIALLY IMPLEMENTED (Round 7)** — the Blitz document behind the `wega-dom` contract.
 
-## Purpose
+Owns `BlitzDocument` (an owning, zero-cost wrapper of Blitz's `BaseDocument` that derefs to it, so layout/paint/style/form APIs that are not behind the contract yet keep working), `BlitzNode` (borrowed node view), `BlitzMutator` (Blitz's `DocumentMutator` behind `Mutator`) and the `NodeId`<->`NodeKey` conversions (`ToKey`/`ToNodeId`).
 
-Adapter around the vendored Blitz components (`engines/vendor/blitz`).
+Not yet here: layout, style, paint, events, form state (the engine still uses Blitz directly for these; see `docs/architecture/dom-round7-report.md`).
 
-## Intended responsibilities
+## Dependencies
 
-- Implement Wega DOM/layout/paint traits using Blitz
-- Isolate Blitz types behind the adapter boundary
-
-## Expected dependencies
-
-The wrapped third-party engine plus the Wega-owned trait it implements. Specifically: `engines/vendor/blitz`, target Wega traits.
-
-## Dependencies to avoid
-
-Leaking third-party types into non-adapter crates; reverse dependencies from the wrapped library into Wega internals. Also: Being imported by core subsystems.
-
-## Phase 2 decision
-
-Planned package `wega-adapter-blitz` (`wega-adapter-*` naming).
-
-## Current status
-
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+`wega-dom`, `blitz-dom`, `html5ever`, `url`; dev: `wega-html`, `blitz-html` (parser parity tests). No dependency on `wega-engine`; `tests/boundary.rs` enforces it. `#![forbid(unsafe_code)]`.

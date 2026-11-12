@@ -7,9 +7,6 @@ license = "MPL-2.0"
 publish = false
 description = "Wega's Blitz adapter: the Blitz document behind the wega-dom contract"
 
-[lints.rust]
-unsafe_code = "forbid"
-
 [dependencies]
 wega-dom = { path = "../../dom/core" }
 blitz-dom = { version = "=0.3.0-beta.4", default-features = false }

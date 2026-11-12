@@ -18,6 +18,7 @@
 //!   immediately, each one validates *before* touching the document (all-or-nothing per
 //!   operation, never a panic on a stale key), and deferred side effects run when the mutator is
 //!   finished or dropped. There is no rollback and no staging.
+#![forbid(unsafe_code)]
 use html5ever::QualName;
 use url::Url;
 
@@ -392,23 +393,5 @@ pub trait Mutator {
     where
         Self: Sized,
     {
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn the_contract_names_no_blitz_types() {
-        let source = include_str!("lib.rs");
-        let contract = source.split("#[cfg(test)]").next().unwrap();
-        for line in contract
-            .lines()
-            .filter(|l| !l.trim_start().starts_with("//"))
-        {
-            assert!(
-                !line.contains("blitz_") && !line.contains("BaseDocument"),
-                "contract mentions the document engine: {line}"
-            );
-        }
     }
 }

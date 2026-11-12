@@ -7,9 +7,6 @@ license = "MPL-2.0"
 publish = false
 description = "Wega's engine-neutral document contract: node identity, read-only views and mutation scopes"
 
-[lints.rust]
-unsafe_code = "forbid"
-
 [dependencies]
 html5ever = "0.40.1"
 url = "2.5"

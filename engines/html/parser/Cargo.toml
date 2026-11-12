@@ -7,9 +7,6 @@ license = "MPL-2.0"
 publish = false
 description = "Wega's incremental HTML parser: tree construction into a wega-dom document"
 
-[lints.rust]
-unsafe_code = "forbid"
-
 [dependencies]
 wega-dom = { path = "../../dom/core" }
 html5ever = "0.40.1"

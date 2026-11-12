@@ -27,6 +27,10 @@ const CONTRACT_CRATES: &[&str] = &[
     "wega-display-list",
 ];
 
+/// Directed edges between contract crates that are part of the design: the HTML parser builds
+/// into the DOM contract. The reverse edge, and every other pair, stays forbidden.
+const ALLOWED_CONTRACT_EDGES: &[(&str, &str)] = &[("wega-html", "wega-dom")];
+
 /// Development tools that production crates must never depend on.
 const DEV_TOOLS: &[&str] = &["wega-dependency-graph", "wega-architecture-check"];
 
@@ -134,6 +138,36 @@ const FORBIDDEN: &[ForbiddenEdge] = &[
         "services must not depend on adapters",
     ),
     (
+        "wega-dom",
+        "wega-engine",
+        &[],
+        "the document contract must not depend on the engine",
+    ),
+    (
+        "wega-dom",
+        "wega-adapter-*",
+        &[],
+        "the document contract must not depend on adapters",
+    ),
+    (
+        "wega-html",
+        "wega-engine",
+        &[],
+        "the parser must not depend on the engine",
+    ),
+    (
+        "wega-html",
+        "wega-adapter-*",
+        &[],
+        "the parser builds into the contract, not into a document engine",
+    ),
+    (
+        "wega-adapter-blitz",
+        "wega-engine",
+        &[],
+        "adapters must not depend on the engine",
+    ),
+    (
         "*",
         "wega-adapter-*",
         &["wega-engine"],
@@ -176,6 +210,7 @@ pub fn check_graph(graph: &Graph) -> Vec<Finding> {
         }
         if CONTRACT_CRATES.contains(&edge.from.as_str())
             && CONTRACT_CRATES.contains(&edge.to.as_str())
+            && !ALLOWED_CONTRACT_EDGES.contains(&(edge.from.as_str(), edge.to.as_str()))
         {
             findings.push(Finding {
                 rule: "ARCH-003 independent contract crates",
@@ -398,6 +433,28 @@ mod tests {
     fn contract_crates_must_be_independent() {
         let g = graph(&[("wega-css", &["wega-dom"]), ("wega-dom", &[])]);
         assert_eq!(violations(&g).len(), 1);
+    }
+
+    #[test]
+    fn the_parser_may_depend_on_the_dom_contract_but_not_the_reverse() {
+        let allowed = graph(&[("wega-html", &["wega-dom"]), ("wega-dom", &[])]);
+        assert_eq!(violations(&allowed).len(), 0);
+        let reverse = graph(&[("wega-dom", &["wega-html"]), ("wega-html", &[])]);
+        assert_eq!(violations(&reverse).len(), 1);
+    }
+
+    #[test]
+    fn new_dom_crates_must_not_reach_the_engine_or_each_others_adapters() {
+        for (from, to) in [
+            ("wega-dom", "wega-engine"),
+            ("wega-html", "wega-engine"),
+            ("wega-adapter-blitz", "wega-engine"),
+            ("wega-html", "wega-adapter-blitz"),
+            ("wega-dom", "wega-adapter-blitz"),
+        ] {
+            let g = graph(&[(from, &[to]), (to, &[])]);
+            assert!(!violations(&g).is_empty(), "{from} -> {to} must be flagged");
+        }
     }
 
     #[test]

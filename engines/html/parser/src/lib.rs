@@ -7,6 +7,7 @@
 //! (MIT OR Apache-2.0, DioxusLabs); modified by Wega contributors, 2026, to
 //! borrow the shared document per operation instead of holding one mutator for
 //! the whole parse.
+#![forbid(unsafe_code)]
 use html5ever::{
     QualName,
     tendril::StrTendril,
