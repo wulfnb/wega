@@ -4,7 +4,7 @@ use crate::{
     csp::Csp,
     encoding::{self, DocumentKind},
     network::{Destination, FetchContext, Network, Response},
-    parser::{Parser, Step},
+    parser::Step,
     script::{DynScriptHost, HostContext},
 };
 use blitz_dom::{BaseDocument, DocumentConfig, NodeId, traversal::TreeTraverser};
@@ -300,6 +300,7 @@ impl NavigationProvider for Navigation {
 
 #[path = "document_host.rs"]
 mod document_host;
+use crate::html_report::{HtmlReport, Parser};
 #[cfg(test)]
 use document_host::script_kind;
 
@@ -693,6 +694,7 @@ impl View {
                 self.document.clone(),
                 html,
                 self.limits.dom_nodes,
+                HtmlReport,
             ));
         }
         self.dirty = true;

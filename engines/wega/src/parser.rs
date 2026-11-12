@@ -8,7 +8,6 @@
 //! borrow the shared document per operation instead of holding one mutator for
 //! the whole parse.
 use crate::dom_model::{DocumentMutation, MutationError, Mutator, NewAttribute, NodeKey, NodeView};
-use blitz_dom::BaseDocument;
 use html5ever::{
     QualName,
     tendril::StrTendril,
@@ -21,10 +20,31 @@ use std::{
     rc::Rc,
 };
 
+/// One HTML parse warning (tokenizer or tree-construction error, or a parser limit). The
+/// parser owns this value and knows nothing about who consumes it.
+pub(crate) struct HtmlDiagnostic<'a> {
+    pub message: Cow<'a, str>,
+    /// The source line being parsed, when known.
+    pub line: Option<u64>,
+    /// The document being parsed.
+    pub url: &'a url::Url,
+}
+/// Receives parse warnings as they happen (so their order relative to other events is
+/// preserved). Static dispatch: the consumer is a type parameter of the parser.
+pub(crate) trait ParseReport {
+    fn warning(&self, diagnostic: HtmlDiagnostic<'_>);
+}
+impl<T: ParseReport + ?Sized> ParseReport for &T {
+    fn warning(&self, diagnostic: HtmlDiagnostic<'_>) {
+        (**self).warning(diagnostic);
+    }
+}
+
 /// The tree sink, generic over the document it builds into (`dom_model::DocumentMutation`).
 /// Each tree-construction operation uses its own mutation scope, as before.
-pub(crate) struct Sink<D: DocumentMutation = BaseDocument> {
+pub(crate) struct Sink<D: DocumentMutation, W: ParseReport> {
     document: Rc<RefCell<D>>,
+    report: W,
     /// Nodes created so far, and the node budget. Every node the tree builder is given is a
     /// real, distinct node (html5ever identifies open elements by handle equality, so
     /// placeholders would corrupt its stacks). Crossing the budget only sets `overflow`;
@@ -41,17 +61,18 @@ fn attribute(attr: html5ever::Attribute) -> NewAttribute {
         value: attr.value.to_string(),
     }
 }
-impl<D: DocumentMutation> Sink<D> {
-    fn new(document: Rc<RefCell<D>>, limit: usize) -> Self {
+impl<D: DocumentMutation, W: ParseReport> Sink<D, W> {
+    fn new(document: Rc<RefCell<D>>, limit: usize, report: W) -> Self {
         Self {
             document,
+            report,
             created: Cell::new(0),
             limit,
             line: Cell::new(1),
             overflow: Cell::new(false),
         }
     }
-    fn mutate<R>(&self, f: impl FnOnce(&mut D::Mutator<'_>) -> R) -> R {
+    fn mutate<T>(&self, f: impl FnOnce(&mut D::Mutator<'_>) -> T) -> T {
         let mut document = self.document.borrow_mut();
         let mut mutator = document.mutate();
         f(&mut mutator)
@@ -60,15 +81,17 @@ impl<D: DocumentMutation> Sink<D> {
     /// construction bug; report it as an HTML warning and keep parsing.
     fn applied(&self, result: Result<(), MutationError>) {
         if let Err(error) = result {
-            let mut event = crate::diagnostics::Diagnostic::error(
-                crate::diagnostics::Category::Html,
-                format!("HTML tree construction was rejected: {error}"),
-                Some(self.document.borrow().base_url().to_string()),
-            );
-            event.severity = "warning".into();
-            event.line = Some(self.line.get());
-            event.emit();
+            self.warn(Cow::Owned(format!(
+                "HTML tree construction was rejected: {error}"
+            )));
         }
+    }
+    fn warn(&self, message: Cow<'_, str>) {
+        self.report.warning(HtmlDiagnostic {
+            message,
+            line: Some(self.line.get()),
+            url: self.document.borrow().base_url(),
+        });
     }
     fn overflowed(&self) -> bool {
         self.overflow.get()
@@ -82,7 +105,7 @@ impl<D: DocumentMutation> Sink<D> {
         }
     }
 }
-impl<D: DocumentMutation> TreeSink for Sink<D> {
+impl<D: DocumentMutation, W: ParseReport> TreeSink for Sink<D, W> {
     type Output = ();
     type Handle = NodeKey;
     type ElemName<'a>
@@ -91,14 +114,7 @@ impl<D: DocumentMutation> TreeSink for Sink<D> {
         Self: 'a;
     fn finish(self) {}
     fn parse_error(&self, msg: Cow<'static, str>) {
-        let mut event = crate::diagnostics::Diagnostic::error(
-            crate::diagnostics::Category::Html,
-            msg.into_owned(),
-            Some(self.document.borrow().base_url().to_string()),
-        );
-        event.severity = "warning".into();
-        event.line = Some(self.line.get());
-        event.emit();
+        self.warn(msg);
     }
     fn set_current_line(&self, line_number: u64) {
         self.line.set(line_number);
@@ -241,11 +257,11 @@ pub(crate) enum Step {
 /// discarded so the tokenizer runs dry after the current token and is never resumed. (A
 /// script pause would only be legal for tag tokens; draining the queue works for every token
 /// kind, including runs of comments.)
-struct BudgetedBuilder<D: DocumentMutation> {
-    builder: TreeBuilder<NodeKey, Sink<D>>,
+struct BudgetedBuilder<D: DocumentMutation, W: ParseReport> {
+    builder: TreeBuilder<NodeKey, Sink<D, W>>,
     input: Rc<BufferQueue>,
 }
-impl<D: DocumentMutation> TokenSink for BudgetedBuilder<D> {
+impl<D: DocumentMutation, W: ParseReport> TokenSink for BudgetedBuilder<D, W> {
     type Handle = NodeKey;
     fn process_token(&self, token: Token, line_number: u64) -> TokenSinkResult<NodeKey> {
         let result = self.builder.process_token(token, line_number);
@@ -264,15 +280,15 @@ impl<D: DocumentMutation> TokenSink for BudgetedBuilder<D> {
     }
 }
 
-pub(crate) struct Parser<D: DocumentMutation = BaseDocument> {
-    tokenizer: Tokenizer<BudgetedBuilder<D>>,
+pub(crate) struct Parser<D: DocumentMutation, W: ParseReport> {
+    tokenizer: Tokenizer<BudgetedBuilder<D, W>>,
     input: Rc<BufferQueue>,
     finished: bool,
 }
-impl<D: DocumentMutation> Parser<D> {
-    pub fn new(document: Rc<RefCell<D>>, html: &str, node_limit: usize) -> Self {
+impl<D: DocumentMutation, W: ParseReport> Parser<D, W> {
+    pub fn new(document: Rc<RefCell<D>>, html: &str, node_limit: usize, report: W) -> Self {
         let builder = TreeBuilder::new(
-            Sink::new(document, node_limit),
+            Sink::new(document, node_limit, report),
             TreeBuilderOpts {
                 // Scripts run, so <noscript> content is raw text.
                 scripting_enabled: true,
@@ -341,11 +357,12 @@ pub(crate) struct FragmentOverflow;
 /// fragments) straight into the document through the same tree sink as full documents, then
 /// moves the result under `context`. The parse stops at `limit` nodes. Scripts do not run and
 /// are not paused for; the caller marks them already started.
-pub(crate) fn parse_fragment<D: DocumentMutation>(
+pub(crate) fn parse_fragment<D: DocumentMutation, W: ParseReport>(
     document: &mut D,
     context: NodeKey,
     limit: usize,
     html: &str,
+    report: &W,
 ) -> Result<(), FragmentOverflow> {
     let url = document.base_url().clone();
     let root = document.root();
@@ -353,7 +370,7 @@ pub(crate) fn parse_fragment<D: DocumentMutation>(
     let input = Rc::new(BufferQueue::default());
     input.push_back(StrTendril::from_slice(html));
     let builder = TreeBuilder::new_for_fragment(
-        Sink::new(document.clone(), limit),
+        Sink::new(document.clone(), limit, report),
         context,
         None,
         TreeBuilderOpts {
@@ -375,8 +392,9 @@ pub(crate) fn parse_fragment<D: DocumentMutation>(
             ..Default::default()
         },
     );
-    let overflowed =
-        |tokenizer: &Tokenizer<BudgetedBuilder<&mut D>>| tokenizer.sink.builder.sink.overflowed();
+    let overflowed = |tokenizer: &Tokenizer<BudgetedBuilder<&mut D, &W>>| {
+        tokenizer.sink.builder.sink.overflowed()
+    };
     loop {
         let result = tokenizer.feed(&input);
         if overflowed(&tokenizer) {
@@ -411,33 +429,32 @@ pub(crate) fn parse_fragment<D: DocumentMutation>(
         // Nothing is kept: the temporary root and whatever hangs below it are dropped here.
         let _ = mutator.remove_and_drop(fragment);
         drop(mutator);
-        report(&url, "HTML fragment exceeded the node budget");
+        report.warning(HtmlDiagnostic {
+            message: Cow::Borrowed("HTML fragment exceeded the node budget"),
+            line: None,
+            url: &url,
+        });
         return Err(FragmentOverflow);
     }
     let _ = mutator.append_children(context, &children);
     let _ = mutator.remove_and_drop(fragment);
     Ok(())
 }
-fn report(url: &url::Url, message: &str) {
-    let mut event = crate::diagnostics::Diagnostic::error(
-        crate::diagnostics::Category::Html,
-        message.to_owned(),
-        Some(url.to_string()),
-    );
-    event.severity = "warning".into();
-    event.emit();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dom_model::DocumentView;
-    use blitz_dom::DocumentConfig;
+
+    struct Silent;
+    impl ParseReport for Silent {
+        fn warning(&self, _: HtmlDiagnostic<'_>) {}
+    }
+    use blitz_dom::{BaseDocument, DocumentConfig};
     use blitz_html::HtmlDocument;
 
     fn wega_parse(html: &str, limit: usize) -> (Rc<RefCell<BaseDocument>>, usize) {
         let document = Rc::new(RefCell::new(BaseDocument::new(DocumentConfig::default())));
-        let mut parser = Parser::new(document.clone(), html, limit);
+        let mut parser = Parser::new(document.clone(), html, limit, Silent);
         let mut scripts = 0;
         while let Step::Script(_) = parser.step() {
             scripts += 1;
@@ -610,7 +627,7 @@ mod tests {
                 blitz_fragment(&mut expected, expected_context.into(), html);
                 let context =
                     add_context(&mut actual, html5ever::Namespace::from(*namespace), name);
-                parse_fragment(&mut actual, context, usize::MAX, html).unwrap();
+                parse_fragment(&mut actual, context, usize::MAX, html, &Silent).unwrap();
                 assert_eq!(
                     inner(&actual, context),
                     inner(&expected, expected_context),
@@ -636,6 +653,7 @@ mod tests {
             context,
             usize::MAX,
             "<p id=a>x</p><p id=b>y</p>",
+            &Silent,
         )
         .unwrap();
         let a = DocumentView::element_by_id(&document, "a").unwrap();
@@ -644,7 +662,7 @@ mod tests {
         assert_eq!(before[0], a, "the parsed node is the node in the tree");
         assert_eq!(document.node(a).unwrap().parent(), Some(context));
         // Parsing again replaces nothing by itself: the caller decides (it appends here).
-        parse_fragment(&mut document, context, usize::MAX, "<i>z</i>").unwrap();
+        parse_fragment(&mut document, context, usize::MAX, "<i>z</i>", &Silent).unwrap();
         assert_eq!(document.node(context).unwrap().children().len(), 3);
         // Nodes parsed earlier keep their identity.
         assert_eq!(DocumentView::element_by_id(&document, "a"), Some(a));
@@ -658,6 +676,7 @@ mod tests {
             context,
             usize::MAX,
             "<script>1</script>a<script>2</script>b<p>c</p>",
+            &Silent,
         )
         .unwrap();
         let kinds: Vec<_> = document
@@ -686,7 +705,7 @@ mod tests {
             let (mut document, context) = context_document(html5ever::ns!(html), "div");
             let before = assert_tree_is_consistent(&document);
             assert_eq!(
-                parse_fragment(&mut document, context, limit, &html),
+                parse_fragment(&mut document, context, limit, &html, &Silent),
                 Err(FragmentOverflow)
             );
             // The temporary root and everything under it are gone; the context is untouched.
@@ -702,13 +721,13 @@ mod tests {
         }
         // Within the budget it succeeds (the temporary root counts too).
         let (mut document, context) = context_document(html5ever::ns!(html), "div");
-        assert!(parse_fragment(&mut document, context, 100, "<p>a</p><p>b</p>").is_ok());
+        assert!(parse_fragment(&mut document, context, 100, "<p>a</p><p>b</p>", &Silent).is_ok());
         // Every construction case survives a spread of budgets in a table context.
         let mut document = new_document();
         for fragment in FRAGMENTS {
             for limit in [0, 1, 2, 3, 5, 8, 13, 21, usize::MAX] {
                 let context = add_context(&mut document, html5ever::ns!(html), "table");
-                let _ = parse_fragment(&mut document, context, limit, fragment);
+                let _ = parse_fragment(&mut document, context, limit, fragment, &Silent);
             }
             assert_tree_is_consistent(&document);
         }
@@ -722,13 +741,13 @@ mod tests {
     /// Everything a budget test needs to know about one parse.
     struct Outcome {
         document: Rc<RefCell<BaseDocument>>,
-        parser: Parser,
+        parser: Parser<BaseDocument, Silent>,
         scripts: usize,
         overflowed: bool,
     }
     fn budgeted(html: &str, limit: usize) -> Outcome {
         let document = Rc::new(RefCell::new(BaseDocument::new(DocumentConfig::default())));
-        let mut parser = Parser::new(document.clone(), html, limit);
+        let mut parser = Parser::new(document.clone(), html, limit, Silent);
         let (mut scripts, mut overflowed) = (0, false);
         loop {
             match parser.step() {
@@ -921,7 +940,12 @@ mod tests {
     #[test]
     fn chunked_input_and_document_write_respect_the_budget() {
         let document = Rc::new(RefCell::new(BaseDocument::new(DocumentConfig::default())));
-        let mut parser = Parser::new(document.clone(), "<p>a</p><script>w</script>tail", 40);
+        let mut parser = Parser::new(
+            document.clone(),
+            "<p>a</p><script>w</script>tail",
+            40,
+            Silent,
+        );
         assert!(matches!(parser.step(), Step::Script(_)));
         // document.write puts a large chunk at the insertion point.
         parser.write(&"<p>x</p>".repeat(500));

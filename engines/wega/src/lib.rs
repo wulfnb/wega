@@ -25,6 +25,7 @@ mod dom_host;
 mod dom_model;
 mod encoding;
 mod event_loop;
+mod html_report;
 pub mod media;
 mod network;
 mod parser;
