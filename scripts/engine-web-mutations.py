@@ -39,7 +39,7 @@ MUTATIONS = [
      [(WEB, 'resp.headers = wegaExposedHeaders(resp.headers, wegaInclude);', 'resp.headers = resp.headers;')],
      'security', 'modes_opaque_responses_and_exposed_headers'),
     ('samesite-cross-site-blocks-lax',
-     [('engines/network/src/cookies.rs', '(_, SiteContext::CrossSite) => false,', '(_, SiteContext::CrossSite) => true,')],
+     [('engines/services/cookies/src/lib.rs', '(_, SiteContext::CrossSite) => false,', '(_, SiteContext::CrossSite) => true,')],
      'security', 'samesite_cookies_stay_on_their_site'),
     ('csp-inline-scripts',
      [(VIEW, '            .allows_inline_script(Some(&element.nonce), &element.text)\n        {', '            .allows_inline_script(Some(&element.nonce), &element.text)\n            && false\n        {')],

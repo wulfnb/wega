@@ -27,11 +27,10 @@ use wega_protocol::{
 };
 pub mod cache_api;
 pub mod cache_storage;
-mod cookies;
 pub mod indexeddb;
 pub use cache_storage::{CacheEntry, CacheStorage};
-pub use cookies::{CookieEntry, Cookies, SiteContext};
 pub use indexeddb::IndexedDB;
+pub use wega_cookies::{CookieEntry, Cookies, SiteContext};
 const MAX_HEADER: usize = 64 * 1024;
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;

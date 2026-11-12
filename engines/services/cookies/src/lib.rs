@@ -1,6 +1,7 @@
 //! Bounded RFC6265bis jar shared by HTTP resources, fetch and document.cookie.
 //! SameSite is enforced from the request's site context; reqwest's cookie trait
 //! cannot carry that context, so every request attaches cookies explicitly.
+#![forbid(unsafe_code)]
 use cookie_store::{Cookie, CookieStore, RawCookie};
 use publicsuffix::Psl;
 use serde::{Deserialize, Serialize};

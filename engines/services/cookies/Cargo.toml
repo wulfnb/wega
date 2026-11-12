@@ -1,0 +1,17 @@
+[package]
+name = "wega-cookies"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Wega's bounded RFC6265bis cookie jar (extracted from wega-network)"
+
+[dependencies]
+serde = {version="1",features=["derive"]}
+url = {version="2.5", features=["serde"]}
+cookie_store = {version="=0.22.1",features=["public_suffix"]}
+publicsuffix = "=2.3.0"
+
+[dev-dependencies]
+tempfile = "3"

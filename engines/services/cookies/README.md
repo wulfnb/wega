@@ -1,6 +1,6 @@
 # services/cookies
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Wave 1) — package `wega-cookies`**
 
 ## Purpose
 
@@ -21,4 +21,4 @@ Cookie jar and cookie policy.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+IMPLEMENTED. Member of the `engines` workspace. Extracted verbatim from `engines/network/src/cookies.rs` (plus `public_suffix_list.dat`); `wega-network` re-exports `Cookies`, `CookieEntry` and `SiteContext`, so existing `wega_network::…` imports keep working. See `docs/architecture/module-map.md`.
