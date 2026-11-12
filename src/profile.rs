@@ -154,8 +154,8 @@ impl Default for Profile {
             active: 0,
             bookmarks: vec![
                 Bookmark {
-                    title: "Servo".into(),
-                    url: "https://servo.org/".into(),
+                    title: "Wega".into(),
+                    url: "https://github.com/wulfnb/wega".into(),
                     visited_at: 0,
                     visit_count: 0,
                 },

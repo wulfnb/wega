@@ -96,7 +96,7 @@ class MediaPackagerTests(unittest.TestCase):
         self.binary = self.app / 'Contents/MacOS/wega'
         self.binary.parent.mkdir(parents=True)
         self.binary.write_bytes(b'original executable')
-        lists = self.root / 'vendor/servo/gstreamer_plugin_lists'
+        lists = self.root / 'packaging/media/gstreamer_plugin_lists'
         lists.mkdir(parents=True)
         (lists / 'common.rs.in').write_text('["alpha"] // comment\n')
         (lists / 'macos.rs.in').write_text('["beta"]\n')
@@ -119,7 +119,7 @@ class MediaPackagerTests(unittest.TestCase):
             original = command[-1]
             deps = self.dependencies.get(original, [])
             return original + ':\n' + ''.join('  ' + dependency + ' (compatibility version 1.0.0)\n' for dependency in deps)
-        with patch.dict(os.environ, {'SERVO_GSTREAMER_PLUGIN_DIR': str(self.sdk)} if override else {}, clear=True), patch.object(media.subprocess, 'check_output', side_effect=check_output), patch.object(media.subprocess, 'run', side_effect=lambda command, **_: self.calls.append(command)), contextlib.redirect_stdout(io.StringIO()):
+        with patch.dict(os.environ, {'WEGA_GSTREAMER_PLUGIN_DIR': str(self.sdk)} if override else {}, clear=True), patch.object(media.subprocess, 'check_output', side_effect=check_output), patch.object(media.subprocess, 'run', side_effect=lambda command, **_: self.calls.append(command)), contextlib.redirect_stdout(io.StringIO()):
             media.bundle(self.app, self.root)
 
     def test_dependency_closure_is_copied_rewritten_and_signed_only_inside_app(self):
@@ -177,14 +177,14 @@ class MediaPackagerTests(unittest.TestCase):
         # A listed gst-libav plugin is refused even before its dependencies are read.
         self.dependencies.clear()
         (self.sdk / 'libgstlibav.dylib').write_bytes(b'plugin')
-        (self.root / 'vendor/servo/gstreamer_plugin_lists/macos.rs.in').write_text('["beta", "gstlibav"]\n')
+        (self.root / 'packaging/media/gstreamer_plugin_lists/macos.rs.in').write_text('["beta", "gstlibav"]\n')
         with self.assertRaisesRegex(RuntimeError, 'libgstlibav'):
             self.run_bundle()
 
     def test_shipped_plugin_lists_use_system_codecs_without_gst_libav(self):
         plugins = {}
         for name in ['common', 'macos']:
-            content = (ROOT / f'vendor/servo/gstreamer_plugin_lists/{name}.rs.in').read_text()
+            content = (ROOT / f'packaging/media/gstreamer_plugin_lists/{name}.rs.in').read_text()
             plugins[name] = media.ast.literal_eval(media.re.sub(r'//[^\n]*', '', content))
         self.assertNotIn('gstlibav', plugins['common'] + plugins['macos'])
         self.assertIn('gstapplemedia', plugins['macos'])

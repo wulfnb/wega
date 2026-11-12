@@ -1,0 +1,1 @@
+Pinned WebIDL reference inputs from Servo 0.7.0 (MPL-2.0). These are generator inputs, not an embedded engine or runtime dependency. Original source: https://github.com/servo/servo/tree/main/components/script_bindings/webidls. File hashes are recorded in ../idls.json.

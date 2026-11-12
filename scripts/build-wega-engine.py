@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build the independent Blitz worker and atomically install it beside Wega.
 
-Servo pins ICU 2.1, while Blitz beta.4 needs ICU 2.3. Keep both lockfiles and
-target directories independent; neither engine changes the other's dependencies.
+The worker has its own workspace, lockfile and target directory so V8/Skia
+compilation remains separate from the desktop shell.
 """
 import argparse
 import importlib.util

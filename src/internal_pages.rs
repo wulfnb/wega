@@ -1,7 +1,7 @@
 //! Native internal pages for Wega (`wega://newtab`, `history`, `bookmarks`, `settings`, `about`).
 //!
 //! Internal pages are rendered natively via egui directly inside the tab viewport.
-//! They do not require starting or initializing Servo or external engine worker processes.
+//! They do not require starting external engine worker processes.
 
 use crate::{
     browser::{Browser, Tab},
@@ -22,9 +22,6 @@ impl Tab {
     pub(crate) fn is_internal(&self) -> bool {
         if let Some(page) = &self.wega {
             return page.url().starts_with("wega://");
-        }
-        if let Some(view) = self.view() {
-            return view.url().is_some_and(|u| u.scheme() == "wega");
         }
         self.initial_url.starts_with("wega://")
     }
@@ -599,11 +596,7 @@ impl Browser {
                             .color(colors.text)
                             .strong(),
                     );
-                    let mode = if self.profile().policy.wega_only {
-                        "Wega-only developer mode (Servo disabled)"
-                    } else {
-                        "Dual engine (Wega experimental standalone + Servo compatibility)"
-                    };
+                    let mode = "Wega standalone engine (V8 + Blitz + Stylo + Skia)";
                     ui.label(RichText::new(mode).size(12.0).color(colors.muted));
                 });
             });
@@ -647,11 +640,7 @@ impl Browser {
                         .spacing(egui::vec2(16.0, 8.0))
                         .show(ui, |ui| {
                             ui.label(RichText::new("Engine backend").strong());
-                            let engine_label = if self.profile().policy.wega_only {
-                                "Wega standalone engine (V8 + Blitz)"
-                            } else {
-                                "Wega standalone engine + Servo 0.7 fallback"
-                            };
+                            let engine_label = "Wega standalone engine (V8 + Blitz + Stylo + Skia)";
                             ui.label(engine_label);
                             ui.end_row();
 

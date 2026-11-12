@@ -1,19 +1,19 @@
 {
   "pins": [
     {
-      "path": "vendor/servo-script-bindings/webidls/CharacterData.webidl",
+      "path": "tools/webidl/upstream/CharacterData.webidl",
       "sha256": "e39377156a6a172c5a6e72b697d76148ff60c50e2dac364461399fd1386cd4ce",
       "origin": "https://dom.spec.whatwg.org/#characterdata",
       "license": "MPL-2.0"
     },
     {
-      "path": "vendor/servo-script-bindings/webidls/Text.webidl",
+      "path": "tools/webidl/upstream/Text.webidl",
       "sha256": "9f2dcac227b53e8011070a8ea1b3430ba092d2915184861486a1cd8ef2bdbc48",
       "origin": "https://dom.spec.whatwg.org/#text",
       "license": "MPL-2.0"
     },
     {
-      "path": "vendor/servo-script-bindings/webidls/Comment.webidl",
+      "path": "tools/webidl/upstream/Comment.webidl",
       "sha256": "1b16ed9f9e0e073f33f1f37bb723c322b98d8e2017f61b1e61be538074e3b4ea",
       "origin": "https://dom.spec.whatwg.org/#comment",
       "license": "MPL-2.0"

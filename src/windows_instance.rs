@@ -63,7 +63,6 @@ pub fn claim(
         || options.test_mode()
         || options.capture.is_some()
         || options.webdriver_port.is_some()
-        || options.remote_devtools.is_some()
     {
         return Err(
             "This profile is already running; choose its engine in the browser, or use an isolated profile for diagnostics".into(),

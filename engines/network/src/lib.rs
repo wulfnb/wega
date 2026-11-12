@@ -378,6 +378,15 @@ struct Cache {
     bytes: usize,
 }
 impl Cache {
+    fn clear_scope(&mut self, scope: &str) {
+        let prefix = format!("{scope}\n");
+        self.entries.retain(|entry| !entry.key.starts_with(&prefix));
+        self.bytes = self
+            .entries
+            .iter()
+            .map(|entry| cache_cost(&entry.key, &entry.response))
+            .sum();
+    }
     fn get(&mut self, key: &str, limit: usize) -> Result<Option<Response>, String> {
         let now = Instant::now();
         self.entries.retain(|entry| entry.until > now);
@@ -675,17 +684,32 @@ impl LocalClient {
                     continue;
                 }
             }
-            if response
-                .content_length()
-                .is_some_and(|bytes| bytes > request.limit as u64)
+            // The renderer needs only attachment metadata. The host downloader
+            // streams the actual bytes independently using the same cookie jar.
+            let attachment = request.top_level
+                && request.destination == ResourceDestination::Document
+                && (200..300).contains(&status)
+                && response_headers.iter().any(|(name, value)| {
+                    name.eq_ignore_ascii_case("content-disposition")
+                        && value
+                            .split(';')
+                            .next()
+                            .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("attachment"))
+                });
+            if !attachment
+                && response
+                    .content_length()
+                    .is_some_and(|bytes| bytes > request.limit as u64)
             {
                 return Err("Response exceeds its size limit".into());
             }
             let mut bytes = Vec::new();
-            response
-                .take(request.limit as u64 + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|e| e.to_string())?;
+            if !attachment {
+                response
+                    .take(request.limit as u64 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| error.to_string())?;
+            }
             if bytes.len() > request.limit {
                 return Err("Response exceeds its size limit".into());
             }
@@ -709,7 +733,10 @@ impl LocalClient {
                     }
                 }
             }
-            if cacheable && let Some((cache, _)) = cache {
+            if cacheable
+                && !attachment
+                && let Some((cache, _)) = cache
+            {
                 cache
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -921,10 +948,20 @@ impl SessionHandle {
         if let Ok(url) = Url::parse(origin) {
             let _ = self.session.cookies.clear_site(&url);
         }
+        self.broker
+            .cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_scope(&self.session.scope);
         self.broker.clear_site_data(&root, origin)
     }
     pub fn clear_all_data(&self) -> Result<(), String> {
         self.session.cookies.clear();
+        self.broker
+            .cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_scope(&self.session.scope);
         let root = PathBuf::from(&self.session.scope);
         self.broker.clear_all_data(&root)
     }

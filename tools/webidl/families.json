@@ -6,9 +6,9 @@
       "output": "engines/wega/src/dom/generated/character-data.js",
       "manifest": "engines/wega/src/dom/generated/character-data.hooks.json",
       "files": [
-        "vendor/servo-script-bindings/webidls/CharacterData.webidl",
-        "vendor/servo-script-bindings/webidls/Text.webidl",
-        "vendor/servo-script-bindings/webidls/Comment.webidl"
+        "tools/webidl/upstream/CharacterData.webidl",
+        "tools/webidl/upstream/Text.webidl",
+        "tools/webidl/upstream/Comment.webidl"
       ],
       "native_base": {
         "Node": "dom.base.Node",

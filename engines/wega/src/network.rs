@@ -522,7 +522,7 @@ impl Network {
                 }
                 Ok(Response::local(url.clone(), data, Some(&mime)))
             }
-            _ => Err("Unsupported address scheme; use Servo for this page".into()),
+            _ => Err("Unsupported address scheme".into()),
         }
     }
     fn fetch_http(

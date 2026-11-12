@@ -65,7 +65,7 @@ def imports(path):
 def plugins():
     names=[]
     for file in ['common.rs.in','windows.rs.in']:
-        text=(ROOT/'vendor/servo/gstreamer_plugin_lists'/file).read_text()
+        text=(ROOT/'packaging/media/gstreamer_plugin_lists'/file).read_text()
         names.extend(re.findall(r'^"([\w]+)"',text,re.M))
     return [name+'.dll' for name in names]
 

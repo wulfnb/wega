@@ -544,3 +544,15 @@
      }
  
      fn each_custom_state<F>(&self, _callback: F)
+--- a/src/node/serialize.rs
++++ b/src/node/serialize.rs
+@@ -121,8 +121,7 @@
+             .resolve_current_color
+             .then(|| self.primary_styles())
+             .flatten()
+-            .map(|style| style.clone_color())
+-            .map(|color| color.to_css_string());
++            .map(|style| style.clone_color().into_srgb_legacy().to_css_string());
+ 
+         match &self.data {
+             NodeData::Document(_) => {}

@@ -323,16 +323,7 @@ pub(crate) fn icon(ui: &mut Ui, symbol: &str, help: &str) -> egui::Response {
     response.on_hover_text(help)
 }
 
-fn shorten(text: &str, max: usize) -> String {
-    let mut chars = text.chars();
-    let mut short: String = chars.by_ref().take(max).collect();
-    if chars.next().is_some() {
-        short.push('…');
-    }
-    short
-}
-
-// Mask only the corners after Servo's rectangular GPU blit.
+// Mask only the corners around the page texture.
 pub(crate) fn page_corners(painter: &egui::Painter, rect: egui::Rect) {
     let colors = crate::theme::palette(painter.ctx());
     if colors.glass {
@@ -527,7 +518,7 @@ impl Browser {
                 )
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        let reserved=if self.profile().policy.show_performance {if self.is_wega() {740.0} else {530.0}} else {370.0};
+                        let reserved=if self.profile().policy.show_performance {if !self.is_internal() {740.0} else {530.0}} else {370.0};
                         let status_width = (ui.available_width() - reserved).max(0.0);
                         ui.allocate_ui_with_layout(
                             egui::vec2(status_width, 20.0),
@@ -565,9 +556,9 @@ impl Browser {
                                         self.chrome.notice = None;
                                     }
                                 } else {
-                                    let status = self.tab().view().and_then(|view|view.status_text()).unwrap_or_else(|| {
-                                        if self.tab().loading(){"Loading page…".into()}else if self.is_wega(){"Experimental: forms, media and page tools need Servo".into()}else{String::new()}
-                                    });
+                                    let status = {
+                                        if self.tab().loading(){"Loading page…".into()}else{String::new()}
+                                    };
                                     ui.add(
                                         egui::Label::new(
                                             RichText::new(status).size(11.0).color(colors.muted),
@@ -578,7 +569,7 @@ impl Browser {
                             },
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            self.engine_picker(ui);
+                            self.engine_badge(ui);
                             // Zoom lives in the menu; the status bar only flags a
                             // non-default level, and clicking it resets.
                             let zoom = (self.page_zoom() * 100.0).round();
@@ -691,9 +682,7 @@ impl Browser {
             let security = site_info_button(ui, protocol);
             ui.ctx().data_mut(|data| data.insert_temp(Id::unique("site-panel-anchor"), security.rect.left_bottom()));
             if security.clicked() { self.refresh_site_data(); self.features.site_info = !self.features.site_info; }
-            // Servo is the default; only flag tabs on the experimental engine.
-            // The status bar picker switches engines for any tab.
-            if self.is_wega() {
+            if !self.is_internal() {
                 self.engine_badge(ui);
             }
             self.containers_menu(ui);
@@ -828,12 +817,10 @@ impl Browser {
                 });
                 if ui.button("Reader view").clicked() {
                     let script = include_str!("reader.js");
-                    if self.is_wega() {
+                    if !self.is_internal() {
                         if let Some(tab) = self.tab_mut().wega.as_mut() {
                             let _ = tab.send(wega::engine_protocol::Command::Evaluate(script.to_string()));
                         }
-                    } else if let Some(view) = self.tab().view() {
-                        view.evaluate_javascript(script, |_| {});
                     }
                     ui.close();
                 }
@@ -876,12 +863,10 @@ impl Browser {
                     }
                     if ui.button("Toggle page dark style").clicked() {
                         let script = "(()=>{let s=document.getElementById('__wega_dark');if(s){s.remove();return} s=document.createElement('style');s.id='__wega_dark';s.textContent='html{color-scheme:dark!important;background:#171717!important;color:#eee!important}body,main,article,section,header,footer,nav{background-color:#171717!important;color:#eee!important}a{color:#a9caff!important}';document.head.appendChild(s)})()";
-                        if self.is_wega() {
+                        if !self.is_internal() {
                             if let Some(tab) = self.tab_mut().wega.as_mut() {
                                 let _ = tab.send(wega::engine_protocol::Command::Evaluate(script.to_string()));
                             }
-                        } else if let Some(view) = self.tab().view() {
-                            view.evaluate_javascript(script, |_| {});
                         }
                         ui.close();
                     }
@@ -910,10 +895,7 @@ impl Browser {
             let tab = &self.session().tabs()[index];
             let id = tab.key;
             let unloaded = !tab.loaded();
-            let loading = tab.loading()
-                || tab
-                    .id()
-                    .is_some_and(|view| self.features.traversals.contains_key(&view));
+            let loading = tab.loading();
             let width = if vertical {
                 ui.available_width().max(130.0)
             } else {
@@ -1483,7 +1465,7 @@ impl Browser {
         if !self.dialogs.prompts.is_empty() || self.features.clear_data {
             return;
         }
-        // Requests are answered once by consuming the corresponding Servo responder.
+        // Requests are answered once by sending to the original worker document.
         if let Some((request_id, origin, permission)) = self
             .pending_permission()
             .map(|(id, origin, permission)| (id, origin.to_owned(), permission.to_owned()))
@@ -1532,415 +1514,6 @@ impl Browser {
                 self.answer_permission(request_id, allow);
                 self.finish_dialog(ctx);
             }
-            return;
         }
-        if !self.dialogs.authentications.is_empty() {
-            let fresh = self.prepare_dialog(ctx, "authentication");
-            let submit = crate::ux::enter(ctx);
-            let mut answer = if crate::ux::escape(ctx) {
-                Some(false)
-            } else {
-                None
-            };
-            let request = self.dialogs.authentications.front().unwrap();
-            egui::Modal::new(Id::unique("authentication")).show(ctx, |ui| {
-                ui.heading("Website authentication");
-                ui.label(request.url().origin().ascii_serialization());
-                let username = ui.add(
-                    egui::TextEdit::singleline(&mut self.chrome.username).hint_text("Username"),
-                );
-                if fresh {
-                    username.request_focus();
-                }
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.chrome.password)
-                        .password(true)
-                        .hint_text("Password"),
-                );
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        answer = Some(false);
-                    }
-                    if ui.button("Sign in").clicked() || submit {
-                        answer = Some(true);
-                    }
-                });
-            });
-            if let Some(allow) = answer {
-                let request = self.dialogs.authentications.pop_front().unwrap();
-                if allow {
-                    request.authenticate(
-                        std::mem::take(&mut self.chrome.username),
-                        std::mem::take(&mut self.chrome.password),
-                    );
-                }
-                self.chrome.password.clear();
-                self.chrome.username.clear();
-                self.finish_dialog(ctx);
-            }
-            return;
-        }
-        let Some((owner, mut control)) = self.dialogs.controls.pop_front() else {
-            return;
-        };
-        let fresh = self.prepare_dialog(ctx, format!("control-{:?}", control.id()));
-        let cancel = crate::ux::escape(ctx);
-        let submit = crate::ux::enter(ctx);
-        let mut finished = false;
-        let title = self
-            .session()
-            .tabs()
-            .iter()
-            .find(|t| t.id() == Some(owner))
-            .map(|t| t.url())
-            .unwrap_or_default();
-        match &mut control {
-            servo::EmbedderControl::SimpleDialog(dialog) => {
-                if fresh && let servo::SimpleDialog::Prompt(prompt) = dialog {
-                    self.chrome.prompt_text = prompt.current_value().to_owned();
-                }
-                let mut answer = if cancel {
-                    Some(false)
-                } else if submit {
-                    Some(true)
-                } else {
-                    None
-                };
-                egui::Modal::new(Id::unique("site_dialog")).show(ctx, |ui| {
-                    ui.heading("Message from website");
-                    ui.label(shorten(&title, 80));
-                    ui.separator();
-                    ui.label(dialog.message());
-                    if let servo::SimpleDialog::Prompt(_) = dialog {
-                        let field =
-                            ui.add(egui::TextEdit::singleline(&mut self.chrome.prompt_text));
-                        if fresh {
-                            field.request_focus();
-                        }
-                    }
-                    // An alert has nothing to decline.
-                    let cancel =
-                        (!matches!(dialog, servo::SimpleDialog::Alert(_))).then_some("Cancel");
-                    if let Some(choice) = crate::components::dialog_buttons(ui, cancel, "OK", false)
-                    {
-                        answer = Some(choice);
-                    }
-                });
-                if let Some(allow) = answer {
-                    if let servo::EmbedderControl::SimpleDialog(mut dialog) = control {
-                        if let servo::SimpleDialog::Prompt(prompt) = &mut dialog {
-                            prompt.set_current_value(&std::mem::take(&mut self.chrome.prompt_text));
-                        }
-                        if allow {
-                            dialog.confirm();
-                        } else {
-                            dialog.dismiss();
-                        }
-                    }
-                    return;
-                }
-            }
-            servo::EmbedderControl::SelectElement(select) => {
-                if fresh {
-                    self.chrome.original_selection = select.selected_options();
-                }
-                if cancel {
-                    select.select(self.chrome.original_selection.clone());
-                    if let servo::EmbedderControl::SelectElement(select) = control {
-                        drop(select);
-                    }
-                    self.finish_dialog(ctx);
-                    return;
-                }
-                let mut selected = select.selected_options();
-                egui::Modal::new(Id::unique("select_element")).show(ctx, |ui| {
-                    ui.label("Choose an option");
-                    egui::ScrollArea::vertical()
-                        .max_height(350.0)
-                        .show(ui, |ui| {
-                            let mut option = |ui: &mut Ui, item: &servo::SelectElementOption| {
-                                let checked = selected.contains(&item.id);
-                                if ui
-                                    .add_enabled(
-                                        !item.is_disabled,
-                                        egui::Button::new(&item.label).selected(checked),
-                                    )
-                                    .clicked()
-                                {
-                                    if select.allow_select_multiple() {
-                                        if checked {
-                                            selected.retain(|id| *id != item.id);
-                                        } else {
-                                            selected.push(item.id);
-                                        }
-                                    } else {
-                                        selected = vec![item.id];
-                                        finished = true;
-                                    }
-                                }
-                            };
-                            for item in select.options() {
-                                match item {
-                                    servo::SelectElementOptionOrOptgroup::Option(item) => {
-                                        option(ui, item)
-                                    }
-                                    servo::SelectElementOptionOrOptgroup::Optgroup {
-                                        label,
-                                        options,
-                                    } => {
-                                        ui.strong(label);
-                                        for item in options {
-                                            option(ui, item);
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    if ui.button("Done").clicked() || submit {
-                        finished = true;
-                    }
-                });
-                select.select(selected);
-                if finished {
-                    if let servo::EmbedderControl::SelectElement(select) = control {
-                        select.submit();
-                    }
-                    return;
-                }
-            }
-            servo::EmbedderControl::FilePicker(picker) => {
-                if fresh {
-                    self.chrome.file_handoff = None;
-                    if let Some(directory) = std::env::var_os("WEGA_FILE_HANDOFF_DIR") {
-                        let uploads = std::env::var_os("BROWSER_UPLOAD_DIR")
-                            .map(std::path::PathBuf::from)
-                            .unwrap_or_else(|| "/config/uploads".into());
-                        match crate::file_handoff::Request::new(
-                            std::path::Path::new(&directory),
-                            &uploads,
-                            picker.allow_select_multiple(),
-                            url::Url::parse(&title)
-                                .map(|url| url.origin().ascii_serialization())
-                                .unwrap_or_else(|_| "Page".into()),
-                            picker
-                                .filter_patterns()
-                                .iter()
-                                .filter(|pattern| pattern.0.len() <= 256)
-                                .take(64)
-                                .map(|pattern| pattern.0.clone())
-                                .collect(),
-                        ) {
-                            Ok(request) => self.chrome.file_handoff = Some(request),
-                            Err(error) => {
-                                self.chrome.file_error = Some(format!(
-                                    "Viewer handoff unavailable: {error}. Use path entry."
-                                ))
-                            }
-                        }
-                    }
-                }
-                let remote = self
-                    .chrome
-                    .file_handoff
-                    .as_ref()
-                    .map(|request| request.poll());
-                if self.chrome.file_handoff.is_some() {
-                    ctx.request_repaint_after(std::time::Duration::from_millis(250));
-                }
-                let mut remote_answer = None;
-                match remote {
-                    Some(Ok(Some(paths))) => {
-                        self.chrome.file_paths = paths
-                            .iter()
-                            .map(|path| path.display().to_string())
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        remote_answer = Some(!paths.is_empty());
-                    }
-                    Some(Err(error)) => {
-                        self.chrome.file_error = Some(error);
-                        self.chrome.file_handoff = None;
-                    }
-                    _ => {}
-                }
-                let mut answer = if cancel {
-                    Some(false)
-                } else if submit {
-                    Some(true)
-                } else {
-                    None
-                };
-                if remote_answer.is_some() {
-                    answer = remote_answer;
-                }
-                egui::Modal::new(Id::unique("file_picker")).show(ctx, |ui| {
-                    ui.set_max_width((ctx.content_rect().width() - 48.0).clamp(250.0, 520.0));
-                    ui.heading("Choose file for website");
-                    ui.label(shorten(&title, 80));
-                    if std::env::var_os("BROWSER_DOWNLOAD_DIR").is_some() {
-                        ui.label("Choose from this computer in the web viewer to upload directly. Upload and path entry remain available as a fallback.");
-                    } else if ui.button("Browse files…").clicked() {
-                        let mut dialog = rfd::FileDialog::new().set_parent(self.window.as_ref()).set_title("Choose file for website");
-                        let extensions: Vec<_> = picker.filter_patterns().iter().map(|p| p.0.as_str()).collect();
-                        if !extensions.is_empty() { dialog = dialog.add_filter("Accepted files", &extensions); }
-                        let selected = if picker.allow_select_multiple() { dialog.pick_files() } else { dialog.pick_file().map(|p| vec![p]) };
-                        if let Some(paths) = selected {
-                            self.chrome.file_paths = paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n");
-                            self.chrome.file_error = None;
-                        }
-                    }
-                    ui.label(if picker.allow_select_multiple() { "Selected paths (one per line)" } else { "Selected file path" });
-                    let field = ui.add(egui::TextEdit::multiline(&mut self.chrome.file_paths).desired_width(f32::INFINITY).desired_rows(3));
-                    if fresh { field.request_focus(); }
-                    if let Some(error) = &self.chrome.file_error { ui.colored_label(crate::theme::palette(ctx).danger, error); }
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() { answer = Some(false); }
-                        if ui.button("Choose").clicked() { answer = Some(true); }
-                    });
-                });
-                if answer == Some(true) {
-                    match crate::ux::validate_files(
-                        &self.chrome.file_paths,
-                        picker.allow_select_multiple(),
-                    ) {
-                        Ok(paths) => {
-                            if let servo::EmbedderControl::FilePicker(mut picker) = control {
-                                picker.select(&paths);
-                                picker.submit();
-                            }
-                            self.chrome.file_paths.clear();
-                            self.finish_dialog(ctx);
-                            return;
-                        }
-                        Err(error) => self.chrome.file_error = Some(error),
-                    }
-                } else if answer == Some(false) {
-                    if let servo::EmbedderControl::FilePicker(picker) = control {
-                        picker.dismiss();
-                    }
-                    self.chrome.file_paths.clear();
-                    self.finish_dialog(ctx);
-                    return;
-                }
-            }
-            servo::EmbedderControl::ColorPicker(picker) => {
-                if fresh {
-                    self.chrome.original_color =
-                        picker.current_color().map(|c| [c.red, c.green, c.blue]);
-                }
-                if cancel {
-                    picker.select(self.chrome.original_color.map(|c| servo::RgbColor {
-                        red: c[0],
-                        green: c[1],
-                        blue: c[2],
-                    }));
-                    if let servo::EmbedderControl::ColorPicker(picker) = control {
-                        drop(picker);
-                    }
-                    self.finish_dialog(ctx);
-                    return;
-                }
-                let color = picker.current_color();
-                let mut rgb = color.map(|c| [c.red, c.green, c.blue]).unwrap_or([0, 0, 0]);
-                egui::Modal::new(Id::unique("color_picker")).show(ctx, |ui| {
-                    ui.heading("Choose a color");
-                    ui.color_edit_button_srgb(&mut rgb);
-                    if ui.button("Done").clicked() || submit {
-                        finished = true;
-                    }
-                });
-                picker.select(Some(servo::RgbColor {
-                    red: rgb[0],
-                    green: rgb[1],
-                    blue: rgb[2],
-                }));
-                if finished {
-                    if let servo::EmbedderControl::ColorPicker(picker) = control {
-                        picker.submit();
-                    }
-                    return;
-                }
-            }
-            servo::EmbedderControl::ContextMenu(menu) => {
-                let mut action = None;
-                let mut download = None;
-                finished = cancel;
-                // A menu at the pointer, like every desktop browser; Escape or a
-                // click elsewhere dismisses it.
-                let at = menu.position().min;
-                let scale = ctx.pixels_per_point();
-                let anchor =
-                    self.chrome.page_rect.min + egui::vec2(at.x as f32, at.y as f32) / scale;
-                let area = egui::Area::new(Id::unique("page_context"))
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(anchor)
-                    .constrain(true)
-                    .show(ctx, |ui| {
-                        egui::Frame::menu(ui.style()).show(ui, |ui| {
-                            ui.set_min_width(220.0);
-                            ui.with_layout(
-                                egui::Layout::top_down_justified(egui::Align::Min),
-                                |ui| {
-                                    if let Some(url) = &menu.element_info().link_url
-                                        && ui.button("Download link").clicked()
-                                    {
-                                        download = Some(url.to_string());
-                                        finished = true;
-                                    }
-                                    if let Some(url) = &menu.element_info().image_url
-                                        && ui.button("Download image").clicked()
-                                    {
-                                        download = Some(url.to_string());
-                                        finished = true;
-                                    }
-                                    for item in menu.items() {
-                                        match item {
-                                            servo::ContextMenuItem::Item {
-                                                label,
-                                                action: item_action,
-                                                enabled,
-                                            } => {
-                                                if ui
-                                                    .add_enabled(*enabled, egui::Button::new(label))
-                                                    .clicked()
-                                                {
-                                                    action = Some(*item_action);
-                                                }
-                                            }
-                                            servo::ContextMenuItem::Separator => {
-                                                ui.separator();
-                                            }
-                                        }
-                                    }
-                                },
-                            );
-                        });
-                    });
-                // On macOS the menu opens on mouse-down, so the right button's
-                // release arrives later and must not count as clicking away.
-                let right_release =
-                    ctx.input(|i| i.pointer.button_released(egui::PointerButton::Secondary));
-                if area.response.clicked_elsewhere() && !right_release {
-                    finished = true;
-                }
-                if let Some(url) = download {
-                    // Start right away; the downloads panel opens to show progress.
-                    self.offer_download(&url, "");
-                    self.begin_download();
-                }
-                if action.is_some() || finished {
-                    if let servo::EmbedderControl::ContextMenu(menu) = control {
-                        if let Some(action) = action {
-                            menu.select(action);
-                        } else {
-                            menu.dismiss();
-                        }
-                    }
-                    return;
-                }
-            }
-            servo::EmbedderControl::InputMethod(_) => return,
-        }
-        self.dialogs.controls.push_front((owner, control));
     }
 }

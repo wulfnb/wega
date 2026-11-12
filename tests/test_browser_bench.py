@@ -27,7 +27,6 @@ class MeasurementTests(unittest.TestCase):
             self.assertEqual(bench.process_snapshot(), {10: (1, 1048576, 2.5)})
 
     def test_required_cases_cover_the_bounded_supported_apis(self):
-        self.assertEqual(bench.REQUIRED['servo'], set(bench.PROBES))
         self.assertEqual(bench.REQUIRED['wega'], set(bench.PROBES))
         self.assertIn(b'FormData', bench.fixture('forms'))
         self.assertIn(b'PENDING:fetch', bench.fixture('fetch'))

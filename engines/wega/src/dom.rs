@@ -1607,7 +1607,7 @@ impl Dom {
                 );
                 Value::Null
             }
-            _ => return Err("This Web API is not available; use Servo for this page".into()),
+            _ => return Err("This Web API is not available".into()),
         };
         Ok(value)
     }

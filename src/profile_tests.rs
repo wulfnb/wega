@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn normalization_keeps_engine_and_title_with_each_valid_address() {
-    use crate::engine_choice::EngineKind::{Servo, Wega};
+    use crate::engine_choice::EngineKind::Wega;
     let mut profile = Profile {
         urls: vec!["https://".into(), "https://article.test/".into()],
         titles: vec!["Invalid".into(), "Article".into()],
-        engines: vec![Servo, Wega],
+        engines: vec![Wega, Wega],
         ..Default::default()
     };
     profile.normalize();
@@ -415,4 +415,24 @@ fn shortcuts_keep_bookmarks_then_rank_frequent_pages_without_duplicates() {
         old.new_tab_shortcuts().last().unwrap().url,
         "https://old.test/"
     );
+}
+
+#[test]
+fn legacy_servo_sessions_migrate_without_losing_tabs_or_preferences() {
+    let mut profile: Profile = serde_json::from_str(r#"{
+        "urls": ["https://example.test/"],
+        "titles": ["Saved work"],
+        "engines": ["Servo"],
+        "policy": {"wega_only": false, "wega_fallback": true, "site_engines": {"https://example.test": "Servo"}}
+    }"#).unwrap();
+    profile.normalize();
+    assert_eq!(profile.urls, vec!["https://example.test/"]);
+    assert_eq!(profile.titles, vec!["Saved work"]);
+    assert_eq!(
+        profile.engines,
+        vec![crate::engine_choice::EngineKind::Wega]
+    );
+    let saved = serde_json::to_string(&profile).unwrap();
+    assert!(!saved.contains("Servo"));
+    assert!(!saved.contains("wega_fallback"));
 }

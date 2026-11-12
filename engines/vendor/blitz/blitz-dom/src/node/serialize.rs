@@ -121,8 +121,7 @@ impl Node {
             .resolve_current_color
             .then(|| self.primary_styles())
             .flatten()
-            .map(|style| style.clone_color())
-            .map(|color| color.to_css_string());
+            .map(|style| style.clone_color().into_srgb_legacy().to_css_string());
 
         match &self.data {
             NodeData::Document(_) => {}

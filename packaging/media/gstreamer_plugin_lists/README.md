@@ -1,0 +1,1 @@
+Optional GStreamer plugin allowlists originally distributed with Servo 0.7.0 (MPL-2.0). These static packaging inputs do not embed or initialize Servo. Wega content rendering uses the standalone worker.

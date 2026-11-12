@@ -1,4 +1,4 @@
-//! macOS Now Playing and remote commands. Servo callbacks are marshalled to winit.
+//! macOS Now Playing and remote commands. Worker events are marshalled to winit.
 #[derive(Debug, Default)]
 pub struct MediaInfo {
     pub title: String,
@@ -10,17 +10,20 @@ pub struct MediaInfo {
     pub rate: f64,
 }
 impl MediaInfo {
-    pub fn update(&mut self, event: servo::MediaSessionEvent) {
+    pub fn update(&mut self, event: wega::engine_protocol::media::MediaSessionEvent) {
         match event {
-            servo::MediaSessionEvent::SetMetadata(m) => {
+            wega::engine_protocol::media::MediaSessionEvent::SetMetadata(m) => {
                 self.title = m.title;
                 self.artist = m.artist;
                 self.album = m.album;
             }
-            servo::MediaSessionEvent::PlaybackStateChange(state) => {
-                self.playing = matches!(state, servo::MediaSessionPlaybackState::Playing);
+            wega::engine_protocol::media::MediaSessionEvent::PlaybackStateChange(state) => {
+                self.playing = matches!(
+                    state,
+                    wega::engine_protocol::media::MediaSessionPlaybackState::Playing
+                );
             }
-            servo::MediaSessionEvent::SetPositionState(p) => {
+            wega::engine_protocol::media::MediaSessionEvent::SetPositionState(p) => {
                 self.position = p.position;
                 self.duration = p.duration;
                 self.rate = p.playback_rate;
@@ -54,7 +57,7 @@ mod platform {
     impl NativeMedia {
         pub fn new(proxy: winit::event_loop::EventLoopProxy<crate::engine::Wake>) -> Self {
             use crate::engine::Wake;
-            use servo::MediaSessionActionType as Action;
+            use wega::engine_protocol::media::MediaSessionAction as Action;
             unsafe {
                 let center: Retained<AnyObject> =
                     msg_send![class!(MPNowPlayingInfoCenter), defaultCenter];
