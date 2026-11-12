@@ -1,5 +1,6 @@
 //! Checked native operations over Blitz's single DOM, used by the V8 host.
 use crate::Limits;
+use crate::dom_model::Mutator;
 use blitz_dom::node::NodeData;
 use blitz_dom::{BaseDocument, NodeId};
 use html5ever::{LocalName, QualName, ns};
@@ -1212,21 +1213,21 @@ impl Dom {
                 // Parse into a detached same-context element first; reject budgets before
                 // replacing live children, and retain removed nodes held by JS wrappers.
                 let element=doc.get_node(target).unwrap().element_data().ok_or("innerHTML needs an element")?;
-                let name=if element.name.local.as_str()=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.name.clone()};let staging=doc.mutate().create_element(name,vec![]);
+                let name=if element.name.local.as_str()=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.name.clone()};let staging=crate::dom_model::mutate(&mut *doc).create_element(name,[]).into();
                 {let mut mutation=doc.mutate();crate::parser::parse_fragment(&mut mutation,staging,text(2));}
                 let parsed=Self::subtree(&doc,staging);
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
                 if text(0)=="innerHTML" {for id in &parsed {if doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e|&*e.name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
-                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {doc.mutate().remove_and_drop_node(staging);return Err("DOM node limit exceeded".into());}
-                let children=doc.get_node(staging).unwrap().children.to_vec();
+                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {crate::dom_model::mutate(&mut *doc).remove_and_drop(staging.into()).map_err(Self::mutation_error)?;return Err("DOM node limit exceeded".into());}
+                let children:Vec<crate::dom_model::NodeKey>=doc.get_node(staging).unwrap().children.iter().copied().map(Into::into).collect();
                 if text(0)=="contextualFragment" {
-                    let fragment=doc.mutate().create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),vec![]);
-                    doc.mutate().replace_children(fragment,&children);doc.mutate().remove_and_drop_node(staging);
+                    let mut mutation=crate::dom_model::mutate(&mut *doc);let fragment=mutation.create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[]);
+                    mutation.replace_children(fragment,&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.into()).map_err(Self::mutation_error)?;mutation.finish();let fragment:NodeId=fragment.into();
                     self.allocated.set(self.allocated.get()+parsed.len());
                     return Ok(json!(fragment.as_u64().to_string()));
                 }
                 let old=doc.get_node(target).unwrap().children.to_vec();
-                doc.mutate().replace_children(target,&children);doc.mutate().remove_and_drop_node(staging);
+                {let mut mutation=crate::dom_model::mutate(&mut *doc);mutation.replace_children(target.into(),&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.into()).map_err(Self::mutation_error)?;}
                 self.allocated.set(self.allocated.get()+parsed.len()-1);
                 for id in old {self.collect_detached(&mut doc,id);}
                 Value::Null
@@ -1253,7 +1254,7 @@ impl Dom {
                 if anchor.is_some_and(|id|doc.get_node(id).is_none_or(|n|n.parent!=Some(parent))){return Err("NotFoundError: reference is not a child".into());}
                 let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.get_node(id).and_then(|n|n.parent).or_else(||self.shadows.borrow().host(id.as_u64()).map(NodeId::from_u64));}
                 if anchor==Some(child){return Ok(json!(child.as_u64().to_string()));}
-                if let Some(anchor)=anchor{doc.mutate().insert_nodes_before(anchor,&[child]);}else{doc.mutate().append_children(parent,&[child]);}
+                {let mut mutation=crate::dom_model::mutate(&mut *doc);if let Some(anchor)=anchor{mutation.insert_before(anchor.into(),&[child.into()]).map_err(Self::mutation_error)?;}else{mutation.append_children(parent.into(),&[child.into()]).map_err(Self::mutation_error)?;}}
                 json!(child.as_u64().to_string())
             },
             "createNS"|"createComment"|"createFragment"|"createDocument"=>{
@@ -1407,7 +1408,9 @@ impl Dom {
                     NodeData::Document(_) => return Ok(Value::Null),
                     NodeData::Text(data) => {
                         credit(data.content.len());
-                        doc.mutate().set_node_text(id, text(2));
+                        crate::dom_model::mutate(&mut *doc)
+                            .set_text(id.into(), text(2))
+                            .map_err(Self::mutation_error)?;
                         return Ok(Value::Null);
                     }
                     _ => {}
@@ -1417,15 +1420,19 @@ impl Dom {
                 // script still holds them.
                 let old = doc.get_node(id).unwrap().children.to_vec();
                 if text(2).is_empty() {
-                    doc.mutate().replace_children(id, &[]);
+                    crate::dom_model::mutate(&mut *doc)
+                        .replace_children(id.into(), &[])
+                        .map_err(Self::mutation_error)?;
                 } else {
                     if self.allocated.get() >= self.limits.dom_nodes {
                         return Err("DOM text or node budget exceeded".into());
                     }
                     self.allocated.set(self.allocated.get() + 1);
-                    let mut mutation = doc.mutate();
-                    let child = mutation.create_text_node(text(2));
-                    mutation.replace_children(id, &[child]);
+                    let mut mutation = crate::dom_model::mutate(&mut *doc);
+                    let child = mutation.create_text(text(2));
+                    mutation
+                        .replace_children(id.into(), &[child])
+                        .map_err(Self::mutation_error)?;
                 }
                 for child in old {
                     self.collect_detached(&mut doc, child);
@@ -1438,19 +1445,22 @@ impl Dom {
                 if text(3).len() > 1024 * 1024 {
                     return Err("DOM attribute budget exceeded".into());
                 }
-                doc.mutate().set_attribute(
-                    id,
-                    QualName::new(None, ns!(), LocalName::from(text(2))),
-                    text(3),
-                );
+                crate::dom_model::mutate(&mut *doc)
+                    .set_attribute(
+                        id.into(),
+                        QualName::new(None, ns!(), LocalName::from(text(2))),
+                        text(3),
+                    )
+                    .map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), Some(text(3)), None);
                 Value::Null
             }
             "removeAttr" => {
                 let id = node_id()?;
                 let old = Self::attribute(&doc, id, text(2));
-                doc.mutate()
-                    .clear_attribute(id, QualName::new(None, ns!(), LocalName::from(text(2))));
+                crate::dom_model::mutate(&mut *doc)
+                    .clear_attribute(id.into(), QualName::new(None, ns!(), LocalName::from(text(2))))
+                    .map_err(Self::mutation_error)?;
                 if old.is_some() { self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), None, None); }
                 Value::Null
             }
@@ -1470,15 +1480,16 @@ impl Dom {
                     return Err("DOM node budget exceeded".into());
                 }
                 self.allocated.set(self.allocated.get() + 1);
+                let mut mutation = crate::dom_model::mutate(&mut *doc);
                 let id = if text(0) == "create" {
-                    doc.mutate().create_element(
+                    mutation.create_element(
                         QualName::new(None, ns!(html), LocalName::from(text(1))),
-                        vec![],
+                        [],
                     )
                 } else {
-                    doc.mutate().create_text_node(text(1))
+                    mutation.create_text(text(1))
                 };
-                json!(id.as_u64().to_string())
+                json!(id.to_string())
             }
             "append" => {
                 let parent = node_id()?;
@@ -1494,12 +1505,16 @@ impl Dom {
                     }
                     ancestor = doc.get_node(id).and_then(|n| n.parent);
                 }
-                doc.mutate().append_children(parent, &[child]);
+                crate::dom_model::mutate(&mut *doc)
+                    .append_children(parent.into(), &[child.into()])
+                    .map_err(Self::mutation_error)?;
                 json!(child.as_u64().to_string())
             }
             "remove" => {
                 let id = node_id()?;
-                doc.mutate().remove_node(id);
+                crate::dom_model::mutate(&mut *doc)
+                    .remove(id.into())
+                    .map_err(Self::mutation_error)?;
                 Value::Null
             }
             "scriptInserted" => {
@@ -1616,6 +1631,16 @@ impl Dom {
             _ => return Err("This Web API is not available; use Servo for this page".into()),
         };
         Ok(value)
+    }
+    /// The JS-facing message for a rejected mutation (kept from the pre-contract checks).
+    fn mutation_error(error: crate::dom_model::MutationError) -> String {
+        match error {
+            crate::dom_model::MutationError::Stale(_) => "Node no longer exists".into(),
+            crate::dom_model::MutationError::HierarchyCycle { .. } => {
+                "Cannot create a DOM cycle".into()
+            }
+            other => other.to_string(),
+        }
     }
     fn subtree(doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
         crate::dom_model::subtree(doc, root.into())
