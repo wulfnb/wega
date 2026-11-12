@@ -36,7 +36,7 @@ pub struct RuntimeSpec {
 /// Creates the runtime and installs host state in its `OpState`. Must be called on the
 /// thread that will own the isolate, inside the executor the host will drive it with.
 /// Bootstrap scripts and secure-context exposure are the caller's (they differ per realm).
-pub fn create_runtime(spec: RuntimeSpec) -> Result<JsRuntime, String> {
+pub(crate) fn create_runtime(spec: RuntimeSpec) -> Result<JsRuntime, String> {
     let mut extensions = match spec.kind {
         RuntimeKind::Document => web::extensions(&spec.url, &*spec.network),
         RuntimeKind::Worker => crate::web_extensions::extensions(spec.url.clone(), None),
@@ -107,6 +107,9 @@ pub fn create_runtime(spec: RuntimeSpec) -> Result<JsRuntime, String> {
 }
 
 /// Exposes `isSecureContext` (and removes secure-only globals) for the realm's URL.
-pub fn configure_secure_context(runtime: &mut JsRuntime, url: &url::Url) -> Result<(), String> {
+pub(crate) fn configure_secure_context(
+    runtime: &mut JsRuntime,
+    url: &url::Url,
+) -> Result<(), String> {
     crate::security_context::configure(runtime, url)
 }

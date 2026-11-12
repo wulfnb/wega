@@ -24,14 +24,16 @@ mod security_context;
 mod snapshot;
 mod web;
 mod web_extensions;
+mod worker;
 
 pub use env::ScriptEnvironment;
 pub use host::{HostConfig, RuntimeLimits, V8Host};
 pub use native_ops::NativeHost;
 pub use net::{BoxFuture, ScriptNetwork};
-pub use runtime::{RuntimeKind, RuntimeSpec, configure_secure_context, create_runtime};
+pub use runtime::{RuntimeKind, RuntimeSpec};
 pub use script::{ScriptError, ScriptHost};
 pub use snapshot::{SnapshotScript, build_startup_snapshot};
+pub use worker::{LoopStatus, Turn, WorkerRuntime, WorkerTerminator};
 
 /// V8 flags are process-wide: call before the first isolate is created.
 pub fn set_lite_mode() {
