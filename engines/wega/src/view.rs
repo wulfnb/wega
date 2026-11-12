@@ -33,8 +33,9 @@ use std::{
 };
 use url::Url;
 use wega_adapter_blitz::BlitzDocument;
-use wega_adapter_blitz::{ToKey, ToNodeId as _};
+use wega_adapter_blitz::{ToKey, ToNodeId};
 use wega_dom::Mutator as _;
+use wega_dom::input::{FocusState as _, InputControl as _, element_chain};
 use wega_protocol::identity::FrameId;
 
 pub struct Frame {
@@ -1117,8 +1118,7 @@ impl View {
         let target_node = NodeId::from_u64(target);
         match action.to_ascii_lowercase().as_str() {
             "focus" => {
-                let mut doc = self.document.borrow_mut();
-                doc.set_focus_to(target_node);
+                let _ = self.document.borrow_mut().set_focus(target_node.key());
                 self.dirty = true;
             }
             "default" | "click" => {
@@ -1467,6 +1467,12 @@ impl View {
         self.activation
             .set(Some(Instant::now() + Duration::from_secs(5)));
     }
+    /// Where keyboard input goes: the focused node, else the document's fallback target.
+    fn keyboard_target(&self) -> NodeId {
+        let doc = self.document.borrow();
+        doc.keyboard_target()
+            .map_or(doc.root_node().id, ToNodeId::node_id)
+    }
     fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
         let scroll = self.document.borrow().viewport_scroll();
         (x + scroll.x as f32, y + scroll.y as f32)
@@ -1532,14 +1538,14 @@ impl View {
             .borrow_mut()
             .resolve(self.started.elapsed().as_secs_f64());
         let (page_x, page_y) = self.page_point(pointer.x, pointer.y);
-        let previous = self.document.borrow().get_hover_node_id();
-        if pointer.kind == PointerKind::Leave {
-            self.document.borrow_mut().clear_hover();
+        let change = if pointer.kind == PointerKind::Leave {
+            self.document.borrow_mut().pointer_left()
         } else {
-            self.document.borrow_mut().set_hover_to(page_x, page_y);
-        }
-        let hovered = self.document.borrow().get_hover_node_id();
-        if previous != hovered {
+            self.document.borrow_mut().pointer_moved(page_x, page_y)
+        };
+        let previous = change.previous.map(ToNodeId::node_id);
+        let hovered = change.current.map(ToNodeId::node_id);
+        if change.changed() {
             // Restyle for :hover so the cursor below reflects it.
             self.document
                 .borrow_mut()
@@ -1616,9 +1622,13 @@ impl View {
         let (old_chain, new_chain) = {
             let doc = self.document.borrow();
             let chain = |id: Option<NodeId>| {
-                id.filter(|id| wega_dom::DocumentView::node(&*doc, (*id).key()).is_some())
-                    .map(|id| doc.node_chain(id))
-                    .unwrap_or_default()
+                id.map(|id| {
+                    element_chain(&*doc, id.key())
+                        .into_iter()
+                        .map(ToNodeId::node_id)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
             };
             (chain(previous), chain(hovered))
         };
@@ -1926,11 +1936,7 @@ impl View {
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
-        let target = self
-            .document
-            .borrow()
-            .get_focussed_node_id()
-            .unwrap_or(self.document.borrow().root_node().id);
+        let target = self.keyboard_target();
         let disabled = self
             .document
             .borrow()
@@ -2188,11 +2194,7 @@ impl View {
             return;
         }
         use blitz_traits::events::BlitzImeEvent;
-        let target = self
-            .document
-            .borrow()
-            .get_focussed_node_id()
-            .unwrap_or(self.document.borrow().root_node().id);
+        let target = self.keyboard_target();
         let (text, kind) = match &event {
             BlitzImeEvent::Preedit(text, _) => (text, "compositionupdate"),
             BlitzImeEvent::Commit(text) => (text, "compositionend"),
