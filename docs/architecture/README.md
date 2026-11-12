@@ -13,6 +13,7 @@ Holds architecture documentation for the planned modular engine layout.
 - [`crate-initialization-plan.md`](./crate-initialization-plan.md): crate boundaries and execution plan.
 - [`wave1-implementation-report.md`](./wave1-implementation-report.md): Wave 1 results.
 - [`wave2-gate-report.md`](./wave2-gate-report.md): Wave 2 architecture gate decisions (no implementation).
+- [`architecture-refactor-progress.md`](./architecture-refactor-progress.md): architecture-first refactoring progress (ownership model, V8/network/worker decoupling, `wega-adapter-skia`).
 - [`baseline/`](./baseline/): baseline and post-wave dependency graphs and architecture reports.
 
 ## Expected dependencies
