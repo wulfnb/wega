@@ -47,6 +47,16 @@ The macro adapters preserve function modifiers, explicitly construct lifetime
 generic parameters and match Syn 3's pointer mutability enum. Both the engine
 and the standalone spike use these same patches and updated lockfiles.
 
+### Hickory security update (12 November 2026)
+
+`deno_net` 0.252.0 and `deno_fetch` 0.284.0 are pinned copies of their
+published crates. Their `*-hickory-upgrade.patch` files move both consumers to
+Hickory 0.26.3 together: resolver runtime and error APIs, nameserver connections,
+and DNS record fields/variants. Permission checks still cover every configured
+nameserver IP and port; DNS result types and TTLs retain their existing shape.
+The prior Hickory advisory exceptions are removed. The engine lockfile also
+replaces yanked `crypto-bigint` 0.7.8 with 0.7.11.
+
 ## Blitz, Stylo and Skia adapter (`blitz/`, P4–P5)
 
 Published `blitz-dom`/`blitz-paint` 0.3.0-beta.4, `stylo` 0.22.0 and

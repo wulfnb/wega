@@ -227,12 +227,17 @@ impl Reaper {
                     .min(self.deadline.saturating_duration_since(Instant::now())),
             );
         };
-        if let Some(observer) = self.observer.take() {
-            observer(ExitReport {
-                pid: self.child.id(),
-                forced: self.forced || self.killed.load(Ordering::Acquire),
-                status,
-            });
+        let observer = self.observer.take();
+        let report = ExitReport {
+            pid: self.child.id(),
+            forced: self.forced || self.killed.load(Ordering::Acquire),
+            status,
+        };
+        // Finish reaping and release retained reservations before notifying an
+        // observer that can immediately admit a replacement process.
+        drop(self);
+        if let Some(observer) = observer {
+            observer(report);
         }
     }
 }

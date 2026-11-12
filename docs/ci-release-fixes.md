@@ -76,16 +76,19 @@ This patch does not change repository branch-protection settings.
 Main should require the always-running `CI Completion Gate` before merging;
 individual conditionally skipped jobs should not be made unconditional requirements.
 
-The engine's pinned Deno dependency graph reports seven advisory findings:
-`crypto-bigint 0.5.5`, two Hickory findings on `0.25.2`, and four rustls findings on
-`0.23.40`, plus the `rsa` Marvin finding that has no fixed release. Deno TLS pins
-that rustls version exactly, so a lockfile-only rustls update is rejected. Updating
-Deno TLS/net/crypto coherently is separate dependency work.
+The engine's remaining pinned Deno exceptions cover `crypto-bigint 0.5.5`,
+four rustls findings on `0.23.40`, and the `rsa` Marvin finding with no fixed
+release. Deno TLS pins that rustls version exactly. These six IDs remain explicit
+in `engines/.cargo/audit.toml`, with a review date of 2027-02-01; any other
+vulnerability fails the blocking audit.
 
-A non-blocking audit hid every *new* engine advisory along with the known ones, so
-those eight IDs are now listed explicitly in `engines/.cargo/audit.toml`, each with
-its fix version and a review date (2027-02-01). The engine audit is blocking again:
-anything not on that list fails CI. Remove each ID when the Deno pin moves.
+PR #63's CI repair vendors the pinned Deno fetch/net consumers and migrates both
+to Hickory 0.26.3, removing the two earlier Hickory exceptions as well as the new
+findings. `crypto-bigint` 0.7.8 was yanked and is replaced by 0.7.11. Audit commands
+keep fetching enabled: cargo-audit's `--no-fetch` also disables fetching missing
+sparse registry entries, causing incomplete yanked checks on a fresh runner.
+The CI and daily security workflows use the same online audit commands.
+
 Existing third-party warnings are not a claim of zero security risk.
 
 ## Keeping up with advisories

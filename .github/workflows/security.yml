@@ -68,18 +68,20 @@ jobs:
         with:
           tool: cargo-audit@0.22.2
       # Same checks as the CI lint job; each workspace reads its own .cargo/audit.toml.
+      # Keep registry fetching enabled: --no-fetch also prevents cargo-audit
+      # from loading sparse index entries needed for yanked checks.
       - name: Browser workspace
         run: cargo audit
       - name: Engine workspace
         if: ${{ !cancelled() }}
         working-directory: engines
-        run: cargo audit --no-fetch
+        run: cargo audit
       - name: V8 spike workspace
         if: ${{ !cancelled() }}
-        run: cargo audit --no-fetch --file engines/v8-spike/Cargo.lock
+        run: cargo audit --file engines/v8-spike/Cargo.lock
       - name: Error collector workspace
         if: ${{ !cancelled() }}
-        run: cargo audit --no-fetch --file error-collector/Cargo.lock
+        run: cargo audit --file error-collector/Cargo.lock
 
   # The release image is scanned when it is built; base-image CVEs published
   # afterwards only show up by rescanning what users actually pull.
