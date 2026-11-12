@@ -53,7 +53,7 @@ Lifecycle: `Engine::new → Network + Hubs → create_view → View::new → nav
 | `f066709` | **B3** `workers::Hubs` owned by the engine; `FetchInterceptor`; `Network` no longer references workers |
 | `e430f0b` | **B4** `src/v8/` directory (host, ops, extension adapter, loader, broker socket, Deno setup, secure-context exposure, `ScriptNetwork`); `dom_host.rs`; `build.rs` paths; mutation-script paths. **B5** `RawIsolateGuard` invariants documented |
 | `7bffc42` | **C** `wega-adapter-skia` (raster only) extracted; engine drops direct `anyrender_skia` and `kurbo` dependencies |
-| (this commit) | this report, post-refactor graph and architecture report |
+| `1e5da1a` | this report (round 1), post-refactor graph and architecture report |
 
 ## 4. Crates created or removed
 
@@ -110,3 +110,85 @@ Interpretation: evaluation and DOM-op costs are unchanged within noise (they pas
 3. Re-measure the hot-path benchmark on a quiet machine first and after.
 
 Other open items: `wega-dom`/`wega-html` stay deferred (no viable contract; ≈86/40 Blitz call sites); Canvas/WebGL Skia exception; the `Error`-vs-`TypeError` conformance bug; refresh the stale mutation-script targets.
+
+---
+
+# Round 2 — remove the Dom dependency and extract `wega-adapter-v8`
+
+Baseline verified first: branch `feature/browser-cache-accessibility`, the seven round-1 commits present, clean tree, full suite green.
+
+## 10. Remaining `Dom` references in the V8 glue (classified)
+
+All 13 references were in `V8Host` (`src/v8/mod.rs`); none were elsewhere in the glue. They were **not** one concern, so the interface is grouped by concern rather than being a thin wrapper over `Dom`:
+
+| Reference (before) | Concern | Interface method(s) |
+|---|---|---|
+| `dom.document.borrow().url()` | security context | `document_url()` |
+| `Arc::new(dom.network.clone())` | network access | `network() -> Arc<dyn ScriptNetwork>` |
+| `dom.network.policy` | network access / permissions | `network_policy()` |
+| `dom.network.remote` (×1) | network access | removed: `ScriptNetwork::remote()` already existed |
+| `dom` as `Rc<dyn NativeHost>` | JavaScript callbacks | `ScriptEnvironment: NativeHost` (upcast) |
+| `dom.begin_task()` | lifecycle | `begin_task()` |
+| `dom.network.wake` (×2, in tick/module wakers) | resource ownership (cross-thread waker) | `wake()`, captured once in `V8Host::new` |
+| `dom.errors` (×2: drain, bounded slow-script note) | results drained by the view | `take_errors()`, `note_slow_script()` |
+| `dom.requests` | results drained by the view | `take_requests()` (associated `Requests`) |
+| `dom.budget()`, `set_allocated`, `history` | resource budgets | `budget()`, `sync_nodes()`, `history()` |
+| (isolate/thread affinity) | V8 isolate ownership | stays inside `V8Host`; the environment never sees V8/Deno types |
+
+## 11. New interfaces and ownership
+
+- **`ScriptEnvironment`** (`env.rs`): the table above. No `Dom`, Blitz or V8/Deno types; `wega_network::Policy`/`Remote`/`Request`/`Response` are kept. **Threading/reentrancy** is documented on the trait: the environment is shared as `Rc<E>` on the document thread (not `Send`/`Sync`); the values it hands to other threads (`network`, `wake`) are `Send + Sync`; methods may be called from V8 callbacks and must not re-enter script or hold a `RefCell` borrow across a call into script. `V8Host<E>` is **generic**, so these calls are statically dispatched; the only dynamic dispatch remains `Rc<dyn NativeHost>` in the isolate's `OpState` (as before) and the engine's `Box<dyn ScriptHost>`.
+- **Location of the contract:** in `wega-adapter-v8` itself. Cargo shows exactly one implementer/consumer pair (the engine implements, the adapter consumes), so a separate `wega-js-runtime` crate would add a boundary with no second user. It can be split out later without changing the traits.
+- **`ScriptHost`/`ScriptError`/`NativeHost`/`ScriptNetwork`** moved with the adapter. `NativeHost` gained `is_generated_hook` so the engine owns the generated-hook registry (`dom/generated/hooks.json`) and the adapter no longer embeds an engine path.
+- **`create_runtime(RuntimeSpec)`** replaces two near-duplicate runtime set-ups (documents and workers); `RuntimeKind::{Document, Worker}` carries the differences (Web Storage backend/extension directory).
+- **Snapshot ownership:** the engine's `build.rs` still generates the WebIDL bindings and reads `src/dom/*.js`, then calls the adapter's `build_startup_snapshot`; the engine embeds the snapshot and passes snapshot and bootstrap script to `V8Host::new(env, &HostConfig)`. The adapter has **no** references to root `tools/`, root `vendor/` or `engines/wega` paths.
+- The adapter does **not** depend on `wega-engine`; the one isolate per document/worker is still created by `create_runtime` on the owning thread (no second isolate, no duplicated runtime state).
+
+## 12. Commits (round 2)
+
+| Commit | Change |
+|---|---|
+| `8a56b4a` | `V8Host<E: ScriptEnvironment>`; `Dom` implements it (`dom_host.rs`); `src/v8` has no `Dom`/Blitz/engine request references |
+| `5973fc9` | Extract `wega-adapter-v8` (`engines/adapters/v8`); build.rs now calls the adapter's snapshot builder; mutation-script paths updated |
+| `784b623` | Architecture checker: documented unsafe exception (`wega-adapter-v8`) is informational; post-V8 graph and report |
+| (this commit) | this section |
+
+## 13. Dependency graph before/after (engines workspace)
+
+Before (round 1): `wega-engine → {network, platform, protocol, security, permissions, adapter-skia}` plus a build-dependency on `wega-network` and the whole Deno stack as normal and build dependencies. After ([`baseline/dependency-graph-after-v8.md`](./baseline/dependency-graph-after-v8.md)): 10 members, 18 edges; new `wega-engine → wega-adapter-v8`, `wega-adapter-v8 → {wega-network, wega-protocol, wega-security}`; the engine's build-dependency on `wega-network` is gone. The engine dropped ten direct Deno-related dependencies (`deno_error`, `deno_webidl`, `deno_web`, `deno_fetch`, `deno_websocket`, `deno_webstorage`, `deno_crypto`, `deno_permissions`, `deno_net`, `deno_tls`, `sys_traits`); `deno_core` remains (workers). Lockfile: new path package only, no external version change. No cycles; checker: **0 violations** ([`baseline/architecture-check-after-v8.md`](./baseline/architecture-check-after-v8.md)).
+
+## 14. Unsafe code audit
+
+`grep` across the engines workspace sources: the engine (`wega-engine`, `deny(unsafe_code)`) now contains **no** `unsafe`. `wega-adapter-v8` is `deny(unsafe_code)` with one documented exception: `RawIsolateGuard` (two `unsafe` blocks in `host.rs`) with written invariants (balanced enter/exit on one thread, valid isolate pointer, LIFO nesting, no aliasing). `wega-adapter-skia` is `forbid(unsafe_code)`. Native `unsafe` otherwise lives only in `wega-platform` as before. The architecture checker recognises the V8 exception explicitly.
+
+## 15. Validation (round 2)
+
+- Full engines suite at `5973fc9`: **360 passed, 0 failed, 3 ignored**; 386 s wall, 1.55 GB max RSS, 181 MB peak footprint (round-1: 393 s, 1.48 GB; the +70 MB RSS is within build/link variation, not re-profiled).
+- Broker mode (`WEGA_TEST_BROKER=1`: security, forms, scripts, documents, history): passed. Required-worker test with a CI-style content helper: passed (exercises the worker runtime built by `create_runtime`).
+- Clippy `-D warnings` (workspace and tools), `fmt --check`, root `cargo check --locked`, both `cargo metadata`: pass. Tools workspace tests pass.
+- Mutation-script targets: all 54 checked targets resolve (including the adapter files); the 9 stale `view.rs` targets from before remain.
+- Not run: Windows and Linux builds/tests (cfg-specific `sys_traits` features and `winapi` paths moved with the code unchanged), the MSVC Skia cache jobs, and the native-sandbox ignored tests.
+
+## 16. Performance comparison
+
+Hot-path benchmark, debug build, load average 14-17 on the machine (noise is ±30%, larger than any difference), medians of 7, three runs per revision interleaved with checkouts of the same tree:
+
+| Metric | Before extraction (`8a56b4a`) | After (`HEAD`) |
+|---|---|---|
+| `evaluate_json("1+1")` | 13.4 / 14.0 / 14.8 µs | 13.3 / 13.3 / 15.2 µs |
+| DOM op iteration | 425 / 442 / 587 µs | 361 / 398 / 369 µs |
+| `create_view` + `set_html` | 211 / 298 / 229 ms | 235 / 256 / 187 ms |
+
+No measurable change. (Two earlier pairs on the same loaded machine also overlapped.) Generic `V8Host<E>` plus cross-crate calls did not change the cost of the existing `Rc<dyn NativeHost>` path.
+
+## 17. Remaining blockers and coupling
+
+- **Engine still depends on `deno_core`** for worker realms (`workers/runtime.rs` uses `JsRuntime`, `execute_script`, `IsolateHandle`). Removing it needs a worker-runtime wrapper in the adapter; `WorkerHost` also depends on the engine's `canvas`/`webgl`, which stay for now.
+- `build.rs` still `#[path]`-includes root `tools/webidl/*.rs` and reads root `vendor/servo-script-bindings` WebIDL inputs (WebIDL generator location unchanged by decision); the DOM JS assets remain under `engines/wega/src/dom/`.
+- `wega-js-runtime` is intentionally not created (single implementer/consumer pair).
+- Blitz (`dom.rs`, `view.rs`, `parser.rs`, `script.rs`, `document_host.rs`, `components.rs`), Stylo/html5ever (`dom.rs`, `parser.rs`) and Skia in Canvas/WebGL are unchanged.
+- Stale mutation-script targets (9) and the `Error`-vs-`TypeError` fetch conformance bug remain open.
+
+## 18. Recommended next step
+
+Move worker realm creation behind the adapter (a `WorkerRuntime` wrapper that owns `JsRuntime`, the dispatch/execute calls and the isolate handle), then drop `deno_core` from `wega-engine`; separately decide whether `canvas`/`webgl` hosts stay in the engine (they are needed by `WorkerHost`). After that, the first candidate for the DOM work is a measured look at the ≈86 `get_node`/40 `mutate()` Blitz call sites, not a new crate.
