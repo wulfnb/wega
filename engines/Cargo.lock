@@ -6800,6 +6800,7 @@ dependencies = [
  "wega-cookies",
  "wega-platform",
  "wega-protocol",
+ "wega-storage",
 ]
 
 [[package]]
@@ -6819,6 +6820,18 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "url",
+]
+
+[[package]]
+name = "wega-storage"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
  "url",
 ]
 

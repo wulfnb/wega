@@ -21,16 +21,12 @@ use std::{
 };
 use url::Url;
 use websocket::resolve_target;
+pub use wega_cookies::{CookieEntry, Cookies, SiteContext};
 use wega_protocol::{
     authority::{Origin, Principal},
     identity::{PartitionId, ServiceIdentity, ServiceSessionId},
 };
-pub mod cache_api;
-pub mod cache_storage;
-pub mod indexeddb;
-pub use cache_storage::{CacheEntry, CacheStorage};
-pub use indexeddb::IndexedDB;
-pub use wega_cookies::{CookieEntry, Cookies, SiteContext};
+pub use wega_storage::{CacheEntry, CacheStorage, IndexedDB, cache_api, cache_storage, indexeddb};
 const MAX_HEADER: usize = 64 * 1024;
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;

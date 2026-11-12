@@ -9,6 +9,7 @@ publish = false
 wega-platform = { path = "../platform" }
 wega-protocol = { path = "../protocol" }
 wega-cookies = { path = "../services/cookies" }
+wega-storage = { path = "../services/storage" }
 serde = {version="1",features=["derive"]}
 serde_json = "1"
 url = {version="2.5", features=["serde"]}

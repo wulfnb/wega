@@ -1,6 +1,6 @@
 # services/storage
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Wave 1) — package `wega-storage`**
 
 ## Purpose
 
@@ -22,4 +22,4 @@ Persistent origin storage backing Cache Storage, the Cache API and IndexedDB. Re
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. Planned package `wega-storage`. Candidate sources: `engines/network/src/cache_storage.rs`, `cache_api.rs`, `indexeddb.rs`. See `docs/architecture/crate-initialization-plan.md`.
+IMPLEMENTED. Member of the `engines` workspace. Extracted verbatim from `engines/network/src/{cache_storage,cache_api,indexeddb}.rs`; database schemas and file layout are unchanged. `wega-network` re-exports `cache_api`, `cache_storage`, `indexeddb`, `CacheEntry`, `CacheStorage` and `IndexedDB`. This crate has no dependency on `wega-network`. See `docs/architecture/crate-initialization-plan.md`.
