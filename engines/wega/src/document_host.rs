@@ -516,7 +516,9 @@ impl View {
         for delta in requests.traverse {
             self.events.push_back(PageEvent::Traverse(delta));
         }
-        let focus_before = self.document.borrow().focused();
+        // Activation can move focus; sampling it on every drain would tax every script call.
+        let focus_before =
+            (!requests.activate.is_empty()).then(|| self.document.borrow().focused());
         for node in requests.activate {
             // element.click(): script already saw the event; run the defaults.
             if self.default_click(node) {
@@ -538,7 +540,9 @@ impl View {
                 self.generated_events(generated, serde_json::json!({}), None);
             }
         }
-        self.focus_transition(focus_before);
+        if let Some(before) = focus_before {
+            self.focus_transition(before);
+        }
         for request in requests.scripts {
             let before = self.host.ordered.len();
             self.prepare_script(request.node, false, false);
