@@ -66,6 +66,49 @@ fn hot_paths() {
         .unwrap();
         start.elapsed().as_secs_f64() * 1e6 / 10.0
     });
+    // Mutation paths: insertion/removal, attribute and text updates, HTML parsing.
+    let insert_remove = repeat(|| {
+        let mut page = view();
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{const r=document.getElementById('root');const kids=[];for(let i=0;i<1000;i++){const d=document.createElement('div');r.appendChild(d);kids.push(d);}for(const d of kids)r.removeChild(d);return r.childNodes.length})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 1_000.0
+    });
+    let attributes = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{const e=document.getElementById('root');for(let i=0;i<2000;i++){e.setAttribute('data-k',String(i));e.removeAttribute('data-k');}return 1})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 2_000.0
+    });
+    let text = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{const t=document.createTextNode('a');document.getElementById('root').appendChild(t);for(let i=0;i<2000;i++){t.data='x'+i;}return 1})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 2_000.0
+    });
+    let parse = repeat(|| {
+        let mut html = String::from("<!doctype html><body><div id=root>");
+        for i in 0..3_000 {
+            html.push_str(&format!(
+                "<div id=n{i} data-i={i}><span>text {i}</span></div>"
+            ));
+        }
+        html.push_str("</div></body>");
+        let engine =
+            Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
+        let mut v = engine
+            .create_view(Url::parse("https://bench.test/").unwrap())
+            .unwrap();
+        let start = Instant::now();
+        v.set_html(&html).unwrap();
+        start.elapsed().as_secs_f64() * 1e3
+    });
     let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
     let lifecycle = repeat(|| {
         let start = Instant::now();
@@ -84,5 +127,9 @@ fn hot_paths() {
     );
     println!("BENCH lookup+nodeType+nodeName+parentNode: {lookups:.2} us/iteration");
     println!("BENCH deep clone of a 51-node subtree: {clone:.2} us/clone");
+    println!("BENCH appendChild+removeChild: {insert_remove:.2} us/node");
+    println!("BENCH setAttribute+removeAttribute: {attributes:.2} us/pair");
+    println!("BENCH text node data update: {text:.2} us/update");
+    println!("BENCH parse 9000-node document (set_html): {parse:.2} ms");
     println!("BENCH create_view+set_html (document lifecycle): {lifecycle:.2} ms/document");
 }
