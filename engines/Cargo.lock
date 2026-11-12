@@ -6729,6 +6729,7 @@ dependencies = [
  "html5ever",
  "url",
  "wega-dom",
+ "wega-html",
 ]
 
 [[package]]
@@ -6823,11 +6824,21 @@ dependencies = [
  "wega-adapter-skia",
  "wega-adapter-v8",
  "wega-dom",
+ "wega-html",
  "wega-network",
  "wega-permissions",
  "wega-platform",
  "wega-protocol",
  "wega-security",
+]
+
+[[package]]
+name = "wega-html"
+version = "0.1.0"
+dependencies = [
+ "html5ever",
+ "url",
+ "wega-dom",
 ]
 
 [[package]]

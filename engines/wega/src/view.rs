@@ -3,7 +3,6 @@ use crate::{
     csp::Csp,
     encoding::{self, DocumentKind},
     network::{Destination, FetchContext, Network, Response},
-    parser::Step,
     script::{DynScriptHost, HostContext},
 };
 use blitz_dom::{DocumentConfig, NodeId, traversal::TreeTraverser};
@@ -305,6 +304,7 @@ mod document_host;
 use crate::html_report::{HtmlReport, Parser};
 #[cfg(test)]
 use document_host::script_kind;
+use wega_html::Step;
 
 pub struct View {
     host: document_host::DocumentHost,

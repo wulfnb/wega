@@ -27,7 +27,6 @@ mod event_loop;
 mod html_report;
 pub mod media;
 mod network;
-mod parser;
 pub mod permissions;
 mod script;
 mod view;

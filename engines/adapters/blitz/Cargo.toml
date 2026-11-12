@@ -17,4 +17,5 @@ html5ever = "0.40.1"
 url = "2.5"
 
 [dev-dependencies]
+wega-html = { path = "../../html/parser" }
 blitz-html = "=0.3.0-beta.4"

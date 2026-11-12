@@ -16,6 +16,7 @@ wega-adapter-skia = { path = "../adapters/skia" }
 wega-adapter-v8 = { path = "../adapters/v8" }
 wega-adapter-blitz = { path = "../adapters/blitz" }
 wega-dom = { path = "../dom/core" }
+wega-html = { path = "../html/parser" }
 wega-platform = {path="../platform"}
 tokio = {version="1",features=["rt","time","net","sync"]}
 base64 = "0.23"

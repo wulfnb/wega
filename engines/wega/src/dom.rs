@@ -1217,7 +1217,7 @@ impl Dom {
                 let element=doc.node(target.key()).and_then(NodeView::qual_name).ok_or("innerHTML needs an element")?;
                 let name=if &*element.local=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.clone()};let staging:NodeId=wega_dom::mutate(&mut *doc).create_element(name,[]).node_id();
                 let remaining=self.limits.dom_nodes.saturating_sub(self.allocated.get()).saturating_add(2);
-                if crate::parser::parse_fragment(&mut *doc,staging.key(),remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=wega_dom::mutate(&mut *doc).remove_and_drop(staging.key());return Err("DOM node limit exceeded".into());}
+                if wega_html::parse_fragment(&mut *doc,staging.key(),remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=wega_dom::mutate(&mut *doc).remove_and_drop(staging.key());return Err("DOM node limit exceeded".into());}
                 let parsed=Self::subtree(&doc,staging);
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
                 if text(0)=="innerHTML" {for id in &parsed {if doc.node((*id).key()).and_then(NodeView::element_name).is_some_and(|name|name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}

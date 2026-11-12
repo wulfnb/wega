@@ -1,7 +1,7 @@
 //! The engine's consumer of HTML parser warnings: parse diagnostics become `Html`
 //! warnings with the document URL and line, emitted as they occur.
-use crate::parser::{HtmlDiagnostic, ParseReport};
 use wega_adapter_blitz::BlitzDocument;
+use wega_html::{HtmlDiagnostic, ParseReport};
 
 pub(crate) struct HtmlReport;
 impl ParseReport for HtmlReport {
@@ -18,4 +18,4 @@ impl ParseReport for HtmlReport {
 }
 
 /// The incremental parser as the engine uses it.
-pub(crate) type Parser = crate::parser::Parser<BlitzDocument, HtmlReport>;
+pub(crate) type Parser = wega_html::Parser<BlitzDocument, HtmlReport>;
