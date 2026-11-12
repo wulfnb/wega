@@ -109,6 +109,47 @@ fn hot_paths() {
         v.set_html(&html).unwrap();
         start.elapsed().as_secs_f64() * 1e3
     });
+    // Round 6 additions: fragment parsing, namespaced creation, shallow clone, inline style.
+    let fragment_small = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{const r=document.getElementById('root');for(let i=0;i<500;i++){r.innerHTML='<p class=a>one <b>two</b></p><i>three</i>'}return 1})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 500.0
+    });
+    let fragment_large = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{const r=document.getElementById('root');const h='<div class=c><span>text</span><a href=x>l</a></div>'.repeat(300);for(let i=0;i<10;i++){r.innerHTML=h}return 1})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e3 / 10.0
+    });
+    let create_ns = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{let n=0;for(let i=0;i<1000;i++){n+=document.createElementNS('http://www.w3.org/2000/svg','circle').nodeType}return n})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 1_000.0
+    });
+    let shallow_clone = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{const r=document.getElementById('root');let n=0;for(let i=0;i<1000;i++){n+=r.cloneNode(false).nodeType}return n})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 1_000.0
+    });
+    let style = repeat(|| {
+        let start = Instant::now();
+        page.evaluate_json(
+            "(()=>{const e=document.getElementById('root');for(let i=0;i<1000;i++){e.style.setProperty('color','red');e.style.removeProperty('color')}return 1})()",
+        )
+        .unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / 1_000.0
+    });
     let engine = Engine::new(Limits::default(), NetworkPolicy::default(), Arc::new(|| {})).unwrap();
     let lifecycle = repeat(|| {
         let start = Instant::now();
@@ -130,6 +171,11 @@ fn hot_paths() {
     println!("BENCH appendChild+removeChild: {insert_remove:.2} us/node");
     println!("BENCH setAttribute+removeAttribute: {attributes:.2} us/pair");
     println!("BENCH text node data update: {text:.2} us/update");
+    println!("BENCH innerHTML small fragment (3 nodes): {fragment_small:.2} us/call");
+    println!("BENCH innerHTML large fragment (900 nodes): {fragment_large:.2} ms/call");
+    println!("BENCH createElementNS: {create_ns:.2} us/call");
+    println!("BENCH cloneNode(false): {shallow_clone:.2} us/call");
+    println!("BENCH style.setProperty+removeProperty: {style:.2} us/pair");
     println!("BENCH parse 9000-node document (set_html): {parse:.2} ms");
     println!("BENCH create_view+set_html (document lifecycle): {lifecycle:.2} ms/document");
 }
