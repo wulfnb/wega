@@ -109,3 +109,44 @@ impl crate::v8::native_ops::NativeHost for Dom {
         String::new()
     }
 }
+
+impl crate::v8::env::ScriptEnvironment for Dom {
+    type Requests = crate::dom::Requests;
+
+    fn begin_task(&self) {
+        Dom::begin_task(self)
+    }
+    fn document_url(&self) -> url::Url {
+        self.document.borrow().url().clone()
+    }
+    fn network(&self) -> std::sync::Arc<dyn crate::v8::net::ScriptNetwork> {
+        std::sync::Arc::new(self.network.clone())
+    }
+    fn network_policy(&self) -> std::sync::Arc<std::sync::RwLock<wega_network::Policy>> {
+        self.network.policy.clone()
+    }
+    fn wake(&self) -> std::sync::Arc<dyn Fn() + Send + Sync> {
+        self.network.wake.clone()
+    }
+    fn budget(&self) -> (usize, usize) {
+        Dom::budget(self)
+    }
+    fn sync_nodes(&self, count: usize) {
+        self.set_allocated(count)
+    }
+    fn history(&self) -> (usize, usize) {
+        self.history.get()
+    }
+    fn take_errors(&self) -> Vec<String> {
+        std::mem::take(&mut *self.errors.borrow_mut())
+    }
+    fn note_slow_script(&self, message: String) {
+        let mut errors = self.errors.borrow_mut();
+        if errors.len() < 16 {
+            errors.push(message);
+        }
+    }
+    fn take_requests(&self) -> Self::Requests {
+        std::mem::take(&mut *self.requests.borrow_mut())
+    }
+}

@@ -1,5 +1,6 @@
 //! V8 isolates are confined to the owning DOM thread; only termination crosses threads.
 pub(crate) mod broker_socket;
+pub(crate) mod env;
 pub(crate) mod extension_adapter;
 pub(crate) mod module_loader;
 pub(crate) mod native_ops;
@@ -10,10 +11,10 @@ pub(crate) mod web_extensions;
 
 use crate::{
     Limits,
-    dom::Dom,
     script::{ScriptError, ScriptHost},
 };
 use deno_core::{JsRuntime, RuntimeOptions};
+use env::ScriptEnvironment;
 use serde_json::json;
 use std::{
     rc::Rc,
@@ -202,14 +203,15 @@ impl Drop for Watchdog {
     }
 }
 
-pub(crate) struct V8Host {
+pub(crate) struct V8Host<E: ScriptEnvironment> {
     runtime: Option<JsRuntime>,
     loading_module: Option<ModuleLoad>,
     evaluating_modules: Vec<ModuleEvaluation>,
     queued: std::collections::VecDeque<(String, String, bool)>,
     watchdog: Watchdog,
     executor: Rc<tokio::runtime::Runtime>,
-    dom: Rc<Dom>,
+    env: Rc<E>,
+    wake: Arc<dyn Fn() + Send + Sync>,
     budget: Duration,
     slow: Duration,
     oom: Arc<AtomicBool>,
@@ -220,10 +222,10 @@ pub(crate) struct V8Host {
     timer: Option<Instant>,
     polled_at: Instant,
 }
-impl V8Host {
-    /// The document's host (`Dom`) is created and owned by the view and injected here;
+impl<E: ScriptEnvironment> V8Host<E> {
+    /// The document environment is created and owned by the view and injected here;
     /// the V8 host only runs script against it.
-    pub fn new(dom: Rc<Dom>, limits: &Limits) -> Result<Self, String> {
+    pub fn new(env: Rc<E>, limits: &Limits) -> Result<Self, String> {
         let executor = Rc::new(
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -234,8 +236,8 @@ impl V8Host {
         let entered = executor.enter();
         // Do not enable lite mode per isolate: V8 flags are process-wide. Workers receive
         // their per-view option before initializing the platform.
-        let document_url = dom.document.borrow().url().clone();
-        let script_network: Arc<dyn crate::v8::net::ScriptNetwork> = Arc::new(dom.network.clone());
+        let document_url = env.document_url();
+        let script_network = env.network();
         let mut extensions = crate::v8::web::extensions(&document_url, &*script_network);
         extensions.push(wega_dom::init());
         for extension in &extensions {
@@ -273,18 +275,13 @@ impl V8Host {
         })
         .map_err(|e| e.to_string())?;
         // Deno's trusted bootstrap needs its own heap before page code starts.
-        let host: Rc<dyn crate::v8::native_ops::NativeHost> = dom.clone();
+        let host: Rc<dyn crate::v8::native_ops::NativeHost> = env.clone();
         runtime.op_state().borrow_mut().put(host);
         runtime
             .op_state()
             .borrow_mut()
-            .put(crate::v8::web::permissions(dom.network.policy.clone()));
-        if let Some(remote) = dom
-            .network
-            .remote
-            .clone()
-            .filter(|remote| remote.is_bound())
-        {
+            .put(crate::v8::web::permissions(env.network_policy()));
+        if let Some(remote) = script_network.remote().filter(|remote| remote.is_bound()) {
             deno_websocket::set_broker(
                 &mut runtime.op_state().borrow_mut(),
                 Arc::new(crate::v8::broker_socket::Connector {
@@ -326,7 +323,8 @@ impl V8Host {
             queued: Default::default(),
             watchdog,
             executor,
-            dom,
+            wake: env.wake(),
+            env,
             budget: limits.script_time,
             slow: limits.slow_script,
             oom,
@@ -340,7 +338,7 @@ impl V8Host {
     }
     /// Run one bounded step of script; reports a notice when it is slow.
     fn bounded<T>(&mut self, name: &str, run: impl FnOnce(&mut Self) -> T) -> (T, bool) {
-        self.dom.begin_task();
+        self.env.begin_task();
         let started = Instant::now();
         self.watchdog.arm(self.budget);
         let _guard = self
@@ -352,13 +350,10 @@ impl V8Host {
         let fired = self.watchdog.disarm();
         let elapsed = started.elapsed();
         if !fired && elapsed > self.slow {
-            let mut errors = self.dom.errors.borrow_mut();
-            if errors.len() < 16 {
-                errors.push(format!(
-                    "{name}: slow script ({} ms); the page may be unresponsive",
-                    elapsed.as_millis()
-                ));
-            }
+            self.env.note_slow_script(format!(
+                "{name}: slow script ({} ms); the page may be unresponsive",
+                elapsed.as_millis()
+            ));
         }
         (result, fired)
     }
@@ -416,7 +411,8 @@ impl V8Host {
             .map(|value| format!("{value:?}"))
     }
 }
-impl ScriptHost for V8Host {
+impl<E: ScriptEnvironment> ScriptHost for V8Host<E> {
+    type Requests = E::Requests;
     fn checkpoint(&mut self) -> Result<(), ScriptError> {
         // HTML's microtask checkpoint follows each script task. Timer dispatch
         // belongs to the timer task source, never to a parser-blocking script.
@@ -555,7 +551,7 @@ impl ScriptHost for V8Host {
         if self.frozen {
             return Ok(());
         }
-        let module_waker = Waker::from(Arc::new(WakeLoop(self.dom.network.wake.clone())));
+        let module_waker = Waker::from(Arc::new(WakeLoop(self.wake.clone())));
         let mut module_cx = Context::from_waker(&module_waker);
         if self.loading_module.is_some() {
             let (result, expired) = self.bounded("module loading", |host| {
@@ -611,7 +607,7 @@ impl ScriptHost for V8Host {
             }
         }
         self.run("__wega_timers()", "timer dispatch")?;
-        let waker = Waker::from(Arc::new(WakeLoop(self.dom.network.wake.clone())));
+        let waker = Waker::from(Arc::new(WakeLoop(self.wake.clone())));
         let mut cx = Context::from_waker(&waker);
         let (result, timed_out) = self.bounded("event loop", |host| {
             let runtime = host.runtime.as_mut().unwrap();
@@ -709,10 +705,10 @@ impl ScriptHost for V8Host {
         self.heap
     }
     fn take_errors(&mut self) -> Vec<String> {
-        std::mem::take(&mut *self.dom.errors.borrow_mut())
+        self.env.take_errors()
     }
-    fn take_requests(&mut self) -> crate::dom::Requests {
-        std::mem::take(&mut *self.dom.requests.borrow_mut())
+    fn take_requests(&mut self) -> Self::Requests {
+        self.env.take_requests()
     }
     fn allow_eval(&mut self, allowed: bool) {
         if let Some(runtime) = &mut self.runtime {
@@ -724,13 +720,13 @@ impl ScriptHost for V8Host {
         }
     }
     fn budget(&self) -> (usize, usize) {
-        self.dom.budget()
+        self.env.budget()
     }
     fn sync_nodes(&mut self, count: usize) {
-        self.dom.set_allocated(count);
+        self.env.sync_nodes(count);
     }
     fn history(&self) -> (usize, usize) {
-        self.dom.history.get()
+        self.env.history()
     }
     fn freeze(&mut self, frozen: bool) {
         self.frozen = frozen;

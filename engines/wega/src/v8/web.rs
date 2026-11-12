@@ -10,7 +10,7 @@ use std::{
 #[derive(Debug)]
 struct PolicyParser {
     inner: RuntimePermissionDescriptorParser<sys_traits::impls::RealSys>,
-    policy: Arc<RwLock<crate::NetworkPolicy>>,
+    policy: Arc<RwLock<wega_network::Policy>>,
 }
 const GRANT: &str = "wega-policy-grant.invalid";
 impl PolicyParser {
@@ -103,7 +103,7 @@ impl PermissionDescriptorParser for PolicyParser {
         self.inner.parse_run_query(t)
     }
 }
-pub(crate) fn permissions(policy: Arc<RwLock<crate::NetworkPolicy>>) -> PermissionsContainer {
+pub(crate) fn permissions(policy: Arc<RwLock<wega_network::Policy>>) -> PermissionsContainer {
     let parser = PolicyParser {
         inner: RuntimePermissionDescriptorParser::new(sys_traits::impls::RealSys),
         policy,

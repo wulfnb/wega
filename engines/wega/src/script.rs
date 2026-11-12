@@ -35,6 +35,9 @@ pub(crate) struct HostContext {
 }
 
 pub(crate) trait ScriptHost {
+    /// The page's queued host requests; an associated type so the script host does not
+    /// name the engine's document types.
+    type Requests;
     fn run(&mut self, source: &str, name: &str) -> Result<String, ScriptError>;
     fn run_module(&mut self, source: &str, name: &str) -> Result<String, ScriptError>;
     fn modules_pending(&self) -> bool;
@@ -46,7 +49,7 @@ pub(crate) trait ScriptHost {
     fn take_errors(&mut self) -> Vec<String>;
     fn freeze(&mut self, frozen: bool);
     /// Page requests (dynamic scripts, document.write, popups, history).
-    fn take_requests(&mut self) -> crate::dom::Requests;
+    fn take_requests(&mut self) -> Self::Requests;
     /// CSP without 'unsafe-eval' disables eval and `new Function`.
     fn allow_eval(&mut self, allowed: bool);
     /// Allocated nodes and charged text bytes.
@@ -62,17 +65,19 @@ pub(crate) trait ScriptHost {
     }
 }
 /// Creates the V8 script host for a document host built by the view.
+pub(crate) type DynScriptHost = dyn ScriptHost<Requests = crate::dom::Requests>;
+
 pub(crate) fn create(
     dom: std::rc::Rc<crate::dom::Dom>,
     limits: &crate::Limits,
-) -> Result<Box<dyn ScriptHost>, String> {
+) -> Result<Box<DynScriptHost>, String> {
     Ok(Box::new(crate::v8::V8Host::new(dom, limits)?))
 }
 
 /// HTML performs a checkpoint after an ordinary exception too. A fatal limit
 /// tears down the realm and must never run another callback while recovering.
 pub(crate) fn finish_task<T>(
-    host: &mut dyn ScriptHost,
+    host: &mut DynScriptHost,
     result: Result<T, ScriptError>,
 ) -> Result<T, ScriptError> {
     if !result.as_ref().is_err_and(|error| error.fatal) {

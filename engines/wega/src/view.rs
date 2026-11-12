@@ -4,7 +4,7 @@ use crate::{
     encoding::{self, DocumentKind},
     network::{Destination, FetchContext, Network, Response},
     parser::{Parser, Step},
-    script::{HostContext, ScriptHost},
+    script::{DynScriptHost, HostContext},
 };
 use blitz_dom::{BaseDocument, DocumentConfig, NodeId, traversal::TreeTraverser};
 use blitz_html::HtmlDocument;
@@ -309,7 +309,7 @@ pub struct View {
     document_revision: u64,
     navigation_generation: u64,
     document_generation: Rc<Cell<u64>>,
-    script: Option<Box<dyn ScriptHost>>,
+    script: Option<Box<DynScriptHost>>,
     network: Network,
     hubs: crate::workers::Hubs,
     limits: Limits,
