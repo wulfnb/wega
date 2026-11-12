@@ -1213,8 +1213,9 @@ impl Dom {
                 // Parse into a detached same-context element first; reject budgets before
                 // replacing live children, and retain removed nodes held by JS wrappers.
                 let element=doc.get_node(target).unwrap().element_data().ok_or("innerHTML needs an element")?;
-                let name=if element.name.local.as_str()=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.name.clone()};let staging=crate::dom_model::mutate(&mut *doc).create_element(name,[]).into();
-                {let mut mutation=doc.mutate();crate::parser::parse_fragment(&mut mutation,staging,text(2));}
+                let name=if element.name.local.as_str()=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.name.clone()};let staging:NodeId=crate::dom_model::mutate(&mut *doc).create_element(name,[]).into();
+                let remaining=self.limits.dom_nodes.saturating_sub(self.allocated.get()).saturating_add(2);
+                if crate::parser::parse_fragment(&mut *doc,staging.into(),remaining,text(2)).is_err() {let _=crate::dom_model::mutate(&mut *doc).remove_and_drop(staging.into());return Err("DOM node limit exceeded".into());}
                 let parsed=Self::subtree(&doc,staging);
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
                 if text(0)=="innerHTML" {for id in &parsed {if doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e|&*e.name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}

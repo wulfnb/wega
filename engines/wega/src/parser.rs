@@ -8,7 +8,7 @@
 //! borrow the shared document per operation instead of holding one mutator for
 //! the whole parse.
 use crate::dom_model::{DocumentMutation, MutationError, Mutator, NewAttribute, NodeKey, NodeView};
-use blitz_dom::{BaseDocument, NodeId};
+use blitz_dom::BaseDocument;
 use html5ever::{
     QualName,
     tendril::StrTendril,
@@ -42,6 +42,15 @@ fn attribute(attr: html5ever::Attribute) -> NewAttribute {
     }
 }
 impl<D: DocumentMutation> Sink<D> {
+    fn new(document: Rc<RefCell<D>>, limit: usize) -> Self {
+        Self {
+            document,
+            created: Cell::new(0),
+            limit,
+            line: Cell::new(1),
+            overflow: Cell::new(false),
+        }
+    }
     fn mutate<R>(&self, f: impl FnOnce(&mut D::Mutator<'_>) -> R) -> R {
         let mut document = self.document.borrow_mut();
         let mut mutator = document.mutate();
@@ -263,13 +272,7 @@ pub(crate) struct Parser<D: DocumentMutation = BaseDocument> {
 impl<D: DocumentMutation> Parser<D> {
     pub fn new(document: Rc<RefCell<D>>, html: &str, node_limit: usize) -> Self {
         let builder = TreeBuilder::new(
-            Sink {
-                document,
-                created: Cell::new(0),
-                line: Cell::new(1),
-                limit: node_limit,
-                overflow: Cell::new(false),
-            },
+            Sink::new(document, node_limit),
             TreeBuilderOpts {
                 // Scripts run, so <noscript> content is raw text.
                 scripting_enabled: true,
@@ -330,46 +333,99 @@ impl<D: DocumentMutation> Parser<D> {
     }
 }
 
-/// Use Blitz's fragment sink while retaining its otherwise-discarded HTML errors.
-/// Tree construction and fragment-root transfer match blitz-html exactly.
-pub(crate) fn parse_fragment(
-    mutation: &mut blitz_dom::DocumentMutator<'_>,
-    element: NodeId,
+/// The fragment did not fit the node budget; nothing of it was kept.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct FragmentOverflow;
+
+/// Parses `html` as the children of `context` (innerHTML, `insertAdjacentHTML`, contextual
+/// fragments) straight into the document through the same tree sink as full documents, then
+/// moves the result under `context`. The parse stops at `limit` nodes. Scripts do not run and
+/// are not paused for; the caller marks them already started.
+pub(crate) fn parse_fragment<D: DocumentMutation>(
+    document: &mut D,
+    context: NodeKey,
+    limit: usize,
     html: &str,
-) {
-    use html5ever::{ParseOpts, tendril::TendrilSink};
-    let url = mutation.doc.url().to_string();
-    let sink = blitz_html::DocumentHtmlParser::new(mutation);
-    let options = ParseOpts {
-        tree_builder: TreeBuilderOpts {
+) -> Result<(), FragmentOverflow> {
+    let url = document.base_url().clone();
+    let root = document.root();
+    let document = Rc::new(RefCell::new(&mut *document));
+    let input = Rc::new(BufferQueue::default());
+    input.push_back(StrTendril::from_slice(html));
+    let builder = TreeBuilder::new_for_fragment(
+        Sink::new(document.clone(), limit),
+        context,
+        None,
+        TreeBuilderOpts {
             exact_errors: false,
             scripting_enabled: false,
             iframe_srcdoc: false,
             drop_doctype: true,
             quirks_mode: QuirksMode::NoQuirks,
         },
-        ..Default::default()
+    );
+    let state = builder.tokenizer_state_for_context_elem(false);
+    let tokenizer = Tokenizer::new(
+        BudgetedBuilder {
+            builder,
+            input: input.clone(),
+        },
+        TokenizerOpts {
+            initial_state: Some(state),
+            ..Default::default()
+        },
+    );
+    let overflowed =
+        |tokenizer: &Tokenizer<BudgetedBuilder<&mut D>>| tokenizer.sink.builder.sink.overflowed();
+    loop {
+        let result = tokenizer.feed(&input);
+        if overflowed(&tokenizer) {
+            break;
+        }
+        // A script end tag only pauses the tokenizer; fragments do not run scripts.
+        if matches!(result, html5ever::TokenizerResult::Done) {
+            break;
+        }
+    }
+    if !overflowed(&tokenizer) {
+        tokenizer.end();
+    }
+    let overflow = overflowed(&tokenizer);
+    drop(tokenizer);
+    let mut document = document.borrow_mut();
+    // The tree builder parsed into a temporary `<html>` root appended to the document node.
+    let fragment = document.node(root).and_then(|node| node.children().last());
+    let Some(fragment) = fragment else {
+        return if overflow {
+            Err(FragmentOverflow)
+        } else {
+            Ok(())
+        };
     };
-    let mut parser =
-        html5ever::driver::parse_fragment_for_element(sink, options, element, false, None);
-    parser.process(StrTendril::from_slice(html));
-    parser.tokenizer.end();
-    for message in parser.tokenizer.sink.sink.errors.borrow().iter() {
-        let mut event = crate::diagnostics::Diagnostic::error(
-            crate::diagnostics::Category::Html,
-            message.to_string(),
-            Some(url.clone()),
-        );
-        event.severity = "warning".into();
-        event.emit();
+    let children: Vec<NodeKey> = document
+        .node(fragment)
+        .map(|node| node.children().collect())
+        .unwrap_or_default();
+    let mut mutator = document.mutate();
+    if overflow {
+        // Nothing is kept: the temporary root and whatever hangs below it are dropped here.
+        let _ = mutator.remove_and_drop(fragment);
+        drop(mutator);
+        report(&url, "HTML fragment exceeded the node budget");
+        return Err(FragmentOverflow);
     }
-    drop(parser);
-    let document = mutation.doc.root_node().id;
-    if let Some(fragment) = mutation.last_child_id(document) {
-        let children = mutation.child_ids(fragment);
-        mutation.append_children(element, &children);
-        mutation.remove_and_drop_node(fragment);
-    }
+    let _ = mutator.append_children(context, &children);
+    let _ = mutator.remove_and_drop(fragment);
+    Ok(())
+}
+fn report(url: &url::Url, message: &str) {
+    let mut event = crate::diagnostics::Diagnostic::error(
+        crate::diagnostics::Category::Html,
+        message.to_owned(),
+        Some(url.to_string()),
+    );
+    event.severity = "warning".into();
+    event.emit();
 }
 
 #[cfg(test)]
@@ -434,6 +490,228 @@ mod tests {
             .map(|id| doc.get_node(*id).unwrap().is_text_node())
             .collect();
         assert_eq!(kinds, vec![true, false, true, false, true]);
+    }
+
+    // ---- fragment parsing ----------------------------------------------------------------
+
+    /// The previous implementation (blitz-html's fragment sink), kept as the oracle.
+    fn blitz_fragment(document: &mut BaseDocument, element: blitz_dom::NodeId, html: &str) {
+        use html5ever::{ParseOpts, tendril::TendrilSink};
+        let mut mutation = document.mutate();
+        let sink = blitz_html::DocumentHtmlParser::new(&mut mutation);
+        let options = ParseOpts {
+            tree_builder: TreeBuilderOpts {
+                exact_errors: false,
+                scripting_enabled: false,
+                iframe_srcdoc: false,
+                drop_doctype: true,
+                quirks_mode: QuirksMode::NoQuirks,
+            },
+            ..Default::default()
+        };
+        let mut parser =
+            html5ever::driver::parse_fragment_for_element(sink, options, element, false, None);
+        parser.process(StrTendril::from_slice(html));
+        parser.tokenizer.end();
+        drop(parser);
+        let root = mutation.doc.root_node().id;
+        if let Some(fragment) = mutation.last_child_id(root) {
+            let children = mutation.child_ids(fragment);
+            mutation.append_children(element, &children);
+            mutation.remove_and_drop_node(fragment);
+        }
+    }
+    fn new_document() -> BaseDocument {
+        BaseDocument::new(DocumentConfig {
+            base_url: Some("http://example.test/".into()),
+            ..Default::default()
+        })
+    }
+    /// Adds a detached-from-nothing context element under the document node.
+    fn add_context(
+        document: &mut BaseDocument,
+        namespace: html5ever::Namespace,
+        name: &str,
+    ) -> NodeKey {
+        let root = DocumentView::root(document);
+        let mut mutator = crate::dom_model::mutate(document);
+        let context = mutator.create_element(
+            QualName::new(None, namespace, html5ever::LocalName::from(name)),
+            [],
+        );
+        mutator.append_children(root, &[context]).unwrap();
+        mutator.finish();
+        context
+    }
+    fn context_document(namespace: html5ever::Namespace, name: &str) -> (BaseDocument, NodeKey) {
+        let mut document = new_document();
+        let context = add_context(&mut document, namespace, name);
+        (document, context)
+    }
+    fn inner(document: &BaseDocument, context: NodeKey) -> String {
+        document
+            .get_node(blitz_dom::NodeId::from(context))
+            .unwrap()
+            .outer_html()
+    }
+
+    const FRAGMENTS: &[&str] = &[
+        "plain <b>bold</b> text",
+        "<p>one<p>two<div>three</div>",
+        "<tr><td>cell<td>cell2<tr><td>row2",
+        "<td>cell</td><th>head</th>",
+        "<option>a<option>b<optgroup label=g><option>c",
+        "<li>a<li>b<ul><li>n</ul>",
+        "<template id=t><tr><td>in template</td></tr></template>after",
+        "<template><template><b>nested</b></template></template>",
+        "<svg viewBox='0 0 1 1'><circle r=1 /><foreignObject><p>html <b>in</b> svg</p></foreignObject><desc><i>d</i></desc></svg>",
+        "<math><mi>x</mi><annotation-xml encoding='text/html'><p>h</p></annotation-xml></math>",
+        "<b><i>misnested</b></i> text <a href=1>1<a href=2>2</a></a>",
+        "<table><tr><td>a</td></tr>foster<b>x</b></table>",
+        "<form><input name=a><form><input name=b></form></form>",
+        "<script>if (a < b && c) {}</script><script src=x.js></script><noscript><p>ns</p></noscript>",
+        "<style>p > a { color: red }</style><textarea><b>raw</b></textarea><title>t & u</title>",
+        "<!-- comment --><?pi data?><!doctype html>text &amp; &lt; &#x41; &nbsp;",
+        "<html a=1><body b=2><head><meta charset=x></head>x",
+        "<frameset><frame></frameset><plaintext><b>not a tag",
+        "<img src=x alt='a'><br><hr><input type=checkbox checked>",
+        "<ruby>a<rt>b<rp>(</rp></ruby><details><summary>s</summary>d</details>",
+        "",
+        "   ",
+        "&amp;",
+    ];
+    const CONTEXTS: &[(&str, &str)] = &[
+        ("http://www.w3.org/1999/xhtml", "div"),
+        ("http://www.w3.org/1999/xhtml", "body"),
+        ("http://www.w3.org/1999/xhtml", "table"),
+        ("http://www.w3.org/1999/xhtml", "tbody"),
+        ("http://www.w3.org/1999/xhtml", "tr"),
+        ("http://www.w3.org/1999/xhtml", "td"),
+        ("http://www.w3.org/1999/xhtml", "select"),
+        ("http://www.w3.org/1999/xhtml", "colgroup"),
+        ("http://www.w3.org/1999/xhtml", "textarea"),
+        ("http://www.w3.org/1999/xhtml", "script"),
+        ("http://www.w3.org/1999/xhtml", "style"),
+        ("http://www.w3.org/1999/xhtml", "title"),
+        ("http://www.w3.org/1999/xhtml", "template"),
+        ("http://www.w3.org/1999/xhtml", "p"),
+        ("http://www.w3.org/2000/svg", "svg"),
+        ("http://www.w3.org/2000/svg", "foreignObject"),
+        ("http://www.w3.org/1998/Math/MathML", "math"),
+    ];
+
+    #[test]
+    fn generic_fragment_parsing_matches_the_blitz_html_fragment_sink() {
+        let (mut expected, mut actual) = (new_document(), new_document());
+        for (namespace, name) in CONTEXTS {
+            for html in FRAGMENTS {
+                let expected_context =
+                    add_context(&mut expected, html5ever::Namespace::from(*namespace), name);
+                blitz_fragment(&mut expected, expected_context.into(), html);
+                let context =
+                    add_context(&mut actual, html5ever::Namespace::from(*namespace), name);
+                parse_fragment(&mut actual, context, usize::MAX, html).unwrap();
+                assert_eq!(
+                    inner(&actual, context),
+                    inner(&expected, expected_context),
+                    "fragment {html:?} in <{name}>"
+                );
+                // The temporary parser root is gone: only context elements hang below the
+                // document node, and both implementations left the same number of them.
+                assert_eq!(
+                    actual.root_node().children.len(),
+                    expected.root_node().children.len(),
+                    "{html:?} in <{name}>"
+                );
+            }
+        }
+        assert_tree_is_consistent(&actual);
+    }
+
+    #[test]
+    fn fragment_parsing_moves_nodes_in_place_without_copying_them() {
+        let (mut document, context) = context_document(html5ever::ns!(html), "div");
+        parse_fragment(
+            &mut document,
+            context,
+            usize::MAX,
+            "<p id=a>x</p><p id=b>y</p>",
+        )
+        .unwrap();
+        let a = DocumentView::element_by_id(&document, "a").unwrap();
+        let before: Vec<NodeKey> = document.node(context).unwrap().children().collect();
+        assert_eq!(before.len(), 2);
+        assert_eq!(before[0], a, "the parsed node is the node in the tree");
+        assert_eq!(document.node(a).unwrap().parent(), Some(context));
+        // Parsing again replaces nothing by itself: the caller decides (it appends here).
+        parse_fragment(&mut document, context, usize::MAX, "<i>z</i>").unwrap();
+        assert_eq!(document.node(context).unwrap().children().len(), 3);
+        // Nodes parsed earlier keep their identity.
+        assert_eq!(DocumentView::element_by_id(&document, "a"), Some(a));
+    }
+
+    #[test]
+    fn fragment_scripts_stay_inert_and_do_not_pause() {
+        let (mut document, context) = context_document(html5ever::ns!(html), "div");
+        parse_fragment(
+            &mut document,
+            context,
+            usize::MAX,
+            "<script>1</script>a<script>2</script>b<p>c</p>",
+        )
+        .unwrap();
+        let kinds: Vec<_> = document
+            .node(context)
+            .unwrap()
+            .children()
+            .map(|k| {
+                document
+                    .node(k)
+                    .unwrap()
+                    .qual_name()
+                    .map(|n| n.local.to_string())
+            })
+            .collect();
+        assert_eq!(
+            kinds.len(),
+            5,
+            "both scripts and all following input parsed: {kinds:?}"
+        );
+    }
+
+    #[test]
+    fn fragment_parsing_respects_the_node_budget_and_leaves_the_document_valid() {
+        let html = "<p>x</p>".repeat(10_000);
+        for limit in [0, 1, 10, 100] {
+            let (mut document, context) = context_document(html5ever::ns!(html), "div");
+            let before = assert_tree_is_consistent(&document);
+            assert_eq!(
+                parse_fragment(&mut document, context, limit, &html),
+                Err(FragmentOverflow)
+            );
+            // The temporary root and everything under it are gone; the context is untouched.
+            assert_eq!(
+                document.node(context).unwrap().children().len(),
+                0,
+                "limit {limit}"
+            );
+            assert!(
+                assert_tree_is_consistent(&document) <= before + OVERSHOOT,
+                "limit {limit}"
+            );
+        }
+        // Within the budget it succeeds (the temporary root counts too).
+        let (mut document, context) = context_document(html5ever::ns!(html), "div");
+        assert!(parse_fragment(&mut document, context, 100, "<p>a</p><p>b</p>").is_ok());
+        // Every construction case survives a spread of budgets in a table context.
+        let mut document = new_document();
+        for fragment in FRAGMENTS {
+            for limit in [0, 1, 2, 3, 5, 8, 13, 21, usize::MAX] {
+                let context = add_context(&mut document, html5ever::ns!(html), "table");
+                let _ = parse_fragment(&mut document, context, limit, fragment);
+            }
+            assert_tree_is_consistent(&document);
+        }
     }
 
     // ---- node budget -------------------------------------------------------------------

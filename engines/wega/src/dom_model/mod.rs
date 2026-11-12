@@ -92,6 +92,27 @@ pub trait DocumentView {
     fn base_url(&self) -> &Url;
 }
 
+/// A borrowed document is a document: lets a parser build into a `&mut` the caller already
+/// holds, without wrapping it in a second owner.
+impl<D: DocumentView> DocumentView for &mut D {
+    type Node<'a>
+        = D::Node<'a>
+    where
+        Self: 'a;
+    fn node(&self, key: NodeKey) -> Option<Self::Node<'_>> {
+        (**self).node(key)
+    }
+    fn element_by_id(&self, id: &str) -> Option<NodeKey> {
+        (**self).element_by_id(id)
+    }
+    fn root(&self) -> NodeKey {
+        (**self).root()
+    }
+    fn base_url(&self) -> &Url {
+        (**self).base_url()
+    }
+}
+
 /// The root of the tree `key` belongs to (the topmost ancestor; `key` itself if it has no
 /// parent or does not resolve).
 pub fn tree_root<D: DocumentView>(doc: &D, key: NodeKey) -> NodeKey {
@@ -237,6 +258,19 @@ pub trait DocumentMutation: DocumentView {
     /// this when the element is closed, because its text arrives after the element is
     /// inserted. Applies immediately; not part of a mutation scope.
     fn refresh_style_element(&mut self, key: NodeKey);
+}
+
+impl<D: DocumentMutation> DocumentMutation for &mut D {
+    type Mutator<'a>
+        = D::Mutator<'a>
+    where
+        Self: 'a;
+    fn mutate(&mut self) -> Self::Mutator<'_> {
+        (**self).mutate()
+    }
+    fn refresh_style_element(&mut self, key: NodeKey) {
+        (**self).refresh_style_element(key);
+    }
 }
 
 /// One mutation scope. **Semantics (fixed by tests):**
