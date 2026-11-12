@@ -266,3 +266,34 @@ No boundary was needed. Worker Canvas/WebGL operations are reached through `Nati
 ## 26. Next step
 
 The JavaScript runtime is isolated. The next architectural question is the DOM boundary: measure the actual Blitz call sites in `dom.rs`/`view.rs` and decide, from data, whether a Wega-owned interface exists that Blitz can satisfy without wrappers; do not begin it without that measurement.
+
+---
+
+# Round 4 — DOM ownership and the Blitz boundary
+
+Full analysis: [`dom-migration-report.md`](./dom-migration-report.md).
+
+## 27. Summary
+
+- **Measured:** 553 Blitz call sites over 112 methods; `dom.rs` 315, `view.rs` 149, `parser.rs` 46, `document_host.rs` 24; 59% are read paths (lookup, kind/name, attributes, tree links); the V8 adapter, workers, Canvas/WebGL and `components.rs` are Blitz-free.
+- **Ownership:** one document (`Rc<RefCell<BaseDocument>>`, view-owned); node identity is Blitz's versioned `NodeId(u64)`, which JS already holds as a decimal string; Wega owns identity, retention, budgets and shadow/custom-element semantics; Blitz owns storage, style, layout, paint, hit testing and native events.
+- **Interface:** `dom_model` (inside `wega-engine`): `NodeKey(u64)`, `NodeKind`, `NodeView`/`DocumentView` (borrowed `Copy` handles through an associated type, static dispatch, read-only) and shared `attribute`/`subtree`/`node_info`/`tree_root`. Only `dom_model/blitz.rs` names Blitz; a test enforces that. Mutation, events and layout are deliberately not in the contract.
+- **Prototype validated on real consumers** (`bindingCheck`, `getById`, `info`, ancestor walks, `Dom::attribute`, `Dom::subtree`): identical results to the old code, no cycle, no copied state, no measurable overhead (attribute lookup is faster: 2.8 ms vs 3.2 ms per 24k lookups).
+- **Parser:** `html5ever::TreeSink` is already the sink interface; `parser.rs` and the DOM ops share ~13 mutator operations. `wega-html` is not extracted; a mutation contract comes first.
+- **Crate graph:** unchanged (10 members, 18 edges, 0 architecture violations); no manifest or lockfile changed.
+
+## 28. Commits (round 4)
+
+| Commit | Change |
+|---|---|
+| `e8fc4ff` | `dom_model` read-only document view, consumers in `dom.rs`, parity/identity/lifecycle tests, overhead test, extended hot-path benchmark |
+| `f46e834` | worker cancellation and nested-async tests (cover the Round 3 tokio-context change) |
+| (this commit) | DOM migration report, post-DOM architecture report, this section |
+
+## 29. Validation and results
+
+Full suite **371 passed, 0 failed, 4 ignored** (261 s on a quiet machine, 1.54 GB max RSS); broker mode, required-worker test, root checks, clippy, fmt and the architecture checker pass. Hot-path benchmarks before/after are within noise (§4.1 of the report). Windows/Linux, MSVC Skia and native-sandbox checks were not run.
+
+## 30. Remaining Blitz coupling and next step
+
+Remaining: ≈250 read sites on Blitz node fields, ≈70 mutation sites, events, layout and paint taking `BaseDocument`, `blitz_html` for XML/fragments. Recommended next step: the mutation contract (GAT mutator with commit-on-drop) validated on `parser.rs` and the DOM creation/removal ops, then a generic parser — see §10 of the DOM report.
