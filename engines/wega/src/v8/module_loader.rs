@@ -1,5 +1,5 @@
 //! Module graphs use the same bounded network queue and live policy as page resources.
-use crate::script_net::ScriptNetwork;
+use crate::v8::net::ScriptNetwork;
 use deno_core::error::ModuleLoaderError;
 use deno_core::{
     ModuleLoadOptions, ModuleLoadReferrer, ModuleLoadResponse, ModuleLoader, ModuleSource,

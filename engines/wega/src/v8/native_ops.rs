@@ -8,8 +8,9 @@ fn generated_hooks() -> &'static std::collections::HashSet<String> {
     static HOOKS: std::sync::OnceLock<std::collections::HashSet<String>> =
         std::sync::OnceLock::new();
     HOOKS.get_or_init(|| {
-        let manifest: Vec<Value> = serde_json::from_str(include_str!("dom/generated/hooks.json"))
-            .expect("checked generated hook registry");
+        let manifest: Vec<Value> =
+            serde_json::from_str(include_str!("../dom/generated/hooks.json"))
+                .expect("checked generated hook registry");
         let mut hooks = std::collections::HashSet::new();
         for hook in manifest {
             assert!(

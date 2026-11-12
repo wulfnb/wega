@@ -610,7 +610,7 @@ impl ServiceWorkerHub {
         scope: &str,
         module: bool,
     ) -> Result<u64, String> {
-        if !crate::security_context::trustworthy(document)
+        if !wega_security::secure_context::trustworthy(document)
             || !matches!(document.scheme(), "http" | "https")
         {
             return Err("SecurityError: Service workers require a secure context".into());

@@ -1,11 +1,11 @@
 //! Compile trusted bootstrap factories into a V8 snapshot without profile/DOM data.
 use deno_core::{JsRuntimeForSnapshot, RuntimeOptions, v8};
 use std::path::PathBuf;
-#[path = "src/extension_adapter.rs"]
+#[path = "src/v8/extension_adapter.rs"]
 mod extension_adapter;
-#[path = "src/native_ops.rs"]
+#[path = "src/v8/native_ops.rs"]
 mod native_ops;
-#[path = "src/web_extensions.rs"]
+#[path = "src/v8/web_extensions.rs"]
 mod web_extensions;
 
 #[path = "../../tools/webidl/ast.rs"]
@@ -138,9 +138,9 @@ fn main() {
     std::fs::write(output, runtime.snapshot()).unwrap();
     for file in [
         "build.rs",
-        "src/native_ops.rs",
-        "src/web_extensions.rs",
-        "src/extension_adapter.rs",
+        "src/v8/native_ops.rs",
+        "src/v8/web_extensions.rs",
+        "src/v8/extension_adapter.rs",
     ] {
         println!("cargo:rerun-if-changed={file}");
     }

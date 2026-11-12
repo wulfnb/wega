@@ -1,6 +1,6 @@
 //! Async byte transport over the existing bounded host-service dispatcher.
 //! Deno owns WebSocket framing; the host owns dialing, TLS, cookies and grants.
-use crate::script_net::ScriptNetwork;
+use crate::v8::net::ScriptNetwork;
 use std::{
     io,
     pin::Pin,

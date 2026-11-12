@@ -121,7 +121,7 @@ pub(crate) fn permissions(policy: Arc<RwLock<crate::NetworkPolicy>>) -> Permissi
 }
 pub(crate) fn extensions(
     document: &url::Url,
-    network: &dyn crate::script_net::ScriptNetwork,
+    network: &dyn crate::v8::net::ScriptNetwork,
 ) -> Vec<deno_core::Extension> {
     use sha2::{Digest, Sha256};
     // reqwest and Deno enable different Rustls providers; select one explicitly.
@@ -140,10 +140,10 @@ pub(crate) fn extensions(
     } else {
         None
     };
-    crate::web_extensions::extensions(url, directory)
+    crate::v8::web_extensions::extensions(url, directory)
 }
 
-pub(crate) use crate::extension_adapter::adapt_extension;
+pub(crate) use crate::v8::extension_adapter::adapt_extension;
 
 /// Storage operations stay in Rust; Deno's Web Storage bindings retain their
 /// conversion/proxy semantics while the browser owns the SQLite connection.

@@ -1,4 +1,13 @@
 //! V8 isolates are confined to the owning DOM thread; only termination crosses threads.
+pub(crate) mod broker_socket;
+pub(crate) mod extension_adapter;
+pub(crate) mod module_loader;
+pub(crate) mod native_ops;
+pub(crate) mod net;
+pub(crate) mod security_context;
+pub(crate) mod web;
+pub(crate) mod web_extensions;
+
 use crate::{
     Limits,
     dom::Dom,
@@ -16,115 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-impl crate::native_ops::NativeHost for Dom {
-    fn fetch(
-        &self,
-        mut request: wega_network::Request,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<wega_network::Response, String>>>>
-    {
-        let blocked = self.connect_check(&request.url);
-        if !blocked.is_empty() {
-            return Box::pin(std::future::ready(Err(blocked)));
-        }
-        let document = self.document.borrow().url().clone();
-        let document_url = document.clone();
-        request.origin = document.origin().ascii_serialization();
-        request.initiator = Some(document);
-        request.top_level = false;
-        request.destination = wega_network::ResourceDestination::Fetch;
-        request.redirect = "manual".into();
-        request.limit = self.limits.resource_bytes.min(wega_network::MAX_BODY);
-        self.network.request(request, Some(document_url))
-    }
-
-    fn call(&self, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
-        Dom::call(self, args)
-    }
-    fn cookie_header(&self, address: &str, include: bool) -> String {
-        let Ok(url) = url::Url::parse(address) else {
-            return String::new();
-        };
-        if !include {
-            return String::new();
-        }
-        let document = self.document.borrow().url().clone();
-        let context = self.network.cookies.context(&url, Some(&document), false);
-        self.network.cookies.get(&url, false, context)
-    }
-    fn cookie_response(&self, address: &str, include: bool, value: &str) {
-        let Ok(url) = url::Url::parse(address) else {
-            return;
-        };
-        if !include {
-            return;
-        }
-        let document = self.document.borrow().url().clone();
-        let context = self.network.cookies.context(&url, Some(&document), false);
-        self.network.cookies.set(&url, value, false, context);
-    }
-    fn document_origin(&self) -> String {
-        self.document.borrow().url().origin().ascii_serialization()
-    }
-    fn ws_headers(&self, address: &str) -> Vec<(String, String)> {
-        let document = self.document.borrow().url().clone();
-        let mut headers = vec![("origin".to_owned(), document.origin().ascii_serialization())];
-        if let Ok(url) = url::Url::parse(address) {
-            let context = self.network.cookies.context(&url, Some(&document), false);
-            let cookie = self.network.cookies.get(&url, false, context);
-            if !cookie.is_empty() {
-                headers.push(("cookie".to_owned(), cookie));
-            }
-        }
-        headers
-    }
-    fn referrer(&self, address: &str) -> String {
-        let Ok(url) = url::Url::parse(address) else {
-            return String::new();
-        };
-        let document = self.document.borrow().url().clone();
-        crate::network::referrer(&document, &url, None).unwrap_or_default()
-    }
-    fn connect_check(&self, address: &str) -> String {
-        let Ok(url) = url::Url::parse(address) else {
-            return "Invalid URL".into();
-        };
-        let mut policy_url = url.clone();
-        if url.scheme() == "ws" {
-            let _ = policy_url.set_scheme("http");
-        }
-        if url.scheme() == "wss" {
-            let _ = policy_url.set_scheme("https");
-        }
-        if matches!(url.scheme(), "http" | "https" | "ws" | "wss")
-            && !self
-                .network
-                .policy
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .permits(&policy_url)
-        {
-            // A controlling service worker may still answer from its caches.
-            let document = self.document.borrow().url().clone();
-            if !self.hubs.service.controls(&self.network, &document) {
-                return "Network request blocked by browsing policy".into();
-            }
-        }
-        let document = self.document.borrow().url().clone();
-        if crate::network::mixed_content(Some(&document), &url, false) {
-            return format!("Mixed content blocked: {url}");
-        }
-        if !self
-            .csp
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .allows_url("connect-src", &url, &document, None)
-        {
-            return format!("Refused to connect to {url}: Content Security Policy connect-src");
-        }
-        String::new()
-    }
-}
-use crate::native_ops::wega_dom;
+use native_ops::wega_dom;
 /// Trusted bootstrap factories shared by document and worker realms.
 pub(crate) static STARTUP_SNAPSHOT: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/wega-startup.bin"));
@@ -146,12 +47,38 @@ fn heap_bytes(runtime: &mut JsRuntime) -> usize {
         .used_heap_size()
         .saturating_add(stats.external_memory())
 }
+/// Makes an isolate the thread's current isolate for the guard's lifetime.
+///
+/// This is the engine's only `unsafe` code. Entering is needed because garbage
+/// collection, memory-pressure notifications and the watchdog-guarded script steps
+/// can run native/weak callbacks that allocate V8 handles, which requires a current
+/// isolate; `deno_core::scope!` does not enter the isolate itself.
+///
+/// Safety invariants (all hold for every use in this module):
+///
+/// 1. **Balanced and thread-local.** `enter` happens in `new` and the matching `exit`
+///    in `drop` on the same thread. The raw pointer makes the guard `!Send`, so it
+///    cannot be moved to another thread.
+/// 2. **Valid pointer.** The pointer comes from the isolate of a live `JsRuntime`
+///    owned by this `V8Host` (or borrowed as `&mut JsRuntime`). Guards are stack
+///    locals created and dropped inside one method; no path drops the runtime while
+///    a guard exists. Moving the `JsRuntime` value (into the module-loading future in
+///    `run_module`) does not move or free the V8-owned isolate.
+/// 3. **LIFO nesting.** Guards may nest (`bounded` -> `collect_garbage`); because they
+///    are stack-scoped they are dropped in reverse creation order, which V8's
+///    entered-isolate stack requires.
+/// 4. **No aliasing across the call.** `new` takes `&mut Isolate` only to enter; the
+///    guard stores the pointer without borrowing, and the runtime is only used
+///    through its own `&mut` paths while the guard is alive (never concurrently:
+///    the host is single-threaded and the watchdog uses a separate thread-safe
+///    `IsolateHandle`).
 #[allow(unsafe_code)]
 struct RawIsolateGuard(*mut deno_core::v8::Isolate);
 
 #[allow(unsafe_code)]
 impl RawIsolateGuard {
     fn new(isolate: &mut deno_core::v8::Isolate) -> Self {
+        // SAFETY: invariants 1-4 above; the matching `exit` is in `Drop`.
         unsafe {
             isolate.enter();
         }
@@ -162,6 +89,7 @@ impl RawIsolateGuard {
 #[allow(unsafe_code)]
 impl Drop for RawIsolateGuard {
     fn drop(&mut self) {
+        // SAFETY: the isolate outlives the guard (invariant 2) and this thread entered it (invariant 1).
         unsafe {
             (*self.0).exit();
         }
@@ -307,9 +235,8 @@ impl V8Host {
         // Do not enable lite mode per isolate: V8 flags are process-wide. Workers receive
         // their per-view option before initializing the platform.
         let document_url = dom.document.borrow().url().clone();
-        let script_network: Arc<dyn crate::script_net::ScriptNetwork> =
-            Arc::new(dom.network.clone());
-        let mut extensions = crate::web::extensions(&document_url, &*script_network);
+        let script_network: Arc<dyn crate::v8::net::ScriptNetwork> = Arc::new(dom.network.clone());
+        let mut extensions = crate::v8::web::extensions(&document_url, &*script_network);
         extensions.push(wega_dom::init());
         for extension in &extensions {
             for source in extension
@@ -329,12 +256,12 @@ impl V8Host {
         }
         let mut runtime = JsRuntime::try_new(RuntimeOptions {
             startup_snapshot: Some(STARTUP_SNAPSHOT),
-            module_loader: Some(Rc::new(crate::module_loader::Loader::new(
+            module_loader: Some(Rc::new(crate::v8::module_loader::Loader::new(
                 script_network.clone(),
                 &document_url,
                 limits.resource_bytes,
             ))),
-            extension_transpiler: Some(Rc::new(crate::web::adapt_extension)),
+            extension_transpiler: Some(Rc::new(crate::v8::web::adapt_extension)),
             // Per-document ownership: the store is never shared across origins.
             shared_array_buffer_store: Some(Default::default()),
             create_params: Some(
@@ -346,12 +273,12 @@ impl V8Host {
         })
         .map_err(|e| e.to_string())?;
         // Deno's trusted bootstrap needs its own heap before page code starts.
-        let host: Rc<dyn crate::native_ops::NativeHost> = dom.clone();
+        let host: Rc<dyn crate::v8::native_ops::NativeHost> = dom.clone();
         runtime.op_state().borrow_mut().put(host);
         runtime
             .op_state()
             .borrow_mut()
-            .put(crate::web::permissions(dom.network.policy.clone()));
+            .put(crate::v8::web::permissions(dom.network.policy.clone()));
         if let Some(remote) = dom
             .network
             .remote
@@ -360,13 +287,13 @@ impl V8Host {
         {
             deno_websocket::set_broker(
                 &mut runtime.op_state().borrow_mut(),
-                Arc::new(crate::broker_socket::Connector {
+                Arc::new(crate::v8::broker_socket::Connector {
                     network: script_network.clone(),
                 }),
             );
             deno_webstorage::set_backend(
                 &mut runtime.op_state().borrow_mut(),
-                Arc::new(crate::web::BrokerStorage {
+                Arc::new(crate::v8::web::BrokerStorage {
                     remote,
                     origin: document_url.origin().ascii_serialization(),
                 }),
@@ -376,11 +303,11 @@ impl V8Host {
         runtime
             .execute_script(
                 "ext:wega_dom/bootstrap.js",
-                include_str!("dom/bootstrap.js"),
+                include_str!("../dom/bootstrap.js"),
             )
             .map_err(|error| error.to_string())?;
         runtime.op_state().borrow_mut().put(String::new());
-        crate::security_context::configure(&mut runtime, &document_url)?;
+        crate::v8::security_context::configure(&mut runtime, &document_url)?;
         let bootstrap_heap = heap_bytes(&mut runtime);
         let oom = Arc::new(AtomicBool::new(false));
         let flag = oom.clone();

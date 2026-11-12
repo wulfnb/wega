@@ -632,7 +632,7 @@ impl Network {
     }
 }
 
-impl crate::script_net::ScriptNetwork for Network {
+impl crate::v8::net::ScriptNetwork for Network {
     fn remote(&self) -> Option<wega_network::Remote> {
         self.remote.clone()
     }
@@ -648,7 +648,7 @@ impl crate::script_net::ScriptNetwork for Network {
         url: Url,
         limit: usize,
         local: Option<std::path::PathBuf>,
-    ) -> crate::script_net::BoxFuture<Result<(Url, Vec<u8>), String>> {
+    ) -> crate::v8::net::BoxFuture<Result<(Url, Vec<u8>), String>> {
         let network = self.clone();
         let context = FetchContext::subresource(document, Destination::Module);
         let (sender, receiver) = tokio::sync::oneshot::channel();

@@ -213,17 +213,17 @@ fn run(
         webgl: RefCell::new(crate::webgl::WebGLEngine::new(spec.limits.max_pixels * 8)),
         start: Instant::now(),
     });
-    let script_network: Arc<dyn crate::script_net::ScriptNetwork> = Arc::new(spec.network.clone());
-    let mut extensions = crate::web_extensions::extensions(spec.script_url.clone(), None);
-    extensions.push(crate::native_ops::wega_dom::init());
+    let script_network: Arc<dyn crate::v8::net::ScriptNetwork> = Arc::new(spec.network.clone());
+    let mut extensions = crate::v8::web_extensions::extensions(spec.script_url.clone(), None);
+    extensions.push(crate::v8::native_ops::wega_dom::init());
     let mut runtime = JsRuntime::try_new(RuntimeOptions {
         startup_snapshot: Some(crate::v8::STARTUP_SNAPSHOT),
-        module_loader: Some(Rc::new(crate::module_loader::Loader::new(
+        module_loader: Some(Rc::new(crate::v8::module_loader::Loader::new(
             script_network.clone(),
             &spec.script_url,
             spec.limits.resource_bytes,
         ))),
-        extension_transpiler: Some(Rc::new(crate::web::adapt_extension)),
+        extension_transpiler: Some(Rc::new(crate::v8::web::adapt_extension)),
         shared_array_buffer_store: Some(Default::default()),
         create_params: Some(deno_core::v8::CreateParams::default().heap_limits(
             0,
@@ -236,9 +236,9 @@ fn run(
     {
         let state = runtime.op_state();
         let mut state = state.borrow_mut();
-        let native: Rc<dyn crate::native_ops::NativeHost> = host.clone();
+        let native: Rc<dyn crate::v8::native_ops::NativeHost> = host.clone();
         state.put(native);
-        state.put(crate::web::permissions(spec.network.policy.clone()));
+        state.put(crate::v8::web::permissions(spec.network.policy.clone()));
         state.put(String::new());
         if spec
             .network
@@ -248,7 +248,7 @@ fn run(
         {
             deno_websocket::set_broker(
                 &mut state,
-                Arc::new(crate::broker_socket::Connector {
+                Arc::new(crate::v8::broker_socket::Connector {
                     network: script_network.clone(),
                 }),
             );
@@ -269,7 +269,7 @@ fn run(
         .execute_script("ext:wega_dom/worker-bootstrap.js", BOOTSTRAP)
         .map_err(|error| format!("Worker bootstrap failed: {error}"))?;
     host.sealed.set(true);
-    crate::security_context::configure(&mut runtime, &spec.script_url)?;
+    crate::v8::security_context::configure(&mut runtime, &spec.script_url)?;
 
     let dispatch = |runtime: &mut JsRuntime, name: &str, payload: &str| {
         let source = format!(
@@ -553,7 +553,7 @@ impl WorkerHost {
         Ok(json!({ "url": script.url.as_str(), "source": script.source }))
     }
 }
-impl crate::native_ops::NativeHost for WorkerHost {
+impl crate::v8::native_ops::NativeHost for WorkerHost {
     fn fetch(
         &self,
         mut request: wega_network::Request,
