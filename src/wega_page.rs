@@ -187,6 +187,8 @@ impl Snapshot {
         self.last_frame = None;
         self.dialog = None;
         self.cursor = None;
+        self.accessibility = None;
+        self.accessibility_enabled = false;
         self.compatibility = None;
         self.fallback_reported = false;
         for request in cancelled {
@@ -1534,6 +1536,9 @@ impl Page {
     /// `buttons` is (DOM `button`, DOM `buttons`).
     pub fn enable_accessibility(&self, enable: bool) {
         if let Ok(mut state) = self.state.lock() {
+            if state.accessibility_enabled == enable {
+                return;
+            }
             state.accessibility_enabled = enable;
         }
         let _ = self.send(Request::EnableAccessibility(enable));

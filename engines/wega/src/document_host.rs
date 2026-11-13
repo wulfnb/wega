@@ -157,14 +157,14 @@ impl View {
             match parser.step() {
                 Step::Script(node) => {
                     self.apply_meta();
-                    self.prepare_script(node, true, false);
+                    self.prepare_script(node.node_id(), true, false);
                 }
                 Step::Finished => {
                     self.apply_meta();
                     self.parsed();
                 }
                 Step::Overflow => {
-                    if self.showing_error {
+                    if self.showing_error || self.building_error {
                         // Even the error page exceeds the budget; show what parsed.
                         self.host.parser = None;
                         break;
@@ -180,7 +180,7 @@ impl View {
     /// After parsing: enforce the node budget and read meta refresh.
     pub(super) fn parsed(&mut self) {
         let count = self.node_count();
-        if count > self.limits.dom_nodes {
+        if count > self.limits.dom_nodes && !(self.showing_error || self.building_error) {
             self.load_error("DOM node limit exceeded".into());
             return;
         }
@@ -516,6 +516,9 @@ impl View {
         for delta in requests.traverse {
             self.events.push_back(PageEvent::Traverse(delta));
         }
+        // Activation can move focus; sampling it on every drain would tax every script call.
+        let focus_before =
+            (!requests.activate.is_empty()).then(|| self.document.borrow().focused());
         for node in requests.activate {
             // element.click(): script already saw the event; run the defaults.
             if self.default_click(node) {
@@ -536,6 +539,9 @@ impl View {
                 };
                 self.generated_events(generated, serde_json::json!({}), None);
             }
+        }
+        if let Some(before) = focus_before {
+            self.focus_transition(before);
         }
         for request in requests.scripts {
             let before = self.host.ordered.len();
@@ -569,6 +575,9 @@ impl View {
         }
         for app_url in requests.external_apps {
             self.events.push_back(PageEvent::ExternalApp(app_url));
+        }
+        for text in requests.clipboard_writes {
+            self.events.push_back(PageEvent::ClipboardWrite(text));
         }
     }
 }

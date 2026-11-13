@@ -384,7 +384,14 @@ impl CanvasContext2D {
             self.origin_clean = false;
         }
 
-        let info = ImageInfo::new_n32_premul((src_w, src_h), None);
+        // get_image_data() supplies unpremultiplied RGBA bytes, independently
+        // of Skia's native surface format (BGRA on Linux and Windows).
+        let info = ImageInfo::new(
+            (src_w, src_h),
+            ColorType::RGBA8888,
+            AlphaType::Unpremul,
+            None,
+        );
         let image = skia_safe::images::raster_from_data(
             &info,
             skia_safe::Data::new_copy(source_pixels),

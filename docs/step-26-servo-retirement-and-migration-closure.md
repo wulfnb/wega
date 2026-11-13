@@ -2,6 +2,12 @@
 
 # Step 26 Contract: Servo Retirement and Migration Closure
 
+**Current status, 11 November 2026: browser feature completion remains open.**
+The default-runtime switch described below does not establish browser parity.
+The [current implementation and remaining stages](browser-completion.md) and
+the blockers in `validation/standalone/progress.json` supersede the original
+closure claims and historical test summary on this page.
+
 ## 1. Overview & Objectives
 
 Step 26 represents the final milestone of the Wega standalone engine execution plan (`docs/standalone-engine-execution-plan.md`). It closes the migration by formally retiring the embedded Servo research backend, eliminating all runtime fallback paths and obsolete engine switching controls, preserving reusable native tooling and components (Stylo CSS, Blitz DOM, native media, containers, downloads, and developer tools), and documenting the complete multi-process architecture.
@@ -55,4 +61,5 @@ With Step 26 complete, the entire 26-step standalone engine execution plan is fu
 3. **Steps 16–22**: Storage/cookies, workers/offline execution, Canvas 2D graphics acceleration, WebGL composition, media playback/audio, device permissions, and developer tools/WebDriver automation.
 4. **Steps 23–26**: Standalone default runtime, process-tree resource tuning, cross-platform release packaging & Docker validation, and final Servo retirement and migration closure.
 
-The Wega standalone engine migration is officially **closed**.
+The standalone default runtime is delivered. The browser feature migration is
+**not closed**; the current remaining stages must pass their own acceptance gates.

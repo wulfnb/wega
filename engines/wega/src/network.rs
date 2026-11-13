@@ -55,6 +55,8 @@ pub(crate) struct FetchContext {
     pub referrer_policy: Option<String>,
     pub destination: Destination,
     pub bypass_cache: bool,
+    /// Service worker scripts are never served by a service worker.
+    pub bypass_service_worker: bool,
 }
 impl Default for FetchContext {
     fn default() -> Self {
@@ -66,6 +68,7 @@ impl Default for FetchContext {
             referrer_policy: None,
             destination: Destination::Other,
             bypass_cache: false,
+            bypass_service_worker: false,
         }
     }
 }
@@ -155,6 +158,17 @@ pub(crate) fn referrer(initiator: &Url, target: &Url, policy: Option<&str>) -> O
 }
 
 type Task = Box<dyn FnOnce(&Client) + Send>;
+/// Offers a request to something that may answer it before the network does
+/// (service workers). Implemented by the worker layer; `Network` does not depend on it.
+pub(crate) trait FetchInterceptor: Send + Sync {
+    /// `None` means the request continues to the network.
+    fn intercept(
+        &self,
+        network: &Network,
+        client: Option<&Url>,
+        request: &wega_network::Request,
+    ) -> Option<Result<wega_network::Response, String>>;
+}
 #[derive(Clone)]
 pub(crate) struct Network {
     jobs: mpsc::SyncSender<Task>,
@@ -164,10 +178,27 @@ pub(crate) struct Network {
     pub storage_dir: Option<std::path::PathBuf>,
     pub remote: Option<wega_network::Remote>,
     pub fonts: Option<Arc<Vec<Vec<u8>>>>,
-    pub shared_workers: Arc<Mutex<crate::workers::SharedWorkerHub>>,
-    pub port_hub: crate::workers::SharedPortHub,
+    /// Offers requests to service workers; wired by the engine (see `workers::Hubs`).
+    interceptor: Arc<std::sync::OnceLock<Arc<dyn FetchInterceptor>>>,
+    /// Cache API stores for documents and workers when no broker owns them.
+    cache_stores: Arc<Mutex<std::collections::HashMap<String, wega_network::CacheStorage>>>,
+    /// When the current document was created; a service worker activated
+    /// later controls it only after `clients.claim()`.
+    navigated: Arc<Mutex<std::time::Instant>>,
+    client: Client,
+    detached: Arc<std::sync::atomic::AtomicUsize>,
 }
 impl Network {
+    pub(crate) fn set_interceptor(&self, interceptor: Arc<dyn FetchInterceptor>) {
+        let _ = self.interceptor.set(interceptor);
+    }
+    fn intercept(
+        &self,
+        client: Option<&Url>,
+        request: &wega_network::Request,
+    ) -> Option<Result<wega_network::Response, String>> {
+        self.interceptor.get()?.intercept(self, client, request)
+    }
     pub fn new(policy: NetworkPolicy, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
         Self::create(policy, wake, None)
     }
@@ -186,8 +217,6 @@ impl Network {
         let policy = Arc::new(std::sync::RwLock::new(policy));
         let brokered = remote.is_some();
         let broker = remote.clone();
-        let shared_workers = Arc::new(Mutex::new(crate::workers::SharedWorkerHub::new()));
-        let port_hub = Arc::new(Mutex::new(crate::workers::MessagePortHub::new()));
         let fonts = remote
             .as_ref()
             .filter(|remote| remote.is_bound())
@@ -225,6 +254,7 @@ impl Network {
                 Arc::new(crate::cookies::Cookies::Local(cookies)),
             )
         };
+        let detached_client = client.clone();
         let (jobs, receiver) = mpsc::sync_channel::<Task>(32);
         let receiver = Arc::new(Mutex::new(receiver));
         // Tab workers keep two bounded broker dispatchers so independent resources
@@ -257,14 +287,165 @@ impl Network {
             remote: broker,
             fonts,
             cookies,
-            shared_workers,
-            port_hub,
+            interceptor: Default::default(),
+            cache_stores: Default::default(),
+            navigated: Arc::new(Mutex::new(std::time::Instant::now())),
+            client: detached_client,
+            detached: Default::default(),
         })
     }
     pub fn spawn(&self, task: impl FnOnce(&Client) + Send + 'static) -> Result<(), String> {
         self.jobs
             .try_send(Box::new(task))
             .map_err(|_| "Network queue is full".into())
+    }
+    /// Run a task on its own thread. Worker realms use this so their requests
+    /// never wait behind document requests that are waiting on them.
+    pub fn spawn_detached(
+        &self,
+        task: impl FnOnce(&Client) + Send + 'static,
+    ) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        if self.detached.fetch_add(1, Ordering::AcqRel) >= 16 {
+            self.detached.fetch_sub(1, Ordering::AcqRel);
+            return Err("Network queue is full".into());
+        }
+        let (client, counter) = (self.client.clone(), self.detached.clone());
+        std::thread::Builder::new()
+            .name("wega-net-worker".into())
+            .spawn(move || {
+                task(&client);
+                counter.fetch_sub(1, Ordering::AcqRel);
+            })
+            .map(|_| ())
+            .map_err(|error| {
+                self.detached.fetch_sub(1, Ordering::AcqRel);
+                error.to_string()
+            })
+    }
+    /// A script-initiated request. `client` is the document the request is
+    /// made for; its controlling service worker sees the request first.
+    pub fn request(
+        &self,
+        request: wega_network::Request,
+        client: Option<Url>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<wega_network::Response, String>>>>
+    {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let network = self.clone();
+        let detached = client.is_none();
+        let task = move |http: &Client| {
+            let result = network
+                .intercept(client.as_ref(), &request)
+                .unwrap_or_else(|| http.response(&request));
+            let _ = sender.send(result);
+        };
+        let queued = if detached {
+            self.spawn_detached(task)
+        } else {
+            self.spawn(task)
+        };
+        Box::pin(async move {
+            queued?;
+            receiver.await.map_err(|_| "Network dispatcher stopped")?
+        })
+    }
+    pub fn navigated(&self) -> std::time::Instant {
+        *self
+            .navigated
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    pub fn mark_navigated(&self) {
+        *self
+            .navigated
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = std::time::Instant::now();
+    }
+    /// One Cache API operation for the origin of `url`.
+    pub fn cache_call(&self, url: &Url, payload: &str) -> Result<serde_json::Value, String> {
+        if !wega_network::cache_api::cache_allowed(url) {
+            return Err("SecurityError: Cache storage requires a secure context".into());
+        }
+        if payload.len() > wega_network::MAX_BODY {
+            return Err("QuotaExceededError: Cache operation exceeds IPC budget".into());
+        }
+        let operation: wega_network::cache_api::CacheOperation =
+            serde_json::from_str(payload).map_err(|error| error.to_string())?;
+        let origin = url.origin().ascii_serialization();
+        if let Some(remote) = &self.remote {
+            let bytes = remote.resource(
+                wega_network::ResourceRequest::Cache { origin },
+                payload.as_bytes(),
+            )?;
+            return serde_json::from_slice(&bytes).map_err(|error| error.to_string());
+        }
+        let mut stores = self
+            .cache_stores
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !stores.contains_key(&origin) {
+            let store = match &self.storage_dir {
+                Some(root) => wega_network::CacheStorage::open_origin(root, &origin)?,
+                None => wega_network::CacheStorage::in_memory()?,
+            };
+            stores.insert(origin.clone(), store);
+        }
+        stores
+            .get_mut(&origin)
+            .expect("store inserted above")
+            .api_call(operation)
+    }
+    /// Offer a document or subresource load to the controlling service worker.
+    fn service_worker_response(
+        &self,
+        url: &Url,
+        context: &FetchContext,
+        limit: usize,
+    ) -> Option<Result<Response, String>> {
+        if context.bypass_service_worker {
+            return None;
+        }
+        let mut request = wega_network::Request::get(url, limit);
+        request.method = context.method.to_string();
+        request.body = context.body.clone().unwrap_or_default();
+        request.initiator = context.initiator.clone();
+        request.top_level = context.destination == Destination::Document;
+        request.destination = match context.destination {
+            Destination::Document => wega_network::ResourceDestination::Document,
+            Destination::Module => wega_network::ResourceDestination::Module,
+            Destination::Script => wega_network::ResourceDestination::Script,
+            Destination::Style => wega_network::ResourceDestination::Style,
+            Destination::Image => wega_network::ResourceDestination::Image,
+            Destination::Font => wega_network::ResourceDestination::Font,
+            Destination::Other => wega_network::ResourceDestination::Subresource,
+        };
+        if let Some(kind) = &context.content_type {
+            request.headers.push(("content-type".into(), kind.clone()));
+        }
+        let answer = self.intercept(context.initiator.as_ref(), &request)?;
+        Some(answer.and_then(|response| {
+            let mut headers = reqwest::header::HeaderMap::new();
+            for (name, value) in response.headers {
+                if let (Ok(name), Ok(value)) =
+                    (name.parse::<reqwest::header::HeaderName>(), value.parse())
+                {
+                    headers.append(name, value);
+                }
+            }
+            if response.body.len() > limit {
+                return Err("Resource exceeds the size limit".into());
+            }
+            if !(200..300).contains(&response.status) && !request.top_level {
+                return Err(format!("HTTP status {}", response.status));
+            }
+            Ok(Response {
+                url: Url::parse(&response.url).unwrap_or_else(|_| url.clone()),
+                status: response.status,
+                headers,
+                bytes: response.body,
+            })
+        }))
     }
     fn policy(&self) -> NetworkPolicy {
         self.policy
@@ -351,6 +532,9 @@ impl Network {
         context: &FetchContext,
         limit: usize,
     ) -> Result<Response, String> {
+        if let Some(answer) = self.service_worker_response(url, context, limit) {
+            return answer;
+        }
         let top_level = context.destination == Destination::Document;
         let mut url = url.clone();
         let mut method = context.method.clone();
@@ -445,6 +629,39 @@ impl Network {
             });
         }
         Err("Too many redirects".into())
+    }
+}
+
+impl wega_adapter_v8::ScriptNetwork for Network {
+    fn remote(&self) -> Option<wega_network::Remote> {
+        self.remote.clone()
+    }
+    fn storage_dir(&self) -> Option<std::path::PathBuf> {
+        self.storage_dir.clone()
+    }
+    fn queue(&self, task: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+        self.spawn(move |_| task())
+    }
+    fn fetch_module(
+        &self,
+        document: &Url,
+        url: Url,
+        limit: usize,
+        local: Option<std::path::PathBuf>,
+    ) -> wega_adapter_v8::BoxFuture<Result<(Url, Vec<u8>), String>> {
+        let network = self.clone();
+        let context = FetchContext::subresource(document, Destination::Module);
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let spawned = self.spawn(move |client| {
+            let result = network
+                .fetch(client, &url, &context, limit, local.as_deref())
+                .map(|response| (response.url, response.bytes));
+            let _ = sender.send(result);
+        });
+        Box::pin(async move {
+            spawned?;
+            receiver.await.map_err(|error| error.to_string())?
+        })
     }
 }
 

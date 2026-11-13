@@ -1,0 +1,192 @@
+//! The document host's implementation of the script runtime's host callbacks.
+use crate::dom::Dom;
+
+/// The generated DOM binding hooks (`dom/generated/hooks.json`) the script runtime may dispatch.
+pub(crate) fn is_generated_hook(name: &str) -> bool {
+    static HOOKS: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
+    HOOKS
+        .get_or_init(|| {
+            let manifest: Vec<serde_json::Value> =
+                serde_json::from_str(include_str!("dom/generated/hooks.json"))
+                    .expect("checked generated hook registry");
+            let mut hooks = std::collections::HashSet::new();
+            for hook in manifest {
+                assert!(
+                    hooks.insert(hook["name"].as_str().expect("hook name").to_owned()),
+                    "duplicate generated hook"
+                );
+            }
+            hooks
+        })
+        .contains(name)
+}
+
+impl wega_adapter_v8::NativeHost for Dom {
+    fn is_generated_hook(&self, name: &str) -> bool {
+        is_generated_hook(name)
+    }
+    fn fetch(
+        &self,
+        mut request: wega_network::Request,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<wega_network::Response, String>>>>
+    {
+        let blocked = self.connect_check(&request.url);
+        if !blocked.is_empty() {
+            return Box::pin(std::future::ready(Err(blocked)));
+        }
+        let document = self.document.borrow().url().clone();
+        let document_url = document.clone();
+        request.origin = document.origin().ascii_serialization();
+        request.initiator = Some(document);
+        request.top_level = false;
+        request.destination = wega_network::ResourceDestination::Fetch;
+        request.redirect = "manual".into();
+        request.limit = self.limits.resource_bytes.min(wega_network::MAX_BODY);
+        self.network.request(request, Some(document_url))
+    }
+
+    fn call(&self, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
+        Dom::call(self, args)
+    }
+    fn cookie_header(&self, address: &str, include: bool) -> String {
+        let Ok(url) = url::Url::parse(address) else {
+            return String::new();
+        };
+        if !include {
+            return String::new();
+        }
+        let document = self.document.borrow().url().clone();
+        let context = self.network.cookies.context(&url, Some(&document), false);
+        self.network.cookies.get(&url, false, context)
+    }
+    fn cookie_response(&self, address: &str, include: bool, value: &str) {
+        let Ok(url) = url::Url::parse(address) else {
+            return;
+        };
+        if !include {
+            return;
+        }
+        let document = self.document.borrow().url().clone();
+        let context = self.network.cookies.context(&url, Some(&document), false);
+        self.network.cookies.set(&url, value, false, context);
+    }
+    fn document_origin(&self) -> String {
+        self.document.borrow().url().origin().ascii_serialization()
+    }
+    fn ws_headers(&self, address: &str) -> Vec<(String, String)> {
+        let document = self.document.borrow().url().clone();
+        let mut headers = vec![("origin".to_owned(), document.origin().ascii_serialization())];
+        if let Ok(url) = url::Url::parse(address) {
+            let context = self.network.cookies.context(&url, Some(&document), false);
+            let cookie = self.network.cookies.get(&url, false, context);
+            if !cookie.is_empty() {
+                headers.push(("cookie".to_owned(), cookie));
+            }
+        }
+        headers
+    }
+    fn referrer(&self, address: &str) -> String {
+        let Ok(url) = url::Url::parse(address) else {
+            return String::new();
+        };
+        let document = self.document.borrow().url().clone();
+        crate::network::referrer(&document, &url, None).unwrap_or_default()
+    }
+    fn connect_check(&self, address: &str) -> String {
+        let Ok(url) = url::Url::parse(address) else {
+            return "Invalid URL".into();
+        };
+        let mut policy_url = url.clone();
+        if url.scheme() == "ws" {
+            let _ = policy_url.set_scheme("http");
+        }
+        if url.scheme() == "wss" {
+            let _ = policy_url.set_scheme("https");
+        }
+        if matches!(url.scheme(), "http" | "https" | "ws" | "wss")
+            && !self
+                .network
+                .policy
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .permits(&policy_url)
+        {
+            // A controlling service worker may still answer from its caches.
+            let document = self.document.borrow().url().clone();
+            if !self.hubs.service.controls(&self.network, &document) {
+                return "Network request blocked by browsing policy".into();
+            }
+        }
+        let document = self.document.borrow().url().clone();
+        if crate::network::mixed_content(Some(&document), &url, false) {
+            return format!("Mixed content blocked: {url}");
+        }
+        if !self
+            .csp
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .allows_url("connect-src", &url, &document, None)
+        {
+            return format!("Refused to connect to {url}: Content Security Policy connect-src");
+        }
+        String::new()
+    }
+}
+
+impl wega_adapter_v8::ScriptEnvironment for Dom {
+    type Requests = crate::dom::Requests;
+
+    fn begin_task(&self) {
+        Dom::begin_task(self)
+    }
+    fn document_url(&self) -> url::Url {
+        self.document.borrow().url().clone()
+    }
+    fn network(&self) -> std::sync::Arc<dyn wega_adapter_v8::ScriptNetwork> {
+        std::sync::Arc::new(self.network.clone())
+    }
+    fn network_policy(&self) -> std::sync::Arc<std::sync::RwLock<wega_network::Policy>> {
+        self.network.policy.clone()
+    }
+    fn wake(&self) -> std::sync::Arc<dyn Fn() + Send + Sync> {
+        self.network.wake.clone()
+    }
+    fn budget(&self) -> (usize, usize) {
+        Dom::budget(self)
+    }
+    fn sync_nodes(&self, count: usize) {
+        self.set_allocated(count)
+    }
+    fn history(&self) -> (usize, usize) {
+        self.history.get()
+    }
+    fn take_errors(&self) -> Vec<String> {
+        std::mem::take(&mut *self.errors.borrow_mut())
+    }
+    fn note_slow_script(&self, message: String) {
+        let mut errors = self.errors.borrow_mut();
+        if errors.len() < 16 {
+            errors.push(message);
+        }
+    }
+    fn take_requests(&self) -> Self::Requests {
+        std::mem::take(&mut *self.requests.borrow_mut())
+    }
+}
+
+#[cfg(test)]
+mod packaging_tests {
+    #[test]
+    fn eager_and_lazy_sources_are_embedded_without_a_build_tree() {
+        let eager = deno_core::include_js_files!(wega_dom dir "src/dom", "bindings.js");
+        let lazy = deno_core::include_lazy_loaded_js_files!(wega_dom dir "src/dom", "web.js");
+        for source in eager.iter().chain(lazy.iter()) {
+            assert!(
+                source.is_runtime_loadable(),
+                "{} requires a build-machine path",
+                source.specifier
+            );
+        }
+    }
+}

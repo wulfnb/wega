@@ -1,243 +1,269 @@
-//! Web Workers architecture: DedicatedWorker, SharedWorker, ServiceWorker, and transferable ports.
+//! Web workers: dedicated, shared and service workers plus the message ports
+//! that connect them to documents.
 
-pub mod dedicated;
+pub(crate) mod runtime;
 pub mod service;
 pub mod shared;
 pub mod transfer;
 
-pub use dedicated::{DedicatedWorker, WorkerEvent, WorkerId};
-pub use service::{ServiceWorkerInfo, ServiceWorkerManager, ServiceWorkerState};
-pub use shared::{SharedWorkerHub, SharedWorkerInstance};
+pub use runtime::{CanvasFrame, CanvasFrames, Kind};
+pub use service::{ServiceWorkerHub, ServiceWorkerInfo, ServiceWorkerState};
+pub use shared::SharedWorkerHub;
 pub use transfer::{ArrayBufferTransfer, MessagePortHub, PortId, PortMessage, SharedPortHub};
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use runtime::{Handle, Spec};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex, RwLock};
 use url::Url;
-use wega_network::CacheEntry;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct WorkerId(pub u64);
+
+/// `new Worker()` / `new SharedWorker()` arguments after URL resolution.
+#[derive(Deserialize)]
+pub(crate) struct WorkerConfig {
+    pub url: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub module: bool,
+    pub port: u64,
+    /// Script text the document resolved itself (blob: URLs).
+    #[serde(default)]
+    pub source: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkerEvent {
+    pub kind: String,
+    pub payload: String,
+}
+
+struct Dedicated {
+    handle: Handle,
+    events: Arc<Mutex<VecDeque<WorkerEvent>>>,
+}
+
+/// Worker state shared by every view of one engine: shared workers, message ports
+/// and service workers. Owned by the engine; `Network` knows nothing about it.
+#[derive(Clone)]
+pub(crate) struct Hubs {
+    pub shared: Arc<Mutex<SharedWorkerHub>>,
+    pub ports: SharedPortHub,
+    pub service: Arc<ServiceWorkerHub>,
+}
+impl Hubs {
+    pub fn new() -> Self {
+        let ports: SharedPortHub = Arc::new(Mutex::new(MessagePortHub::new()));
+        Self {
+            shared: Arc::new(Mutex::new(SharedWorkerHub::new())),
+            service: Arc::new(ServiceWorkerHub::new(ports.clone())),
+            ports,
+        }
+    }
+}
+impl Default for Hubs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The workers one document owns.
 pub struct WorkerManager {
     document_url: Url,
-    storage_dir: Option<PathBuf>,
-    dedicated: HashMap<WorkerId, DedicatedWorker>,
+    dedicated: HashMap<WorkerId, Dedicated>,
     shared: Arc<Mutex<SharedWorkerHub>>,
-    service: ServiceWorkerManager,
     port_hub: SharedPortHub,
+    service: Arc<ServiceWorkerHub>,
+    frames: CanvasFrames,
     next_worker_id: u64,
 }
 
+/// What a worker inherits from the document that creates it.
+pub(crate) struct Environment<'a> {
+    pub network: &'a crate::network::Network,
+    pub csp: &'a Arc<RwLock<crate::csp::Csp>>,
+    pub limits: &'a crate::Limits,
+}
+
 impl WorkerManager {
-    pub fn with_shared(
-        document_url: Url,
-        storage_dir: Option<PathBuf>,
-        shared: Arc<Mutex<SharedWorkerHub>>,
-        port_hub: SharedPortHub,
-    ) -> Self {
+    pub(crate) fn with_hubs(document_url: Url, hubs: Hubs) -> Self {
         Self {
             document_url,
-            storage_dir,
             dedicated: HashMap::new(),
-            shared,
-            service: ServiceWorkerManager::new(),
-            port_hub,
+            shared: hubs.shared,
+            port_hub: hubs.ports,
+            service: hubs.service,
+            frames: Default::default(),
             next_worker_id: 0,
         }
-    }
-
-    pub fn new(document_url: Url, storage_dir: Option<PathBuf>) -> Self {
-        Self::with_shared(
-            document_url,
-            storage_dir,
-            Arc::new(Mutex::new(SharedWorkerHub::new())),
-            Arc::new(Mutex::new(MessagePortHub::new())),
-        )
     }
 
     pub fn port_hub(&self) -> SharedPortHub {
         self.port_hub.clone()
     }
 
-    pub fn spawn_dedicated(
-        &mut self,
-        script_url: &str,
-        script_content: String,
-    ) -> Result<WorkerId, String> {
-        let content = if !script_content.is_empty() {
-            script_content
-        } else if script_url.starts_with("data:") {
-            if let Ok(data_url) = data_url::DataUrl::process(script_url) {
-                if let Ok((bytes, _)) = data_url.decode_to_vec() {
-                    String::from_utf8(bytes).unwrap_or_default()
-                } else {
-                    String::new()
-                }
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
-
-        if !script_url.starts_with("data:") {
-            let script = self
-                .document_url
-                .join(script_url)
-                .map_err(|e| format!("Invalid script URL: {e}"))?;
-
-            if script.origin() != self.document_url.origin() {
-                return Err(
-                    "SecurityError: Worker script must be same-origin with the document".into(),
-                );
-            }
-        }
-
-        self.next_worker_id += 1;
-        let id = WorkerId(self.next_worker_id);
-        let worker = DedicatedWorker::spawn(id, content)?;
-        self.dedicated.insert(id, worker);
-        Ok(id)
+    /// Frames committed by workers for this document's placeholder canvases.
+    pub fn take_frames(&self) -> Vec<(u64, CanvasFrame)> {
+        self.frames
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .drain()
+            .collect()
     }
 
-    pub fn post_dedicated(&self, id: WorkerId, data: String) -> Result<(), String> {
-        let worker = self.dedicated.get(&id).ok_or("Worker not found")?;
-        worker.post_message(data)
+    /// Worker scripts are same-origin, `data:` or this origin's `blob:` URLs,
+    /// and are subject to the document's `worker-src` policy.
+    pub(crate) fn check_script(
+        &self,
+        address: &str,
+        csp: &Arc<RwLock<crate::csp::Csp>>,
+    ) -> Result<Url, String> {
+        let url = Url::parse(address)
+            .map_err(|_| format!("SyntaxError: Invalid worker script URL {address}"))?;
+        let document = &self.document_url;
+        let same_origin = match url.scheme() {
+            "data" => true,
+            "file" => document.scheme() == "file",
+            "http" | "https" | "blob" => url.origin() == document.origin(),
+            _ => false,
+        };
+        if !same_origin {
+            return Err(
+                "SecurityError: Worker script must be same-origin with the document".into(),
+            );
+        }
+        if !csp
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .allows_url("worker-src", &url, document, None)
+        {
+            return Err(format!(
+                "SecurityError: Refused to create a worker from {url}: Content Security Policy worker-src"
+            ));
+        }
+        Ok(url)
+    }
+
+    fn spec(
+        &self,
+        kind: Kind,
+        url: Url,
+        config: &WorkerConfig,
+        environment: &Environment,
+        sink: runtime::Sink,
+    ) -> Spec {
+        Spec {
+            kind,
+            name: config.name.clone(),
+            script_url: url,
+            source: (!config.source.is_empty()).then(|| config.source.clone()),
+            module: config.module,
+            creator: self.document_url.clone(),
+            network: environment.network.clone(),
+            csp: environment.csp.clone(),
+            limits: environment.limits.clone(),
+            port_hub: self.port_hub.clone(),
+            service: self.service.clone(),
+            port: (kind == Kind::Dedicated).then_some(PortId(config.port)),
+            frames: if kind == Kind::Dedicated {
+                self.frames.clone()
+            } else {
+                Default::default()
+            },
+            scope: String::new(),
+            sink,
+        }
+    }
+
+    pub(crate) fn spawn_dedicated(
+        &mut self,
+        config: &WorkerConfig,
+        environment: &Environment,
+    ) -> Result<WorkerId, String> {
+        let url = self.check_script(&config.url, environment.csp)?;
+        if url.scheme() == "blob" && config.source.is_empty() {
+            return Err("NetworkError: The worker script blob is not available".into());
+        }
+        if self.dedicated.len() >= 32 {
+            return Err("QuotaExceededError: Too many workers".into());
+        }
+        let events: Arc<Mutex<VecDeque<WorkerEvent>>> = Default::default();
+        let (queue, wake) = (events.clone(), environment.network.wake.clone());
+        let sink: runtime::Sink = Arc::new(move |kind, payload| {
+            if kind == "log" {
+                return;
+            }
+            let mut queue = queue
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if queue.len() < 256 {
+                queue.push_back(WorkerEvent {
+                    kind: kind.into(),
+                    payload: payload.into(),
+                });
+            }
+            drop(queue);
+            wake();
+        });
+        let handle = Handle::spawn(self.spec(Kind::Dedicated, url, config, environment, sink))?;
+        self.next_worker_id += 1;
+        let id = WorkerId(self.next_worker_id);
+        self.dedicated.insert(id, Dedicated { handle, events });
+        Ok(id)
     }
 
     pub fn terminate_dedicated(&mut self, id: WorkerId) -> Result<(), String> {
         let mut worker = self.dedicated.remove(&id).ok_or("Worker not found")?;
-        worker.terminate();
+        worker.handle.stop();
         Ok(())
     }
 
     pub fn poll_dedicated_events(&mut self, id: WorkerId) -> Vec<WorkerEvent> {
-        if let Some(worker) = self.dedicated.get(&id) {
-            worker.poll_events()
-        } else {
-            Vec::new()
-        }
+        self.dedicated
+            .get(&id)
+            .map(|worker| {
+                worker
+                    .events
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .drain(..)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
-    pub fn connect_shared(
+    pub fn dedicated_count(&self) -> usize {
+        self.dedicated.len()
+    }
+
+    pub(crate) fn connect_shared(
         &mut self,
-        script_url: &str,
-        name: &str,
-        script_content: String,
-    ) -> Result<(PortId, PortId), String> {
-        let content = if !script_content.is_empty() {
-            script_content
-        } else if script_url.starts_with("data:") {
-            if let Ok(data_url) = data_url::DataUrl::process(script_url) {
-                if let Ok((bytes, _)) = data_url.decode_to_vec() {
-                    String::from_utf8(bytes).unwrap_or_default()
-                } else {
-                    String::new()
-                }
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
-
-        let script_full = if !script_url.starts_with("data:") {
-            let script = self
-                .document_url
-                .join(script_url)
-                .map_err(|e| format!("Invalid script URL: {e}"))?;
-
-            if script.origin() != self.document_url.origin() {
-                return Err(
-                    "SecurityError: SharedWorker script must be same-origin with the document"
-                        .into(),
-                );
-            }
-            script.to_string()
-        } else {
-            script_url.to_string()
-        };
-
-        let origin = self.document_url.origin().ascii_serialization();
-        let (port_doc, port_worker) = self
-            .port_hub
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .create_channel();
-
-        let instance = self
-            .shared
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get_or_spawn(&origin, name, &script_full, content, self.port_hub.clone())?;
-
-        instance
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .connect(port_worker)?;
-
-        Ok((port_doc, port_worker))
-    }
-
-    pub fn register_service_worker(
-        &mut self,
-        script_url: &str,
-        scope: Option<&str>,
-    ) -> Result<ServiceWorkerInfo, String> {
-        self.service.register(
-            &self.document_url,
-            script_url,
-            scope,
-            self.storage_dir.clone(),
-        )
-    }
-
-    pub fn get_service_worker(&self, url: &Url) -> Option<ServiceWorkerInfo> {
-        self.service.get_registration(url)
-    }
-
-    pub fn unregister_service_worker(&mut self, scope: &str) -> bool {
-        self.service.unregister(scope)
-    }
-
-    pub fn intercept_fetch(&self, url: &Url) -> Option<CacheEntry> {
-        self.service.intercept_fetch(url)
-    }
-
-    pub fn create_channel(&mut self) -> (PortId, PortId) {
-        self.port_hub
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .create_channel()
-    }
-
-    pub fn post_port(
-        &mut self,
-        source: PortId,
-        data: String,
-        transferred_ports: Vec<PortId>,
+        config: &WorkerConfig,
+        environment: &Environment,
     ) -> Result<(), String> {
-        self.port_hub
+        let url = self.check_script(&config.url, environment.csp)?;
+        if url.scheme() == "blob" && config.source.is_empty() {
+            return Err("NetworkError: The worker script blob is not available".into());
+        }
+        let origin = self.document_url.origin().ascii_serialization();
+        let sink: runtime::Sink = Arc::new(|_, _| {});
+        self.shared
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .post_message(source, data, transferred_ports)
-    }
-
-    pub fn close_port(&mut self, port: PortId) {
-        self.port_hub
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .close(port);
-    }
-
-    pub fn poll_port(&mut self, port: PortId) -> Vec<PortMessage> {
-        self.port_hub
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .poll_messages(port)
+            .connect(
+                &origin,
+                url.as_str(),
+                &config.name,
+                PortId(config.port),
+                || self.spec(Kind::Shared, url.clone(), config, environment, sink),
+            )
     }
 
     pub fn terminate_all(&mut self) {
         for (_, mut worker) in self.dedicated.drain() {
-            worker.terminate();
+            worker.handle.stop();
         }
     }
 }

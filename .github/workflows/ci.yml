@@ -101,16 +101,18 @@ jobs:
         uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
         with:
           tool: cargo-audit@0.22.2
+      # Keep registry fetching enabled: --no-fetch also prevents cargo-audit
+      # from loading sparse index entries needed for yanked checks.
       - name: Audit browser, collector and spike dependencies for security vulnerabilities
         run: |
           cargo audit
-          cargo audit --no-fetch --file error-collector/Cargo.lock
-          cargo audit --no-fetch --file engines/v8-spike/Cargo.lock
+          cargo audit --file error-collector/Cargo.lock
+          cargo audit --file engines/v8-spike/Cargo.lock
       # engines/.cargo/audit.toml lists the advisories pinned by Deno, each with its
       # fix; any other engine advisory fails here (see docs/ci-release-fixes.md).
       - name: Audit engine dependencies (pinned Deno advisories listed explicitly)
         working-directory: engines
-        run: cargo audit --no-fetch
+        run: cargo audit
       - name: Scan repository for secret and credential leaks
         run: gitleaks detect --verbose --config .gitleaks.toml
 
@@ -364,6 +366,9 @@ jobs:
           context: .
           file: ./Dockerfile
           target: runtime-prebuilt
+          # Refresh distro security updates even when the base digest is unchanged.
+          pull: true
+          no-cache-filters: desktop
           push: false
           load: true
           provenance: false

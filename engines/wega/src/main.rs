@@ -69,7 +69,7 @@ fn main() {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::args().any(|arg| arg == "--lite") {
-        deno_core::v8_set_flags(vec![String::new(), "--lite-mode".into()]);
+        wega_adapter_v8::set_lite_mode();
     }
     let (sender, receiver) = mpsc::sync_channel(32);
     let queue: Arc<Mutex<protocol::queue::CommandQueue>> = Default::default();

@@ -1,0 +1,19 @@
+[package]
+name = "wega-dependency-graph"
+version = "0.1.0"
+description = "Development tool: print the workspace-internal crate dependency graph from `cargo metadata`"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "wega_dependency_graph"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wega-dependency-graph"
+path = "src/main.rs"
+
+[dependencies]
+cargo_metadata = "0.23.1"

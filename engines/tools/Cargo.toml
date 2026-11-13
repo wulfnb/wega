@@ -1,0 +1,13 @@
+# Standalone development-tools workspace.
+# Deliberately NOT part of the `engines` workspace (see `exclude` in ../Cargo.toml)
+# so that development-only dependencies such as `cargo_metadata` never enter
+# `engines/Cargo.lock`. This workspace has its own `Cargo.lock`.
+[workspace]
+members = ["dependency-graph", "architecture-check"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false

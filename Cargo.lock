@@ -4705,14 +4705,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wega-cookies"
+version = "0.1.0"
+dependencies = [
+ "cookie_store",
+ "publicsuffix",
+ "serde",
+ "url",
+]
+
+[[package]]
 name = "wega-network"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "cookie_store",
  "fontdb",
  "getrandom 0.3.4",
- "publicsuffix",
  "reqwest",
  "rusqlite",
  "serde",
@@ -4721,8 +4729,10 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "url",
+ "wega-cookies",
  "wega-platform",
  "wega-protocol",
+ "wega-storage",
 ]
 
 [[package]]
@@ -4742,6 +4752,17 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "url",
+]
+
+[[package]]
+name = "wega-storage"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "url",
 ]
 

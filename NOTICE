@@ -53,7 +53,7 @@ https://github.com/web-platform-tests/wpt under BSD-3-Clause. The revision,
 checksums and original license are included in engines/wega/tests/fixtures/wpt/.
 
 Wega cookie storage uses cookie_store (MIT/Apache-2.0) and publicsuffix
-(MIT/Apache-2.0). engines/network/src/public_suffix_list.dat is the MPL-2.0
+(MIT/Apache-2.0). engines/services/cookies/src/public_suffix_list.dat is the MPL-2.0
 Public Suffix List snapshot bundled in publicsuffix 2.3.0; its header is retained.
 Deno fetch's pinned source is adapted at extension load to attach browser cookies
 and ingest Set-Cookie on every redirect hop. Original MIT sources are unchanged.

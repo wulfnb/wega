@@ -24,3 +24,12 @@ condition = "AND"
 regexTarget = "line"
 paths = ['''^engines/wega/src/dom/generated/[a-z0-9-]+\.js$''']
 regexes = ['''(?m)^// tools/webidl/idl/[a-z0-9-]+\.webidl sha256=[0-9a-f]{64}$''']
+
+# Validation receipts contain source fingerprints, including API filenames that
+# match the generic credential rule. Match only these complete checksum entries.
+[[rules.allowlists]]
+description = "Browser completion receipt Cache API source SHA-256 entries"
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/validation/browser-completion-2026-11-11\.json$''']
+regexes = ['''(?m)^[ \t]*"engines/(network/src|wega/tests)/cache_api\.rs": "[0-9a-f]{64}",?$''']

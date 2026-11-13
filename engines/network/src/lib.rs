@@ -6,7 +6,7 @@ mod cors;
 mod services;
 mod websocket;
 use connection::Connection;
-pub use services::ResourceRequest;
+pub use services::{ResourceRequest, service_worker_store};
 use std::{
     collections::{HashMap, VecDeque},
     io::{Read, Write},
@@ -21,16 +21,12 @@ use std::{
 };
 use url::Url;
 use websocket::resolve_target;
+pub use wega_cookies::{CookieEntry, Cookies, SiteContext};
 use wega_protocol::{
     authority::{Origin, Principal},
     identity::{PartitionId, ServiceIdentity, ServiceSessionId},
 };
-pub mod cache_storage;
-mod cookies;
-pub mod indexeddb;
-pub use cache_storage::{CacheEntry, CacheStorage};
-pub use cookies::{CookieEntry, Cookies, SiteContext};
-pub use indexeddb::IndexedDB;
+pub use wega_storage::{CacheEntry, CacheStorage, IndexedDB, cache_api, cache_storage, indexeddb};
 const MAX_HEADER: usize = 64 * 1024;
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;

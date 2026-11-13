@@ -239,6 +239,43 @@ fn run_worker(required: bool) {
     assert!(
         matches!(wait(&|event| matches!(event, Event::DocumentEvaluated { .. })), Event::DocumentEvaluated { context: returned, result: Ok(value) } if returned == context && value == "[\"inherited=yes\",\"broker\",\"isolated\",4999950000]")
     );
+    let mut cache_context = context;
+    cache_context.request = protocol::RequestId(2);
+    protocol::write(&mut stdin, &identity.command(Request::EvaluateDocument {
+        context:cache_context,
+        source:"globalThis.cacheVerified='pending';(async()=>{const cache=await caches.open('inherited');await cache.put('/offline',new Response('brokered'));cacheVerified=await (await cache.match('/offline')).text()})().catch(error=>cacheVerified=String(error));true".into(),
+    })).unwrap();
+    wait(
+        &|event| matches!(event,Event::DocumentEvaluated {context,..} if context.request==cache_context.request),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        cache_context.request = protocol::RequestId(cache_context.request.0 + 1);
+        protocol::write(
+            &mut stdin,
+            &identity.command(Request::EvaluateDocument {
+                context: cache_context,
+                source: "cacheVerified".into(),
+            }),
+        )
+        .unwrap();
+        match wait(
+            &|event| matches!(event,Event::DocumentEvaluated {context,..} if context.request==cache_context.request),
+        ) {
+            Event::DocumentEvaluated {
+                result: Ok(value), ..
+            } if value == "\"brokered\"" => break,
+            Event::DocumentEvaluated {
+                result: Ok(value), ..
+            } if value == "\"pending\"" => {}
+            event => panic!("Inherited Cache API failed: {event:?}"),
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Inherited cache operation timed out"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     session.revoke();
     protocol::write(&mut stdin, &identity.command(Request::Shutdown)).unwrap();
     wait(&|event| matches!(event, Event::ShutdownComplete));

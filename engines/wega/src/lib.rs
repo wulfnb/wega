@@ -14,7 +14,6 @@ pub use blitz_traits::events;
 pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
 
-mod broker_socket;
 pub mod canvas;
 mod components;
 mod cookies;
@@ -22,29 +21,23 @@ mod csp;
 #[path = "../../../src/diagnostic_event.rs"]
 pub mod diagnostics;
 mod dom;
+mod dom_host;
 mod encoding;
 mod event_loop;
-mod extension_adapter;
+mod html_report;
 pub mod media;
-mod module_loader;
-mod native_ops;
+mod native_event;
 mod network;
-mod parser;
 pub mod permissions;
-mod raster;
 mod script;
-mod security_context;
-mod v8;
 mod view;
-mod web;
-mod web_extensions;
 pub mod webgl;
 pub mod workers;
 pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use network::NetworkPolicy;
-pub use raster::{Painted, Pixels};
 pub use view::{Frame, View};
 pub use view::{PageEvent, Pointer, PointerKind};
+pub use wega_adapter_skia::{Painted, Pixels};
 
 #[derive(Clone, Debug)]
 pub struct Limits {
@@ -77,6 +70,8 @@ impl Default for Limits {
 /// Shared bounded networking; each View owns its DOM, VM and render surfaces.
 pub struct Engine {
     network: network::Network,
+    /// Worker state shared by all of this engine's views.
+    hubs: workers::Hubs,
     limits: Limits,
 }
 impl Engine {
@@ -85,10 +80,7 @@ impl Engine {
         policy: NetworkPolicy,
         wake: std::sync::Arc<dyn Fn() + Send + Sync>,
     ) -> Result<Self, String> {
-        Ok(Self {
-            network: network::Network::new(policy, wake)?,
-            limits,
-        })
+        Self::assemble(network::Network::new(policy, wake)?, limits)
     }
     /// Private tab workers delegate HTTP and cookies to the browser's shared broker.
     pub fn brokered(
@@ -111,8 +103,14 @@ impl Engine {
         wake: std::sync::Arc<dyn Fn() + Send + Sync>,
         remote: wega_network::Remote,
     ) -> Result<Self, String> {
+        Self::assemble(network::Network::brokered(policy, wake, remote)?, limits)
+    }
+    fn assemble(network: network::Network, limits: Limits) -> Result<Self, String> {
+        let hubs = workers::Hubs::new();
+        network.set_interceptor(std::sync::Arc::new(hubs.service.clone()));
         Ok(Self {
-            network: network::Network::brokered(policy, wake, remote)?,
+            network,
+            hubs,
             limits,
         })
     }
@@ -126,7 +124,12 @@ impl Engine {
     /// views on one thread must be destroyed/reset in reverse creation order.
     /// Native browser tabs each have their own worker process and DOM thread.
     pub fn create_view(&self, url: Url) -> Result<View, String> {
-        View::new(url, self.network.clone(), self.limits.clone())
+        View::new(
+            url,
+            self.network.clone(),
+            self.hubs.clone(),
+            self.limits.clone(),
+        )
     }
     pub fn set_policy(&self, policy: NetworkPolicy) {
         *self

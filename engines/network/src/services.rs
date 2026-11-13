@@ -29,11 +29,29 @@ pub enum ResourceRequest {
         key: String,
         index: u32,
     },
+    Cache {
+        origin: String,
+    },
+    /// An origin's stored service worker registrations: read, or replace
+    /// with the request body (an empty body removes them).
+    ServiceWorkers {
+        origin: String,
+        write: bool,
+    },
+}
+/// Where one origin's service worker registrations live under a profile root.
+pub fn service_worker_store(root: &std::path::Path, origin: &str) -> PathBuf {
+    let name = Sha256::digest(origin.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    root.join("service-workers").join(format!("{name}.json"))
 }
 #[derive(Default)]
 pub(crate) struct StorageHub {
     persistent: HashMap<(PathBuf, String), Database>,
     transient: HashMap<([u8; 16], String), (Weak<Session>, Database)>,
+    caches: HashMap<(PathBuf, String), CacheStorage>,
 }
 struct StorageCall<'a> {
     origin: &'a str,
@@ -43,6 +61,23 @@ struct StorageCall<'a> {
     index: u32,
 }
 impl StorageHub {
+    fn cache(
+        &mut self,
+        session: &Session,
+        origin: &str,
+        operation: cache_api::CacheOperation,
+    ) -> Result<Value, String> {
+        let root = PathBuf::from(&session.scope);
+        let key = (root.clone(), origin.to_owned());
+        if !self.caches.contains_key(&key) {
+            if self.caches.len() >= 32 {
+                self.caches.clear();
+            }
+            self.caches
+                .insert(key.clone(), CacheStorage::open_origin(&root, origin)?);
+        }
+        self.caches.get_mut(&key).unwrap().api_call(operation)
+    }
     fn call(
         &mut self,
         session: &Arc<Session>,
@@ -207,6 +242,7 @@ impl StorageHub {
     ) -> Result<(), String> {
         let id = (root.to_path_buf(), origin.to_owned());
         self.persistent.remove(&id);
+        self.caches.remove(&id);
         self.transient.retain(|(_, queued_origin), (owner, _)| {
             queued_origin != origin
                 || owner
@@ -222,9 +258,11 @@ impl StorageHub {
         if directory.exists() {
             let _ = std::fs::remove_dir_all(&directory);
         }
+        let _ = std::fs::remove_file(service_worker_store(root, origin));
         Ok(())
     }
     pub(crate) fn clear_all(&mut self, root: &std::path::Path) -> Result<(), String> {
+        self.caches.retain(|(directory, _), _| directory != root);
         self.persistent
             .retain(|(directory, _), _| directory != root);
         self.transient.retain(|_, (owner, _)| {
@@ -256,6 +294,76 @@ impl Broker {
             return Err("Revoked resource session".into());
         }
         match request {
+            ResourceRequest::Cache { origin } => {
+                let receipt = session
+                    .navigation
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let document = receipt
+                    .committed
+                    .as_ref()
+                    .or(receipt.last.as_ref())
+                    .ok_or("No committed cache storage grant")?;
+                if !cache_api::cache_allowed(document)
+                    || document.origin().ascii_serialization() != origin
+                {
+                    return Err("SecurityError: Cache storage document origin mismatch".into());
+                }
+                let operation: cache_api::CacheOperation =
+                    serde_json::from_slice(&body).map_err(|error| error.to_string())?;
+                let result = self
+                    .storage
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .cache(session, &origin, operation)?;
+                let bytes = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
+                if bytes.len() > MAX_BODY {
+                    return Err("QuotaExceededError: Cache result exceeds IPC budget".into());
+                }
+                Ok(bytes)
+            }
+            ResourceRequest::ServiceWorkers { origin, write } => {
+                let receipt = session
+                    .navigation
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let document = receipt
+                    .committed
+                    .as_ref()
+                    .or(receipt.last.as_ref())
+                    .ok_or("No committed service worker storage grant")?;
+                if !cache_api::cache_allowed(document)
+                    || document.origin().ascii_serialization() != origin
+                {
+                    return Err("SecurityError: Service worker storage origin mismatch".into());
+                }
+                drop(receipt);
+                let path = service_worker_store(&PathBuf::from(&session.scope), &origin);
+                if !write {
+                    return match std::fs::read(&path) {
+                        Ok(bytes) if bytes.len() <= MAX_BODY => Ok(bytes),
+                        Ok(_) => {
+                            Err("QuotaExceededError: Stored registrations are too large".into())
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                            Ok(Vec::new())
+                        }
+                        Err(error) => Err(error.to_string()),
+                    };
+                }
+                if body.is_empty() {
+                    let _ = std::fs::remove_file(&path);
+                    return Ok(Vec::new());
+                }
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                // Replace atomically so a crash never leaves a partial registry.
+                let temporary = path.with_extension("json.tmp");
+                std::fs::write(&temporary, &body).map_err(|error| error.to_string())?;
+                std::fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
+                Ok(Vec::new())
+            }
             ResourceRequest::WebSocketOpen { url, protocols } => {
                 if !body.is_empty() {
                     return Err("Unexpected upgrade body".into());
@@ -494,6 +602,94 @@ mod tests {
         assert!(storage(&a, origin, true, "get", "old", "").is_err());
         second.revoke();
         assert!(storage(&b, origin, true, "get", "shared", "").is_err());
+    }
+    #[test]
+    fn service_worker_registrations_are_stored_per_committed_origin_and_cleared() {
+        let broker = Broker::new().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let session = broker
+            .open_bound_session(root.path().into(), Policy::default())
+            .unwrap();
+        let remote = document(&session, "https://app.test/");
+        let call = |remote: &Remote, origin: &str, write: bool, body: &[u8]| {
+            remote.resource(
+                ResourceRequest::ServiceWorkers {
+                    origin: origin.into(),
+                    write,
+                },
+                body,
+            )
+        };
+        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
+        call(&remote, "https://app.test", true, b"[{\"scope\":\"/\"}]").unwrap();
+        assert_eq!(
+            call(&remote, "https://app.test", false, &[]).unwrap(),
+            b"[{\"scope\":\"/\"}]"
+        );
+        // Another origin's registrations are neither readable nor writable.
+        assert!(call(&remote, "https://other.test", false, &[]).is_err());
+        assert!(call(&remote, "https://other.test", true, b"[]").is_err());
+        let insecure = document(&session, "http://plain.test/");
+        assert!(call(&insecure, "http://plain.test", false, &[]).is_err());
+
+        session.clear_site_data("https://app.test").unwrap();
+        let remote = document(&session, "https://app.test/");
+        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
+        call(&remote, "https://app.test", true, b"[1]").unwrap();
+        call(&remote, "https://app.test", true, b"").unwrap();
+        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
+    }
+    #[test]
+    fn cache_resources_are_bound_to_committed_origin_and_cleared_with_site_data() {
+        use crate::cache_api::CacheOperation;
+        let broker = Broker::new().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let session = broker
+            .open_bound_session(root.path().into(), Policy::default())
+            .unwrap();
+        let remote = document(&session, "https://cache.test/");
+        let call =
+            |remote: &Remote, origin: &str, operation: CacheOperation| -> Result<Value, String> {
+                let response = remote.resource(
+                    ResourceRequest::Cache {
+                        origin: origin.into(),
+                    },
+                    &serde_json::to_vec(&operation).unwrap(),
+                )?;
+                serde_json::from_slice(&response).map_err(|error| error.to_string())
+            };
+        call(
+            &remote,
+            "https://cache.test",
+            CacheOperation::Open { name: "v1".into() },
+        )
+        .unwrap();
+        assert!(call(&remote, "https://foreign.test", CacheOperation::Names).is_err());
+        session.begin_navigation(&Url::parse("https://foreign.test/").unwrap());
+        assert!(call(&remote, "https://cache.test", CacheOperation::Names).is_err());
+        let remote = document(&session, "https://cache.test/");
+        assert_eq!(
+            call(&remote, "https://cache.test", CacheOperation::Names).unwrap(),
+            json!(["v1"])
+        );
+        session.clear_site_data("https://cache.test").unwrap();
+        assert_eq!(
+            call(&remote, "https://cache.test", CacheOperation::Names).unwrap(),
+            json!([])
+        );
+        call(
+            &remote,
+            "https://cache.test",
+            CacheOperation::Open { name: "v2".into() },
+        )
+        .unwrap();
+        session.clear_all_data().unwrap();
+        assert_eq!(
+            call(&remote, "https://cache.test", CacheOperation::Names).unwrap(),
+            json!([])
+        );
+        session.revoke();
+        assert!(call(&remote, "https://cache.test", CacheOperation::Names).is_err());
     }
     #[test]
     fn bound_cookie_calls_cannot_export_http_only_or_foreign_origin_credentials() {

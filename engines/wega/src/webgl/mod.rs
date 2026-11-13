@@ -3,6 +3,7 @@
 pub mod constants;
 pub mod context;
 pub mod engine;
+pub(crate) mod host;
 pub mod resources;
 
 pub use constants::*;

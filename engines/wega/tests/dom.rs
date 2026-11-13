@@ -563,3 +563,88 @@ fn generated_bindings_enforce_brands_conversions_and_survive_reentrancy() {
         "[\"v\",true,\"B\",\"moved\",[\"listener\",true]]"
     );
 }
+
+#[test]
+fn fragment_parsing_covers_contexts_foreign_content_and_budgets() {
+    let engine = Engine::new(
+        Limits {
+            dom_nodes: 256,
+            html_bytes: 4 * 1024 * 1024,
+            script_time: Duration::from_secs(5),
+            ..Limits::default()
+        },
+        NetworkPolicy {
+            allow_loopback: true,
+            ..Default::default()
+        },
+        Arc::new(|| {}),
+    )
+    .unwrap();
+    let mut view = engine
+        .create_view(Url::parse("about:blank").unwrap())
+        .unwrap();
+    view.set_html("<main id=m><table id=t><tbody id=tb></tbody></table><template id=tpl></template><svg id=s></svg><p id=p>old</p></main>")
+        .unwrap();
+    view.poll();
+    let result = view
+        .evaluate_json(
+            r#"(()=>{
+  const out = {};
+  // Table insertion contexts: rows and cells need the table-aware tree builder.
+  tb.innerHTML = '<tr><td>a<td>b<tr><td>c';
+  out.rows = tb.rows ? tb.rows.length : tb.children.length;
+  out.cells = tb.querySelectorAll('td').length;
+  // insertAdjacentHTML into a row keeps the table structure.
+  tb.firstElementChild.insertAdjacentHTML('beforeend', '<td>d</td>');
+  out.after = tb.firstElementChild.children.length;
+  // Template contents are a separate fragment.
+  tpl.innerHTML = '<tr><td>t</td></tr><b>x</b>';
+  out.template = [tpl.content.childNodes.length, tpl.childNodes.length];
+  // SVG and foreign content.
+  s.innerHTML = '<circle r="1"/><foreignObject><p>html</p></foreignObject>';
+  out.svg = [s.firstChild.namespaceURI, s.lastChild.firstChild.namespaceURI];
+  // Misnested markup.
+  p.innerHTML = '<b><i>x</b>y</i>';
+  out.misnested = p.innerHTML;
+  // Nodes parsed into the document are the nodes the page holds afterwards.
+  p.innerHTML = '<span id=held>h</span>';
+  const held = document.getElementById('held');
+  out.owned = held.parentNode === p && p.firstChild === held;
+  // A document fragment from a range, with scripts inert until inserted.
+  const range = document.createRange(); range.selectNode(p);
+  const fragment = range.createContextualFragment('<i>one</i><u>two</u>');
+  out.fragment = fragment.childNodes.length;
+  // Budget: a huge fragment is rejected without touching the page.
+  const before = p.innerHTML;
+  let rejected = false;
+  try { p.innerHTML = '<b></b>'.repeat(100000); } catch (e) { rejected = /limit/i.test(String(e)); }
+  out.overflow = [rejected, p.innerHTML === before, held.parentNode === p];
+  // And the page keeps working afterwards.
+  p.innerHTML = '<em>ok</em>';
+  out.after_overflow = p.firstChild.nodeName;
+  return out;
+})()"#,
+        )
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(value["cells"], 3, "{value}");
+    assert_eq!(value["after"], 3, "{value}");
+    assert_eq!(value["template"], serde_json::json!([2, 0]), "{value}");
+    assert_eq!(
+        value["svg"],
+        serde_json::json!(["http://www.w3.org/2000/svg", "http://www.w3.org/1999/xhtml"]),
+        "{value}"
+    );
+    assert_eq!(value["owned"], true, "{value}");
+    assert_eq!(value["fragment"], 2, "{value}");
+    assert_eq!(
+        value["overflow"],
+        serde_json::json!([true, true, true]),
+        "{value}"
+    );
+    assert_eq!(value["after_overflow"], "EM", "{value}");
+    assert!(
+        value["misnested"].as_str().unwrap().contains("<b>"),
+        "{value}"
+    );
+}

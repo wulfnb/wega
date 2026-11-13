@@ -58,6 +58,24 @@ with (profile / 'browser.log').open('w') as log:
         assert 'needle' in request('GET', root + '/source')
         result = request('POST', root + '/execute/sync', {'script': 'return {sum:arguments[0]+arguments[1], title:document.title};', 'args': [20, 22]})
         assert result == {'sum': 42, 'title': 'Capability fixture'}, result
+        def cache_result(script):
+            request('POST', root + '/execute/sync', {'script': "globalThis.cacheProof=null;(async()=>{"+script+"})().then(value=>cacheProof={value},error=>cacheProof={error:String(error)});return true;", 'args': []})
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                result = request('POST', root + '/execute/sync', {'script': 'return globalThis.cacheProof;', 'args': []})
+                if result is not None:
+                    assert result == {'value': 'desktop-persisted'}, result
+                    return
+                time.sleep(0.05)
+            raise TimeoutError('Desktop Cache API did not complete')
+        cache_result("const cache=await caches.open('webdriver');await cache.put('/__cache-proof',new Response('desktop-persisted'));return await(await cache.match('/__cache-proof')).text();")
+        # Leaving a website must detach its worker so native pages report their
+        # own URL/title. Returning creates a new document with the same storage.
+        request('POST', root + '/url', {'url': 'wega://newtab'})
+        assert request('GET', root + '/url') == 'wega://newtab'
+        assert request('GET', root + '/title') == 'New tab'
+        request('POST', root + '/url', {'url': os.environ.get('WEGA_FIXTURE_URL', 'http://127.0.0.1:8767') + '/capabilities.html'})
+        cache_result("return await(await caches.match('/__cache-proof')).text();")
         handle = request('GET', root + '/window')
         assert handle in request('GET', root + '/window/handles')
         request('POST', root + '/window', {'handle': handle})
@@ -90,7 +108,7 @@ with (profile / 'browser.log').open('w') as log:
         (profile / 'webdriver-screenshot.png').write_bytes(png)
         assert request('POST', root + '/element', {'using': 'css selector', 'value': 'h1'}, 500)['error'] == 'unsupported operation'
         request('DELETE', root)
-        print(f'WEBDRIVER TEST PASSED: W3C HTTP sessions, capability rejection, engine navigation/back/forward/refresh, URL/title/source, JSON script arguments/results, window handles, viewport PNG, unsupported-command error and session deletion. Artifacts: {profile}', flush=True)
+        print(f'WEBDRIVER TEST PASSED: W3C HTTP sessions, capability rejection, native-page transitions, persistent Cache API, engine navigation/back/forward/refresh, URL/title/source, JSON script arguments/results, window handles, viewport PNG, unsupported-command error and session deletion. Artifacts: {profile}', flush=True)
     finally:
         process.terminate()
         try:

@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "branch": "feature/standalone-wega-engine",
-  "date": "2026-11-03",
+  "branch": "main",
+  "date": "2026-11-11",
   "language_policy": "Rust for Wega-owned implementation and tooling; V8/Skia permitted",
   "test_policy": "Tests run after implementation. Prior Step 05/06 three-platform acceptance is retained at its recorded commit; current Step 14/15 local bounded checks passed and hosted full-suite validation is pending.",
   "runtime_tests_executed": true,
-  "servo_retirement_allowed": true,
+  "servo_retirement_allowed": false,
   "steps": {
     "02": {
       "implementation": "complete",
@@ -37,17 +37,25 @@
       "acceptance_verified": true
     },
     "14": {
-      "implementation": "complete",
+      "implementation": "partial",
       "protocol_version": 15,
-      "acceptance": "FrameTree connected to browser supervisor in Snapshot. Bounded contexts, nesting depth and message size limits enforced. Capability::SiteIsolationFrames advertised in protocol v15. Cross-origin property access security whitelist verified. Cross-document Command::FramePostMessage and Event::FramePostMessage wired with targetOrigin matching and structured transfers. Descendant pruning on detach and commit verified.",
-      "acceptance_verified": true,
-      "contract": "docs/step-14-browsing-contexts-iframes-site-isolation.md"
+      "acceptance_verified": false,
+      "contract": "docs/step-14-browsing-contexts-iframes-site-isolation.md",
+      "blockers": [
+        "Visible iframe rendering and complete child realms, site-isolated workers, surface composition and native input remain incomplete."
+      ],
+      "historical_acceptance": "FrameTree connected to browser supervisor in Snapshot. Bounded contexts, nesting depth and message size limits enforced. Capability::SiteIsolationFrames advertised in protocol v15. Cross-origin property access security whitelist verified. Cross-document Command::FramePostMessage and Event::FramePostMessage wired with targetOrigin matching and structured transfers. Descendant pruning on detach and commit verified.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "15": {
-      "implementation": "complete",
-      "acceptance": "Rust-owned custom elements registry and ShadowTree implemented. Lifecycle reactions (connected, disconnected, adopted, attributeChanged) wired. Open/closed encapsulation, delegatesFocus, template stamping, slot assignment and event retargeting verified passing in tests.",
-      "acceptance_verified": true,
-      "contract": "docs/step-15-custom-elements-and-shadow-dom.md"
+      "implementation": "partial",
+      "acceptance_verified": false,
+      "contract": "docs/step-15-custom-elements-and-shadow-dom.md",
+      "blockers": [
+        "Shadow DOM scoped Stylo styling and flattened Blitz layout remain unimplemented."
+      ],
+      "historical_acceptance": "Rust-owned custom elements registry and ShadowTree implemented. Lifecycle reactions (connected, disconnected, adopted, attributeChanged) wired. Open/closed encapsulation, delegatesFocus, template stamping, slot assignment and event retargeting verified passing in tests.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "07": {
       "implementation": "complete",
@@ -63,7 +71,7 @@
       "blockers": [
         "DOMImplementation (createDocument/createDocumentType/createHTMLDocument), XML/XHTML documents and script-created DocumentType",
         "ProcessingInstruction and CDATASection nodes",
-        "Per-tag HTML element interfaces (HTMLDivElement, HTMLAreaElement, ...) beyond HTMLElement/HTMLHeadElement/HTMLScriptElement",
+        "Per-tag HTML element interfaces now exist as member-less classes; element-specific members and generated bindings remain open",
         "Legacy platform object named properties (HTMLCollection/NamedNodeMap named getters, supported property names)",
         "Namespace-aware attribute matching and Attr.value mutation records",
         "MutationObserver childList record details for textContent/normalize",
@@ -85,16 +93,24 @@
       "acceptance_verified": true
     },
     "11": {
-      "implementation": "complete",
-      "acceptance": "Form control interactions, form reset, file selection dialog with capability containment, real multipart file upload encoding, and AccessKit accessibility tree and action transport implemented and verified.",
+      "implementation": "partial",
       "contract": "docs/step-11-input-controls-accessibility.md",
-      "acceptance_verified": true
+      "acceptance_verified": false,
+      "blockers": [
+        "Page accessibility grafts and document-scoped actions are now implemented; native screen-reader and supported-platform acceptance remain pending."
+      ],
+      "historical_acceptance": "Form control interactions, form reset, file selection dialog with capability containment, real multipart file upload encoding, and AccessKit accessibility tree and action transport implemented and verified.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "12": {
-      "implementation": "complete",
-      "acceptance": "Range and Selection DOM interfaces, contentEditable and document.designMode, TreeWalker and NodeFilter, clipboard commands and navigator.clipboard, in-page find and browser find bar integration, and DataTransfer/DragEvent structures implemented and verified.",
+      "implementation": "partial",
       "contract": "docs/step-12-selection-editing-clipboard-find.md",
-      "acceptance_verified": true
+      "acceptance_verified": false,
+      "blockers": [
+        "navigator.clipboard.writeText is activation-gated and reaches the OS clipboard; readText still uses an internal string and OS read permission brokering remains open."
+      ],
+      "historical_acceptance": "Range and Selection DOM interfaces, contentEditable and document.designMode, TreeWalker and NodeFilter, clipboard commands and navigator.clipboard, in-page find and browser find bar integration, and DataTransfer/DragEvent structures implemented and verified.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "13": {
       "implementation": "complete",
@@ -103,41 +119,70 @@
       "acceptance_verified": true
     },
     "16": {
-      "implementation": "complete",
+      "implementation": "partial",
       "protocol_version": 16,
-      "acceptance": "Authoritative storage keys with origin, container/profile, and top-level partition context. Opaque origins and stale grants rejected. localStorage and sessionStorage scope and isolation verified. 10MB quota enforcement with QuotaExceededError rejection. Cookie inventory with HttpOnly inspector and script isolation. Per-site and global clear-data. Validated legacy data preservation on copies. CacheStorage and IndexedDB packages with SQLite WAL crash recovery.",
-      "acceptance_verified": true,
-      "contract": "docs/step-16-storage-and-browser-data-management.md"
+      "acceptance_verified": false,
+      "contract": "docs/step-16-storage-and-browser-data-management.md",
+      "blockers": [
+        "Page Cache API is implemented with broker-owned origin-scoped SQLite storage; detached cache handle lifetime and opaque responses remain open.",
+        "IndexedDB remains a Rust backend without page-facing requests, transactions, indexes or cursors."
+      ],
+      "historical_acceptance": "Authoritative storage keys with origin, container/profile, and top-level partition context. Opaque origins and stale grants rejected. localStorage and sessionStorage scope and isolation verified. 10MB quota enforcement with QuotaExceededError rejection. Cookie inventory with HttpOnly inspector and script isolation. Per-site and global clear-data. Validated legacy data preservation on copies. CacheStorage and IndexedDB packages with SQLite WAL crash recovery.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "17": {
-      "implementation": "complete",
-      "acceptance": "Structured clone and transferable ownership detaching source ArrayBuffers. MessagePort and MessageChannel peer entanglement and closure. DedicatedWorker background threads with dedicated V8 isolates/JsRuntimes, bidirectional postMessage/onmessage, and navigation teardown. SharedWorker connection multiplexing and state sharing across same-origin documents. ServiceWorker path prefix scope matching and offline fetch interception against CacheStorage.",
-      "acceptance_verified": true,
-      "contract": "docs/step-17-workers-and-offline-execution.md"
+      "implementation": "partial",
+      "acceptance_verified": false,
+      "contract": "docs/step-17-workers-and-offline-execution.md",
+      "blockers": [
+        "Service Worker registration does not fetch or execute its script; full lifecycle, persistent control and fetch-event execution remain open.",
+        "Worker-global Cache API exposure and complete worker loading/API support remain open."
+      ],
+      "historical_acceptance": "Structured clone and transferable ownership detaching source ArrayBuffers. MessagePort and MessageChannel peer entanglement and closure. DedicatedWorker background threads with dedicated V8 isolates/JsRuntimes, bidirectional postMessage/onmessage, and navigation teardown. SharedWorker connection multiplexing and state sharing across same-origin documents. ServiceWorker path prefix scope matching and offline fetch interception against CacheStorage.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "18": {
-      "implementation": "complete",
-      "acceptance": "Skia raster surface Canvas 2D engine with save/restore stack, affine 2D transforms, Path2D vector geometry with arcs and curves, fill/stroke/clip/isPointInPath, linear/radial/conic gradients and pattern shaders, text rendering with font metrics fallback, RGBA8888 unpremultiplied pixel readback and writes (getImageData/putImageData), toDataURL and toBlob serialization, cross-origin canvas tainting and SecurityError enforcement, aggregate pixel memory tracking with QuotaExceededError rejection, and OffscreenCanvas with worker transfer.",
-      "acceptance_verified": true,
-      "contract": "docs/step-18-canvas-2d-graphics.md"
+      "implementation": "partial",
+      "acceptance_verified": false,
+      "contract": "docs/step-18-canvas-2d-graphics.md",
+      "blockers": [
+        "Worker OffscreenCanvas still contains no-op rendering paths; complete worker graphics acceptance remains open."
+      ],
+      "historical_acceptance": "Skia raster surface Canvas 2D engine with save/restore stack, affine 2D transforms, Path2D vector geometry with arcs and curves, fill/stroke/clip/isPointInPath, linear/radial/conic gradients and pattern shaders, text rendering with font metrics fallback, RGBA8888 unpremultiplied pixel readback and writes (getImageData/putImageData), toDataURL and toBlob serialization, cross-origin canvas tainting and SecurityError enforcement, aggregate pixel memory tracking with QuotaExceededError rejection, and OffscreenCanvas with worker transfer.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "19": {
-      "implementation": "complete",
-      "acceptance": "OpenGL ES 2.0/3.0 WebGL 1.0 and 2.0 state machine, shader compilation and reflection, buffer upload and drawArrays execution, uniform upload, texture uploads with cross-origin taint propagation, pixel readback with SecurityError enforcement, drawing buffer toDataURL serialization, context loss and recovery extension (WEBGL_lose_context), aggregate WebGL pixel memory allocation quotas with QuotaExceededError rejection, context isolation preventing 2D/WebGL collision on the same canvas, and View resilient screenshot composition with device scaling, CSS zoom, and subregion clipping.",
-      "acceptance_verified": true,
-      "contract": "docs/step-19-webgl-and-composition.md"
+      "implementation": "partial",
+      "acceptance_verified": false,
+      "contract": "docs/step-19-webgl-and-composition.md",
+      "blockers": [
+        "WebGL shader compilation and drawing are simulated; real backend execution and conformance remain open.",
+        "WebGPU is not exposed."
+      ],
+      "historical_acceptance": "OpenGL ES 2.0/3.0 WebGL 1.0 and 2.0 state machine, shader compilation and reflection, buffer upload and drawArrays execution, uniform upload, texture uploads with cross-origin taint propagation, pixel readback with SecurityError enforcement, drawing buffer toDataURL serialization, context loss and recovery extension (WEBGL_lose_context), aggregate WebGL pixel memory allocation quotas with QuotaExceededError rejection, context isolation preventing 2D/WebGL collision on the same canvas, and View resilient screenshot composition with device scaling, CSS zoom, and subregion clipping.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "20": {
-      "implementation": "complete",
-      "acceptance": "Common media service and capability/codec reporting (canPlayType) for WAV, WebM (VP8/VP9/Opus/Vorbis), MP4, and MP3. RIFF WAVE parser and PCM audio sample extractor. WebM EBML demuxer with video/audio track parsing and stream dimensions. Monotonic media playback clock with play, pause, seek, volume, mute, playback rates, and looping. Bounded buffer manager with quota enforcement. MediaSession API with metadata, playback state, position state, and action dispatch. HTMLMediaElement, HTMLVideoElement, HTMLAudioElement, and global Audio constructor. Element-local error fallback panel with download link.",
-      "acceptance_verified": true,
-      "contract": "docs/step-20-media-playback-and-audio.md"
+      "implementation": "partial",
+      "acceptance_verified": false,
+      "contract": "docs/step-20-media-playback-and-audio.md",
+      "blockers": [
+        "Unreadable media sources now fail to load; the video frame path still generates a color pattern rather than decoding video.",
+        "Real brokered media resource loading, codec decoding, audio output and video composition remain open."
+      ],
+      "historical_acceptance": "Common media service and capability/codec reporting (canPlayType) for WAV, WebM (VP8/VP9/Opus/Vorbis), MP4, and MP3. RIFF WAVE parser and PCM audio sample extractor. WebM EBML demuxer with video/audio track parsing and stream dimensions. Monotonic media playback clock with play, pause, seek, volume, mute, playback rates, and looping. Bounded buffer manager with quota enforcement. MediaSession API with metadata, playback state, position state, and action dispatch. HTMLMediaElement, HTMLVideoElement, HTMLAudioElement, and global Audio constructor. Element-local error fallback panel with download link.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "21": {
-      "implementation": "complete",
-      "acceptance": "Origin-scoped permissions registry with Permissions-Policy enforcement, opaque origin denial, pending prompt queuing and document navigation cancellation. Protocol version 21 with Capability::PermissionsRevocation, Command::AnswerPermission, Command::RevokePermission, Command::ExitFullscreen, and typed content events for notifications, prompts, fullscreen, protocol registrations, and external apps. Native device lifecycle tracking for MediaStreamTrack audio/video capture and WakeLock sentinels with acknowledged embedder revocation tearing down active tracks (readyState = 'ended', firing 'ended') and releasing wake locks (released = true, firing 'release'). Full Web API semantics for navigator.permissions, Notification, navigator.mediaDevices.getUserMedia, MediaStreamTrack, MediaStream, navigator.wakeLock, screen.orientation, and requestFullscreen/exitFullscreen requiring user activation.",
-      "acceptance_verified": true,
-      "contract": "docs/step-21-permissions-and-native-capabilities.md"
+      "implementation": "partial",
+      "acceptance_verified": false,
+      "contract": "docs/step-21-permissions-and-native-capabilities.md",
+      "blockers": [
+        "Device enumeration returns an empty list; getUserMedia still creates placeholder tracks and real native camera/microphone capture remains open.",
+        "WebRTC and Web Audio are not exposed."
+      ],
+      "historical_acceptance": "Origin-scoped permissions registry with Permissions-Policy enforcement, opaque origin denial, pending prompt queuing and document navigation cancellation. Protocol version 21 with Capability::PermissionsRevocation, Command::AnswerPermission, Command::RevokePermission, Command::ExitFullscreen, and typed content events for notifications, prompts, fullscreen, protocol registrations, and external apps. Native device lifecycle tracking for MediaStreamTrack audio/video capture and WakeLock sentinels with acknowledged embedder revocation tearing down active tracks (readyState = 'ended', firing 'ended') and releasing wake locks (released = true, firing 'release'). Full Web API semantics for navigator.permissions, Notification, navigator.mediaDevices.getUserMedia, MediaStreamTrack, MediaStream, navigator.wakeLock, screen.orientation, and requestFullscreen/exitFullscreen requiring user activation.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     },
     "22": {
       "implementation": "complete",
@@ -164,10 +209,14 @@
       "contract": "docs/step-25-platform-validation-packaging-and-docker.md"
     },
     "26": {
-      "implementation": "complete",
-      "acceptance": "Servo retirement finalized and standalone engine migration closed. Wega operates as the sole runtime engine across the application, backed by Blitz DOM, Stylo CSS, Deno V8 JavaScript, and Skia rendering with native OS process sandboxing. All baseline product flows and automated test suites run without Servo initialization or fallback. Reusable native media, notifications, and tooling are preserved while legacy backend paths and historical flags are retired. Architecture, README, operator documentation, and execution plan updated.",
-      "acceptance_verified": true,
-      "contract": "docs/step-26-servo-retirement-and-migration-closure.md"
+      "implementation": "partial",
+      "acceptance_verified": false,
+      "contract": "docs/step-26-servo-retirement-and-migration-closure.md",
+      "blockers": [
+        "Standalone default-runtime delivery does not close remaining browser capability, security or platform acceptance gates."
+      ],
+      "historical_acceptance": "Servo retirement finalized and standalone engine migration closed. Wega operates as the sole runtime engine across the application, backed by Blitz DOM, Stylo CSS, Deno V8 JavaScript, and Skia rendering with native OS process sandboxing. All baseline product flows and automated test suites run without Servo initialization or fallback. Reusable native media, notifications, and tooling are preserved while legacy backend paths and historical flags are retired. Architecture, README, operator documentation, and execution plan updated.",
+      "acceptance": "See current blockers and docs/browser-completion.md; earlier bounded tests do not establish complete feature acceptance."
     }
   },
   "substeps": {
@@ -472,5 +521,7 @@
     "remaining_blockers": [
       "Per-tag HTML element interfaces (64 classes: HTMLDivElement, HTMLAreaElement, ...)"
     ]
-  }
+  },
+  "browser_features_complete": false,
+  "current_feature_status": "docs/browser-completion.md"
 }

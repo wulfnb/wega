@@ -8,12 +8,12 @@ publish = false
 [dependencies]
 wega-platform = { path = "../platform" }
 wega-protocol = { path = "../protocol" }
+wega-cookies = { path = "../services/cookies" }
+wega-storage = { path = "../services/storage" }
 serde = {version="1",features=["derive"]}
 serde_json = "1"
 url = {version="2.5", features=["serde"]}
 reqwest = {version="0.12",default-features=false,features=["blocking","rustls-tls","gzip","brotli","cookies"]}
-cookie_store = {version="=0.22.1",features=["public_suffix"]}
-publicsuffix = "=2.3.0"
 getrandom = "0.3"
 
 sha2 = "0.10"

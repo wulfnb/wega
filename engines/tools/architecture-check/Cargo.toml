@@ -1,0 +1,15 @@
+[package]
+name = "wega-architecture-check"
+version = "0.1.0"
+description = "Development tool: report-only architecture rule checker (see docs/architecture/module-map.md)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "wega-architecture-check"
+path = "src/main.rs"
+
+[dependencies]
+wega-dependency-graph = { path = "../dependency-graph" }

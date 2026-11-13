@@ -108,5 +108,27 @@
     "extra_licenses": [
       "LICENSE.md"
     ]
+  },
+  "deno_net": {
+    "version": "0.252.0",
+    "directory": "deno/deno_net",
+    "sha256": "0e9f25b320adf4f748464b6b6b42d81159df0ac4a9bc77b4c72af0c687e69e25",
+    "patches": [
+      "deno/patches/deno_net-hickory-upgrade.patch"
+    ],
+    "extra_licenses": [
+      "LICENSE.md"
+    ]
+  },
+  "deno_fetch": {
+    "version": "0.284.0",
+    "directory": "deno/deno_fetch",
+    "sha256": "752387783c99f75ea6962bb88af3735baba9f4a9e66716eacd39586db0e28d99",
+    "patches": [
+      "deno/patches/deno_fetch-hickory-upgrade.patch"
+    ],
+    "extra_licenses": [
+      "LICENSE.md"
+    ]
   }
 }

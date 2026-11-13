@@ -72,6 +72,25 @@ fn canvas_2d_raster_surface_draw_and_pixel_readback() {
 }
 
 #[test]
+fn canvas_draw_image_preserves_rgba_channels_and_unpremultiplied_alpha() {
+    let mut view = test_view(
+        "<canvas id='source' width='2' height='1'></canvas><canvas id='target' width='2' height='1'></canvas>",
+    );
+    let result = eval_json(
+        &mut view,
+        r#"(() => {
+        const source = document.getElementById('source');
+        const pixels = new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 64, 128]);
+        source.getContext('2d').putImageData(new ImageData(pixels, 2, 1), 0, 0);
+        const target = document.getElementById('target').getContext('2d');
+        target.drawImage(source, 0, 0);
+        return [...target.getImageData(0, 0, 2, 1).data];
+    })()"#,
+    );
+    assert_eq!(result, serde_json::json!([255, 0, 0, 255, 0, 0, 64, 128]));
+}
+
+#[test]
 fn canvas_paths_curves_arcs_and_hit_testing() {
     let html = r####"<!doctype html>
     <html><body>

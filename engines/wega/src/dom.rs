@@ -1,7 +1,7 @@
 //! Checked native operations over Blitz's single DOM, used by the V8 host.
 use crate::Limits;
+use blitz_dom::NodeId;
 use blitz_dom::node::NodeData;
-use blitz_dom::{BaseDocument, NodeId};
 use html5ever::{LocalName, QualName, ns};
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
@@ -10,6 +10,9 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
+use wega_adapter_blitz::BlitzDocument;
+use wega_adapter_blitz::{ToKey, ToNodeId};
+use wega_dom::{DocumentView, Mutator, NodeKind, NodeView};
 
 /// A `<script>` element that script inserted into the document.
 #[derive(Clone, Copy, Debug)]
@@ -38,11 +41,14 @@ pub(crate) struct Requests {
     pub fullscreen: Vec<bool>,
     pub protocol_registrations: Vec<wega_protocol::permissions::ProtocolHandlerRegistration>,
     pub external_apps: Vec<String>,
+    /// Text for the OS clipboard, written by the browser process.
+    pub clipboard_writes: Vec<String>,
 }
 
 pub(crate) struct Dom {
     pub network: crate::network::Network,
-    pub document: Rc<RefCell<BaseDocument>>,
+    pub hubs: crate::workers::Hubs,
+    pub document: Rc<RefCell<BlitzDocument>>,
     pub limits: Limits,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
     pub errors: Rc<RefCell<Vec<String>>>,
@@ -63,6 +69,9 @@ pub(crate) struct Dom {
     components: RefCell<crate::components::Registry>,
     shadows: RefCell<crate::components::ShadowTree>,
     clipboard: RefCell<String>,
+    /// This document as a service worker client.
+    client_id: String,
+    created: Instant,
     pub workers: RefCell<crate::workers::WorkerManager>,
     pub canvas_engine: RefCell<crate::canvas::CanvasEngine>,
     pub webgl_engine: RefCell<crate::webgl::WebGLEngine>,
@@ -93,14 +102,15 @@ impl Dom {
         let allocated =
             Cell::new(blitz_dom::traversal::TreeTraverser::new(&document.borrow()).count());
         let doc_url = document.borrow().url().clone();
-        let workers = RefCell::new(crate::workers::WorkerManager::with_shared(
+        context.network.mark_navigated();
+        context.hubs.service.configure(limits);
+        let workers = RefCell::new(crate::workers::WorkerManager::with_hubs(
             doc_url,
-            context.network.storage_dir.clone(),
-            context.network.shared_workers.clone(),
-            context.network.port_hub.clone(),
+            context.hubs.clone(),
         ));
         Self {
             network: context.network,
+            hubs: context.hubs,
             document,
             limits: limits.clone(),
             navigate: context.navigate,
@@ -120,6 +130,13 @@ impl Dom {
             components: Default::default(),
             shadows: Default::default(),
             clipboard: Default::default(),
+            client_id: {
+                use std::hash::{BuildHasher, Hasher};
+                let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+                hasher.write_u64(1);
+                format!("{:016x}", hasher.finish())
+            },
+            created: Instant::now(),
             workers,
             canvas_engine: RefCell::new(crate::canvas::CanvasEngine::new(limits.max_pixels * 4)),
             webgl_engine: RefCell::new(crate::webgl::WebGLEngine::new(limits.max_pixels * 8)),
@@ -129,6 +146,40 @@ impl Dom {
             layout_dirty: Cell::new(true),
         }
     }
+    fn port_hub(&self) -> std::sync::MutexGuard<'_, crate::workers::MessagePortHub> {
+        self.hubs
+            .ports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    /// Copy frames committed by workers into their placeholder canvases.
+    fn apply_worker_frames(&self) {
+        let frames = self.workers.borrow().take_frames();
+        if frames.is_empty() {
+            return;
+        }
+        let mut engine = self.canvas_engine.borrow_mut();
+        for (id, frame) in frames {
+            let id = crate::canvas::CanvasId(id);
+            let Some(context) = engine.get_mut(id) else {
+                continue;
+            };
+            if (context.width, context.height) != (frame.width, frame.height)
+                && engine.resize_canvas(id, frame.width, frame.height).is_err()
+            {
+                continue;
+            }
+            if let Some(context) = engine.get_mut(id) {
+                let _ = context.put_image_data(
+                    &frame.pixels,
+                    0,
+                    0,
+                    frame.width as i32,
+                    frame.height as i32,
+                );
+            }
+        }
+    }
     pub fn begin_task(&self) {
         self.invalidate();
     }
@@ -136,7 +187,7 @@ impl Dom {
         self.revision.set(self.revision.get().wrapping_add(1));
         self.layout_dirty.set(true);
     }
-    fn resolve(&self, doc: &mut BaseDocument) {
+    fn resolve(&self, doc: &mut BlitzDocument) {
         if self.layout_dirty.replace(false) {
             doc.resolve(self.start.elapsed().as_secs_f64());
         }
@@ -155,280 +206,40 @@ impl Dom {
                 .try_borrow()
                 .map_err(|_| "InvalidStateError: reentrant native DOM borrow")?;
             for identity in identities {
-                let id = identity
-                    .as_str()
-                    .and_then(|id| id.parse::<u64>().ok())
-                    .ok_or("TypeError: invalid binding node identity")?;
-                if document.get_node(NodeId::from_u64(id)).is_none() {
+                let key = wega_dom::NodeKey::from_u64(
+                    identity
+                        .as_str()
+                        .and_then(|id| id.parse::<u64>().ok())
+                        .ok_or("TypeError: invalid binding node identity")?,
+                );
+                if wega_dom::DocumentView::node(&*document, key).is_none() {
                     return Err("InvalidStateError: binding node no longer exists".into());
                 }
             }
             return Ok(Value::Null);
         }
+        if text(0).starts_with("canvas") {
+            self.apply_worker_frames();
+        }
+        if let Some(result) =
+            crate::canvas::host::host_call(&mut self.canvas_engine.borrow_mut(), args)
+        {
+            return result;
+        }
+        if let Some(result) =
+            crate::webgl::host::host_call(&mut self.webgl_engine.borrow_mut(), args)
+        {
+            return result;
+        }
         match text(0) {
-            "webglCreate" => {
-                let w = text(1).parse::<u32>().unwrap_or(300);
-                let h = text(2).parse::<u32>().unwrap_or(150);
-                let is_webgl2 = text(3) == "webgl2";
-                let id = self.webgl_engine.borrow_mut().create_context(
-                    w,
-                    h,
-                    is_webgl2,
-                    crate::webgl::ContextAttributes::default(),
-                )?;
-                return Ok(json!(id.0));
+            "cacheAllowed" => {
+                return Ok(json!(wega_network::cache_api::cache_allowed(
+                    self.document.borrow().url()
+                )));
             }
-            "webglResize" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                let w = text(2).parse::<u32>().unwrap_or(300);
-                let h = text(3).parse::<u32>().unwrap_or(150);
-                self.webgl_engine.borrow_mut().resize_context(
-                    crate::webgl::WebGLContextId(id),
-                    w,
-                    h,
-                )?;
-                return Ok(Value::Null);
-            }
-            "webglDestroy" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                self.webgl_engine
-                    .borrow_mut()
-                    .destroy_context(crate::webgl::WebGLContextId(id));
-                return Ok(Value::Null);
-            }
-            "webglGetMemory" => {
-                let mem = self.webgl_engine.borrow().total_pixel_bytes();
-                return Ok(json!(mem));
-            }
-            "webglOp" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                let op = text(2);
-                let op_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
-                let mut engine = self.webgl_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::webgl::WebGLContextId(id))
-                    .ok_or("WebGL context not found")?;
-
-                match op {
-                    "getError" => return Ok(json!(ctx.last_error)),
-                    "isContextLost" => return Ok(json!(ctx.context_lost)),
-                    "loseContext" => {
-                        ctx.lose_context();
-                        return Ok(Value::Null);
-                    }
-                    "restoreContext" => {
-                        ctx.restore_context();
-                        return Ok(Value::Null);
-                    }
-                    "enable" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.enable(cap);
-                        return Ok(Value::Null);
-                    }
-                    "disable" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.disable(cap);
-                        return Ok(Value::Null);
-                    }
-                    "isEnabled" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(json!(ctx.is_enabled(cap)));
-                    }
-                    "clearColor" => {
-                        let r = op_args.get(0).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let g = op_args.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let b = op_args.get(2).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let a = op_args.get(3).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        ctx.clear_color(r, g, b, a);
-                        return Ok(Value::Null);
-                    }
-                    "clearDepth" => {
-                        let d = op_args.get(0).and_then(Value::as_f64).unwrap_or(1.0) as f32;
-                        ctx.clear_depth(d);
-                        return Ok(Value::Null);
-                    }
-                    "clear" => {
-                        let mask = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.clear(mask);
-                        return Ok(Value::Null);
-                    }
-                    "viewport" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.viewport(x, y, w, h);
-                        return Ok(Value::Null);
-                    }
-                    "scissor" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.scissor(x, y, w, h);
-                        return Ok(Value::Null);
-                    }
-                    "createBuffer" => return Ok(json!(ctx.create_buffer())),
-                    "bindBuffer" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let buf_id = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.bind_buffer(target, buf_id);
-                        return Ok(Value::Null);
-                    }
-                    "bufferData" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let data: Vec<u8> = op_args
-                            .get(1)
-                            .and_then(|v| serde_json::from_value(v.clone()).ok())
-                            .unwrap_or_default();
-                        let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.buffer_data(target, &data, usage);
-                        return Ok(Value::Null);
-                    }
-                    "createShader" => {
-                        let stype = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(json!(ctx.create_shader(stype)));
-                    }
-                    "shaderSource" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let src = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        ctx.shader_source(sid, src);
-                        return Ok(Value::Null);
-                    }
-                    "compileShader" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.compile_shader(sid);
-                        return Ok(Value::Null);
-                    }
-                    "getShaderParameter" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(ctx.get_shader_parameter(sid, pname));
-                    }
-                    "getShaderInfoLog" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        return Ok(json!(ctx.get_shader_info_log(sid)));
-                    }
-                    "createProgram" => return Ok(json!(ctx.create_program())),
-                    "attachShader" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let sid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.attach_shader(pid, sid);
-                        return Ok(Value::Null);
-                    }
-                    "linkProgram" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.link_program(pid);
-                        return Ok(Value::Null);
-                    }
-                    "useProgram" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.use_program(pid);
-                        return Ok(Value::Null);
-                    }
-                    "getProgramParameter" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(ctx.get_program_parameter(pid, pname));
-                    }
-                    "getUniformLocation" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        return Ok(json!(ctx.get_uniform_location(pid, name)));
-                    }
-                    "getAttribLocation" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        return Ok(json!(ctx.get_attrib_location(pid, name)));
-                    }
-                    "uniformValues" => {
-                        let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let vals: Vec<f32> = op_args
-                            .get(1)
-                            .and_then(|v| serde_json::from_value(v.clone()).ok())
-                            .unwrap_or_default();
-                        ctx.uniform_values(loc, &vals);
-                        return Ok(Value::Null);
-                    }
-                    "vertexAttribPointer" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        let size = op_args.get(1).and_then(Value::as_i64).unwrap_or(4) as i32;
-                        let atype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let norm = op_args.get(3).and_then(Value::as_bool).unwrap_or(false);
-                        let stride = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let offset = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.vertex_attrib_pointer(idx, size, atype, norm, stride, offset);
-                        return Ok(Value::Null);
-                    }
-                    "enableVertexAttribArray" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        ctx.enable_vertex_attrib_array(idx);
-                        return Ok(Value::Null);
-                    }
-                    "disableVertexAttribArray" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        ctx.disable_vertex_attrib_array(idx);
-                        return Ok(Value::Null);
-                    }
-                    "drawArrays" => {
-                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let first = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let count = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.draw_arrays(mode, first, count);
-                        return Ok(Value::Null);
-                    }
-                    "drawElements" => {
-                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let count = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let etype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let offset = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.draw_elements(mode, count, etype, offset);
-                        return Ok(Value::Null);
-                    }
-                    "createTexture" => return Ok(json!(ctx.create_texture())),
-                    "bindTexture" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let tid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.bind_texture(target, tid);
-                        return Ok(Value::Null);
-                    }
-                    "texImage2D" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let level = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let iformat = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let pixels: Vec<u8> = op_args
-                            .get(8)
-                            .and_then(|v| serde_json::from_value(v.clone()).ok())
-                            .unwrap_or_default();
-                        let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
-                        ctx.tex_image_2d(
-                            target, level, iformat, w, h, border, format, ttype, &pixels, is_clean,
-                        );
-                        return Ok(Value::Null);
-                    }
-                    "taint" => {
-                        ctx.origin_clean = false;
-                        return Ok(Value::Null);
-                    }
-                    "readPixels" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(1) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(1) as i32;
-                        let pixels = ctx.read_pixels(x, y, w, h)?;
-                        return Ok(json!(pixels));
-                    }
-                    "toDataURL" => {
-                        let data_url = ctx.to_data_url()?;
-                        return Ok(json!(data_url));
-                    }
-                    _ => return Err(format!("Unknown WebGL operation: {}", op)),
-                }
+            "cacheCall" => {
+                let url = self.document.borrow().url().clone();
+                return self.network.cache_call(&url, text(1));
             }
             "mediaCanPlayType" => {
                 let mime = text(1);
@@ -487,41 +298,15 @@ impl Dom {
                     .ok_or("Media instance not found")?;
 
                 if bytes.is_empty() {
-                    if src.ends_with(".wav") || src.contains("audio") {
-                        let mut wav_bytes = Vec::new();
-                        wav_bytes.extend_from_slice(b"RIFF");
-                        let chunk_sz = (36 + 128000) as u32;
-                        wav_bytes.extend_from_slice(&chunk_sz.to_le_bytes());
-                        wav_bytes.extend_from_slice(b"WAVEfmt ");
-                        wav_bytes.extend_from_slice(&16u32.to_le_bytes());
-                        wav_bytes.extend_from_slice(&1u16.to_le_bytes());
-                        wav_bytes.extend_from_slice(&1u16.to_le_bytes());
-                        wav_bytes.extend_from_slice(&16000u32.to_le_bytes());
-                        wav_bytes.extend_from_slice(&32000u32.to_le_bytes());
-                        wav_bytes.extend_from_slice(&2u16.to_le_bytes());
-                        wav_bytes.extend_from_slice(&16u16.to_le_bytes());
-                        wav_bytes.extend_from_slice(b"data");
-                        wav_bytes.extend_from_slice(&128000u32.to_le_bytes());
-                        wav_bytes.resize(wav_bytes.len() + 128000, 0);
-                        let _ = inst.load_bytes(src, wav_bytes);
-                    } else if src.ends_with(".webm") || src.contains("video") {
-                        inst.src = src.to_string();
-                        inst.current_src = src.to_string();
-                        inst.clock.duration = 4.0;
-                        inst.video_width = 320;
-                        inst.video_height = 180;
-                        inst.clock.ready_state = crate::media::ReadyState::HaveEnoughData;
-                        inst.clock.network_state = crate::media::NetworkState::Idle;
-                    } else {
-                        let err = crate::media::MediaError {
-                            code: crate::media::MediaErrorCode::SrcNotSupported,
-                            message: "Failed to load media: unsupported format or missing source"
-                                .into(),
-                        };
-                        inst.clock.error = Some(err);
-                        inst.clock.ready_state = crate::media::ReadyState::HaveNothing;
-                        inst.clock.network_state = crate::media::NetworkState::NoSource;
-                    }
+                    // A source that cannot be read is a load failure; never
+                    // report synthetic metadata for it.
+                    inst.clock.error = Some(crate::media::MediaError {
+                        code: crate::media::MediaErrorCode::SrcNotSupported,
+                        message: "Failed to load media: unsupported format or missing source"
+                            .into(),
+                    });
+                    inst.clock.ready_state = crate::media::ReadyState::HaveNothing;
+                    inst.clock.network_state = crate::media::NetworkState::NoSource;
                 } else {
                     let _ = inst.load_bytes(src, bytes);
                 }
@@ -919,169 +704,22 @@ impl Dom {
                     .push(target_url.to_string());
                 return Ok(Value::Null);
             }
-            "canvasCreate" => {
-                let w = text(1).parse::<u32>().unwrap_or(300);
-                let h = text(2).parse::<u32>().unwrap_or(150);
-                let is_offscreen = text(3) == "true";
-                let id = self
-                    .canvas_engine
-                    .borrow_mut()
-                    .create_canvas(w, h, is_offscreen)?;
-                return Ok(json!(id.0));
-            }
-            "canvasResize" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let w = text(2).parse::<u32>().unwrap_or(300);
-                let h = text(3).parse::<u32>().unwrap_or(150);
-                self.canvas_engine
-                    .borrow_mut()
-                    .resize_canvas(crate::canvas::CanvasId(id), w, h)?;
-                return Ok(Value::Null);
-            }
-            "canvasDestroy" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                self.canvas_engine
-                    .borrow_mut()
-                    .destroy_canvas(crate::canvas::CanvasId(id));
-                return Ok(Value::Null);
-            }
-            "canvasGetMemory" => {
-                let mem = self.canvas_engine.borrow().total_pixel_bytes();
-                return Ok(json!(mem));
-            }
-            "canvasExecute" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let cmd = text(2);
-                let cmd_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
-                let mut engine = self.canvas_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::canvas::CanvasId(id))
-                    .ok_or("Canvas not found")?;
-                let res = ctx.execute_command(cmd, &cmd_args)?;
-                return Ok(res);
-            }
-            "canvasToDataURL" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let mime = text(2);
-                let mut engine = self.canvas_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::canvas::CanvasId(id))
-                    .ok_or("Canvas not found")?;
-                let data_url = ctx.to_data_url(mime)?;
-                return Ok(json!(data_url));
-            }
-            "canvasToBlob" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let mut engine = self.canvas_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::canvas::CanvasId(id))
-                    .ok_or("Canvas not found")?;
-                let bytes = ctx.to_blob_bytes()?;
-                return Ok(json!(bytes));
-            }
-            "canvasGetImageData" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let coords: Vec<i32> = serde_json::from_str(text(2)).unwrap_or_default();
-                let x = coords.get(0).copied().unwrap_or(0);
-                let y = coords.get(1).copied().unwrap_or(0);
-                let w = coords.get(2).copied().unwrap_or(1);
-                let h = coords.get(3).copied().unwrap_or(1);
-                let mut engine = self.canvas_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::canvas::CanvasId(id))
-                    .ok_or("Canvas not found")?;
-                let pixels = ctx.get_image_data(x, y, w, h)?;
-                return Ok(json!(pixels));
-            }
-            "canvasPutImageData" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                #[derive(serde::Deserialize)]
-                struct PutPayload {
-                    data: Vec<u8>,
-                    dx: i32,
-                    dy: i32,
-                    w: i32,
-                    h: i32,
-                }
-                let payload: PutPayload =
-                    serde_json::from_str(text(2)).map_err(|e| e.to_string())?;
-                let mut engine = self.canvas_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::canvas::CanvasId(id))
-                    .ok_or("Canvas not found")?;
-                ctx.put_image_data(&payload.data, payload.dx, payload.dy, payload.w, payload.h)?;
-                return Ok(Value::Null);
-            }
-            "canvasMeasureText" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let txt = text(2);
-                let engine = self.canvas_engine.borrow();
-                let ctx = engine
-                    .get(crate::canvas::CanvasId(id))
-                    .ok_or("Canvas not found")?;
-                let (width, ascent, descent) = ctx.measure_text(txt);
-                return Ok(json!({
-                    "width": width,
-                    "actualBoundingBoxAscent": ascent,
-                    "actualBoundingBoxDescent": descent,
-                    "fontBoundingBoxAscent": ascent,
-                    "fontBoundingBoxDescent": descent
-                }));
-            }
-            "canvasTaint" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let mut engine = self.canvas_engine.borrow_mut();
-                if let Some(ctx) = engine.get_mut(crate::canvas::CanvasId(id)) {
-                    ctx.origin_clean = false;
-                }
-                return Ok(Value::Null);
-            }
-            "canvasDrawImage" => {
-                let target_id = text(1).parse::<u64>().map_err(|_| "Invalid canvas ID")?;
-                let src_id = text(2)
-                    .parse::<u64>()
-                    .map_err(|_| "Invalid source canvas ID")?;
-                let is_clean = text(3) != "tainted";
-                let mut engine = self.canvas_engine.borrow_mut();
-                let (src_pixels, src_w, src_h) = {
-                    let src = engine
-                        .get_mut(crate::canvas::CanvasId(src_id))
-                        .ok_or("Source canvas not found")?;
-                    let pixels = src.get_image_data(0, 0, src.width as i32, src.height as i32)?;
-                    (pixels, src.width as i32, src.height as i32)
-                };
-                let target = engine
-                    .get_mut(crate::canvas::CanvasId(target_id))
-                    .ok_or("Target canvas not found")?;
-                target.draw_image(
-                    &src_pixels,
-                    src_w,
-                    src_h,
-                    0.0,
-                    0.0,
-                    src_w as f32,
-                    src_h as f32,
-                    0.0,
-                    0.0,
-                    src_w as f32,
-                    src_h as f32,
-                    is_clean,
-                )?;
+            "workerCheck" => {
+                self.workers.borrow().check_script(text(1), &self.csp)?;
                 return Ok(Value::Null);
             }
             "workerCreate" => {
-                let id = self
-                    .workers
-                    .borrow_mut()
-                    .spawn_dedicated(text(1), text(2).to_string())?;
+                let config: crate::workers::WorkerConfig =
+                    serde_json::from_str(text(1)).map_err(|error| error.to_string())?;
+                let id = self.workers.borrow_mut().spawn_dedicated(
+                    &config,
+                    &crate::workers::Environment {
+                        network: &self.network,
+                        csp: &self.csp,
+                        limits: &self.limits,
+                    },
+                )?;
                 return Ok(json!(id.0));
-            }
-            "workerPost" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
-                self.workers
-                    .borrow()
-                    .post_dedicated(crate::workers::WorkerId(id), text(2).to_string())?;
-                return Ok(Value::Null);
             }
             "workerTerminate" => {
                 let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
@@ -1099,70 +737,128 @@ impl Dom {
                 return Ok(json!(events));
             }
             "sharedWorkerConnect" => {
-                let (doc_port, worker_port) = self.workers.borrow_mut().connect_shared(
-                    text(1),
-                    text(2),
-                    text(3).to_string(),
+                let config: crate::workers::WorkerConfig =
+                    serde_json::from_str(text(1)).map_err(|error| error.to_string())?;
+                self.workers.borrow_mut().connect_shared(
+                    &config,
+                    &crate::workers::Environment {
+                        network: &self.network,
+                        csp: &self.csp,
+                        limits: &self.limits,
+                    },
                 )?;
-                return Ok(json!({ "docPort": doc_port.0, "workerPort": worker_port.0 }));
+                return Ok(json!(""));
             }
             "serviceWorkerRegister" => {
-                let info = self
-                    .workers
-                    .borrow_mut()
-                    .register_service_worker(text(1), (!text(2).is_empty()).then_some(text(2)))?;
-                return Ok(json!(info));
+                let options: Value = serde_json::from_str(text(3)).unwrap_or(Value::Null);
+                let document = self.document.borrow().url().clone();
+                let script = url::Url::parse(text(1))
+                    .map_err(|_| "TypeError: Invalid service worker script URL")?;
+                if !self
+                    .csp
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .allows_url("worker-src", &script, &document, None)
+                {
+                    return Err(
+                        "SecurityError: Service worker blocked by Content Security Policy".into(),
+                    );
+                }
+                let job = self.hubs.service.register(
+                    &self.network,
+                    &self.limits,
+                    &document,
+                    text(1),
+                    text(2),
+                    options["module"].as_bool().unwrap_or(false),
+                )?;
+                return Ok(json!(job));
             }
-            "serviceWorkerGetRegistration" => {
-                let url = url::Url::parse(text(1)).map_err(|e| e.to_string())?;
-                let info = self.workers.borrow().get_service_worker(&url);
-                return Ok(json!(info));
+            "serviceWorkerUpdate" => {
+                let document = self.document.borrow().url().clone();
+                if !text(1).starts_with(&document.origin().ascii_serialization()) {
+                    return Err("SecurityError: Registration belongs to another origin".into());
+                }
+                return Ok(json!(self.hubs.service.update(&self.network, text(1))?));
             }
             "serviceWorkerUnregister" => {
-                let removed = self.workers.borrow_mut().unregister_service_worker(text(1));
-                return Ok(json!(removed));
+                let document = self.document.borrow().url().clone();
+                return Ok(json!(self.hubs.service.unregister(
+                    &self.network,
+                    &document,
+                    text(1)
+                )));
             }
-            "serviceWorkerInterceptFetch" => {
-                let url = url::Url::parse(text(1)).map_err(|e| e.to_string())?;
-                let entry = self.workers.borrow().intercept_fetch(&url);
-                return Ok(json!(entry));
+            "serviceWorkerPoll" => {
+                let document = self.document.borrow().url().clone();
+                return Ok(self.hubs.service.poll(
+                    &self.network,
+                    &self.client_id,
+                    &document,
+                    self.created,
+                ));
+            }
+            "serviceWorkerControlled" => {
+                let document = self.document.borrow().url().clone();
+                return Ok(json!(self.hubs.service.controls(&self.network, &document)));
+            }
+            "serviceWorkerPost" => {
+                let id = text(1).parse::<u64>().map_err(|_| "Invalid worker ID")?;
+                let document = self.document.borrow().url().clone();
+                self.hubs
+                    .service
+                    .post(&self.network, id, &self.client_id, &document, text(2))?;
+                return Ok(Value::Null);
             }
             "channelCreate" => {
-                let (p1, p2) = self.workers.borrow_mut().create_channel();
-                return Ok(json!({ "port1": p1.0, "port2": p2.0 }));
+                let (first, second) = self.port_hub().create_channel();
+                return Ok(json!({ "port1": first.0, "port2": second.0 }));
             }
             "portPost" => {
                 let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
-                let transferred: Vec<u64> = serde_json::from_str(text(3)).unwrap_or_default();
-                let ports = transferred
-                    .into_iter()
-                    .map(crate::workers::PortId)
-                    .collect();
-                self.workers.borrow_mut().post_port(
+                self.port_hub().post_message(
                     crate::workers::PortId(port),
                     text(2).to_string(),
-                    ports,
+                    Vec::new(),
                 )?;
                 return Ok(Value::Null);
             }
             "portClose" => {
                 let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
-                self.workers
-                    .borrow_mut()
-                    .close_port(crate::workers::PortId(port));
+                self.port_hub().close(crate::workers::PortId(port));
                 return Ok(Value::Null);
             }
             "portPoll" => {
                 let port = text(1).parse::<u64>().map_err(|_| "Invalid port ID")?;
-                let msgs = self
-                    .workers
-                    .borrow_mut()
-                    .poll_port(crate::workers::PortId(port));
-                return Ok(json!(msgs));
+                return Ok(json!(
+                    self.port_hub().poll_messages(crate::workers::PortId(port))
+                ));
             }
             "clipboardWrite" => {
                 self.clipboard.borrow_mut().clear();
                 self.clipboard.borrow_mut().push_str(text(1));
+                return Ok(Value::Null);
+            }
+            "clipboardWriteText" => {
+                // navigator.clipboard.writeText: gated on transient activation
+                // and forwarded to the browser, which owns the OS clipboard.
+                const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
+                let now = Instant::now();
+                if !self.activation.get().is_some_and(|until| until > now) {
+                    return Err(
+                        "NotAllowedError: clipboard write requires transient user activation"
+                            .into(),
+                    );
+                }
+                if text(1).len() > MAX_CLIPBOARD_BYTES {
+                    return Err("NotAllowedError: clipboard text is too large".into());
+                }
+                self.clipboard.borrow_mut().clear();
+                self.clipboard.borrow_mut().push_str(text(1));
+                self.requests
+                    .borrow_mut()
+                    .clipboard_writes
+                    .push(text(1).to_string());
                 return Ok(Value::Null);
             }
             "clipboardRead" => {
@@ -1250,6 +946,7 @@ impl Dom {
                 | "setAttrNS"
                 | "styleSet"
                 | "focus"
+                | "blur"
                 | "setChecked"
                 | "setText"
                 | "setAttr"
@@ -1348,266 +1045,6 @@ impl Dom {
             return Ok(Value::Null);
         }
         let charge = match text(0) {
-            "webglCreate" => {
-                let w = text(1).parse::<u32>().unwrap_or(300);
-                let h = text(2).parse::<u32>().unwrap_or(150);
-                let is_webgl2 = text(3) == "webgl2";
-                let id = self.webgl_engine.borrow_mut().create_context(
-                    w,
-                    h,
-                    is_webgl2,
-                    crate::webgl::ContextAttributes::default(),
-                )?;
-                return Ok(json!(id.0));
-            }
-            "webglResize" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                let w = text(2).parse::<u32>().unwrap_or(300);
-                let h = text(3).parse::<u32>().unwrap_or(150);
-                self.webgl_engine.borrow_mut().resize_context(
-                    crate::webgl::WebGLContextId(id),
-                    w,
-                    h,
-                )?;
-                return Ok(Value::Null);
-            }
-            "webglDestroy" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                self.webgl_engine
-                    .borrow_mut()
-                    .destroy_context(crate::webgl::WebGLContextId(id));
-                return Ok(Value::Null);
-            }
-            "webglGetMemory" => {
-                let mem = self.webgl_engine.borrow().total_pixel_bytes();
-                return Ok(json!(mem));
-            }
-            "webglOp" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                let op = text(2);
-                let op_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
-                let mut engine = self.webgl_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::webgl::WebGLContextId(id))
-                    .ok_or("WebGL context not found")?;
-
-                match op {
-                    "getError" => return Ok(json!(ctx.last_error)),
-                    "isContextLost" => return Ok(json!(ctx.context_lost)),
-                    "loseContext" => {
-                        ctx.lose_context();
-                        return Ok(Value::Null);
-                    }
-                    "restoreContext" => {
-                        ctx.restore_context();
-                        return Ok(Value::Null);
-                    }
-                    "enable" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.enable(cap);
-                        return Ok(Value::Null);
-                    }
-                    "disable" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.disable(cap);
-                        return Ok(Value::Null);
-                    }
-                    "isEnabled" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(json!(ctx.is_enabled(cap)));
-                    }
-                    "clearColor" => {
-                        let r = op_args.get(0).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let g = op_args.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let b = op_args.get(2).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let a = op_args.get(3).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        ctx.clear_color(r, g, b, a);
-                        return Ok(Value::Null);
-                    }
-                    "clearDepth" => {
-                        let d = op_args.get(0).and_then(Value::as_f64).unwrap_or(1.0) as f32;
-                        ctx.clear_depth(d);
-                        return Ok(Value::Null);
-                    }
-                    "clear" => {
-                        let mask = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.clear(mask);
-                        return Ok(Value::Null);
-                    }
-                    "viewport" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.viewport(x, y, w, h);
-                        return Ok(Value::Null);
-                    }
-                    "scissor" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.scissor(x, y, w, h);
-                        return Ok(Value::Null);
-                    }
-                    "createBuffer" => return Ok(json!(ctx.create_buffer())),
-                    "bindBuffer" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let buf_id = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.bind_buffer(target, buf_id);
-                        return Ok(Value::Null);
-                    }
-                    "bufferData" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let data: Vec<u8> = op_args
-                            .get(1)
-                            .and_then(|v| serde_json::from_value(v.clone()).ok())
-                            .unwrap_or_default();
-                        let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.buffer_data(target, &data, usage);
-                        return Ok(Value::Null);
-                    }
-                    "createShader" => {
-                        let stype = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(json!(ctx.create_shader(stype)));
-                    }
-                    "shaderSource" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let src = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        ctx.shader_source(sid, src);
-                        return Ok(Value::Null);
-                    }
-                    "compileShader" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.compile_shader(sid);
-                        return Ok(Value::Null);
-                    }
-                    "getShaderParameter" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(ctx.get_shader_parameter(sid, pname));
-                    }
-                    "getShaderInfoLog" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        return Ok(json!(ctx.get_shader_info_log(sid)));
-                    }
-                    "createProgram" => return Ok(json!(ctx.create_program())),
-                    "attachShader" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let sid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.attach_shader(pid, sid);
-                        return Ok(Value::Null);
-                    }
-                    "linkProgram" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.link_program(pid);
-                        return Ok(Value::Null);
-                    }
-                    "useProgram" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.use_program(pid);
-                        return Ok(Value::Null);
-                    }
-                    "getProgramParameter" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(ctx.get_program_parameter(pid, pname));
-                    }
-                    "getUniformLocation" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        return Ok(json!(ctx.get_uniform_location(pid, name)));
-                    }
-                    "getAttribLocation" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        return Ok(json!(ctx.get_attrib_location(pid, name)));
-                    }
-                    "uniformValues" => {
-                        let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let vals: Vec<f32> = op_args
-                            .get(1)
-                            .and_then(|v| serde_json::from_value(v.clone()).ok())
-                            .unwrap_or_default();
-                        ctx.uniform_values(loc, &vals);
-                        return Ok(Value::Null);
-                    }
-                    "vertexAttribPointer" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        let size = op_args.get(1).and_then(Value::as_i64).unwrap_or(4) as i32;
-                        let atype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let norm = op_args.get(3).and_then(Value::as_bool).unwrap_or(false);
-                        let stride = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let offset = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.vertex_attrib_pointer(idx, size, atype, norm, stride, offset);
-                        return Ok(Value::Null);
-                    }
-                    "enableVertexAttribArray" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        ctx.enable_vertex_attrib_array(idx);
-                        return Ok(Value::Null);
-                    }
-                    "disableVertexAttribArray" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        ctx.disable_vertex_attrib_array(idx);
-                        return Ok(Value::Null);
-                    }
-                    "drawArrays" => {
-                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let first = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let count = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.draw_arrays(mode, first, count);
-                        return Ok(Value::Null);
-                    }
-                    "drawElements" => {
-                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let count = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let etype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let offset = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.draw_elements(mode, count, etype, offset);
-                        return Ok(Value::Null);
-                    }
-                    "createTexture" => return Ok(json!(ctx.create_texture())),
-                    "bindTexture" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let tid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.bind_texture(target, tid);
-                        return Ok(Value::Null);
-                    }
-                    "texImage2D" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let level = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let iformat = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let pixels: Vec<u8> = op_args
-                            .get(8)
-                            .and_then(|v| serde_json::from_value(v.clone()).ok())
-                            .unwrap_or_default();
-                        let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
-                        ctx.tex_image_2d(
-                            target, level, iformat, w, h, border, format, ttype, &pixels, is_clean,
-                        );
-                        return Ok(Value::Null);
-                    }
-                    "readPixels" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(1) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(1) as i32;
-                        let pixels = ctx.read_pixels(x, y, w, h)?;
-                        return Ok(json!(pixels));
-                    }
-                    "toDataURL" => {
-                        let data_url = ctx.to_data_url()?;
-                        return Ok(json!(data_url));
-                    }
-                    _ => return Err(format!("Unknown WebGL operation: {}", op)),
-                }
-            }
             "setText" => text(2).len() + 32,
             "setAttr" => text(2).len() + text(3).len() + 32,
             "create" | "createText" | "createComment" | "createFragment" => text(1).len() + 32,
@@ -1634,261 +1071,16 @@ impl Dom {
             .map_err(|_| "DOM is currently busy".to_string())?;
         let node_id = || -> Result<NodeId, String> {
             let id = id(1)?;
-            if doc.get_node(id).is_none() {
+            if doc.node(id.key()).is_none() {
                 Err("Node no longer exists".into())
             } else {
                 Ok(id)
             }
         };
         let value = match text(0) {
-            "webglCreate" => {
-                let w = text(1).parse::<u32>().unwrap_or(300);
-                let h = text(2).parse::<u32>().unwrap_or(150);
-                let is_webgl2 = text(3) == "webgl2";
-                let id = self
-                    .webgl_engine
-                    .borrow_mut()
-                    .create_context(w, h, is_webgl2, crate::webgl::ContextAttributes::default())?;
-                return Ok(json!(id.0));
-            }
-            "webglResize" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                let w = text(2).parse::<u32>().unwrap_or(300);
-                let h = text(3).parse::<u32>().unwrap_or(150);
-                self.webgl_engine
-                    .borrow_mut()
-                    .resize_context(crate::webgl::WebGLContextId(id), w, h)?;
-                return Ok(Value::Null);
-            }
-            "webglDestroy" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                self.webgl_engine
-                    .borrow_mut()
-                    .destroy_context(crate::webgl::WebGLContextId(id));
-                return Ok(Value::Null);
-            }
-            "webglGetMemory" => {
-                let mem = self.webgl_engine.borrow().total_pixel_bytes();
-                return Ok(json!(mem));
-            }
-            "webglOp" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                let op = text(2);
-                let op_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
-                let mut engine = self.webgl_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::webgl::WebGLContextId(id))
-                    .ok_or("WebGL context not found")?;
-
-                match op {
-                    "getError" => return Ok(json!(ctx.last_error)),
-                    "isContextLost" => return Ok(json!(ctx.context_lost)),
-                    "loseContext" => {
-                        ctx.lose_context();
-                        return Ok(Value::Null);
-                    }
-                    "restoreContext" => {
-                        ctx.restore_context();
-                        return Ok(Value::Null);
-                    }
-                    "enable" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.enable(cap);
-                        return Ok(Value::Null);
-                    }
-                    "disable" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.disable(cap);
-                        return Ok(Value::Null);
-                    }
-                    "isEnabled" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(json!(ctx.is_enabled(cap)));
-                    }
-                    "clearColor" => {
-                        let r = op_args.get(0).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let g = op_args.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let b = op_args.get(2).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let a = op_args.get(3).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        ctx.clear_color(r, g, b, a);
-                        return Ok(Value::Null);
-                    }
-                    "clearDepth" => {
-                        let d = op_args.get(0).and_then(Value::as_f64).unwrap_or(1.0) as f32;
-                        ctx.clear_depth(d);
-                        return Ok(Value::Null);
-                    }
-                    "clear" => {
-                        let mask = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.clear(mask);
-                        return Ok(Value::Null);
-                    }
-                    "viewport" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.viewport(x, y, w, h);
-                        return Ok(Value::Null);
-                    }
-                    "scissor" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.scissor(x, y, w, h);
-                        return Ok(Value::Null);
-                    }
-                    "createBuffer" => return Ok(json!(ctx.create_buffer())),
-                    "bindBuffer" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let buf_id = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.bind_buffer(target, buf_id);
-                        return Ok(Value::Null);
-                    }
-                    "bufferData" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let data: Vec<u8> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-                        let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.buffer_data(target, &data, usage);
-                        return Ok(Value::Null);
-                    }
-                    "createShader" => {
-                        let stype = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(json!(ctx.create_shader(stype)));
-                    }
-                    "shaderSource" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let src = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        ctx.shader_source(sid, src);
-                        return Ok(Value::Null);
-                    }
-                    "compileShader" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.compile_shader(sid);
-                        return Ok(Value::Null);
-                    }
-                    "getShaderParameter" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(ctx.get_shader_parameter(sid, pname));
-                    }
-                    "getShaderInfoLog" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        return Ok(json!(ctx.get_shader_info_log(sid)));
-                    }
-                    "createProgram" => return Ok(json!(ctx.create_program())),
-                    "attachShader" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let sid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.attach_shader(pid, sid);
-                        return Ok(Value::Null);
-                    }
-                    "linkProgram" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.link_program(pid);
-                        return Ok(Value::Null);
-                    }
-                    "useProgram" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.use_program(pid);
-                        return Ok(Value::Null);
-                    }
-                    "getProgramParameter" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(ctx.get_program_parameter(pid, pname));
-                    }
-                    "getUniformLocation" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        return Ok(json!(ctx.get_uniform_location(pid, name)));
-                    }
-                    "getAttribLocation" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        return Ok(json!(ctx.get_attrib_location(pid, name)));
-                    }
-                    "uniformValues" => {
-                        let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let vals: Vec<f32> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-                        ctx.uniform_values(loc, &vals);
-                        return Ok(Value::Null);
-                    }
-                    "vertexAttribPointer" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        let size = op_args.get(1).and_then(Value::as_i64).unwrap_or(4) as i32;
-                        let atype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let norm = op_args.get(3).and_then(Value::as_bool).unwrap_or(false);
-                        let stride = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let offset = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.vertex_attrib_pointer(idx, size, atype, norm, stride, offset);
-                        return Ok(Value::Null);
-                    }
-                    "enableVertexAttribArray" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        ctx.enable_vertex_attrib_array(idx);
-                        return Ok(Value::Null);
-                    }
-                    "disableVertexAttribArray" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        ctx.disable_vertex_attrib_array(idx);
-                        return Ok(Value::Null);
-                    }
-                    "drawArrays" => {
-                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let first = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let count = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.draw_arrays(mode, first, count);
-                        return Ok(Value::Null);
-                    }
-                    "drawElements" => {
-                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let count = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let etype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let offset = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.draw_elements(mode, count, etype, offset);
-                        return Ok(Value::Null);
-                    }
-                    "createTexture" => return Ok(json!(ctx.create_texture())),
-                    "bindTexture" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let tid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.bind_texture(target, tid);
-                        return Ok(Value::Null);
-                    }
-                    "texImage2D" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let level = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let iformat = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let pixels: Vec<u8> = op_args.get(8).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-                        let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
-                        ctx.tex_image_2d(target, level, iformat, w, h, border, format, ttype, &pixels, is_clean);
-                        return Ok(Value::Null);
-                    }
-                    "readPixels" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(1) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(1) as i32;
-                        let pixels = ctx.read_pixels(x, y, w, h)?;
-                        return Ok(json!(pixels));
-                    }
-                    "toDataURL" => {
-                        let data_url = ctx.to_data_url()?;
-                        return Ok(json!(data_url));
-                    }
-                    _ => return Err(format!("Unknown WebGL operation: {}", op)),
-                }
-            }
             "customUpgrade" => {
                 let target = node_id()?;
-                let name = doc.get_node(target).and_then(|node| node.element_data()).map(|element| element.name.local.as_ref()).unwrap_or("");
+                let name = doc.node(target.key()).and_then(NodeView::element_name).map_or("", |name| name.local);
                 json!(self.components.borrow().needs_upgrade(target.as_u64(), name))
             },
             "customCandidates" => {
@@ -1896,7 +1088,7 @@ impl Dom {
                 let definition: u64 = text(2).parse().map_err(|_| "Invalid definition ID")?;
                 let registry = self.components.borrow();
                 let candidates: Vec<_> = self.component_subtree(&doc, root).into_iter().filter(|id| {
-                    let name = doc.get_node(*id).and_then(|node| node.element_data()).map(|element| element.name.local.as_ref()).unwrap_or("");
+                    let name = doc.node((*id).key()).and_then(NodeView::element_name).map_or("", |name| name.local);
                     registry.needs_upgrade(id.as_u64(), name) == Some(definition)
                 }).map(|id| id.as_u64().to_string()).collect();
                 json!(candidates)
@@ -1905,12 +1097,12 @@ impl Dom {
                 let target = node_id()?;
                 let definition: u64 = text(2).parse().map_err(|_| "Invalid definition ID")?;
                 let mut registry = self.components.borrow_mut();
-                let name = doc.get_node(target).and_then(|node| node.element_data()).map(|element| element.name.local.as_ref()).ok_or("Custom element must be an element")?;
+                let name = doc.node(target.key()).and_then(NodeView::element_name).map(|name| name.local).ok_or("Custom element must be an element")?;
                 if registry.get(name).is_none_or(|entry| entry.id != definition) { return Err("Custom element definition does not match its node".into()); }
                 let began = registry.begin(target.as_u64(), definition)?;
                 if began {
-                    for attribute in doc.get_node(target).unwrap().element_data().unwrap().attrs.iter() {
-                        registry.attribute(target.as_u64(), attribute.name.local.as_ref(), None, Some(&attribute.value), (!attribute.name.ns.as_str().is_empty()).then_some(attribute.name.ns.as_str()));
+                    for (name, value) in doc.node(target.key()).into_iter().flat_map(NodeView::attributes) {
+                        registry.attribute(target.as_u64(), name.local.as_ref(), None, Some(value), (!name.ns.as_str().is_empty()).then_some(name.ns.as_str()));
                     }
                     if self.component_connected(&doc, target) { registry.lifecycle(target.as_u64(), true); }
                 }
@@ -1923,7 +1115,7 @@ impl Dom {
                 let definition: u64 = text(1).parse().map_err(|_| "Invalid definition ID")?;
                 let name = self.components.borrow().by_id(definition).ok_or("TypeError: Illegal constructor")?.name.clone();
                 if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
-                let created = doc.mutate().create_element(QualName::new(None, ns!(html), LocalName::from(name)), vec![]);
+                let created = (wega_dom::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from(name)), [])).node_id();
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 let mut registry = self.components.borrow_mut(); registry.begin(created.as_u64(), definition)?; registry.complete(created.as_u64(), true)?;
                 json!(created.as_u64().to_string())
@@ -1934,17 +1126,17 @@ impl Dom {
             },
             "customAdopt" => {
                 let target = node_id()?; let old = id(2)?; let new = id(3)?;
-                if !matches!(doc.get_node(old).map(|node|&node.data), Some(NodeData::Document(_))) || !matches!(doc.get_node(new).map(|node|&node.data), Some(NodeData::Document(_))) { return Err("Invalid adoption documents".into()); }
+                if !doc.node(old.key()).is_some_and(|node|node.kind()==NodeKind::Document) || !doc.node(new.key()).is_some_and(|node|node.kind()==NodeKind::Document) { return Err("Invalid adoption documents".into()); }
                 let mut registry = self.components.borrow_mut(); for child in self.component_subtree(&doc, target) { registry.adopted(child.as_u64(), old.as_u64(), new.as_u64()); } Value::Null
             },
             "shadowAttach" => {
                 let target = node_id()?;
                 if self.shadows.borrow().root(target.as_u64(), true).is_some() { return Err("NotSupportedError: shadow root already attached".into()); }
-                let tag = doc.get_node(target).and_then(|node| node.element_data()).ok_or("NotSupportedError: invalid shadow host")?.name.local.to_string();
+                let tag = doc.node(target.key()).and_then(NodeView::element_name).ok_or("NotSupportedError: invalid shadow host")?.local.to_string();
                 if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
-                let root = doc.mutate().create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), vec![]);
+                let root = (wega_dom::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), [])).node_id();
                 let entry = match self.shadows.borrow_mut().attach(target.as_u64(), root.as_u64(), text(2), text(3) == "true", &tag) {
-                    Ok(entry) => entry, Err(error) => { doc.mutate().remove_and_drop_node(root); return Err(error); }
+                    Ok(entry) => entry, Err(error) => { let _ = wega_dom::mutate(&mut *doc).remove_and_drop(root.key()); return Err(error); }
                 };
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 self.requests.borrow_mut().compatibility = Some("Shadow DOM scoped style and flattened layout are not implemented by Wega".into());
@@ -1956,14 +1148,14 @@ impl Dom {
             "eventParent" => {
                 let target = node_id()?;
                 if let Some(slot) = self.assigned_slot(&doc, target) { json!(slot.as_u64().to_string()) }
-                else if let Some(parent) = doc.get_node(target).unwrap().parent { json!(parent.as_u64().to_string()) }
+                else if let Some(parent) = wega_dom::DocumentView::node(&*doc, target.key()).and_then(wega_dom::NodeView::parent) { json!(parent.to_string()) }
                 else if text(2) != "true" && text(3) == text(1) { Value::Null }
                 else { json!(self.shadows.borrow().host(target.as_u64()).map(|id|id.to_string())) }
             },
             "assignedSlot" | "assignedSlotInternal" => {
                 let mut assigned = self.assigned_slot(&doc, node_id()?);
                 if text(0) == "assignedSlot" && let Some(slot) = assigned {
-                        let mut root = slot; while let Some(parent) = doc.get_node(root).and_then(|node|node.parent) { root = parent; }
+                        let root = wega_dom::tree_root(&*doc, slot.key());
                         if let Some(host) = self.shadows.borrow().host(root.as_u64()) && self.shadows.borrow().root(host, false).is_none() { assigned = None; }
                 }
                 json!(assigned.map(|id|id.as_u64().to_string()))
@@ -1971,7 +1163,7 @@ impl Dom {
             "componentRoot" => {
                 let mut root = node_id()?;
                 loop {
-                    if let Some(parent) = doc.get_node(root).and_then(|node|node.parent) { root = parent; }
+                    if let Some(parent) = doc.node(root.key()).and_then(NodeView::parent) { root = parent.node_id(); }
                     else if text(2) == "true" && let Some(host) = self.shadows.borrow().host(root.as_u64()) { root = NodeId::from_u64(host); }
                     else { break; }
                 }
@@ -1983,13 +1175,13 @@ impl Dom {
             },
             "cookie"=>json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite)),
             "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);Value::Null},
-            "templateContent"=>{let target=node_id()?;let content=doc.mutate().template_contents(target);json!(content.as_u64().to_string())},
+            "templateContent"=>{let target=node_id()?;let content=wega_dom::mutate(&mut *doc).template_contents(target.key()).map_err(Self::mutation_error)?;json!(content.node_id().as_u64().to_string())},
             "viewport"=>{let viewport=doc.viewport();let scale=(viewport.hidpi_scale*viewport.zoom) as f64;let scroll=doc.viewport_scroll();json!({"width":viewport.window_size.0 as f64/scale,"height":viewport.window_size.1 as f64/scale,"dpr":scale,"scrollX":scroll.x,"scrollY":scroll.y})},
             "scroll"=>{let node=doc.get_node(node_id()?).unwrap();let scroll=node.scroll_offset();json!({"x":scroll.x,"y":scroll.y})},
             "scrollViewport"=>{let x=text(1).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.set_viewport_scroll(blitz_dom::Point{x,y});}Value::Null},
             "scrollNode"=>{let target=node_id()?;let x=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(3).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.scroll_to(target,x,y,blitz_dom::ScrollBehavior::Instant);}Value::Null},
             "scrollIntoView"=>{let target=node_id()?;doc.scroll_into_view(target,blitz_dom::ScrollBehavior::Instant,blitz_dom::ScrollLogicalPosition::Start,blitz_dom::ScrollLogicalPosition::Nearest);Value::Null},
-            "active"=>json!(doc.get_focussed_node_id().map(|id|id.as_u64().to_string())),
+            "active"=>json!(wega_dom::input::FocusState::focused(&*doc).map(|key|key.to_string())),
             "history"=>{let url=doc.url().join(text(1)).map_err(|e|e.to_string())?;if url.origin()!=doc.url().origin()||!matches!(url.scheme(),"http"|"https"){return Err("SecurityError: history URL must have the same tuple origin".into());}doc.set_base_url(url.as_str());Value::Null},
             "media"=>{
                 let url_data=style::stylesheets::UrlExtraData(style::servo_arc::Arc::new(doc.url().clone()));
@@ -2007,48 +1199,39 @@ impl Dom {
             "retain" => {let id=node_id()?;self.retained.borrow_mut().insert(id);Value::Null},
             "release" => {let id=id(1)?;self.retained.borrow_mut().remove(&id);self.collect_detached(&mut doc,id);Value::Null},
             "info"=>{
-                let node=doc.get_node(node_id()?).unwrap();
-                let (kind,name,local,namespace,prefix)=match &node.data {
-                    NodeData::Document(_)=>(9,"#document".to_owned(),None,None,None),
-                    NodeData::Text(_)=>(3,"#text".to_owned(),None,None,None),
-                    NodeData::Comment{..}=>(8,"#comment".to_owned(),None,None,None),
-                    NodeData::Element(e)|NodeData::AnonymousBlock(e)=>{
-                        let local=e.name.local.to_string();let fragment=local=="#document-fragment";
-                        let name=if e.name.ns==ns!(html)&&!fragment {local.to_uppercase()}else{local.clone()};
-                        (if fragment{11}else{1},name,Some(local),Some(e.name.ns.to_string()),e.name.prefix.as_ref().map(|p|p.to_string()))
-                    }
-                };
-                json!({"nodeType":kind,"nodeName":name,"localName":local,"namespaceURI":namespace,"prefix":prefix})
+                let info=wega_dom::node_info(&*doc,node_id()?.key()).ok_or("InvalidStateError: node no longer exists")?;
+                json!({"nodeType":info.node_type,"nodeName":info.node_name,"localName":info.local_name,"namespaceURI":info.namespace,"prefix":info.prefix})
             },
-            "attributes"=>json!(doc.get_node(node_id()?).unwrap().attrs().unwrap_or_default().iter().map(|a|json!({"name":a.name.prefix.as_ref().map_or_else(||a.name.local.to_string(),|p|format!("{p}:{}",a.name.local)),"localName":a.name.local.to_string(),"namespaceURI":if a.name.ns==ns!(){None}else{Some(a.name.ns.to_string())},"value":a.value})).collect::<Vec<_>>()),
+            "attributes"=>json!(doc.node(node_id()?.key()).into_iter().flat_map(NodeView::attributes).map(|(name,value)|json!({"name":name.prefix.as_ref().map_or_else(||name.local.to_string(),|p|format!("{p}:{}",name.local)),"localName":name.local.to_string(),"namespaceURI":if name.ns==ns!(){None}else{Some(name.ns.to_string())},"value":value})).collect::<Vec<_>>()),
             "queryIn"=>json!(doc.query_selector_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
             "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "matches"=>json!(doc.matches_selector(node_id()?,text(2)).map_err(|_|"Invalid selector")?),
             "closest"=>json!(doc.closest(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
-            "getById"=>json!(doc.get_element_by_id(text(1)).map(|id|id.as_u64().to_string())),
+            "getById"=>json!(wega_dom::DocumentView::element_by_id(&*doc,text(1)).map(|key|key.to_string())),
             "outerHTML"=>json!(doc.get_node(node_id()?).unwrap().outer_html()),
             "innerHTML" | "contextualFragment"=>{
                 let mut target=node_id()?;
-                if doc.get_node(target).and_then(|node|node.element_data()).is_some_and(|element|element.name.local.as_str()=="template") { target=doc.mutate().template_contents(target); }
+                if doc.node(target.key()).and_then(NodeView::element_name).is_some_and(|name|name.local=="template") { target=wega_dom::mutate(&mut *doc).template_contents(target.key()).map(ToNodeId::node_id).map_err(Self::mutation_error)?; }
                 if text(2).len()>self.limits.html_bytes{return Err("HTML fragment exceeds the size limit".into());}
                 // Parse into a detached same-context element first; reject budgets before
                 // replacing live children, and retain removed nodes held by JS wrappers.
-                let element=doc.get_node(target).unwrap().element_data().ok_or("innerHTML needs an element")?;
-                let name=if element.name.local.as_str()=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.name.clone()};let staging=doc.mutate().create_element(name,vec![]);
-                {let mut mutation=doc.mutate();crate::parser::parse_fragment(&mut mutation,staging,text(2));}
+                let element=doc.node(target.key()).and_then(NodeView::qual_name).ok_or("innerHTML needs an element")?;
+                let name=if &*element.local=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.clone()};let staging:NodeId=wega_dom::mutate(&mut *doc).create_element(name,[]).node_id();
+                let remaining=self.limits.dom_nodes.saturating_sub(self.allocated.get()).saturating_add(2);
+                if wega_html::parse_fragment(&mut *doc,staging.key(),remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=wega_dom::mutate(&mut *doc).remove_and_drop(staging.key());return Err("DOM node limit exceeded".into());}
                 let parsed=Self::subtree(&doc,staging);
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
-                if text(0)=="innerHTML" {for id in &parsed {if doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e|&*e.name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
-                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {doc.mutate().remove_and_drop_node(staging);return Err("DOM node limit exceeded".into());}
-                let children=doc.get_node(staging).unwrap().children.to_vec();
+                if text(0)=="innerHTML" {for id in &parsed {if doc.node((*id).key()).and_then(NodeView::element_name).is_some_and(|name|name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
+                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {wega_dom::mutate(&mut *doc).remove_and_drop(staging.key()).map_err(Self::mutation_error)?;return Err("DOM node limit exceeded".into());}
+                let children:Vec<wega_dom::NodeKey>=doc.node(staging.key()).map(|node|node.children().collect()).unwrap_or_default();
                 if text(0)=="contextualFragment" {
-                    let fragment=doc.mutate().create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),vec![]);
-                    doc.mutate().replace_children(fragment,&children);doc.mutate().remove_and_drop_node(staging);
+                    let mut mutation=wega_dom::mutate(&mut *doc);let fragment=mutation.create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[]);
+                    mutation.replace_children(fragment,&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.key()).map_err(Self::mutation_error)?;mutation.finish();let fragment:NodeId=fragment.node_id();
                     self.allocated.set(self.allocated.get()+parsed.len());
                     return Ok(json!(fragment.as_u64().to_string()));
                 }
-                let old=doc.get_node(target).unwrap().children.to_vec();
-                doc.mutate().replace_children(target,&children);doc.mutate().remove_and_drop_node(staging);
+                let old:Vec<NodeId>=doc.node(target.key()).map(|node|node.children().map(ToNodeId::node_id).collect()).unwrap_or_default();
+                {let mut mutation=wega_dom::mutate(&mut *doc);mutation.replace_children(target.key(),&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging.key()).map_err(Self::mutation_error)?;}
                 self.allocated.set(self.allocated.get()+parsed.len()-1);
                 for id in old {self.collect_detached(&mut doc,id);}
                 Value::Null
@@ -2058,42 +1241,35 @@ impl Dom {
                 if self.allocated.get().saturating_add(count)>self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
                 let bytes=doc.get_node(source).unwrap().outer_html().len();
                 if self.used.get().saturating_add(bytes)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}
-                let cloned=if deep{doc.mutate().deep_clone_node(source)}else{
-                    match &doc.get_node(source).unwrap().data {
-                        NodeData::Element(e)|NodeData::AnonymousBlock(e)=>{let name=e.name.clone();let attrs=e.attrs.to_vec();doc.mutate().create_element(name,attrs)},
-                        NodeData::Text(t)=>{let text=t.content.to_string();doc.mutate().create_text_node(&text)},
-                        NodeData::Comment{contents}=>{let text=contents.clone();doc.mutate().create_comment_node(&text)},
-                        _=>return Err("This node cannot be cloned".into())
-                    }
-                };
+                let cloned=(wega_dom::mutate(&mut *doc).clone_node(source.key(),deep).map_err(|error|match error{wega_dom::MutationError::NotCloneable(_)=>"This node cannot be cloned".to_string(),other=>Self::mutation_error(other)})?).node_id();
                 self.allocated.set(self.allocated.get()+count);self.used.set(self.used.get()+bytes);json!(cloned.as_u64().to_string())
             },
             "insert"=>{
                 let parent=node_id()?;let child=id(2)?;
-                if doc.get_node(child).is_none(){return Err("Node no longer exists".into());}
+                if doc.node(child.key()).is_none(){return Err("Node no longer exists".into());}
                 let anchor=if text(3).is_empty(){None}else{Some(id(3)?)};
                 if anchor.is_some_and(|id|doc.get_node(id).is_none_or(|n|n.parent!=Some(parent))){return Err("NotFoundError: reference is not a child".into());}
-                let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.get_node(id).and_then(|n|n.parent).or_else(||self.shadows.borrow().host(id.as_u64()).map(NodeId::from_u64));}
+                let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.node(id.key()).and_then(NodeView::parent).map(ToNodeId::node_id).or_else(||self.shadows.borrow().host(id.as_u64()).map(NodeId::from_u64));}
                 if anchor==Some(child){return Ok(json!(child.as_u64().to_string()));}
-                if let Some(anchor)=anchor{doc.mutate().insert_nodes_before(anchor,&[child]);}else{doc.mutate().append_children(parent,&[child]);}
+                {let mut mutation=wega_dom::mutate(&mut *doc);if let Some(anchor)=anchor{mutation.insert_before(anchor.key(),&[child.key()]).map_err(Self::mutation_error)?;}else{mutation.append_children(parent.key(),&[child.key()]).map_err(Self::mutation_error)?;}}
                 json!(child.as_u64().to_string())
             },
             "createNS"|"createComment"|"createFragment"|"createDocument"=>{
                 if self.allocated.get()>=self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
                 let created=match text(0){
                     "createDocument"=>doc.create_node(NodeData::Document(Box::default())),
-                    "createComment"=>doc.mutate().create_comment_node(text(1)),
-                    "createFragment"=>doc.mutate().create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),vec![]),
-                    _=>{let parts=text(2).split_once(':');let (prefix,local)=parts.map_or((None,text(2)),|(p,l)|(Some(html5ever::Prefix::from(p)),l));doc.mutate().create_element(QualName::new(prefix,html5ever::Namespace::from(text(1)),LocalName::from(local)),vec![])}
+                    "createComment"=>(wega_dom::mutate(&mut *doc).create_comment(text(1))).node_id(),
+                    "createFragment"=>(wega_dom::mutate(&mut *doc).create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[])).node_id(),
+                    _=>{let parts=text(2).split_once(':');let (prefix,local)=parts.map_or((None,text(2)),|(p,l)|(Some(html5ever::Prefix::from(p)),l));(wega_dom::mutate(&mut *doc).create_element(QualName::new(prefix,html5ever::Namespace::from(text(1)),LocalName::from(local)),[])).node_id()}
                 };self.allocated.set(self.allocated.get()+1);json!(created.as_u64().to_string())
             },
-            "attrNS"=>json!(doc.get_node(node_id()?).unwrap().attrs().unwrap_or_default().iter().find(|a|a.name.ns.as_str()==text(2)&&a.name.local.as_str()==text(3)).map(|a|a.value.clone())),
+            "attrNS"=>json!(wega_dom::attribute_ns(&*doc,node_id()?.key(),text(2),text(3))),
             "setAttrNS"=>{
                 let target=node_id()?;let payload=[text(3).to_owned(),text(4).to_owned()];
                 let (prefix,local)=payload[0].split_once(':').map_or((None,payload[0].as_str()),|(p,l)|(Some(html5ever::Prefix::from(p)),l));
                 let charge=payload[0].len()+payload[1].len();if self.used.get().saturating_add(charge)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}self.used.set(self.used.get()+charge);
-                let old = doc.get_node(target).unwrap().attrs().unwrap_or_default().iter().find(|a|a.name.ns.as_str()==text(2)&&a.name.local.as_str()==local).map(|a|a.value.clone());
-                doc.mutate().set_attribute(target,QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]);
+                let old = wega_dom::attribute_ns(&*doc,target.key(),text(2),local);
+                wega_dom::mutate(&mut *doc).set_attribute(target.key(),QualName::new(prefix,html5ever::Namespace::from(text(2)),LocalName::from(local)),&payload[1]).map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(target.as_u64(), local, old.as_deref(), Some(&payload[1]), (!text(2).is_empty()).then_some(text(2)));
                 Value::Null
             },
@@ -2102,10 +1278,10 @@ impl Dom {
             "inlineCSS"=>{let target=node_id()?;let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}json!(css)},
             "inlineProperty"=>{let target=node_id()?;let mut css=String::new();if let Ok(property)=style::properties::PropertyId::parse_enabled_for_all_content(text(2)) && let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).property_value_to_css(&property,&mut css);}json!(css)},
             "styleSet"=>{
-                let target=node_id()?;let old=Self::attribute(&doc,target,"style");doc.mutate().remove_style_property(target,text(2));
+                let target=node_id()?;let old=Self::attribute(&doc,target,"style");wega_dom::mutate(&mut *doc).remove_style_property(target.key(),text(2)).map_err(Self::mutation_error)?;
                 let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}
                 if !text(3).is_empty(){css.push_str(&format!("{}: {};",text(2),text(3)));}
-                doc.mutate().set_attribute(target,QualName::new(None,ns!(),LocalName::from("style")),&css);
+                wega_dom::mutate(&mut *doc).set_attribute(target.key(),QualName::new(None,ns!(),LocalName::from("style")),&css).map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),Some(&css),None);Value::Null
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
@@ -2123,7 +1299,8 @@ impl Dom {
             // Blitz creates native text editors during layout. Initialize a
             // newly inserted input before focus so immediate key/IME commands
             // cannot be silently dropped while waiting for the next paint.
-            "focus"=>{let target=node_id()?;self.resolve(&mut doc);doc.set_focus_to(target);self.invalidate();Value::Null},
+            "focus"=>{let target=node_id()?;self.resolve(&mut doc);let _=wega_dom::input::InputControl::set_focus(&mut *doc,target.key());self.invalidate();Value::Null},
+            "blur"=>{wega_dom::input::InputControl::clear_focus(&mut *doc);self.invalidate();Value::Null},
             "serialize"=>{let mut html=String::new();Self::serialize(&doc,node_id()?,&mut html);json!(html)},
             "computed"=>{
                 let target=node_id()?;self.resolve(&mut doc);
@@ -2131,10 +1308,9 @@ impl Dom {
             },
             "limits" => json!({"resourceBytes":self.limits.resource_bytes}),
             "windowNamed" => json!(blitz_dom::traversal::TreeTraverser::new(&doc).filter(|id| {
-                doc.get_node(*id).and_then(|n|n.element_data()).is_some_and(|e| {
-                    let attribute = |name: &str| e.attrs.iter().find(|a|a.name.local.as_str()==name).map(|a|a.value.as_str());
-                    attribute("id")==Some(text(1)) || (matches!(e.name.local.as_str(),"form"|"img"|"embed"|"object") && attribute("name")==Some(text(1)))
-                })
+                doc.node((*id).key()).is_some_and(|node| node.element_name().is_some_and(|element| {
+                    NodeView::attr(node,"id")==Some(text(1)) || (matches!(element.local,"form"|"img"|"embed"|"object") && NodeView::attr(node,"name")==Some(text(1)))
+                }))
             }).map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "root" => json!(doc.root_node().id.as_u64().to_string()),
             "query" => json!(
@@ -2151,291 +1327,28 @@ impl Dom {
             ),
             "text" => {let node=doc.get_node(node_id()?).unwrap();match &node.data {NodeData::Document(_)=>Value::Null,NodeData::Comment{contents}=>json!(contents),_=>json!(node.text_content())}},
             "tag" => json!(
-                doc.get_node(node_id()?).unwrap().element_data().map(|e| e
-                    .name
-                    .local
-                    .to_string()
-                    .to_uppercase())
+                doc.node(node_id()?.key()).and_then(NodeView::element_name).map(|name| name.local.to_uppercase())
             ),
             "firstChild" | "lastChild" | "nextSibling" | "previousSibling" => {
-                let target=node_id()?;
-                let node=doc.get_node(target).unwrap();
+                let target=wega_dom::NodeKey::from_u64(node_id()?.as_u64());
                 let related=match text(0) {
-            "webglCreate" => {
-                let w = text(1).parse::<u32>().unwrap_or(300);
-                let h = text(2).parse::<u32>().unwrap_or(150);
-                let is_webgl2 = text(3) == "webgl2";
-                let id = self
-                    .webgl_engine
-                    .borrow_mut()
-                    .create_context(w, h, is_webgl2, crate::webgl::ContextAttributes::default())?;
-                return Ok(json!(id.0));
-            }
-            "webglResize" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                let w = text(2).parse::<u32>().unwrap_or(300);
-                let h = text(3).parse::<u32>().unwrap_or(150);
-                self.webgl_engine
-                    .borrow_mut()
-                    .resize_context(crate::webgl::WebGLContextId(id), w, h)?;
-                return Ok(Value::Null);
-            }
-            "webglDestroy" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                self.webgl_engine
-                    .borrow_mut()
-                    .destroy_context(crate::webgl::WebGLContextId(id));
-                return Ok(Value::Null);
-            }
-            "webglGetMemory" => {
-                let mem = self.webgl_engine.borrow().total_pixel_bytes();
-                return Ok(json!(mem));
-            }
-            "webglOp" => {
-                let id = text(1).parse::<u64>().map_err(|_| "Invalid WebGL ID")?;
-                let op = text(2);
-                let op_args: Vec<Value> = serde_json::from_str(text(3)).unwrap_or_default();
-                let mut engine = self.webgl_engine.borrow_mut();
-                let ctx = engine
-                    .get_mut(crate::webgl::WebGLContextId(id))
-                    .ok_or("WebGL context not found")?;
-
-                match op {
-                    "getError" => return Ok(json!(ctx.last_error)),
-                    "isContextLost" => return Ok(json!(ctx.context_lost)),
-                    "loseContext" => {
-                        ctx.lose_context();
-                        return Ok(Value::Null);
-                    }
-                    "restoreContext" => {
-                        ctx.restore_context();
-                        return Ok(Value::Null);
-                    }
-                    "enable" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.enable(cap);
-                        return Ok(Value::Null);
-                    }
-                    "disable" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.disable(cap);
-                        return Ok(Value::Null);
-                    }
-                    "isEnabled" => {
-                        let cap = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(json!(ctx.is_enabled(cap)));
-                    }
-                    "clearColor" => {
-                        let r = op_args.get(0).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let g = op_args.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let b = op_args.get(2).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        let a = op_args.get(3).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        ctx.clear_color(r, g, b, a);
-                        return Ok(Value::Null);
-                    }
-                    "clearDepth" => {
-                        let d = op_args.get(0).and_then(Value::as_f64).unwrap_or(1.0) as f32;
-                        ctx.clear_depth(d);
-                        return Ok(Value::Null);
-                    }
-                    "clear" => {
-                        let mask = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.clear(mask);
-                        return Ok(Value::Null);
-                    }
-                    "viewport" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.viewport(x, y, w, h);
-                        return Ok(Value::Null);
-                    }
-                    "scissor" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.scissor(x, y, w, h);
-                        return Ok(Value::Null);
-                    }
-                    "createBuffer" => return Ok(json!(ctx.create_buffer())),
-                    "bindBuffer" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let buf_id = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.bind_buffer(target, buf_id);
-                        return Ok(Value::Null);
-                    }
-                    "bufferData" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let data: Vec<u8> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-                        let usage = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        ctx.buffer_data(target, &data, usage);
-                        return Ok(Value::Null);
-                    }
-                    "createShader" => {
-                        let stype = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(json!(ctx.create_shader(stype)));
-                    }
-                    "shaderSource" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let src = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        ctx.shader_source(sid, src);
-                        return Ok(Value::Null);
-                    }
-                    "compileShader" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.compile_shader(sid);
-                        return Ok(Value::Null);
-                    }
-                    "getShaderParameter" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(ctx.get_shader_parameter(sid, pname));
-                    }
-                    "getShaderInfoLog" => {
-                        let sid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        return Ok(json!(ctx.get_shader_info_log(sid)));
-                    }
-                    "createProgram" => return Ok(json!(ctx.create_program())),
-                    "attachShader" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let sid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.attach_shader(pid, sid);
-                        return Ok(Value::Null);
-                    }
-                    "linkProgram" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.link_program(pid);
-                        return Ok(Value::Null);
-                    }
-                    "useProgram" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.use_program(pid);
-                        return Ok(Value::Null);
-                    }
-                    "getProgramParameter" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let pname = op_args.get(1).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        return Ok(ctx.get_program_parameter(pid, pname));
-                    }
-                    "getUniformLocation" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        return Ok(json!(ctx.get_uniform_location(pid, name)));
-                    }
-                    "getAttribLocation" => {
-                        let pid = op_args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                        let name = op_args.get(1).and_then(Value::as_str).unwrap_or("");
-                        return Ok(json!(ctx.get_attrib_location(pid, name)));
-                    }
-                    "uniformValues" => {
-                        let loc = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let vals: Vec<f32> = op_args.get(1).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-                        ctx.uniform_values(loc, &vals);
-                        return Ok(Value::Null);
-                    }
-                    "vertexAttribPointer" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        let size = op_args.get(1).and_then(Value::as_i64).unwrap_or(4) as i32;
-                        let atype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let norm = op_args.get(3).and_then(Value::as_bool).unwrap_or(false);
-                        let stride = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let offset = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.vertex_attrib_pointer(idx, size, atype, norm, stride, offset);
-                        return Ok(Value::Null);
-                    }
-                    "enableVertexAttribArray" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        ctx.enable_vertex_attrib_array(idx);
-                        return Ok(Value::Null);
-                    }
-                    "disableVertexAttribArray" => {
-                        let idx = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                        ctx.disable_vertex_attrib_array(idx);
-                        return Ok(Value::Null);
-                    }
-                    "drawArrays" => {
-                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let first = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let count = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.draw_arrays(mode, first, count);
-                        return Ok(Value::Null);
-                    }
-                    "drawElements" => {
-                        let mode = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let count = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let etype = op_args.get(2).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let offset = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        ctx.draw_elements(mode, count, etype, offset);
-                        return Ok(Value::Null);
-                    }
-                    "createTexture" => return Ok(json!(ctx.create_texture())),
-                    "bindTexture" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let tid = op_args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                        ctx.bind_texture(target, tid);
-                        return Ok(Value::Null);
-                    }
-                    "texImage2D" => {
-                        let target = op_args.get(0).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let level = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let iformat = op_args.get(2).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(3).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let h = op_args.get(4).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let border = op_args.get(5).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let format = op_args.get(6).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let ttype = op_args.get(7).and_then(Value::as_u64).unwrap_or(0) as u32;
-                        let pixels: Vec<u8> = op_args.get(8).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-                        let is_clean = op_args.get(9).and_then(Value::as_bool).unwrap_or(true);
-                        ctx.tex_image_2d(target, level, iformat, w, h, border, format, ttype, &pixels, is_clean);
-                        return Ok(Value::Null);
-                    }
-                    "readPixels" => {
-                        let x = op_args.get(0).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let y = op_args.get(1).and_then(Value::as_i64).unwrap_or(0) as i32;
-                        let w = op_args.get(2).and_then(Value::as_i64).unwrap_or(1) as i32;
-                        let h = op_args.get(3).and_then(Value::as_i64).unwrap_or(1) as i32;
-                        let pixels = ctx.read_pixels(x, y, w, h)?;
-                        return Ok(json!(pixels));
-                    }
-                    "toDataURL" => {
-                        let data_url = ctx.to_data_url()?;
-                        return Ok(json!(data_url));
-                    }
-                    _ => return Err(format!("Unknown WebGL operation: {}", op)),
-                }
-            }
-                    "firstChild"=>node.children.first().copied(),
-                    "lastChild"=>node.children.last().copied(),
-                    _=>node.parent.and_then(|parent| {
-                        let children=&doc.get_node(parent)?.children;
-                        let index=children.iter().position(|id| *id==target)?;
-                        let next=if text(0)=="nextSibling" {index.checked_add(1)} else {index.checked_sub(1)}?;
-                        children.get(next).copied()
-                    })
+                    "firstChild"=>doc.node(target).and_then(|node|node.children().next()),
+                    "lastChild"=>doc.node(target).and_then(|node|node.children().next_back()),
+                    other=>wega_dom::sibling(&*doc,target,other=="nextSibling")
                 };
-                json!(related.map(|id| id.as_u64().to_string()))
+                json!(related.map(|key| key.to_string()))
             },
-            "childCount" => json!(doc.get_node(node_id()?).unwrap().children.len()),
+            "childCount" => json!(doc.node(node_id()?.key()).map_or(0, |node| node.children().len())),
             "childAt" => {
                 let index=text(2).parse::<usize>().unwrap_or(usize::MAX);
-                json!(doc.get_node(node_id()?).unwrap().children.get(index).map(|id| id.as_u64().to_string()))
+                json!(doc.node(node_id()?.key()).and_then(|node| node.child_at(index)).map(|key| key.to_string()))
             },
             "children" => json!(
-                doc.get_node(node_id()?)
-                    .unwrap()
-                    .children
-                    .iter()
-                    .map(|id| id.as_u64().to_string())
-                    .collect::<Vec<_>>()
+                doc.node(node_id()?.key())
+                    .map(|node| node.children().map(|key| key.to_string()).collect::<Vec<_>>())
+                    .unwrap_or_default()
             ),
-            "parent" => json!(
-                doc.get_node(node_id()?)
-                    .unwrap()
-                    .parent
-                    .map(|id| id.as_u64().to_string())
-            ),
+            "parent" => json!(doc.node(node_id()?.key()).and_then(NodeView::parent).map(|key| key.to_string())),
             "box"=>{
                 let target=node_id()?;self.resolve(&mut doc);let node=doc.get_node(target).unwrap();let layout=node.final_layout();let offset=doc.offset_rect(target).unwrap_or(blitz_dom::BoundingRect{x:0.0,y:0.0,width:0.0,height:0.0});
                 json!({"hasBoxes":node.has_boxes(),"clientWidth":node.client_width(),"clientHeight":node.client_height(),"clientLeft":layout.border.left,"clientTop":layout.border.top,"offsetWidth":offset.width,"offsetHeight":offset.height,"offsetLeft":offset.x,"offsetTop":offset.y,"offsetParent":node.offset_parent().map(|node|node.id.as_u64().to_string()),"scrollWidth":node.scroll_width(),"scrollHeight":node.scroll_height(),"contentWidth":layout.content_box_width(),"contentHeight":layout.content_box_height(),"paddingLeft":layout.padding.left,"paddingTop":layout.padding.top})
@@ -2474,7 +1387,9 @@ impl Dom {
                     NodeData::Document(_) => return Ok(Value::Null),
                     NodeData::Text(data) => {
                         credit(data.content.len());
-                        doc.mutate().set_node_text(id, text(2));
+                        wega_dom::mutate(&mut *doc)
+                            .set_text(id.key(), text(2))
+                            .map_err(Self::mutation_error)?;
                         return Ok(Value::Null);
                     }
                     _ => {}
@@ -2482,17 +1397,21 @@ impl Dom {
                 // Replacing an element's children: only a new text child is a new node,
                 // and the old children are collected (crediting their budget) unless
                 // script still holds them.
-                let old = doc.get_node(id).unwrap().children.to_vec();
+                let old: Vec<NodeId> = doc.node(id.key()).map(|node| node.children().map(ToNodeId::node_id).collect()).unwrap_or_default();
                 if text(2).is_empty() {
-                    doc.mutate().replace_children(id, &[]);
+                    wega_dom::mutate(&mut *doc)
+                        .replace_children(id.key(), &[])
+                        .map_err(Self::mutation_error)?;
                 } else {
                     if self.allocated.get() >= self.limits.dom_nodes {
                         return Err("DOM text or node budget exceeded".into());
                     }
                     self.allocated.set(self.allocated.get() + 1);
-                    let mut mutation = doc.mutate();
-                    let child = mutation.create_text_node(text(2));
-                    mutation.replace_children(id, &[child]);
+                    let mut mutation = wega_dom::mutate(&mut *doc);
+                    let child = mutation.create_text(text(2));
+                    mutation
+                        .replace_children(id.key(), &[child])
+                        .map_err(Self::mutation_error)?;
                 }
                 for child in old {
                     self.collect_detached(&mut doc, child);
@@ -2505,29 +1424,32 @@ impl Dom {
                 if text(3).len() > 1024 * 1024 {
                     return Err("DOM attribute budget exceeded".into());
                 }
-                doc.mutate().set_attribute(
-                    id,
-                    QualName::new(None, ns!(), LocalName::from(text(2))),
-                    text(3),
-                );
+                wega_dom::mutate(&mut *doc)
+                    .set_attribute(
+                        id.key(),
+                        QualName::new(None, ns!(), LocalName::from(text(2))),
+                        text(3),
+                    )
+                    .map_err(Self::mutation_error)?;
                 self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), Some(text(3)), None);
                 Value::Null
             }
             "removeAttr" => {
                 let id = node_id()?;
                 let old = Self::attribute(&doc, id, text(2));
-                doc.mutate()
-                    .clear_attribute(id, QualName::new(None, ns!(), LocalName::from(text(2))));
+                wega_dom::mutate(&mut *doc)
+                    .clear_attribute(id.key(), QualName::new(None, ns!(), LocalName::from(text(2))))
+                    .map_err(Self::mutation_error)?;
                 if old.is_some() { self.components.borrow_mut().attribute(id.as_u64(), text(2), old.as_deref(), None, None); }
                 Value::Null
             }
             "removeAttrNS" => {
                 let target = node_id()?;
-                let name = doc.get_node(target).unwrap().attrs().unwrap_or_default().iter()
-                    .find(|attribute| attribute.name.ns.as_str() == text(2) && attribute.name.local.as_str() == text(3))
-                    .map(|attribute| (attribute.name.clone(), attribute.value.clone()));
+                let name = doc.node(target.key()).into_iter().flat_map(NodeView::attributes)
+                    .find(|(name, _)| name.ns.as_str() == text(2) && name.local.as_str() == text(3))
+                    .map(|(name, value)| (name.clone(), value.to_owned()));
                 if let Some((name, old)) = name {
-                    doc.mutate().clear_attribute(target, name);
+                    wega_dom::mutate(&mut *doc).clear_attribute(target.key(), name).map_err(Self::mutation_error)?;
                     self.components.borrow_mut().attribute(target.as_u64(), text(3), Some(&old), None, (!text(2).is_empty()).then_some(text(2)));
                 }
                 Value::Null
@@ -2537,20 +1459,21 @@ impl Dom {
                     return Err("DOM node budget exceeded".into());
                 }
                 self.allocated.set(self.allocated.get() + 1);
+                let mut mutation = wega_dom::mutate(&mut *doc);
                 let id = if text(0) == "create" {
-                    doc.mutate().create_element(
+                    mutation.create_element(
                         QualName::new(None, ns!(html), LocalName::from(text(1))),
-                        vec![],
+                        [],
                     )
                 } else {
-                    doc.mutate().create_text_node(text(1))
+                    mutation.create_text(text(1))
                 };
-                json!(id.as_u64().to_string())
+                json!(id.to_string())
             }
             "append" => {
                 let parent = node_id()?;
                 let child = id(2)?;
-                if doc.get_node(child).is_none() {
+                if doc.node(child.key()).is_none() {
                     return Err("Node no longer exists".into());
                 }
                 // Reject cycles, including putting a node below itself.
@@ -2559,19 +1482,23 @@ impl Dom {
                     if id == child {
                         return Err("Cannot create a DOM cycle".into());
                     }
-                    ancestor = doc.get_node(id).and_then(|n| n.parent);
+                    ancestor = doc.node(id.key()).and_then(NodeView::parent).map(ToNodeId::node_id);
                 }
-                doc.mutate().append_children(parent, &[child]);
+                wega_dom::mutate(&mut *doc)
+                    .append_children(parent.key(), &[child.key()])
+                    .map_err(Self::mutation_error)?;
                 json!(child.as_u64().to_string())
             }
             "remove" => {
                 let id = node_id()?;
-                doc.mutate().remove_node(id);
+                wega_dom::mutate(&mut *doc)
+                    .remove(id.key())
+                    .map_err(Self::mutation_error)?;
                 Value::Null
             }
             "scriptInserted" => {
                 let node = node_id()?;
-                let is_script = doc.get_node(node).and_then(|n| n.element_data()).is_some_and(|e| &*e.name.local == "script");
+                let is_script = doc.node(node.key()).and_then(NodeView::element_name).is_some_and(|name| name.local == "script");
                 let mut requests = self.requests.borrow_mut();
                 if is_script && requests.scripts.len() < 1024 {
                     requests.scripts.push_back(ScriptRequest { node, force_async: text(2) != "false" });
@@ -2635,7 +1562,7 @@ impl Dom {
             "submitForm" => {
                 let form = node_id()?;
                 let submitter = if text(2).is_empty() { form } else { id(2)? };
-                if doc.get_node(submitter).is_none() {
+                if doc.node(submitter.key()).is_none() {
                     return Err("Node no longer exists".into());
                 }
                 doc.submit_form(form, submitter);
@@ -2684,24 +1611,21 @@ impl Dom {
         };
         Ok(value)
     }
-    fn subtree(doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
-        let mut nodes = vec![];
-        let mut pending = vec![root];
-        while let Some(id) = pending.pop() {
-            if let Some(node) = doc.get_node(id) {
-                nodes.push(id);
-                pending.extend(node.children.iter().copied());
-            }
+    /// The JS-facing message for a rejected mutation (kept from the pre-contract checks).
+    fn mutation_error(error: wega_dom::MutationError) -> String {
+        match error {
+            wega_dom::MutationError::Stale(_) => "Node no longer exists".into(),
+            wega_dom::MutationError::HierarchyCycle { .. } => "Cannot create a DOM cycle".into(),
+            other => other.to_string(),
         }
-        nodes
     }
-    fn attribute(doc: &BaseDocument, id: NodeId, name: &str) -> Option<String> {
-        doc.get_node(id)?
-            .element_data()?
-            .attr(LocalName::from(name))
-            .map(str::to_owned)
+    fn subtree(doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
+        wega_dom::subtree(doc, root.key(), ToNodeId::node_id)
     }
-    fn component_subtree(&self, doc: &BaseDocument, root: NodeId) -> Vec<NodeId> {
+    fn attribute(doc: &BlitzDocument, id: NodeId, name: &str) -> Option<String> {
+        wega_dom::attribute(doc, id.key(), name)
+    }
+    fn component_subtree(&self, doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
         let mut nodes = Vec::new();
         let mut pending = vec![root];
         let mut seen = HashSet::new();
@@ -2709,11 +1633,11 @@ impl Dom {
             if !seen.insert(id) {
                 continue;
             }
-            let Some(node) = doc.get_node(id) else {
+            let Some(node) = doc.node(id.key()) else {
                 continue;
             };
             nodes.push(id);
-            pending.extend(node.children.iter().rev().copied());
+            pending.extend(node.children().rev().map(ToNodeId::node_id));
             if let Some(root) = self.shadows.borrow().root(id.as_u64(), true)
                 && let Ok(root) = root.root.parse()
             {
@@ -2722,30 +1646,35 @@ impl Dom {
         }
         nodes
     }
-    fn component_connected(&self, doc: &BaseDocument, mut node: NodeId) -> bool {
+    fn component_connected(&self, doc: &BlitzDocument, mut node: NodeId) -> bool {
         let mut seen = HashSet::new();
         while seen.insert(node) {
             if node == doc.root_node().id {
                 return true;
             }
-            let Some(next) = doc.get_node(node).and_then(|node| node.parent).or_else(|| {
-                self.shadows
-                    .borrow()
-                    .host(node.as_u64())
-                    .map(NodeId::from_u64)
-            }) else {
+            let Some(next) = doc
+                .node(node.key())
+                .and_then(NodeView::parent)
+                .map(ToNodeId::node_id)
+                .or_else(|| {
+                    self.shadows
+                        .borrow()
+                        .host(node.as_u64())
+                        .map(NodeId::from_u64)
+                })
+            else {
                 return false;
             };
             node = next;
         }
         false
     }
-    fn assigned_slot(&self, doc: &BaseDocument, target: NodeId) -> Option<NodeId> {
-        let node = doc.get_node(target)?;
-        if !matches!(node.data, NodeData::Element(_) | NodeData::Text(_)) {
+    fn assigned_slot(&self, doc: &BlitzDocument, target: NodeId) -> Option<NodeId> {
+        let node = doc.node(target.key())?;
+        if !matches!(node.kind(), NodeKind::Element | NodeKind::Text) {
             return None;
         }
-        let parent = node.parent?;
+        let parent = (node.parent()?).node_id();
         let root = self
             .shadows
             .borrow()
@@ -2757,15 +1686,15 @@ impl Dom {
         Self::subtree(doc, NodeId::from_u64(root))
             .into_iter()
             .find(|id| {
-                doc.get_node(*id)
-                    .and_then(|node| node.element_data())
-                    .is_some_and(|element| element.name.local.as_str() == "slot")
+                doc.node((*id).key())
+                    .and_then(NodeView::element_name)
+                    .is_some_and(|name| name.local == "slot")
                     && Self::attribute(doc, *id, "name").unwrap_or_default() == name
             })
     }
     fn assigned_nodes(
         &self,
-        doc: &BaseDocument,
+        doc: &BlitzDocument,
         slot: NodeId,
         flatten: bool,
         seen: &mut HashSet<NodeId>,
@@ -2773,10 +1702,7 @@ impl Dom {
         if !seen.insert(slot) {
             return vec![];
         }
-        let mut root = slot;
-        while let Some(parent) = doc.get_node(root).and_then(|node| node.parent) {
-            root = parent;
-        }
+        let root = wega_dom::tree_root(doc, slot.key());
         let Some(host) = self
             .shadows
             .borrow()
@@ -2786,16 +1712,16 @@ impl Dom {
             return vec![];
         };
         let mut assigned: Vec<_> = doc
-            .get_node(host)
+            .node(host.key())
             .into_iter()
-            .flat_map(|node| node.children.iter().copied())
+            .flat_map(|node| node.children().map(ToNodeId::node_id))
             .filter(|id| self.assigned_slot(doc, *id) == Some(slot))
             .collect();
         if flatten {
             if assigned.is_empty() {
                 assigned = doc
-                    .get_node(slot)
-                    .map(|node| node.children.to_vec())
+                    .node(slot.key())
+                    .map(|node| node.children().map(ToNodeId::node_id).collect())
                     .unwrap_or_default();
             }
             assigned
@@ -2816,7 +1742,7 @@ impl Dom {
             assigned
         }
     }
-    fn collect_detached(&self, doc: &mut BaseDocument, id: NodeId) {
+    fn collect_detached(&self, doc: &mut BlitzDocument, id: NodeId) {
         let mut root = id;
         while let Some(parent) = doc.get_node(root).and_then(|n| n.parent).or_else(|| {
             self.shadows
@@ -2854,10 +1780,10 @@ impl Dom {
             if let Some(shadow) = self.shadows.borrow_mut().release(id.as_u64())
                 && let Ok(id) = shadow.root.parse()
             {
-                doc.mutate().remove_and_drop_node(NodeId::from_u64(id));
+                let _ = wega_dom::mutate(&mut *doc).remove_and_drop(NodeId::from_u64(id).key());
             }
         }
-        doc.mutate().remove_and_drop_node(root);
+        let _ = wega_dom::mutate(&mut *doc).remove_and_drop(root.key());
         self.allocated
             .set(self.allocated.get().saturating_sub(nodes.len()));
         self.used.set(self.used.get().saturating_sub(bytes));
@@ -2870,7 +1796,7 @@ impl Dom {
         (self.allocated.get(), self.used.get())
     }
     /// The form owner of a control: its `form` attribute, else the nearest ancestor form.
-    pub fn form_owner(doc: &BaseDocument, control: NodeId) -> Option<NodeId> {
+    pub fn form_owner(doc: &BlitzDocument, control: NodeId) -> Option<NodeId> {
         let element = doc.get_node(control)?.element_data()?;
         if let Some(owner) = element.attr(LocalName::from("form")) {
             return doc.get_element_by_id(owner).filter(|id| {
@@ -2893,7 +1819,7 @@ impl Dom {
         None
     }
     /// Resets all controls owned by `form` to their default state (defaultValue / defaultChecked).
-    pub fn reset_form_controls(doc: &mut BaseDocument, form: NodeId) {
+    pub fn reset_form_controls(doc: &mut BlitzDocument, form: NodeId) {
         let controls: Vec<NodeId> = blitz_dom::traversal::TreeTraverser::new(doc)
             .filter(|id| Self::form_owner(doc, *id) == Some(form))
             .collect();
@@ -2936,7 +1862,7 @@ impl Dom {
     /// The form data set of a form (HTML "constructing the entry list"), for
     /// `new FormData(form)`. File inputs contribute empty entries.
     fn form_entries(
-        doc: &BaseDocument,
+        doc: &BlitzDocument,
         form: NodeId,
         submitter: Option<NodeId>,
     ) -> Vec<(String, String)> {
@@ -3019,7 +1945,7 @@ impl Dom {
         }
         entries
     }
-    fn serialize(doc: &BaseDocument, id: NodeId, out: &mut String) {
+    fn serialize(doc: &BlitzDocument, id: NodeId, out: &mut String) {
         let Some(node) = doc.get_node(id) else {
             return;
         };

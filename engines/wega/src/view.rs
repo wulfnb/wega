@@ -2,12 +2,11 @@ use crate::{
     Limits,
     csp::Csp,
     encoding::{self, DocumentKind},
+    native_event::{NativeEvent, script_all},
     network::{Destination, FetchContext, Network, Response},
-    parser::{Parser, Step},
-    script::{HostContext, ScriptHost},
+    script::{DynScriptHost, HostContext},
 };
-use blitz_dom::{BaseDocument, DocumentConfig, NodeId, traversal::TreeTraverser};
-use blitz_html::HtmlDocument;
+use blitz_dom::{NodeId, traversal::TreeTraverser};
 use blitz_traits::{
     events::{
         BlitzPointerEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
@@ -32,6 +31,11 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+use wega_adapter_blitz::{ToKey, ToNodeId};
+use wega_dom::Mutator as _;
+use wega_dom::NodeKey;
+use wega_dom::input::{FocusState as _, InputControl as _, element_chain};
 use wega_protocol::identity::FrameId;
 
 pub struct Frame {
@@ -299,18 +303,21 @@ impl NavigationProvider for Navigation {
 
 #[path = "document_host.rs"]
 mod document_host;
+use crate::html_report::{HtmlReport, Parser};
 #[cfg(test)]
 use document_host::script_kind;
+use wega_html::Step;
 
 pub struct View {
     host: document_host::DocumentHost,
     scheduler: crate::event_loop::Scheduler,
-    document: Rc<RefCell<BaseDocument>>,
+    document: Rc<RefCell<BlitzDocument>>,
     document_revision: u64,
     navigation_generation: u64,
     document_generation: Rc<Cell<u64>>,
-    script: Option<Box<dyn ScriptHost>>,
+    script: Option<Box<DynScriptHost>>,
     network: Network,
+    hubs: crate::workers::Hubs,
     limits: Limits,
     abort: Option<AbortController>,
     pending: Option<mpsc::Receiver<FetchResult>>,
@@ -322,7 +329,7 @@ pub struct View {
     navigation_rx: mpsc::Receiver<NavigationOptions>,
     revision: Arc<AtomicU64>,
     last_revision: u64,
-    raster: crate::raster::Raster,
+    raster: wega_adapter_skia::Raster,
     pub compatibility: Option<String>,
     script_failure: Option<String>,
     in_flight: Arc<AtomicUsize>,
@@ -334,6 +341,9 @@ pub struct View {
     refresh: Option<(Instant, Url)>,
     composing: bool,
     showing_error: bool,
+    /// Set while the error page itself is being parsed, so an error page that also exceeds the
+    /// node budget stops instead of recursing into another error page.
+    building_error: bool,
     cursor: String,
     pub status: Option<String>,
     pub last_favicon: Option<Url>,
@@ -350,20 +360,21 @@ pub struct View {
     pub fullscreen: bool,
 }
 impl View {
-    pub(crate) fn new(url: Url, network: Network, limits: Limits) -> Result<Self, String> {
-        let document = HtmlDocument::from_html(
+    pub(crate) fn new(
+        url: Url,
+        network: Network,
+        hubs: crate::workers::Hubs,
+        limits: Limits,
+    ) -> Result<Self, String> {
+        let document = BlitzDocument::from_html(
             "<!doctype html><title>Wega</title>",
-            DocumentConfig {
-                font_ctx: network
-                    .fonts
-                    .as_ref()
-                    .map(|font| blitz_dom::build_broker_font_ctx(font)),
+            DocumentSetup {
+                fonts: network.fonts.clone(),
                 ..Default::default()
             },
-        )
-        .into_inner();
+        );
         let (_tx, navigation_rx) = mpsc::channel();
-        let raster = crate::raster::Raster::new(network.wake.clone())?;
+        let raster = wega_adapter_skia::Raster::new(network.wake.clone())?;
         let csp = Arc::new(RwLock::new(Csp::default()));
         let mut view = Self {
             host: document_host::DocumentHost::default(),
@@ -374,6 +385,7 @@ impl View {
             document_generation: Rc::new(Cell::new(0)),
             script: None,
             network,
+            hubs,
             limits,
             abort: None,
             pending: None,
@@ -397,6 +409,7 @@ impl View {
             refresh: None,
             composing: false,
             showing_error: false,
+            building_error: false,
             cursor: String::new(),
             status: None,
             last_favicon: None,
@@ -588,12 +601,8 @@ impl View {
         self.csp = Arc::new(RwLock::new(csp));
         self.in_flight = Arc::new(AtomicUsize::new(0));
         self.completed = Arc::new(Mutex::new(Vec::new()));
-        let config = DocumentConfig {
-            font_ctx: self
-                .network
-                .fonts
-                .as_ref()
-                .map(|font| blitz_dom::build_broker_font_ctx(font)),
+        let setup = DocumentSetup {
+            fonts: self.network.fonts.clone(),
             base_url: Some(self.url.to_string()),
             abort_signal: Some(abort.signal.clone()),
             net_provider: Some(Arc::new(Resources {
@@ -608,7 +617,6 @@ impl View {
                 completed: self.completed.clone(),
             })),
             navigation_provider: Some(Arc::new(Navigation(sender, self.network.wake.clone()))),
-            ..Default::default()
         };
         self.script = None;
         self.host.parser = None;
@@ -621,9 +629,9 @@ impl View {
         self.host.script_count = 0;
         self.host.encoding = encoding;
         let document = if xml {
-            HtmlDocument::from_xml(html, config).into_inner()
+            BlitzDocument::from_xml(html, setup)
         } else {
-            blitz_dom::BaseDocument::new(config)
+            BlitzDocument::empty(setup)
         };
         self.document = Rc::new(RefCell::new(document));
         self.script_failure = None;
@@ -636,11 +644,12 @@ impl View {
             .and_then(|r| r.header("refresh"))
             .and_then(|value| self.parse_refresh(value));
         self.abort = Some(abort);
-        let mut host = crate::script::create(
+        let dom = Rc::new(crate::dom::Dom::new(
             HostContext {
                 document: self.document.clone(),
                 navigate: self.navigate.clone(),
                 network: self.network.clone(),
+                hubs: self.hubs.clone(),
                 csp: self.csp.clone(),
                 dialog: self.dialog.clone(),
                 document_generation: self.document_generation.clone(),
@@ -651,7 +660,8 @@ impl View {
             },
             &self.limits,
             html.len(),
-        )?;
+        ));
+        let mut host = crate::script::create(dom, &self.limits)?;
         host.allow_eval(self.csp().allows_eval());
         host.run(
             include_str!("../../../src/page_state.js"),
@@ -679,6 +689,7 @@ impl View {
                 self.document.clone(),
                 html,
                 self.limits.dom_nodes,
+                HtmlReport,
             ));
         }
         self.dirty = true;
@@ -903,6 +914,7 @@ impl View {
             referrer_policy: self.referrer_policy.clone(),
             destination: Destination::Document,
             bypass_cache: false,
+            bypass_service_worker: false,
         };
         if let Err(error) = self.load_request(options.url, context) {
             self.notice(error);
@@ -943,11 +955,13 @@ impl View {
     fn load_error(&mut self, error: String) {
         let escaped = escape(&error);
         self.showing_error = false;
+        self.building_error = true;
         let _=self.set_html(&format!("<!doctype html><title>Page unavailable</title><body style='font:18px system-ui;padding:36px;background:white;color:#142b24'><h1>This page could not be loaded</h1><p>{escaped}</p><p>Reload the page to retry.</p>"));
+        self.building_error = false;
         self.showing_error = true;
         self.notice(error);
     }
-    fn script_error(&mut self, error: crate::script::ScriptError) {
+    fn script_error(&mut self, error: wega_adapter_v8::ScriptError) {
         if error.message == "Module graph is loading" {
             return;
         }
@@ -1098,8 +1112,9 @@ impl View {
         let target_node = NodeId::from_u64(target);
         match action.to_ascii_lowercase().as_str() {
             "focus" => {
-                let mut doc = self.document.borrow_mut();
-                doc.set_focus_to(target_node);
+                let before = self.document.borrow().focused();
+                let _ = self.document.borrow_mut().set_focus(target_node.key());
+                self.focus_transition(before);
                 self.dirty = true;
             }
             "default" | "click" => {
@@ -1124,19 +1139,18 @@ impl View {
                         }
                         node.mark_ancestors_dirty();
                     }
-                    doc.mutate().set_attribute(
-                        target_node,
+                    // The element can only vanish between the click and now; nothing to update then.
+                    let _ = wega_dom::mutate(&mut *doc).set_attribute(
+                        target_node.key(),
                         QualName::new(None, ns!(), LocalName::from("value")),
                         val,
                     );
                     drop(doc);
-                    let source = format!(
-                        "__wega_native_event('input', {}, {{data:{}}}); __wega_native_event('change', {}, {{data:{}}});",
-                        serde_json::json!(target_node.as_u64().to_string()),
-                        serde_json::json!(val),
-                        serde_json::json!(target_node.as_u64().to_string()),
-                        serde_json::json!(val)
-                    );
+                    let init = serde_json::json!({"data": val});
+                    let source = script_all(&[
+                        NativeEvent::new("input", target_node.key()).init(init.clone()),
+                        NativeEvent::new("change", target_node.key()).init(init),
+                    ]);
                     self.run(&source, "wega:accessibility-action");
                     self.dirty = true;
                 }
@@ -1174,8 +1188,8 @@ impl View {
                         node.mark_ancestors_dirty();
                     }
                     let val = format!("C:\\fakepath\\{display_val}");
-                    doc.mutate().set_attribute(
-                        target,
+                    let _ = wega_dom::mutate(&mut *doc).set_attribute(
+                        target.key(),
                         QualName::new(None, ns!(), LocalName::from("value")),
                         &val,
                     );
@@ -1449,6 +1463,29 @@ impl View {
         self.activation
             .set(Some(Instant::now() + Duration::from_secs(5)));
     }
+    /// Focus has one owner, the document. After anything that can move it, compare with the
+    /// state before and dispatch the transition once: `blur` and `focusout` on the node that
+    /// lost focus, `focus` and `focusin` on the one that gained it, each with the other as
+    /// `relatedTarget`. Blitz's own focus events are not forwarded (see `generated_events`).
+    pub(crate) fn focus_transition(&mut self, before: Option<NodeKey>) {
+        let after = self.document.borrow().focused();
+        if before == after {
+            return;
+        }
+        let id = |key: Option<NodeKey>| match key {
+            Some(key) => serde_json::json!(key.to_string()),
+            None => serde_json::Value::Null,
+        };
+        let source = format!("__wega_focus_events({}, {})", id(before), id(after));
+        self.run(&source, "wega:focus");
+        self.dirty = true;
+    }
+    /// Where keyboard input goes: the focused node, else the document's fallback target.
+    fn keyboard_target(&self) -> NodeId {
+        let doc = self.document.borrow();
+        doc.keyboard_target()
+            .map_or(doc.root_node().id, ToNodeId::node_id)
+    }
     fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
         let scroll = self.document.borrow().viewport_scroll();
         (x + scroll.x as f32, y + scroll.y as f32)
@@ -1486,26 +1523,31 @@ impl View {
         pointer: &Pointer,
         related: Option<NodeId>,
     ) -> bool {
-        let options = serde_json::json!({
+        let init = serde_json::json!({
             "clientX": pointer.x, "clientY": pointer.y,
             "screenX": pointer.x, "screenY": pointer.y,
             "button": pointer.button, "buttons": pointer.buttons,
             "shiftKey": pointer.modifiers & 1 != 0, "ctrlKey": pointer.modifiers & 2 != 0,
             "altKey": pointer.modifiers & 4 != 0, "metaKey": pointer.modifiers & 8 != 0,
             "deltaX": pointer.delta_x, "deltaY": pointer.delta_y,
-            "relatedTarget": related.map(|id| id.as_u64().to_string()),
         });
-        let source = format!(
-            "__wega_native_event({}, {}, {})",
-            serde_json::json!(kind),
-            serde_json::json!(target.as_u64().to_string()),
-            options
-        );
-        self.evaluate_json(&source).as_deref() == Ok("true")
+        let event = NativeEvent::new(kind.to_owned(), target.key())
+            .init(init)
+            .related(related.map(ToKey::key));
+        self.send(&event)
+    }
+    /// Dispatch one native event to script; true when it was cancelled.
+    fn send(&mut self, event: &NativeEvent) -> bool {
+        self.evaluate_json(&event.script()).as_deref() == Ok("true")
     }
     /// Pointer input: hover, mouse/pointer events, Blitz defaults (focus, text
     /// selection, clicks), wheel scrolling and the cursor.
     pub fn pointer(&mut self, pointer: Pointer) {
+        let before = self.document.borrow().focused();
+        self.pointer_input(pointer);
+        self.focus_transition(before);
+    }
+    fn pointer_input(&mut self, pointer: Pointer) {
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
@@ -1514,14 +1556,14 @@ impl View {
             .borrow_mut()
             .resolve(self.started.elapsed().as_secs_f64());
         let (page_x, page_y) = self.page_point(pointer.x, pointer.y);
-        let previous = self.document.borrow().get_hover_node_id();
-        if pointer.kind == PointerKind::Leave {
-            self.document.borrow_mut().clear_hover();
+        let change = if pointer.kind == PointerKind::Leave {
+            self.document.borrow_mut().pointer_left()
         } else {
-            self.document.borrow_mut().set_hover_to(page_x, page_y);
-        }
-        let hovered = self.document.borrow().get_hover_node_id();
-        if previous != hovered {
+            self.document.borrow_mut().pointer_moved(page_x, page_y)
+        };
+        let previous = change.previous.map(ToNodeId::node_id);
+        let hovered = change.current.map(ToNodeId::node_id);
+        if change.changed() {
             // Restyle for :hover so the cursor below reflects it.
             self.document
                 .borrow_mut()
@@ -1598,13 +1640,19 @@ impl View {
         let (old_chain, new_chain) = {
             let doc = self.document.borrow();
             let chain = |id: Option<NodeId>| {
-                id.filter(|id| doc.get_node(*id).is_some())
-                    .map(|id| doc.node_chain(id))
-                    .unwrap_or_default()
+                id.map(|id| {
+                    element_chain(&*doc, id.key())
+                        .into_iter()
+                        .map(ToNodeId::node_id)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
             };
             (chain(previous), chain(hovered))
         };
-        if let Some(target) = previous.filter(|id| self.document.borrow().get_node(*id).is_some()) {
+        if let Some(target) = previous.filter(|id| {
+            wega_dom::DocumentView::node(&*self.document.borrow(), (*id).key()).is_some()
+        }) {
             self.dispatch_pointer("pointerout", target, pointer, hovered);
             self.dispatch_pointer("mouseout", target, pointer, hovered);
             for node in old_chain.iter().filter(|n| !new_chain.contains(n)) {
@@ -1795,13 +1843,7 @@ impl View {
         match action {
             None => false,
             Some(Action::Reset(form)) => {
-                let cancelled = self
-                    .evaluate_json(&format!(
-                        "__wega_native_event('reset', {}, {{}})",
-                        serde_json::json!(form.as_u64().to_string())
-                    ))
-                    .as_deref()
-                    == Ok("true");
+                let cancelled = self.send(&NativeEvent::new("reset", form.key()));
                 if !cancelled {
                     self.reset_form(form);
                 }
@@ -1873,16 +1915,17 @@ impl View {
                 _ => {}
             }
             let event_type = event.data.name();
-            let source = format!(
-                "__wega_native_event({}, {}, {})",
-                serde_json::json!(event_type),
-                serde_json::json!(target.as_u64().to_string()),
-                if event_type == "input" {
-                    input_options.clone()
-                } else {
-                    serde_json::json!({})
-                }
-            );
+            if matches!(event_type, "focus" | "blur" | "focusin" | "focusout") {
+                continue;
+            }
+            let init = if event_type == "input" {
+                input_options.clone()
+            } else {
+                serde_json::json!({})
+            };
+            let source = NativeEvent::new(event_type, target.key())
+                .init(init)
+                .script();
             self.run(&source, "wega:native-event");
             if event_type == "input" {
                 let is_checkable = {
@@ -1901,11 +1944,9 @@ impl View {
                         })
                 };
                 if is_checkable {
-                    let source = format!(
-                        "__wega_native_event('change', {}, {})",
-                        serde_json::json!(target.as_u64().to_string()),
-                        input_options
-                    );
+                    let source = NativeEvent::new("change", target.key())
+                        .init(input_options.clone())
+                        .script();
                     self.run(&source, "wega:native-event");
                 }
             }
@@ -1913,14 +1954,15 @@ impl View {
     }
     /// Native editing goes through Blitz/Parley after cancelable DOM events.
     pub fn key(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+        let before = self.document.borrow().focused();
+        self.key_input(event);
+        self.focus_transition(before);
+    }
+    fn key_input(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
-        let target = self
-            .document
-            .borrow()
-            .get_focussed_node_id()
-            .unwrap_or(self.document.borrow().root_node().id);
+        let target = self.keyboard_target();
         let disabled = self
             .document
             .borrow()
@@ -1935,13 +1977,17 @@ impl View {
             self.activate();
         }
         let options = serde_json::json!({"key":event.key.to_string(),"code":event.code.to_string(),"repeat":event.is_auto_repeating,"isComposing":event.is_composing,"shiftKey":event.modifiers.contains(Modifiers::SHIFT),"ctrlKey":event.modifiers.contains(Modifiers::CONTROL),"altKey":event.modifiers.contains(Modifiers::ALT),"metaKey":event.modifiers.contains(Modifiers::META)});
-        let source = format!(
-            "__wega_native_event({}, {}, {})",
-            serde_json::json!(if pressed { "keydown" } else { "keyup" }),
-            serde_json::json!(target.as_u64().to_string()),
-            options
-        );
-        if self.evaluate_json(&source).as_deref() == Ok("true") {
+        // Script sees key events on the focused element, else on <body>; Blitz's own editing
+        // and navigation defaults keep using the fallback target (the root element).
+        let script_target = {
+            let doc = self.document.borrow();
+            doc.focused()
+                .or_else(|| doc.query_selector("body").ok().flatten().map(ToKey::key))
+                .unwrap_or_else(|| target.key())
+        };
+        let keyboard = NativeEvent::new(if pressed { "keydown" } else { "keyup" }, script_target)
+            .init(options);
+        if self.send(&keyboard) {
             return;
         }
         if pressed {
@@ -2020,11 +2066,10 @@ impl View {
                             blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
                         }
                     }
-                    let source = format!(
-                        "__wega_native_event('input', {}, {{}}); __wega_native_event('change', {}, {{}});",
-                        serde_json::json!(target.as_u64().to_string()),
-                        serde_json::json!(target.as_u64().to_string())
-                    );
+                    let source = script_all(&[
+                        NativeEvent::new("input", target.key()),
+                        NativeEvent::new("change", target.key()),
+                    ]);
                     self.run(&source, "wega:native-toggle");
                     self.dirty = true;
                     return;
@@ -2048,12 +2093,9 @@ impl View {
             };
             let input_options = serde_json::json!({"inputType":input_type,"data":event.text.as_ref().map(|text|text.as_str()),"isComposing":event.is_composing});
             if !input_type.is_empty() {
-                let source = format!(
-                    "__wega_native_event('beforeinput',{}, {})",
-                    serde_json::json!(target.as_u64().to_string()),
-                    input_options
-                );
-                if self.evaluate_json(&source).as_deref() == Ok("true") {
+                let before =
+                    NativeEvent::new("beforeinput", target.key()).init(input_options.clone());
+                if self.send(&before) {
                     return;
                 }
             }
@@ -2186,11 +2228,7 @@ impl View {
             return;
         }
         use blitz_traits::events::BlitzImeEvent;
-        let target = self
-            .document
-            .borrow()
-            .get_focussed_node_id()
-            .unwrap_or(self.document.borrow().root_node().id);
+        let target = self.keyboard_target();
         let (text, kind) = match &event {
             BlitzImeEvent::Preedit(text, _) => (text, "compositionupdate"),
             BlitzImeEvent::Commit(text) => (text, "compositionend"),
@@ -2198,39 +2236,22 @@ impl View {
         };
         if matches!(&event,BlitzImeEvent::Preedit(text,_) if !text.is_empty()) && !self.composing {
             self.composing = true;
-            self.run(
-                &format!(
-                    "__wega_native_event('compositionstart',{},{{data:''}})",
-                    serde_json::json!(target.as_u64().to_string())
-                ),
-                "wega:composition",
-            );
+            let start = NativeEvent::new("compositionstart", target.key())
+                .init(serde_json::json!({"data": ""}));
+            self.run(&start.script(), "wega:composition");
         }
         let commit = matches!(event, BlitzImeEvent::Commit(_));
         let input_options = serde_json::json!({"inputType":if commit{"insertText"}else{"insertCompositionText"},"data":text,"isComposing":!commit});
         if commit {
             self.composing = false;
-            if self
-                .evaluate_json(&format!(
-                    "__wega_native_event('beforeinput',{}, {})",
-                    serde_json::json!(target.as_u64().to_string()),
-                    input_options
-                ))
-                .as_deref()
-                == Ok("true")
-            {
+            let before = NativeEvent::new("beforeinput", target.key()).init(input_options.clone());
+            if self.send(&before) {
                 return;
             }
         }
-        self.run(
-            &format!(
-                "__wega_native_event({}, {},{{data:{}}})",
-                serde_json::json!(kind),
-                serde_json::json!(target.as_u64().to_string()),
-                serde_json::json!(text)
-            ),
-            "wega:composition",
-        );
+        let composition =
+            NativeEvent::new(kind, target.key()).init(serde_json::json!({"data": text}));
+        self.run(&composition.script(), "wega:composition");
         let generated = {
             let mut generated = Vec::new();
             self.document.borrow_mut().handle_dom_event(
@@ -2354,6 +2375,16 @@ impl View {
             0,
         );
         self.dirty = another_frame || doc.is_animating();
+        if self.accessibility_enabled {
+            let update = doc.build_accessibility_tree();
+            if let Ok(json) = serde_json::to_string(&update) {
+                // Publish the newest complete tree; animations must not grow an
+                // unbounded queue of superseded accessibility snapshots.
+                self.events
+                    .retain(|event| !matches!(event, PageEvent::Accessibility(_)));
+                self.events.push_back(PageEvent::Accessibility(json));
+            }
+        }
         Ok(scene)
     }
     pub fn configure_shared_frames(&mut self, path: &std::path::Path) -> Result<(), String> {
@@ -2645,6 +2676,7 @@ mod tests {
         let mut view = View::new(
             Url::parse("data:text/html,<button>Click me</button>").unwrap(),
             network,
+            Default::default(),
             limits,
         )
         .unwrap();
@@ -2663,6 +2695,7 @@ mod tests {
         let mut view = View::new(
             Url::parse("data:text/html,<input type='file' id='f'>").unwrap(),
             network,
+            Default::default(),
             limits,
         )
         .unwrap();
@@ -2675,7 +2708,13 @@ mod tests {
     fn range_and_selection_dom_apis() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            limits,
+        )
+        .unwrap();
         view.set_html("<!doctype html><div id='test'>Hello <b>beautiful</b> world</div>")
             .unwrap();
         let js = r#"
@@ -2700,7 +2739,13 @@ mod tests {
     fn content_editable_and_exec_command() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            limits,
+        )
+        .unwrap();
         view.set_html("<!doctype html><div id='ed' contenteditable='true'>Initial text</div>")
             .unwrap();
         let js = r#"
@@ -2724,7 +2769,13 @@ mod tests {
     fn find_in_page_and_tree_walker() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            limits,
+        )
+        .unwrap();
         view.set_html(
             "<!doctype html><p>The quick brown fox jumps over the lazy dog. The fox was quick.</p>",
         )
@@ -2754,7 +2805,13 @@ mod tests {
     fn clipboard_and_datatransfer_apis() {
         let limits = Limits::default();
         let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
-        let mut view = View::new(Url::parse("about:blank").unwrap(), network, limits).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            limits,
+        )
+        .unwrap();
         view.set_html("<!doctype html><div>Test</div>").unwrap();
         let js = r#"
             navigator.clipboard.writeText('clipboard test payload');
@@ -2768,5 +2825,118 @@ mod tests {
         let val: serde_json::Value = serde_json::from_str(&res).unwrap();
         assert_eq!(val["dtRead"], "drag payload");
         assert_eq!(val["evtType"], "dragstart");
+    }
+    fn blank_view(html: &str) -> View {
+        let network = Network::new(Default::default(), Arc::new(|| {})).unwrap();
+        let mut view = View::new(
+            Url::parse("about:blank").unwrap(),
+            network,
+            Default::default(),
+            Limits::default(),
+        )
+        .unwrap();
+        view.set_html(html).unwrap();
+        view
+    }
+    fn settle(view: &mut View, expression: &str) -> serde_json::Value {
+        for _ in 0..200 {
+            view.poll();
+            let value: serde_json::Value =
+                serde_json::from_str(&view.evaluate_json(expression).unwrap()).unwrap();
+            if !value.is_null() {
+                return value;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("{expression} did not settle");
+    }
+    #[test]
+    fn clipboard_write_text_requires_activation_and_reaches_the_browser() {
+        let mut view = blank_view("<!doctype html><div>Test</div>");
+        let write = |tag: &str| {
+            format!(
+                "globalThis.{tag} = null; navigator.clipboard.writeText('os payload')\
+                 .then(() => {{ globalThis.{tag} = 'ok'; }}, e => {{ globalThis.{tag} = e.name; }}); true"
+            )
+        };
+        view.evaluate_json(&write("denied")).unwrap();
+        assert_eq!(settle(&mut view, "globalThis.denied"), "NotAllowedError");
+        assert!(
+            !view
+                .events
+                .iter()
+                .any(|event| matches!(event, PageEvent::ClipboardWrite(_)))
+        );
+
+        view.activate();
+        view.evaluate_json(&write("allowed")).unwrap();
+        assert_eq!(settle(&mut view, "globalThis.allowed"), "ok");
+        assert!(
+            view.events.iter().any(
+                |event| matches!(event, PageEvent::ClipboardWrite(text) if text == "os payload")
+            )
+        );
+    }
+    #[test]
+    fn html_elements_use_per_tag_interfaces() {
+        let mut view =
+            blank_view("<!doctype html><div id=d><p>x</p><table><tr><td>y</td></tr></table></div>");
+        let js = r#"
+            const name = tag => Object.getPrototypeOf(document.createElement(tag)).constructor.name;
+            ({
+                div: document.getElementById('d') instanceof HTMLDivElement,
+                divIsHtml: document.getElementById('d') instanceof HTMLElement,
+                p: document.querySelector('p') instanceof HTMLParagraphElement,
+                td: document.querySelector('td') instanceof HTMLTableCellElement,
+                head: document.head instanceof HTMLHeadElement,
+                body: document.body instanceof HTMLBodyElement,
+                h2: name('h2'),
+                span: name('span'),
+                input: name('input'),
+                custom: name('x-unknown'),
+                notDiv: document.createElement('span') instanceof HTMLDivElement,
+                illegal: (() => { try { new HTMLDivElement(); return false; } catch { return true; } })(),
+            })
+        "#;
+        let val: serde_json::Value =
+            serde_json::from_str(&view.evaluate_json(js).unwrap()).unwrap();
+        for key in ["div", "divIsHtml", "p", "td", "head", "body", "illegal"] {
+            assert_eq!(val[key], true, "{key}");
+        }
+        assert_eq!(val["h2"], "HTMLHeadingElement");
+        assert_eq!(val["span"], "HTMLSpanElement");
+        assert_eq!(val["input"], "HTMLInputElement");
+        assert_eq!(val["custom"], "HTMLElement");
+        assert_eq!(val["notDiv"], false);
+    }
+    #[test]
+    fn media_devices_and_missing_media_are_reported_truthfully() {
+        let mut view = blank_view("<!doctype html><div>Test</div>");
+        view.evaluate_json(
+            "globalThis.devices = null; navigator.mediaDevices.enumerateDevices()\
+             .then(list => { globalThis.devices = list.length; }); true",
+        )
+        .unwrap();
+        assert_eq!(settle(&mut view, "globalThis.devices"), 0);
+
+        let js = r#"
+            const results = {};
+            for (const src of ["https://media.invalid/missing-video.webm", "https://media.invalid/missing-audio.wav"]) {
+                const el = document.createElement(src.endsWith("wav") ? "audio" : "video");
+                let failed = false, loaded = false;
+                el.addEventListener("error", () => { failed = true; });
+                el.addEventListener("loadedmetadata", () => { loaded = true; });
+                el.src = src;
+                results[el.localName] = { failed, loaded, code: el.error ? el.error.code : 0 };
+            }
+            results
+        "#;
+        let val: serde_json::Value =
+            serde_json::from_str(&view.evaluate_json(js).unwrap()).unwrap();
+        for kind in ["video", "audio"] {
+            assert_eq!(val[kind]["failed"], true, "{kind}");
+            assert_eq!(val[kind]["loaded"], false, "{kind}");
+            assert_eq!(val[kind]["code"], 4, "{kind}");
+        }
     }
 }

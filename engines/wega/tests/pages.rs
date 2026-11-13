@@ -121,6 +121,116 @@ fn native_dom_budget_and_cycles_are_rejected() {
     );
     assert!(view.paint(u32::MAX, u32::MAX, 1.0, 1.0, false).is_err());
 }
+/// Regression: a document with more nodes than `dom_nodes` used to panic inside html5ever
+/// ("no current element") when the overflow happened inside one parser chunk. Overflow now
+/// stops parsing, shows the limit page, and leaves the view usable.
+#[test]
+fn parser_node_budget_overflow_shows_the_limit_page_and_recovers() {
+    let overflowing: Vec<(&str, String)> = vec![
+        (
+            "original 400 paragraphs",
+            format!("<body>{}", "<p>x</p>".repeat(400)),
+        ),
+        ("huge", format!("<body>{}", "<p>x</p>".repeat(100_000))),
+        ("nested", "<div>".repeat(10_000)),
+        (
+            "formatting",
+            format!("<p>{}</p>tail<p>tail", "<b>".repeat(300)),
+        ),
+        (
+            "table",
+            format!("<table>{}</table>", "<tr><td>a<td>b".repeat(300)),
+        ),
+        (
+            "template",
+            format!("<template>{}</template>", "<div><i>x</i></div>".repeat(300)),
+        ),
+        ("comments", "<!--c-->".repeat(50_000)),
+        (
+            "scripts around the limit",
+            format!(
+                "<script>globalThis.a=1</script>{}<script>globalThis.b=1</script>",
+                "<p>x".repeat(300)
+            ),
+        ),
+        (
+            "document.write chunk",
+            "<script>document.write('<p>x</p>'.repeat(500))</script><p>after".into(),
+        ),
+    ];
+    let mut view = page(Limits {
+        dom_nodes: 100,
+        ..Limits::default()
+    });
+    for (name, html) in overflowing {
+        view.notices.clear();
+        view.set_html(&html).unwrap();
+        view.poll();
+        assert_eq!(view.title(), "Page unavailable", "{name}");
+        assert!(
+            view.notices
+                .iter()
+                .any(|n| n.contains("DOM node limit exceeded")),
+            "{name}: {:?}",
+            view.notices
+        );
+        // The error page is a normal document: it paints and runs script.
+        assert!(view.paint(100, 100, 1.0, 1.0, false).is_ok(), "{name}");
+        view.evaluate("document.body.appendChild(document.createElement('i'))")
+            .unwrap();
+        // And the view recovers for a fresh, in-budget page.
+        view.set_html("<title>Recovered</title><p>Fresh page</p>")
+            .unwrap();
+        view.poll();
+        assert_eq!(view.title(), "Recovered", "{name}");
+        assert_eq!(
+            view.evaluate_json("document.querySelectorAll('p').length")
+                .unwrap(),
+            "1"
+        );
+    }
+}
+
+/// Regression: when even the limit page exceeds the budget the view used to recurse into
+/// another limit page until the stack overflowed.
+#[test]
+fn a_budget_smaller_than_the_limit_page_does_not_recurse() {
+    for nodes in [1, 3, 8] {
+        let mut view = page(Limits {
+            dom_nodes: nodes,
+            ..Limits::default()
+        });
+        view.set_html(&"<p>x</p>".repeat(50)).unwrap();
+        view.poll();
+        view.set_html("<p>x").unwrap();
+        view.poll();
+    }
+}
+
+#[test]
+fn a_document_at_the_node_budget_loads_and_one_node_less_does_not() {
+    // Find the exact budget by search on a real view so the test does not hard-code the
+    // parser's accounting.
+    let loads = |count: usize, limit: usize| {
+        let mut view = page(Limits {
+            dom_nodes: limit,
+            ..Limits::default()
+        });
+        view.set_html(&format!(
+            "<!doctype html><title>t</title><body>{}",
+            "<p>x</p>".repeat(count)
+        ))
+        .unwrap();
+        view.poll();
+        view.title() != "Page unavailable"
+    };
+    let limit = (10..200)
+        .find(|limit| loads(20, *limit))
+        .expect("a budget that fits");
+    assert!(!loads(20, limit - 1), "one node below the budget overflows");
+    assert!(!loads(400, limit), "a much larger document overflows");
+}
+
 #[test]
 fn policy_blocks_host_boundaries_and_offline_requests() {
     let p = NetworkPolicy {

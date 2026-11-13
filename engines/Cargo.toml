@@ -1,6 +1,6 @@
 [workspace]
-members = ["wega", "network", "platform", "protocol"]
-exclude = ["vendor", "v8-spike"]
+members = ["wega", "network", "platform", "protocol", "services/cookies", "services/storage", "services/security", "services/permissions", "adapters/skia", "adapters/v8", "adapters/blitz", "dom/core", "html/parser"]
+exclude = ["vendor", "v8-spike", "tools"]
 resolver = "2"
 
 [profile.dev]
@@ -8,6 +8,8 @@ debug = 0
 incremental = false
 
 [patch.crates-io]
+deno_net = { path = "vendor/deno/deno_net" }
+deno_fetch = { path = "vendor/deno/deno_fetch" }
 deno_websocket = { path = "vendor/deno/deno_websocket" }
 deno_webstorage = { path = "vendor/deno/deno_webstorage" }
 deno_core = { path = "vendor/deno/deno_core" }

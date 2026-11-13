@@ -152,8 +152,12 @@ fn a_process_reservation_survives_page_drop_until_exit_and_reaping() {
     .unwrap();
     let ticket = owner.reserve(8).unwrap();
     let (exit, exited) = mpsc::channel();
+    let observed_owner = owner.clone();
     let mut process = OwnedProcess::new(child(), move |report| {
-        exit.send(report).unwrap();
+        // Observe accounting inside the callback, before any global shutdown
+        // drain can hide a notification-before-cleanup race.
+        let released = observed_owner.state.lock().unwrap().entries.is_empty();
+        exit.send((report, released)).unwrap();
     });
     let mut input = process.take_stdin().unwrap();
     ticket.attach(&mut process, |_| {}).unwrap();
@@ -164,13 +168,11 @@ fn a_process_reservation_survives_page_drop_until_exit_and_reaping() {
     drop(input);
     process.allow_graceful_shutdown(crate::process::MAX_SHUTDOWN_GRACE);
     drop(process);
+    let (report, released) = exited.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert!(report.status.unwrap().success());
     assert!(
-        exited
-            .recv_timeout(Duration::from_secs(3))
-            .unwrap()
-            .status
-            .unwrap()
-            .success()
+        released,
+        "Exit observers must see released process reservations"
     );
     crate::process::wait_for_shutdowns();
     assert!(owner.state.lock().unwrap().entries.is_empty());
