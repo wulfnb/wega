@@ -66,7 +66,7 @@ jobs:
         run: brew install pkgconf gstreamer libnice-gstreamer
       - name: Install license notice generator
         if: matrix.arch == 'arm64'
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.2
       # install-action has no x86_64-apple-darwin build of cargo-about 0.9.2; its
@@ -177,7 +177,7 @@ jobs:
           workspaces: 'engines -> ../target/wega-engine'
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install license notice generator
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.2
       - name: Build release binaries and license notices
@@ -218,7 +218,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -248,7 +248,7 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
       - name: Install license notice generator
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.2
       - name: Extract standalone Linux binary from built image
@@ -360,7 +360,7 @@ jobs:
           path: ${{ runner.temp }}/skia-msvc
           key: ${{ steps.skia.outputs.cache-primary-key }}
       - name: Install license notice generator
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.2
       - name: Write LICENSE, NOTICE and THIRD-PARTY-NOTICES.html
@@ -479,7 +479,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: echo "IMAGE_NAME=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -596,7 +596,7 @@ jobs:
           \`\`\`
           EOF
       - name: Create or Update GitHub Pre-Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}
@@ -614,7 +614,7 @@ jobs:
         run: python3 scripts/sync-preview-release.py --repository "$REPOSITORY" --tag "$RELEASE_TAG" --sha "$GITHUB_SHA"
       - name: Create immutable per-commit Pre-Release
         if: steps.tag.outputs.COMMIT_TAG != ''
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ steps.tag.outputs.COMMIT_TAG }}
           target_commitish: ${{ github.sha }}
