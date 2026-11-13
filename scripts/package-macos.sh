@@ -7,18 +7,24 @@ if [[ "$(uname -s)" != Darwin ]]; then
   exit 1
 fi
 build_profile=release
-build_args=(--release)
-media_args=()
 bundle_media=false
 for argument in "$@"; do
   case "$argument" in
-    --debug) build_profile=debug; build_args=() ;;
-    --media) media_args=(--features desktop); bundle_media=true ;;
-    --no-media) media_args=(); bundle_media=false ;;
+    --debug) build_profile=debug ;;
+    --media) bundle_media=true ;;
+    --no-media) bundle_media=false ;;
     *) echo 'Usage: scripts/package-macos.sh [--debug] [--media|--no-media]' >&2; exit 1 ;;
   esac
 done
-cargo build --locked "${build_args[@]}" "${media_args[@]}"
+# macOS ships Bash 3.2, whose nounset mode rejects expanding an empty array.
+build_args=(build --locked)
+if [[ "$build_profile" == release ]]; then
+  build_args+=(--release)
+fi
+if $bundle_media; then
+  build_args+=(--features desktop)
+fi
+cargo "${build_args[@]}"
 if [[ "$build_profile" == debug ]]; then
   python3 scripts/build-wega-engine.py --debug
 else
@@ -64,7 +70,11 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 PLIST
 if [[ "$build_profile" == release ]]; then
   # License files must be in place before the media bundler seals the signature.
-  bash scripts/third-party-notices.sh "$app_dir/Contents/Resources" "${media_args[@]}"
+  notice_args=("$app_dir/Contents/Resources")
+  if $bundle_media; then
+    notice_args+=(--features desktop)
+  fi
+  bash scripts/third-party-notices.sh "${notice_args[@]}"
 fi
 if $bundle_media; then
   python3 scripts/bundle-macos-media.py "$app_dir"

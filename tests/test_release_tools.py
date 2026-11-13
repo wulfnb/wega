@@ -8,6 +8,8 @@ import plistlib
 from pathlib import Path
 import runpy
 import shlex
+import shutil
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -232,6 +234,75 @@ class MacBundleTypesTests(unittest.TestCase):
         self.assertEqual(document['CFBundleTypeRole'], 'Viewer')
         self.assertEqual(document['LSHandlerRank'], 'Alternate')
         self.assertEqual(document['LSItemContentTypes'], ['public.html', 'public.xhtml'])
+
+
+class MacPackagingShellTests(unittest.TestCase):
+    def test_package_arguments_work_with_macos_bash_nounset(self):
+        # Execute the real script, including its release notice invocation. Only
+        # expensive/native commands are replaced; Bash still expands every array.
+        for arguments, profile, bundle_media in [
+            ([], 'release', False),
+            (['--media'], 'release', True),
+            (['--media', '--no-media'], 'release', False),
+            (['--debug'], 'debug', False),
+            (['--debug', '--media'], 'debug', True),
+        ]:
+            with self.subTest(arguments=arguments), tempfile.TemporaryDirectory(prefix='wega package ') as directory:
+                project = Path(directory)
+                scripts = project / 'scripts'
+                scripts.mkdir()
+                shutil.copy(ROOT / 'scripts/package-macos.sh', scripts)
+                (scripts / 'third-party-notices.sh').write_text(
+                    '#!/bin/bash\nprintf "%s\\n" "$@" > notice-arguments.txt\n'
+                )
+                icon = project / 'assets/icons/BrowserIcon.icns'
+                icon.parent.mkdir(parents=True)
+                icon.write_bytes(b'fixture')
+                commands = project / 'commands'
+                commands.mkdir()
+                stub = commands / 'stub'
+                stub.write_text(f'''#!{sys.executable}
+import json
+from pathlib import Path
+import sys
+name = Path(sys.argv[0]).name
+with open('commands.jsonl', 'a') as output:
+    output.write(json.dumps([name, *sys.argv[1:]]) + '\\n')
+if name == 'uname':
+    print('Darwin')
+if name == 'cargo' and sys.argv[1] == 'build':
+    profile = 'release' if '--release' in sys.argv else 'debug'
+    output = Path('target') / profile
+    output.mkdir(parents=True)
+    for binary in ['wega', 'wega-engine']:
+        (output / binary).write_bytes(b'fixture')
+''')
+                stub.chmod(0o755)
+                for name in ['cargo', 'python3', 'codesign', 'uname']:
+                    (commands / name).symlink_to(stub)
+                environment = {**os.environ, 'PATH': str(commands) + os.pathsep + os.environ['PATH']}
+                result = subprocess.run(['/bin/bash', str(scripts / 'package-macos.sh'), *arguments],
+                                        env=environment, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                calls = [json.loads(line) for line in (project / 'commands.jsonl').read_text().splitlines()]
+                expected = ['cargo', 'build', '--locked']
+                if profile == 'release':
+                    expected += ['--release']
+                if bundle_media:
+                    expected += ['--features', 'desktop']
+                self.assertIn(expected, calls)
+                self.assertIn(['python3', 'scripts/build-wega-engine.py', *(['--debug'] if profile == 'debug' else [])], calls)
+                app = project / 'target/Wega.app'
+                self.assertEqual((app / 'Contents/MacOS/wega').read_bytes(), b'fixture')
+                notice_arguments = project / 'notice-arguments.txt'
+                if profile == 'release':
+                    expected_notices = [str(app / 'Contents/Resources')]
+                    if bundle_media:
+                        expected_notices += ['--features', 'desktop']
+                    self.assertEqual(notice_arguments.read_text().splitlines(), expected_notices)
+                else:
+                    self.assertFalse(notice_arguments.exists())
+                self.assertEqual(['python3', 'scripts/bundle-macos-media.py', str(app)] in calls, bundle_media)
 
 
 if __name__ == '__main__':

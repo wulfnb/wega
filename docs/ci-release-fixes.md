@@ -105,6 +105,12 @@ Existing third-party warnings are not a claim of zero security risk.
 
 ## Release platforms and pull-request scope
 
+- The macOS packager keeps argument arrays nonempty for Apple's Bash 3.2 with
+  `set -u`, including default release notices and debug builds. A subprocess
+  regression exercises the real shell script with native build/signing stubs.
+- Surfman's ANGLE default selects the Windows backend but does not build ANGLE.
+  Enable `sm-angle-builtin` as well so Cargo supplies `libEGL.dll` and
+  `libGLESv2.dll` for the existing CI launch, ZIP and installer checks.
 - CD packages macOS for Apple Silicon (`macos-15`) and Intel (`macos-15-intel`).
   The pinned V8 prebuilts already include `x86_64-apple-darwin`; the Intel build is
   checked to be a single-architecture `x86_64` binary. `macos-15-intel` is GitHub's
