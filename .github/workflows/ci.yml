@@ -98,7 +98,7 @@ jobs:
       - name: JavaScript line coverage (100% required)
         run: sh scripts/javascript-coverage.sh
       - name: Install security analysis tools
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-audit@0.22.2
       # Keep registry fetching enabled: --no-fetch also prevents cargo-audit
@@ -181,7 +181,7 @@ jobs:
       # coverage.sh runs the Python suite on Linux; macOS runs it with desktop coverage.
       - name: Install coverage tool
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-llvm-cov@0.9.1
       - name: Core coverage and regression gate
@@ -354,7 +354,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
