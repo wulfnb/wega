@@ -366,6 +366,9 @@ jobs:
           context: .
           file: ./Dockerfile
           target: runtime-prebuilt
+          # Refresh distro security updates even when the base digest is unchanged.
+          pull: true
+          no-cache-filters: desktop
           push: false
           load: true
           provenance: false
