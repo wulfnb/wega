@@ -32,17 +32,30 @@ fn page_event_producers_cannot_flood_the_browser_queue() {
     v.set_html("<!doctype html><div></div>").unwrap();
     v.poll();
     for (name, js) in [
-        ("window.open", "for(let i=0;i<50000;i++)window.open('https://probe.test/'+i);1"),
+        (
+            "window.open",
+            "for(let i=0;i<50000;i++)window.open('https://probe.test/'+i);1",
+        ),
         (
             "clipboard.writeText",
             "for(let i=0;i<50000;i++)navigator.clipboard&&navigator.clipboard.writeText('x'+i).catch(()=>{});1",
         ),
-        ("Notification", "for(let i=0;i<20000;i++){try{new Notification('n'+i)}catch(e){}};1"),
-        ("pushState", "for(let i=0;i<5000;i++)history.pushState(null,'','#'+i);1"),
+        (
+            "Notification",
+            "for(let i=0;i<20000;i++){try{new Notification('n'+i)}catch(e){}};1",
+        ),
+        (
+            "pushState",
+            "for(let i=0;i<5000;i++)history.pushState(null,'','#'+i);1",
+        ),
     ] {
         v.evaluate(js).unwrap();
         v.poll();
-        assert!(v.events.len() <= 8, "{name} queued {} events", v.events.len());
+        assert!(
+            v.events.len() <= 8,
+            "{name} queued {} events",
+            v.events.len()
+        );
         v.events.clear();
     }
 }
@@ -60,7 +73,8 @@ fn deep_nesting_within_the_supported_depth_lays_out_and_paints() {
             .unwrap(),
             depth.to_string()
         );
-        v.evaluate_json("document.body.getBoundingClientRect().height").unwrap();
+        v.evaluate_json("document.body.getBoundingClientRect().height")
+            .unwrap();
         v.paint(100, 100, 1.0, 1.0, false).unwrap();
     }
 }
