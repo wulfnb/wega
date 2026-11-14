@@ -358,3 +358,55 @@ Full report: [`dom-round8-report.md`](./dom-round8-report.md); audit and design:
 - **Numbers:** 433 passed, 0 failed, 7 ignored; graph unchanged (13 members, 24 edges, 0 violations); Blitz reference lines 100 → 96; one regression found by A/B measurement and fixed; script `focus()` +228% by design (four events instead of one); other paths within noise at load ≈ 10.
 - **Commits:** `0406e51`, `9db9112`, `3f55e74`, `6162279`, `221a0fa`, `c777548`, `22dbc5a`, `6cab08f`, `fa1a5c5`, report commit.
 - **Next:** a default-action/click-synthesis contract, engine-owned input event types (drop `blitz-traits` events from `view.rs`), then layout geometry, style and form state.
+
+## 37. Round 9 (CSS and styling ownership)
+
+Full report: [`dom-round9-report.md`](./dom-round9-report.md); audit and design: [`dom-round9-design.md`](./dom-round9-design.md).
+
+- **Audit:** Stylo owns CSS semantics; Blitz owns all style state (`Stylist`, sheets, declaration blocks, computed values, invalidation); Wega owned only the JS surface plus seven host ops that named Blitz/Stylo types directly. CSSOM objects are not exposed; Shadow DOM styling is not implemented.
+- **Contract:** `wega_dom::style` (`StyleAccess`, `StyleControl`), implemented once by `BlitzDocument`; `NodeKey` only, stale keys rejected, no Blitz/Stylo type in signatures, no cache or copy. No `wega-style` crate (same two dependents as `wega-dom`) and no `wega-adapter-stylo` (Stylo is not separable from Blitz; limitation recorded). `StylesheetAccess`, `StyleInvalidation`, `ComputedStyleView` not added (no consumers).
+- **Migrated:** inline style read/write, `setProperty`/`removeProperty`, computed values, `CSS.supports`, `matchMedia`. Stylesheet insertion/removal and invalidation stay in the mutation contract/Blitz, now tested.
+- **Bugs fixed (tested):** invalid `setProperty` corrupted the `style` attribute and queued a mutation; non-canonical attribute text; computed `cssText` leaked inline style; detached/shadow `<style>` applied to the document (vendored Blitz patch).
+- **Shadow DOM:** not implemented, pinned by tests and listed in the report. **Other gaps:** `<style media>`, CSSOM objects, pseudo-element computed style, tree-order sheet ordering.
+- **Numbers:** 462 passed, 0 failed, 8 ignored (from 433/7); graph unchanged (13 members, 24 edges, 0 violations); Blitz reference lines 96 → 93; `engines/Cargo.lock` +3 lines; no new unsafe. Release A/B at load 12–14: within noise except `style.setProperty+removeProperty` +13% (validation and canonical serialization) and an intentional −98% for no-op writes. Only macOS validated.
+- **Commits:** `90aa968`, `d67317f`, report commit.
+- **Next:** layout geometry contract (including the style/layout flush), then form state; CSSOM and Shadow DOM styling are features.
+
+## 38. Round 10 (layout and geometry ownership)
+
+Full report: [`dom-round10-report.md`](./dom-round10-report.md); audit and design: [`dom-round10-design.md`](./dom-round10-design.md).
+
+- **Audit:** Blitz (Taffy/Parley) owns the layout tree, calculation and all geometry; the engine owned the JS surface, the flush schedule, one `layout_dirty` gate and 22 direct calls into Blitz. Invalidation authority is Blitz's damage flags plus that single engine gate; it was kept, no second dirty cache.
+- **Contracts:** `wega_dom::layout` (`GeometryAccess`, `HitTest`, `LayoutControl`) in `wega-dom`, implemented once by `BlitzDocument`. CSS pixels throughout; client, document, offset-parent and element-relative spaces defined; reads never relayout, `flush_layout` is the one flush; `NodeKey` only, stale keys rejected, no Blitz types. No `wega-layout` crate (same two dependents as `wega-dom`).
+- **Migrated:** bounding/client rects, offset/client/scroll measurements, element and viewport scrolling, viewport size/DPR, fragment scroll, ResizeObserver boxes, flush, viewport configuration, wheel hit-testing; `pointer_moved` now takes viewport coordinates. Not migrated: `scroll_node_by`, paint-side `Viewport`.
+- **Bugs fixed (tested):** boxless `getClientRects`/rects, a scrolled element's own rect shifted by its scroll (vendored patch), `scroll_at` hit coordinates, stale-node panic, stale geometry for removed/`display:none` elements.
+- **Gaps recorded:** transforms ignored by geometry, no shadow-tree layout, no `resize` event, no `elementFromPoint`, flush skipped while stylesheets load.
+- **Numbers:** 485 passed, 0 failed, 9 ignored (from 462/8); graph unchanged (13 members, 24 edges, 0 violations); lockfiles unchanged; no new unsafe; Blitz reference lines 93 → 83. Release A/B at load 3–10: `offset*`/`client*`/`scroll*` reads about 57–60% faster (the 15-field host op was split), everything else within noise. Only macOS validated.
+- **Commits:** `fe90755`, `9f62df7`, report commit.
+- **Next:** rendering extraction (paint scene, raster, paint viewport), then form state.
+
+## 39. Round 11 (rendering and painting ownership)
+
+Full report: [`dom-round11-report.md`](./dom-round11-report.md); audit and design: [`dom-round11-design.md`](./dom-round11-design.md).
+
+- **Audit:** Wega owned only the orchestration, and called `blitz_paint::paint_scene` and named `anyrender::Scene` directly; Blitz owns painting semantics and the display-list producer, Skia (via `wega-adapter-skia`, CPU only) rasterises on a dedicated thread, the browser UI process owns the window surface.
+- **Contracts:** `wega_dom::render::PaintSource` (`prepare_frame`, `record_scene`, `is_animating`; associated `Scene` type, so no painter or graphics type in the contract), implemented by `BlitzDocument`; `ViewportConfig` is the render viewport (device-pixel size, `scale * zoom`); typed `FrameRequest`/`FrameTarget` in the Skia adapter; `FrameState` owns dirty tracking. No new crate, no `Rasterizer` trait, no display-list abstraction (no consumer).
+- **Migrated:** frame initiation (`begin_paint` now takes `ViewportConfig` and `FrameTarget`), viewport/flush, paint recording (the `blitz_paint` call moved into the adapter; the engine drops `blitz-paint` and `anyrender`), surface submission, invalidation signalling. Behaviour identical: 42 frames bit-identical to Round 10.
+- **Findings:** idle pages repaint continuously (`poll()` marks dirty unconditionally; not safely fixable without canvas/media/resource producers invalidating first; pinned); resize recreates the Skia renderer (~20× per-frame cost); no damage tracking; empty scene while stylesheets load.
+- **Numbers:** 506 passed, 0 failed, 11 ignored (from 485/9); graph unchanged (13 members, 24 edges, 0 violations; informational ARCH-007 14 → 12); `engines/Cargo.lock` ±2 lines (dependency moved to the adapter, no external change); no new unsafe; Blitz reference lines 83 → 81. Release A/B at load 5.7–8.5: no measurable change (±4%); record 0.09 ms, rasterise 0.24 ms at 800×600; +2 MiB over 300 frames. Only macOS CPU rendering validated.
+- **Commits:** `9cd2ce5`, `f082a14`, report commit.
+- **Next (not started):** fix the idle repaint and pooled renderers before damage tracking; Round 12 scope per the plan.
+
+## 40. Round 12 (architecture consolidation and browser compatibility audit)
+
+Full report: [`dom-round12-report.md`](./dom-round12-report.md); companions: [`blitz-retirement-readiness.md`](./blitz-retirement-readiness.md), [`browser-feature-completion-audit.md`](./browser-feature-completion-audit.md), [`post-round12-roadmap.md`](./post-round12-roadmap.md).
+
+- **Consolidation:** five unused `wega-engine` dependencies removed (`blitz-html`, `cssparser`, `style_traits`, `cookie_store`, `publicsuffix`; lockfile −5 edges, no package change) and one dead 230 KB duplicate (`public_suffix_list.dat`) deleted. No cycles; 13 members, 24 edges, 0 violations, 11 informational. About 60 README-only placeholder directories were left (planned structure, not dead code).
+- **Blitz readiness (exact):** direct-import grep 81 lines, but **149 compile errors over 26 `BaseDocument` members when `Deref` is removed** (`url` 49, `get_node` 39, selectors 15, events/default actions 11, forms 3, accessibility 2); Blitz `NodeId` in 78 engine places; Blitz event types in the public API. Contracts exist and are exercised for DOM (partial), HTML, style, input, layout/geometry and paint; none has a second backend; forms, selectors, default actions, accessibility, XML and resource delivery have no contract. Blitz cannot be retired yet.
+- **Feature audit:** category 4 (absent): iframe rendering, IndexedDB for pages, Shadow DOM rendering, WebGPU, WebRTC, Web Audio, password manager, passkeys, printing, extensions, sync, DRM, CSP frame directives and reporting, cross-origin isolation. Category 3 (simulation): WebGL rendering, camera/microphone, media frames. Method: static source review plus author re-verification of the highest-impact claims.
+- **Standards (run):** DOM WPT subset 35 files **1685/1685**, CSS WPT 7/7 + 1 reftest, framework fixtures 7/7, harness fixtures 6/6, reftests 21/21. Coverage is DOM, events and Location only (no navigation, storage, security, accessibility, fetch, worker or layout area; no expectations manifest; upstream WPT absent). Not a conformance measure.
+- **Reliability:** negative tests added (`reliability.rs`): page-event flooding bounded (verified); **a ≥ 122-nested-block page hangs layout** (121: 22 ms; pinned, not fixed; script watchdog does not cover layout); unbounded worker queues and uncommented Windows `unsafe` (74 in platform files) recorded.
+- **Performance:** new repeatable runner `scripts/engine-bench.py` (environment, repeats, spread, compare) and a worker benchmark; 64-metric baseline at load ≈ 9; no regression vs Round 11 (31 of 34 common metrics within ±5%); worker round trip ≈ 5.8 ms (consistent with a 4 ms poll tick, not isolated).
+- **Validation (macOS only):** 509 passed, 0 failed, 12 ignored (from 506/11); broker mode and required-worker pass; fmt, clippy, metadata, checker, boundary tests pass; no new unsafe. **Not tested:** Linux, Windows, MSVC Skia, native sandbox probes on any OS, hosted CI results, the browser UI suites.
+- **Roadmap:** blockers B1–B7 (layout watchdog/hang, frame-level CSP, cross-origin isolation, cookie partitioning, unsafe/sandbox evidence, worker queue bounds, idle repaint), features F1–F9 (iframes first), standards S1–S4, vendor steps A1–A10, infrastructure, phases. Blitz replacement is last.
+- **Commits:** `87e1f81`, `e2a9cc9`, `21f56a1`, report commit. Not pushed.

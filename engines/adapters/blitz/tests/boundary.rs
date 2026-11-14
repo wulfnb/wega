@@ -7,8 +7,16 @@ const ALLOWED: &[&str] = &[
     "blitz-dom",
     "blitz-html",
     "blitz-traits",
+    // The painter and its display-list crate: recording a scene is the `PaintSource` contract.
+    "blitz-paint",
+    "anyrender",
     "html5ever",
     "url",
+    // Stylo is hosted by the Blitz document (stylist, lock and sheets are its fields), so the
+    // style contract is implemented here: property ids and media queries need these.
+    "style",
+    "style_traits",
+    "cssparser",
 ];
 const ALLOWED_DEV: &[&str] = &["wega-html"];
 

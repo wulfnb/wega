@@ -137,6 +137,17 @@ single indexed candidates from detached fragment or shadow trees. Scope-local
 selectors continue through the native selector engine; bindings do not duplicate
 tree traversal in JavaScript.
 
+`blitz/patches/detached-style-elements.patch` (Round 9, 14 November 2026) stops the
+mutator from creating a stylesheet for a `<style>` element that is not in the
+document. Before it, setting the text of a never-inserted `<style>` (or appending
+one to a detached element or a shadow root) applied its rules to the document. The
+element is still processed when it is inserted.
+
+`blitz/patches/own-scroll-bounding-rect.patch` (Round 10, 14 November 2026) stops
+`get_client_bounding_rect` from subtracting an element's own scroll offset from its own
+box: a scrolled container's `getBoundingClientRect()` moved by its `scrollLeft/Top`,
+although scrolling moves the content, not the container.
+
 `deno/patches/transactional-arraybuffer-transfer.patch` validates the complete
 ArrayBuffer transfer list before storing backing references. A successful serialize
 detaches sources after V8 has read typed-array views. Failure removes reserved

@@ -12,6 +12,8 @@ use std::{
 };
 use wega_adapter_blitz::BlitzDocument;
 use wega_adapter_blitz::{ToKey, ToNodeId};
+use wega_dom::layout::{GeometryAccess, LayoutControl, LayoutError, Point, Rect};
+use wega_dom::style::{StyleAccess, StyleControl, StyleError};
 use wega_dom::{DocumentView, Mutator, NodeKind, NodeView};
 
 /// A `<script>` element that script inserted into the document.
@@ -189,7 +191,7 @@ impl Dom {
     }
     fn resolve(&self, doc: &mut BlitzDocument) {
         if self.layout_dirty.replace(false) {
-            doc.resolve(self.start.elapsed().as_secs_f64());
+            doc.flush_layout(self.start.elapsed().as_secs_f64());
         }
     }
     pub fn call(&self, args: &[Value]) -> Result<Value, String> {
@@ -945,6 +947,7 @@ impl Dom {
                 | "createDocument"
                 | "setAttrNS"
                 | "styleSet"
+                | "styleSetImportant"
                 | "focus"
                 | "blur"
                 | "setChecked"
@@ -1051,7 +1054,7 @@ impl Dom {
             "createNS" => text(1).len() + text(2).len() + 32,
             "innerHTML" | "contextualFragment" => text(2).len() + 32,
             "write" => text(1).len(),
-            "styleSet" => text(2).len() + text(3).len() + 32,
+            "styleSet" | "styleSetImportant" => text(2).len() + text(3).len() + 32,
             _ => 0,
         };
         let next = self.used.get().saturating_add(charge);
@@ -1176,19 +1179,14 @@ impl Dom {
             "cookie"=>json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite)),
             "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);Value::Null},
             "templateContent"=>{let target=node_id()?;let content=wega_dom::mutate(&mut *doc).template_contents(target.key()).map_err(Self::mutation_error)?;json!(content.node_id().as_u64().to_string())},
-            "viewport"=>{let viewport=doc.viewport();let scale=(viewport.hidpi_scale*viewport.zoom) as f64;let scroll=doc.viewport_scroll();json!({"width":viewport.window_size.0 as f64/scale,"height":viewport.window_size.1 as f64/scale,"dpr":scale,"scrollX":scroll.x,"scrollY":scroll.y})},
-            "scroll"=>{let node=doc.get_node(node_id()?).unwrap();let scroll=node.scroll_offset();json!({"x":scroll.x,"y":scroll.y})},
-            "scrollViewport"=>{let x=text(1).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.set_viewport_scroll(blitz_dom::Point{x,y});}Value::Null},
-            "scrollNode"=>{let target=node_id()?;let x=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(3).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.scroll_to(target,x,y,blitz_dom::ScrollBehavior::Instant);}Value::Null},
-            "scrollIntoView"=>{let target=node_id()?;doc.scroll_into_view(target,blitz_dom::ScrollBehavior::Instant,blitz_dom::ScrollLogicalPosition::Start,blitz_dom::ScrollLogicalPosition::Nearest);Value::Null},
+            "viewport"=>{let viewport=doc.viewport();json!({"width":viewport.size.width,"height":viewport.size.height,"dpr":viewport.device_pixel_ratio,"scrollX":viewport.scroll.x,"scrollY":viewport.scroll.y})},
+            "scroll"=>{let offset=doc.scroll_offset(node_id()?.key()).map_err(Self::layout_error)?;json!({"x":offset.x,"y":offset.y})},
+            "scrollViewport"=>{let x=text(1).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.set_viewport_scroll(Point{x,y});}Value::Null},
+            "scrollNode"=>{let target=node_id()?;let x=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(3).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.scroll_node_to(target.key(),Point{x,y}).map_err(Self::layout_error)?;}Value::Null},
+            "scrollIntoView"=>{let target=node_id()?;doc.scroll_node_into_view(target.key()).map_err(Self::layout_error)?;Value::Null},
             "active"=>json!(wega_dom::input::FocusState::focused(&*doc).map(|key|key.to_string())),
             "history"=>{let url=doc.url().join(text(1)).map_err(|e|e.to_string())?;if url.origin()!=doc.url().origin()||!matches!(url.scheme(),"http"|"https"){return Err("SecurityError: history URL must have the same tuple origin".into());}doc.set_base_url(url.as_str());Value::Null},
-            "media"=>{
-                let url_data=style::stylesheets::UrlExtraData(style::servo_arc::Arc::new(doc.url().clone()));
-                let mut context=style::parser::ParserContext::new(style::stylesheets::Origin::Author,&url_data,Some(style::stylesheets::CssRuleType::Media),style_traits::ParsingMode::DEFAULT,style::context::QuirksMode::NoQuirks,std::borrow::Cow::Owned(Default::default()),None,None,Default::default());
-                let mut input=cssparser::Parser::new(text(1));let media=style::media_queries::MediaList::parse(&mut context,&mut input);
-                json!(media.evaluate(doc.stylist_device(),style::context::QuirksMode::NoQuirks,&mut style::stylesheets::CustomMediaEvaluator::none()))
-            },
+            "media"=>json!(StyleControl::media_matches(&mut *doc,text(1))),
             "subtree"=>json!(self.component_subtree(&doc,node_id()?).iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "documentDomain"=>{
                 if doc.url().origin().is_tuple() { Value::Null }
@@ -1273,16 +1271,17 @@ impl Dom {
                 self.components.borrow_mut().attribute(target.as_u64(), local, old.as_deref(), Some(&payload[1]), (!text(2).is_empty()).then_some(text(2)));
                 Value::Null
             },
-            "supports"=>json!(doc.css_supports_condition(text(1))),
-            "supportsProperty"=>json!(doc.style_attr_set_property("",text(1),text(2),false).is_some_and(|css|!css.is_empty())),
-            "inlineCSS"=>{let target=node_id()?;let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}json!(css)},
-            "inlineProperty"=>{let target=node_id()?;let mut css=String::new();if let Ok(property)=style::properties::PropertyId::parse_enabled_for_all_content(text(2)) && let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).property_value_to_css(&property,&mut css);}json!(css)},
-            "styleSet"=>{
-                let target=node_id()?;let old=Self::attribute(&doc,target,"style");wega_dom::mutate(&mut *doc).remove_style_property(target.key(),text(2)).map_err(Self::mutation_error)?;
-                let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}
-                if !text(3).is_empty(){css.push_str(&format!("{}: {};",text(2),text(3)));}
-                wega_dom::mutate(&mut *doc).set_attribute(target.key(),QualName::new(None,ns!(),LocalName::from("style")),&css).map_err(Self::mutation_error)?;
-                self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),Some(&css),None);Value::Null
+            "supports"=>json!(doc.supports_condition(text(1))),
+            "supportsProperty"=>json!(doc.supports_declaration(text(1),text(2))),
+            "inlineCSS"=>{let mut css=String::new();Self::style_text(doc.inline_style(node_id()?.key(),&mut css),css)?},
+            "inlineProperty"=>{let mut css=String::new();Self::style_text(doc.inline_property(node_id()?.key(),text(2),&mut css),css)?},
+            // CSSOM setProperty/removeProperty; `false` when the declaration was rejected or
+            // changed nothing, so script queues no mutation record for it.
+            "styleSet"|"styleSetImportant"=>{
+                let target=node_id()?;let old=Self::attribute(&doc,target,"style");
+                let changed=doc.set_inline_property(target.key(),text(2),text(3),text(0)=="styleSetImportant").map_err(Self::mutation_error)?;
+                if changed{let new=Self::attribute(&doc,target,"style");self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),new.as_deref(),None);}
+                json!(changed)
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
             "checked"=>json!(doc.get_node(node_id()?).unwrap().element_data().and_then(|e|e.checkbox_input_checked()).unwrap_or(false)),
@@ -1304,7 +1303,7 @@ impl Dom {
             "serialize"=>{let mut html=String::new();Self::serialize(&doc,node_id()?,&mut html);json!(html)},
             "computed"=>{
                 let target=node_id()?;self.resolve(&mut doc);
-                json!(doc.resolved_style_value(target,text(2)))
+                let mut css=String::new();Self::style_text(doc.resolved_value(target.key(),text(2),&mut css),css)?
             },
             "limits" => json!({"resourceBytes":self.limits.resource_bytes}),
             "windowNamed" => json!(blitz_dom::traversal::TreeTraverser::new(&doc).filter(|id| {
@@ -1349,21 +1348,34 @@ impl Dom {
                     .unwrap_or_default()
             ),
             "parent" => json!(doc.node(node_id()?.key()).and_then(NodeView::parent).map(|key| key.to_string())),
+            // ResizeObserver: the border box and the content box.
             "box"=>{
-                let target=node_id()?;self.resolve(&mut doc);let node=doc.get_node(target).unwrap();let layout=node.final_layout();let offset=doc.offset_rect(target).unwrap_or(blitz_dom::BoundingRect{x:0.0,y:0.0,width:0.0,height:0.0});
-                json!({"hasBoxes":node.has_boxes(),"clientWidth":node.client_width(),"clientHeight":node.client_height(),"clientLeft":layout.border.left,"clientTop":layout.border.top,"offsetWidth":offset.width,"offsetHeight":offset.height,"offsetLeft":offset.x,"offsetTop":offset.y,"offsetParent":node.offset_parent().map(|node|node.id.as_u64().to_string()),"scrollWidth":node.scroll_width(),"scrollHeight":node.scroll_height(),"contentWidth":layout.content_box_width(),"contentHeight":layout.content_box_height(),"paddingLeft":layout.padding.left,"paddingTop":layout.padding.top})
+                let target=node_id()?.key();self.resolve(&mut doc);
+                let offset=doc.offset_box(target).map_err(Self::layout_error)?.rect;let content=doc.content_box(target).map_err(Self::layout_error)?;
+                json!({"offsetWidth":offset.width,"offsetHeight":offset.height,"contentWidth":content.size.width,"contentHeight":content.size.height,"paddingLeft":content.padding_left,"paddingTop":content.padding_top})
+            },
+            "clientBox"=>{
+                let target=node_id()?.key();self.resolve(&mut doc);
+                let b=doc.client_box(target).map_err(Self::layout_error)?;json!({"left":b.left,"top":b.top,"width":b.width,"height":b.height})
+            },
+            "offsetBox"=>{
+                let target=node_id()?.key();self.resolve(&mut doc);
+                let b=doc.offset_box(target).map_err(Self::layout_error)?;
+                json!({"x":b.rect.x,"y":b.rect.y,"width":b.rect.width,"height":b.rect.height,"parent":b.parent.map(|key|key.to_string())})
+            },
+            "scrollSize"=>{
+                let target=node_id()?.key();self.resolve(&mut doc);
+                let size=doc.scroll_size(target).map_err(Self::layout_error)?;json!({"width":size.width,"height":size.height})
             },
             "clientRects"=>{
-                let target=node_id()?;self.resolve(&mut doc);
-                json!(doc.node_client_rects(target).into_iter().map(|r|json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height})).collect::<Vec<_>>())
+                let target=node_id()?.key();self.resolve(&mut doc);
+                let mut rects=Vec::new();doc.client_rects(target,&mut rects).map_err(Self::layout_error)?;
+                json!(rects.into_iter().map(|r|json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height})).collect::<Vec<_>>())
             },
             "rect" => {
-                let id = node_id()?;
-                self.resolve(&mut doc);
-                let node = doc.get_node(id).unwrap();
-                if node.element_data().is_none() {return Ok(json!({"x":0,"y":0,"width":0,"height":0,"left":0,"right":0,"top":0,"bottom":0}));}
-                let r=doc.get_client_bounding_rect(id).unwrap_or(blitz_dom::BoundingRect{x:0.0,y:0.0,width:0.0,height:0.0});
-                json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height,"left":r.x,"top":r.y,"right":r.x+r.width,"bottom":r.y+r.height})
+                let target=node_id()?.key();self.resolve(&mut doc);
+                let r:Rect=doc.bounding_rect(target).map_err(Self::layout_error)?;
+                json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height,"left":r.x,"top":r.y,"right":r.right(),"bottom":r.bottom()})
             }
             "attr" => json!(
                 doc.get_node(node_id()?)
@@ -1548,7 +1560,7 @@ impl Dom {
                 let fragment = url.fragment().unwrap_or_default().to_owned();
                 self.resolve(&mut doc);
                 if fragment.is_empty() {
-                    doc.set_viewport_scroll(blitz_dom::Point { x: 0.0, y: 0.0 });
+                    doc.set_viewport_scroll(Point { x: 0.0, y: 0.0 });
                 } else {
                     doc.scroll_to_fragment(&fragment);
                 }
@@ -1621,6 +1633,16 @@ impl Dom {
     }
     fn subtree(doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
         wega_dom::subtree(doc, root.key(), ToNodeId::node_id)
+    }
+    fn layout_error(error: LayoutError) -> String {
+        error.to_string()
+    }
+    /// A style read as a script value: nodes that are not elements have no style.
+    fn style_text(read: Result<(), StyleError>, css: String) -> Result<Value, String> {
+        match read {
+            Ok(()) | Err(StyleError::NotElement(_)) => Ok(json!(css)),
+            Err(error) => Err(error.to_string()),
+        }
     }
     fn attribute(doc: &BlitzDocument, id: NodeId, name: &str) -> Option<String> {
         wega_dom::attribute(doc, id.key(), name)

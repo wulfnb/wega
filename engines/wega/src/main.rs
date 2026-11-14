@@ -765,31 +765,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let slot = slot.unwrap();
                 sequence = sequence.checked_add(1).ok_or("Frame identity exhausted")?;
                 credits[slot] = Some(sequence);
-                Some((slot as u8, sequence))
+                wega_engine::FrameTarget::Shared {
+                    slot: slot as u8,
+                    sequence,
+                }
             } else {
-                None
+                wega_engine::FrameTarget::Owned
             };
             match view.begin_paint(
-                wega_engine::Viewport {
-                    window_size: (viewport.0, viewport.1),
-                    hidpi_scale: viewport.2,
+                wega_engine::ViewportConfig {
+                    width_px: viewport.0,
+                    height_px: viewport.1,
+                    scale: viewport.2,
                     zoom: viewport.3,
-                    color_scheme: if viewport.4 {
-                        wega_engine::ColorScheme::Dark
-                    } else {
-                        wega_engine::ColorScheme::Light
-                    },
+                    dark: viewport.4,
                 },
                 serial,
                 target,
             ) {
                 Ok(()) => {
-                    pending_target = target;
+                    pending_target = match target {
+                        wega_engine::FrameTarget::Shared { slot, sequence } => {
+                            Some((slot, sequence))
+                        }
+                        wega_engine::FrameTarget::Owned => None,
+                    };
                     pending_revision = Some(DocumentRevision(view.document_revision()));
                     last_frame = std::time::Instant::now();
                 }
                 Err(error) => {
-                    if let Some((slot, _)) = target {
+                    if let wega_engine::FrameTarget::Shared { slot, .. } = target {
                         credits[slot as usize] = None;
                     }
                     frozen = true;

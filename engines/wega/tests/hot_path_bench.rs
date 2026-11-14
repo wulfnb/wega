@@ -305,3 +305,340 @@ fn event_paths() {
     println!("BENCH set_html document replacement: {replacement:.2} ms/document");
     println!("BENCH create_view construction: {construction:.2} ms/view");
 }
+
+/// Style paths (Round 9): inline style reads/writes, computed queries, selector matching,
+/// stylesheet insertion, invalidation, recalculation and styled document creation.
+#[test]
+#[ignore]
+fn style_paths() {
+    const ITEMS: &str = "<style>body{margin:0}.item{color:rgb(1,2,3);padding:1px}.item.on{color:rgb(4,5,6)}#list>.item:nth-child(odd){margin-left:2px}</style><div id=list></div><script>const l=document.getElementById('list');for(let i=0;i<300;i++){const d=document.createElement('div');d.className='item';d.style.cssText='width: 10px; height: 2px';l.appendChild(d)}globalThis.items=[...l.children]</script>";
+    let mut page = input_page(ITEMS);
+    let run = |page: &mut View, js: &str, n: f64| {
+        let start = Instant::now();
+        page.evaluate_json(js).unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / n
+    };
+    let inline_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++){const s=items[i%300].style;n+=s.getPropertyValue('width').length+s.height.length}return n})()",
+            6_000.0,
+        )
+    });
+    let css_text = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++)n+=items[i%300].style.cssText.length;return n})()",
+            3_000.0,
+        )
+    });
+    let inline_write = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{for(let i=0;i<3000;i++)items[i%300].style.setProperty('width',(10+i%7)+'px');return 1})()",
+            3_000.0,
+        )
+    });
+    let inline_remove = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{for(let i=0;i<1500;i++){const s=items[i%300].style;s.setProperty('opacity','0.5');s.removeProperty('opacity')}return 1})()",
+            3_000.0,
+        )
+    });
+    let computed = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++)n+=getComputedStyle(items[i%300]).getPropertyValue('color').length;return n})()",
+            3_000.0,
+        )
+    });
+    let computed_after_write = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{globalThis.round=(globalThis.round|0)+1;let n=0;for(let i=0;i<300;i++){const e=items[i];e.style.setProperty('height',(2+(i+round)%5)+'px');n+=getComputedStyle(e).getPropertyValue('height').length}return n})()",
+            300.0,
+        )
+    });
+    let matching = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<200;i++)n+=document.querySelectorAll('#list > .item:nth-child(odd)').length;for(let i=0;i<3000;i++)n+=items[i%300].matches('.item.on, div.item')?1:0;return n})()",
+            3_200.0,
+        )
+    });
+    let sheet = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<30;i++){const s=document.createElement('style');s.textContent='.item{outline:'+(i%3+1)+'px solid red}';document.head.appendChild(s);n+=getComputedStyle(items[0]).getPropertyValue('outline-width').length;s.remove()}return n})()",
+            30.0,
+        )
+    });
+    let invalidation = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<300;i++){const e=items[i];e.classList.toggle('on');n+=getComputedStyle(e).getPropertyValue('color').length}return n})()",
+            300.0,
+        )
+    });
+    let recalc = repeat(|| {
+        let start = Instant::now();
+        for i in 0..20 {
+            page.evaluate(if i % 2 == 0 {
+                "for(const e of items)e.classList.add('on')"
+            } else {
+                "for(const e of items)e.classList.remove('on')"
+            })
+            .unwrap();
+            page.paint(300, 200, 1.0, 1.0, false).unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 20.0
+    });
+    let mut fresh = view();
+    let creation = repeat(|| {
+        let start = Instant::now();
+        for _ in 0..5 {
+            fresh.set_html(ITEMS).unwrap();
+            fresh.poll();
+            fresh.paint(300, 200, 1.0, 1.0, false).unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 5.0
+    });
+    // The same value again: CSSOM makes this a no-op (no mutation, no restyle).
+    let unchanged = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<300;i++){const e=items[i];e.style.setProperty('display','block');n+=getComputedStyle(e).getPropertyValue('display').length}return n})()",
+            300.0,
+        )
+    });
+    let supports = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<2000;i++)n+=(CSS.supports('display','grid')?1:0)+(CSS.supports('(display:grid) and (gap:1px)')?1:0)+(matchMedia('(min-width:100px)').matches?1:0);return n})()",
+            6_000.0,
+        )
+    });
+    println!("BENCH inline style property read: {inline_read:.2} us/read");
+    println!("BENCH inline style cssText read: {css_text:.2} us/read");
+    println!("BENCH inline style setProperty: {inline_write:.2} us/write");
+    println!("BENCH inline style set+removeProperty: {inline_remove:.2} us/op");
+    println!("BENCH getComputedStyle query, no mutation: {computed:.2} us/query");
+    println!("BENCH getComputedStyle after inline write: {computed_after_write:.2} us/query");
+    println!("BENCH getComputedStyle after an unchanged inline write: {unchanged:.2} us/query");
+    println!("BENCH selector matching (querySelectorAll, matches): {matching:.2} us/op");
+    println!("BENCH stylesheet insert+query+remove: {sheet:.2} us/sheet");
+    println!("BENCH class toggle invalidation + query: {invalidation:.2} us/toggle");
+    println!("BENCH restyle 300 elements + paint: {recalc:.2} ms/frame");
+    println!("BENCH styled document creation (300 items) + paint: {creation:.2} ms/document");
+    println!("BENCH CSS.supports/matchMedia: {supports:.2} us/query");
+}
+
+/// Layout and geometry paths (Round 10): geometry queries with and without mutation, layout
+/// invalidation, scrolling, viewport resize, hit-testing and document layout. Uses only the
+/// script and `View` APIs, so the same file runs against the previous round for A/B runs.
+#[test]
+#[ignore]
+fn layout_paths() {
+    const GRID: &str = "<style>body{margin:0}.cell{width:30px;height:12px;margin:1px;padding:1px;border:1px solid}#scroller{width:120px;height:80px;overflow:auto}#fill{height:2000px}</style><div id=list></div><div id=scroller><div id=fill></div></div><div style=height:3000px></div><script>const l=document.getElementById('list');for(let i=0;i<300;i++){const d=document.createElement('div');d.className='cell';l.appendChild(d)}globalThis.cells=[...l.children];globalThis.sc=document.getElementById('scroller')</script>";
+    let mut page = input_page(GRID);
+    let run = |page: &mut View, js: &str, n: f64| {
+        let start = Instant::now();
+        page.evaluate_json(js).unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / n
+    };
+    let rect_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++){const b=cells[i%300].getBoundingClientRect();n+=b.width}return n})()",
+            3_000.0,
+        )
+    });
+    let rects_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++)n+=cells[i%300].getClientRects().length;return n})()",
+            3_000.0,
+        )
+    });
+    let offset_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++){const e=cells[i%300];n+=e.offsetWidth+e.offsetTop}return n})()",
+            6_000.0,
+        )
+    });
+    let client_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++){const e=cells[i%300];n+=e.clientWidth+e.clientHeight}return n})()",
+            6_000.0,
+        )
+    });
+    let scroll_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++)n+=sc.scrollHeight+sc.scrollTop;return n})()",
+            6_000.0,
+        )
+    });
+    let after_style = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{globalThis.k=(globalThis.k|0)+1;let n=0;for(let i=0;i<300;i++){const e=cells[i];e.style.width=(30+(i+k)%5)+'px';n+=e.getBoundingClientRect().width}return n})()",
+            300.0,
+        )
+    });
+    let thrash = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{globalThis.k=(globalThis.k|0)+1;let n=0;for(let i=0;i<300;i++){cells[i].style.height=(12+(i+k)%3)+'px'}for(let i=0;i<300;i++)n+=cells[i].offsetHeight;return n})()",
+            300.0,
+        )
+    });
+    let invalidation = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<300;i++){const e=cells[i];e.classList.toggle('wide');n+=e.offsetWidth}return n})()",
+            300.0,
+        )
+    });
+    let element_scroll = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<2000;i++){sc.scrollTop=i%500;n+=sc.scrollTop}return n})()",
+            2_000.0,
+        )
+    });
+    let viewport_scroll = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<2000;i++){scrollTo(0,i%500);n+=scrollY}scrollTo(0,0);return n})()",
+            2_000.0,
+        )
+    });
+    let resize = repeat(|| {
+        let start = Instant::now();
+        for i in 0..20 {
+            let width = if i % 2 == 0 { 300 } else { 240 };
+            page.paint(width, 200, 1.0, 1.0, false).unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 20.0
+    });
+    let wheel = repeat(|| {
+        let start = Instant::now();
+        for i in 0..200 {
+            page.scroll_at(0.0, if i % 2 == 0 { 5.0 } else { -5.0 }, 10.0, 60.0);
+        }
+        start.elapsed().as_secs_f64() * 1e6 / 200.0
+    });
+    let mut fresh = view();
+    let layout = repeat(|| {
+        let start = Instant::now();
+        for _ in 0..5 {
+            fresh.set_html(GRID).unwrap();
+            fresh.poll();
+            fresh.paint(300, 200, 1.0, 1.0, false).unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 5.0
+    });
+    println!("BENCH getBoundingClientRect, no mutation: {rect_read:.2} us/read");
+    println!("BENCH getClientRects, no mutation: {rects_read:.2} us/read");
+    println!("BENCH offsetWidth+offsetTop, no mutation: {offset_read:.2} us/read");
+    println!("BENCH clientWidth+clientHeight, no mutation: {client_read:.2} us/read");
+    println!("BENCH scrollHeight+scrollTop, no mutation: {scroll_read:.2} us/read");
+    println!("BENCH rect read after a style write: {after_style:.2} us/element");
+    println!("BENCH 300 style writes then 300 reads (batched): {thrash:.2} us/element");
+    println!("BENCH class toggle + offsetWidth: {invalidation:.2} us/toggle");
+    println!("BENCH element scrollTop write+read: {element_scroll:.2} us/op");
+    println!("BENCH viewport scrollTo+scrollY: {viewport_scroll:.2} us/op");
+    println!("BENCH viewport resize + layout + paint: {resize:.2} ms/frame");
+    println!("BENCH wheel scroll_at (hit-test + scroll): {wheel:.2} us/event");
+    println!("BENCH document layout (300 cells) + paint: {layout:.2} ms/document");
+}
+
+/// Rendering paths (Round 11): whole-frame paint cost (record + rasterise + return) for typical
+/// scenarios. Uses only `View::paint`, so the same file runs against the previous round.
+#[test]
+#[ignore]
+fn render_paths() {
+    const PAGE: &str = "<style>body{margin:0;font:13px sans-serif}.row{height:18px;padding:0 6px;border-bottom:1px solid #ddd;background:#fff}.row:nth-child(odd){background:#f6f6f6}.badge{display:inline-block;width:40px;height:12px;border-radius:6px;background:#3a7}#box{position:absolute;left:300px;top:20px;width:120px;height:80px;background:#e33;opacity:.8;transform:translate(4px,4px);overflow:hidden}#scroller{position:absolute;left:440px;top:20px;width:200px;height:200px;overflow:auto}#fill{height:2000px;background:linear-gradient(#fff,#888)}</style><div id=list></div><div id=box><div style='width:400px;height:400px;background:#3a7'></div></div><div id=scroller><div id=fill></div></div><script>const l=document.getElementById('list');for(let i=0;i<40;i++){const d=document.createElement('div');d.className='row';d.innerHTML='<span class=badge></span> Row number '+i+' with some body text';l.appendChild(d)}</script>";
+    let mut page = input_page(PAGE);
+    let paint = |page: &mut View, w: u32, h: u32, s: f32| {
+        let start = Instant::now();
+        page.paint(w, h, s, 1.0, false).unwrap();
+        start.elapsed().as_secs_f64() * 1e3
+    };
+    paint(&mut page, 800, 600, 1.0);
+    let full = repeat(|| {
+        let mut sum = 0.0;
+        for _ in 0..10 {
+            sum += paint(&mut page, 800, 600, 1.0);
+        }
+        sum / 10.0
+    });
+    let hidpi = repeat(|| {
+        let mut sum = 0.0;
+        for _ in 0..10 {
+            sum += paint(&mut page, 1600, 1200, 2.0);
+        }
+        sum / 10.0
+    });
+    let small_update = repeat(|| {
+        let mut sum = 0.0;
+        for i in 0..10 {
+            page.evaluate(&format!(
+                "document.getElementById('box').style.left='{}px'",
+                300 + i
+            ))
+            .unwrap();
+            sum += paint(&mut page, 800, 600, 1.0);
+        }
+        sum / 10.0
+    });
+    let scroll = repeat(|| {
+        let mut sum = 0.0;
+        for i in 0..10 {
+            page.evaluate(&format!(
+                "document.getElementById('scroller').scrollTop={}",
+                i * 37
+            ))
+            .unwrap();
+            sum += paint(&mut page, 800, 600, 1.0);
+        }
+        sum / 10.0
+    });
+    let resize = repeat(|| {
+        let mut sum = 0.0;
+        for i in 0..10 {
+            sum += if i % 2 == 0 {
+                paint(&mut page, 800, 600, 1.0)
+            } else {
+                paint(&mut page, 640, 480, 1.0)
+            };
+        }
+        sum / 10.0
+    });
+    let small_surface = repeat(|| {
+        let mut sum = 0.0;
+        for _ in 0..10 {
+            sum += paint(&mut page, 200, 150, 1.0);
+        }
+        sum / 10.0
+    });
+    let mut fresh = view();
+    let first = repeat(|| {
+        let start = Instant::now();
+        fresh.set_html(PAGE).unwrap();
+        fresh.poll();
+        fresh.paint(800, 600, 1.0, 1.0, false).unwrap();
+        start.elapsed().as_secs_f64() * 1e3
+    });
+    println!("BENCH paint 800x600 unchanged page: {full:.2} ms/frame");
+    println!("BENCH paint 1600x1200 at scale 2: {hidpi:.2} ms/frame");
+    println!("BENCH paint after a one-element move: {small_update:.2} ms/frame");
+    println!("BENCH paint after a container scroll: {scroll:.2} ms/frame");
+    println!("BENCH paint alternating two sizes: {resize:.2} ms/frame");
+    println!("BENCH paint 200x150: {small_surface:.2} ms/frame");
+    println!("BENCH document load + first paint 800x600: {first:.2} ms/document");
+}

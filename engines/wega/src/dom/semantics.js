@@ -1173,7 +1173,8 @@
       });
     }
     get cssText() {
-      return host("inlineCSS", this._element._id);
+      // A computed declaration never answers from the inline style.
+      return this._computed ? "" : host("inlineCSS", this._element._id);
     }
     set cssText(value) {
       if (this._computed)
@@ -1202,14 +1203,18 @@
     setProperty(name, value, priority = "") {
       if (this._computed)
         fail("NoModificationAllowedError", "Computed style is readonly");
-      if (priority && String(priority).toLowerCase() !== "important") return;
+      priority = String(priority ?? "").toLowerCase();
+      if (priority && priority !== "important") return;
       const old = this._element.getAttribute("style");
-      host(
-        "styleSet",
+      // The host applies CSSOM rules: an invalid declaration or an unchanged block is
+      // not a mutation.
+      const changed = host(
+        priority ? "styleSetImportant" : "styleSet",
         this._element._id,
         String(name),
-        String(value === null ? "" : value) + (priority ? " !important" : ""),
+        String(value === null ? "" : value),
       );
+      if (!changed) return;
       notify(this._element, "attributes", {
         attributeName: "style",
         oldValue: old,
@@ -1517,37 +1522,37 @@
       return host("clientRects", this._id).map(rect=>DOMRect.fromRect(rect));
     }
     get clientWidth() {
-      return Math.round(host("box", this._id).clientWidth);
+      return Math.round(host("clientBox", this._id).width);
     }
     get clientHeight() {
-      return Math.round(host("box", this._id).clientHeight);
+      return Math.round(host("clientBox", this._id).height);
     }
     get clientLeft() {
-      return Math.round(host("box", this._id).clientLeft);
+      return Math.round(host("clientBox", this._id).left);
     }
     get clientTop() {
-      return Math.round(host("box", this._id).clientTop);
+      return Math.round(host("clientBox", this._id).top);
     }
     get offsetWidth() {
-      return Math.round(host("box", this._id).offsetWidth);
+      return Math.round(host("offsetBox", this._id).width);
     }
     get offsetHeight() {
-      return Math.round(host("box", this._id).offsetHeight);
+      return Math.round(host("offsetBox", this._id).height);
     }
     get offsetLeft() {
-      return Math.round(host("box", this._id).offsetLeft);
+      return Math.round(host("offsetBox", this._id).x);
     }
     get offsetTop() {
-      return Math.round(host("box", this._id).offsetTop);
+      return Math.round(host("offsetBox", this._id).y);
     }
     get offsetParent() {
-      return wrap(host("box", this._id).offsetParent);
+      return wrap(host("offsetBox", this._id).parent);
     }
     get scrollWidth() {
-      return Math.round(host("box", this._id).scrollWidth);
+      return Math.round(host("scrollSize", this._id).width);
     }
     get scrollHeight() {
-      return Math.round(host("box", this._id).scrollHeight);
+      return Math.round(host("scrollSize", this._id).height);
     }
     get value() {
       if (this.localName === "select")

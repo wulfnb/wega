@@ -315,37 +315,6 @@ fn clone_node_copies_shallow_or_deep_and_rejects_stale_and_unclonable_nodes() {
 }
 
 #[test]
-fn remove_style_property_edits_the_inline_style_and_validates_the_target() {
-    let (mut doc, _host, a, _b, _c) = tree();
-    let mut m = mutate(&mut doc);
-    m.set_attribute(
-        a,
-        QualName::new(None, ns!(), LocalName::from("style")),
-        "color:red;margin:1px",
-    )
-    .unwrap();
-    m.remove_style_property(a, "color").unwrap();
-    let text = m.create_text("t");
-    assert_eq!(
-        m.remove_style_property(text, "color"),
-        Err(MutationError::NotElement(text))
-    );
-    m.finish();
-    let block = doc
-        .get_node(a.node_id())
-        .unwrap()
-        .element_data()
-        .unwrap()
-        .style_attribute
-        .clone()
-        .unwrap();
-    let guard = doc.guard().read();
-    let mut css = String::new();
-    let _ = block.read_with(&guard).to_css(&mut css);
-    assert!(css.contains("margin") && !css.contains("color"), "{css}");
-}
-
-#[test]
 fn new_and_removed_nodes_are_detached_and_can_be_reinserted() {
     let (mut doc, host, a, _b, _c) = tree();
     let fresh = element(&mut doc, "em", "fresh");

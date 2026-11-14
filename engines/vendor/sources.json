@@ -51,7 +51,9 @@
     "patches": [
       "blitz/patches/blitz-dom.patch",
       "blitz/patches/content-image-budgets.patch",
-      "blitz/patches/document-id-scope.patch"
+      "blitz/patches/document-id-scope.patch",
+      "blitz/patches/detached-style-elements.patch",
+      "blitz/patches/own-scroll-bounding-rect.patch"
     ]
   },
   "blitz-paint": {

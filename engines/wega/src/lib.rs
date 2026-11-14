@@ -24,6 +24,7 @@ mod dom;
 mod dom_host;
 mod encoding;
 mod event_loop;
+mod frame;
 mod html_report;
 pub mod media;
 mod native_event;
@@ -37,7 +38,8 @@ pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use network::NetworkPolicy;
 pub use view::{Frame, View};
 pub use view::{PageEvent, Pointer, PointerKind};
-pub use wega_adapter_skia::{Painted, Pixels};
+pub use wega_adapter_skia::{FrameRequest, FrameTarget, Painted, Pixels};
+pub use wega_dom::layout::ViewportConfig;
 
 #[derive(Clone, Debug)]
 pub struct Limits {

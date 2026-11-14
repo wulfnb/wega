@@ -1,0 +1,474 @@
+{
+  "environment": {
+    "cores": 10,
+    "cpu": "Apple M4",
+    "git_dirty": true,
+    "git_revision": "87e1f81",
+    "load_after": [
+      9.32666015625,
+      8.83984375,
+      9.33544921875
+    ],
+    "load_before": [
+      9.0791015625,
+      11.8974609375,
+      10.26171875
+    ],
+    "machine": "arm64",
+    "memory_bytes": 17179869184,
+    "platform": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+    "profile": "release"
+  },
+  "metrics": {
+    "1600x1200 @2x rasterise and return pixels": {
+      "max": 0.6,
+      "median": 0.6,
+      "min": 0.6,
+      "samples": 3,
+      "unit": "ms"
+    },
+    "1600x1200 @2x record scene (flush+paint prep)": {
+      "max": 0.1,
+      "median": 0.09,
+      "min": 0.09,
+      "samples": 3,
+      "unit": "ms"
+    },
+    "300 style writes then 300 reads (batched)": {
+      "max": 21.58,
+      "median": 8.96,
+      "min": 8.95,
+      "samples": 3,
+      "unit": "us/element"
+    },
+    "8 parallel workers create + reply": {
+      "max": 65.99,
+      "median": 64.53,
+      "min": 63.39,
+      "samples": 3,
+      "unit": "ms/batch"
+    },
+    "800x600 @1x rasterise and return pixels": {
+      "max": 0.24,
+      "median": 0.24,
+      "min": 0.24,
+      "samples": 3,
+      "unit": "ms"
+    },
+    "800x600 @1x record scene (flush+paint prep)": {
+      "max": 0.09,
+      "median": 0.09,
+      "min": 0.09,
+      "samples": 3,
+      "unit": "ms"
+    },
+    "CSS.supports/matchMedia": {
+      "max": 1.9,
+      "median": 1.77,
+      "min": 1.74,
+      "samples": 3,
+      "unit": "us/query"
+    },
+    "appendChild+removeChild": {
+      "max": 59.84,
+      "median": 59.76,
+      "min": 59.68,
+      "samples": 3,
+      "unit": "us/node"
+    },
+    "class toggle + offsetWidth": {
+      "max": 862.35,
+      "median": 492.68,
+      "min": 491.66,
+      "samples": 3,
+      "unit": "us/toggle"
+    },
+    "class toggle invalidation + query": {
+      "max": 1156.29,
+      "median": 1121.08,
+      "min": 1112.71,
+      "samples": 3,
+      "unit": "us/toggle"
+    },
+    "clientWidth+clientHeight, no mutation": {
+      "max": 3.03,
+      "median": 2.05,
+      "min": 2.04,
+      "samples": 3,
+      "unit": "us/read"
+    },
+    "cloneNode(false)": {
+      "max": 17.3,
+      "median": 17.11,
+      "min": 16.94,
+      "samples": 3,
+      "unit": "us/call"
+    },
+    "createElementNS": {
+      "max": 8.2,
+      "median": 8.16,
+      "min": 7.96,
+      "samples": 3,
+      "unit": "us/call"
+    },
+    "create_view construction": {
+      "max": 27.78,
+      "median": 27.23,
+      "min": 26.73,
+      "samples": 3,
+      "unit": "ms/view"
+    },
+    "create_view+set_html (document lifecycle)": {
+      "max": 80.5,
+      "median": 79.04,
+      "min": 78.78,
+      "samples": 3,
+      "unit": "ms/document"
+    },
+    "deep clone of a 51-node subtree": {
+      "max": 37.94,
+      "median": 36.74,
+      "min": 36.68,
+      "samples": 3,
+      "unit": "us/clone"
+    },
+    "dispatch through a 30-deep tree, 60 listeners": {
+      "max": 2929.5,
+      "median": 2900.78,
+      "min": 2898.12,
+      "samples": 3,
+      "unit": "us/event"
+    },
+    "dispatch, 6 listeners over 3 targets": {
+      "max": 95.11,
+      "median": 93.5,
+      "min": 93.14,
+      "samples": 3,
+      "unit": "us/event"
+    },
+    "dispatch, no listeners": {
+      "max": 72.57,
+      "median": 71.39,
+      "min": 70.97,
+      "samples": 3,
+      "unit": "us/event"
+    },
+    "document layout (300 cells) + paint": {
+      "max": 116.32,
+      "median": 75.84,
+      "min": 75.31,
+      "samples": 3,
+      "unit": "ms/document"
+    },
+    "document load + first paint 800x600": {
+      "max": 64.2,
+      "median": 61.87,
+      "min": 61.54,
+      "samples": 3,
+      "unit": "ms/document"
+    },
+    "dom ops (createElement+setAttribute+appendChild+getAttribute)": {
+      "max": 57.16,
+      "median": 57.11,
+      "min": 56.46,
+      "samples": 3,
+      "unit": "us/iteration"
+    },
+    "element scrollTop write+read": {
+      "max": 3.85,
+      "median": 2.24,
+      "min": 2.24,
+      "samples": 3,
+      "unit": "us/op"
+    },
+    "element.focus() transitions (script)": {
+      "max": 406.6,
+      "median": 404.42,
+      "min": 399.04,
+      "samples": 3,
+      "unit": "us/transition"
+    },
+    "evaluate_json(1+1)": {
+      "max": 3.55,
+      "median": 3.54,
+      "min": 3.47,
+      "samples": 3,
+      "unit": "us/call"
+    },
+    "getBoundingClientRect, no mutation": {
+      "max": 3.34,
+      "median": 3.23,
+      "min": 3.17,
+      "samples": 3,
+      "unit": "us/read"
+    },
+    "getClientRects, no mutation": {
+      "max": 2.96,
+      "median": 2.83,
+      "min": 2.82,
+      "samples": 3,
+      "unit": "us/read"
+    },
+    "getComputedStyle after an unchanged inline write": {
+      "max": 29.87,
+      "median": 25.23,
+      "min": 25.11,
+      "samples": 3,
+      "unit": "us/query"
+    },
+    "getComputedStyle after inline write": {
+      "max": 1098.22,
+      "median": 1087.41,
+      "min": 1085.76,
+      "samples": 3,
+      "unit": "us/query"
+    },
+    "getComputedStyle query, no mutation": {
+      "max": 0.65,
+      "median": 0.65,
+      "min": 0.65,
+      "samples": 3,
+      "unit": "us/query"
+    },
+    "inline style cssText read": {
+      "max": 1.65,
+      "median": 1.62,
+      "min": 1.62,
+      "samples": 3,
+      "unit": "us/read"
+    },
+    "inline style property read": {
+      "max": 0.68,
+      "median": 0.67,
+      "min": 0.65,
+      "samples": 3,
+      "unit": "us/read"
+    },
+    "inline style set+removeProperty": {
+      "max": 5.44,
+      "median": 5.42,
+      "min": 5.33,
+      "samples": 3,
+      "unit": "us/op"
+    },
+    "inline style setProperty": {
+      "max": 5.13,
+      "median": 5.12,
+      "min": 5.11,
+      "samples": 3,
+      "unit": "us/write"
+    },
+    "innerHTML large fragment (900 nodes)": {
+      "max": 2.13,
+      "median": 2.05,
+      "min": 2.02,
+      "samples": 3,
+      "unit": "ms/call"
+    },
+    "innerHTML small fragment (3 nodes)": {
+      "max": 11.18,
+      "median": 10.88,
+      "min": 10.53,
+      "samples": 3,
+      "unit": "us/call"
+    },
+    "lookup+nodeType+nodeName+parentNode": {
+      "max": 3.7,
+      "median": 3.64,
+      "min": 3.58,
+      "samples": 3,
+      "unit": "us/iteration"
+    },
+    "native click (move+down+up, 2 targets)": {
+      "max": 1686.59,
+      "median": 1680.69,
+      "min": 1670.46,
+      "samples": 3,
+      "unit": "us/click"
+    },
+    "native click focus transitions": {
+      "max": 1924.4,
+      "median": 1916.17,
+      "min": 1901.06,
+      "samples": 3,
+      "unit": "us/click"
+    },
+    "native keydown to the focused input": {
+      "max": 91.29,
+      "median": 89.45,
+      "min": 88.14,
+      "samples": 3,
+      "unit": "us/key"
+    },
+    "native pointer move between 2 targets": {
+      "max": 1033.51,
+      "median": 1023.93,
+      "min": 1019.36,
+      "samples": 3,
+      "unit": "us/move"
+    },
+    "offsetWidth+offsetTop, no mutation": {
+      "max": 1.81,
+      "median": 1.63,
+      "min": 1.58,
+      "samples": 3,
+      "unit": "us/read"
+    },
+    "paint 1600x1200 at scale 2": {
+      "max": 1.3,
+      "median": 1.29,
+      "min": 1.29,
+      "samples": 3,
+      "unit": "ms/frame"
+    },
+    "paint 200x150": {
+      "max": 0.15,
+      "median": 0.15,
+      "min": 0.15,
+      "samples": 3,
+      "unit": "ms/frame"
+    },
+    "paint 800x600 unchanged page": {
+      "max": 0.62,
+      "median": 0.62,
+      "min": 0.62,
+      "samples": 3,
+      "unit": "ms/frame"
+    },
+    "paint after a container scroll": {
+      "max": 0.62,
+      "median": 0.62,
+      "min": 0.61,
+      "samples": 3,
+      "unit": "ms/frame"
+    },
+    "paint after a one-element move": {
+      "max": 0.7,
+      "median": 0.7,
+      "min": 0.7,
+      "samples": 3,
+      "unit": "ms/frame"
+    },
+    "paint alternating two sizes": {
+      "max": 13.93,
+      "median": 13.73,
+      "min": 13.71,
+      "samples": 3,
+      "unit": "ms/frame"
+    },
+    "parse 9000-node document (set_html)": {
+      "max": 71.2,
+      "median": 70.63,
+      "min": 69.76,
+      "samples": 3,
+      "unit": "ms"
+    },
+    "rect read after a style write": {
+      "max": 562.54,
+      "median": 310.59,
+      "min": 308.95,
+      "samples": 3,
+      "unit": "us/element"
+    },
+    "restyle 300 elements + paint": {
+      "max": 4.25,
+      "median": 3.62,
+      "min": 3.59,
+      "samples": 3,
+      "unit": "ms/frame"
+    },
+    "scrollHeight+scrollTop, no mutation": {
+      "max": 1.96,
+      "median": 1.2,
+      "min": 1.19,
+      "samples": 3,
+      "unit": "us/read"
+    },
+    "selector matching (querySelectorAll, matches)": {
+      "max": 10.35,
+      "median": 9.91,
+      "min": 9.77,
+      "samples": 3,
+      "unit": "us/op"
+    },
+    "setAttribute+removeAttribute": {
+      "max": 6.51,
+      "median": 6.5,
+      "min": 6.49,
+      "samples": 3,
+      "unit": "us/pair"
+    },
+    "set_html document replacement": {
+      "max": 52.6,
+      "median": 50.54,
+      "min": 49.77,
+      "samples": 3,
+      "unit": "ms/document"
+    },
+    "style.setProperty+removeProperty": {
+      "max": 7.96,
+      "median": 7.9,
+      "min": 7.7,
+      "samples": 3,
+      "unit": "us/pair"
+    },
+    "styled document creation (300 items) + paint": {
+      "max": 77.58,
+      "median": 77.09,
+      "min": 76.98,
+      "samples": 3,
+      "unit": "ms/document"
+    },
+    "stylesheet insert+query+remove": {
+      "max": 1257.6,
+      "median": 1250.57,
+      "min": 1242.23,
+      "samples": 3,
+      "unit": "us/sheet"
+    },
+    "text node data update": {
+      "max": 3.19,
+      "median": 3.15,
+      "min": 3.13,
+      "samples": 3,
+      "unit": "us/update"
+    },
+    "viewport resize + layout + paint": {
+      "max": 17.99,
+      "median": 11.87,
+      "min": 11.61,
+      "samples": 3,
+      "unit": "ms/frame"
+    },
+    "viewport scrollTo+scrollY": {
+      "max": 16.21,
+      "median": 8.62,
+      "min": 8.37,
+      "samples": 3,
+      "unit": "us/op"
+    },
+    "wheel scroll_at (hit-test + scroll)": {
+      "max": 126.18,
+      "median": 66.24,
+      "min": 66.07,
+      "samples": 3,
+      "unit": "us/event"
+    },
+    "worker create + first reply + terminate": {
+      "max": 31.38,
+      "median": 31.25,
+      "min": 30.87,
+      "samples": 3,
+      "unit": "ms/worker"
+    },
+    "worker message round trip": {
+      "max": 5783.72,
+      "median": 5775.02,
+      "min": 5771.85,
+      "samples": 3,
+      "unit": "us/round-trip"
+    }
+  },
+  "repeats": 3,
+  "timestamp": 1794690318
+}
