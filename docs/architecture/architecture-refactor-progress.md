@@ -384,3 +384,15 @@ Full report: [`dom-round10-report.md`](./dom-round10-report.md); audit and desig
 - **Numbers:** 485 passed, 0 failed, 9 ignored (from 462/8); graph unchanged (13 members, 24 edges, 0 violations); lockfiles unchanged; no new unsafe; Blitz reference lines 93 → 83. Release A/B at load 3–10: `offset*`/`client*`/`scroll*` reads about 57–60% faster (the 15-field host op was split), everything else within noise. Only macOS validated.
 - **Commits:** `fe90755`, `9f62df7`, report commit.
 - **Next:** rendering extraction (paint scene, raster, paint viewport), then form state.
+
+## 39. Round 11 (rendering and painting ownership)
+
+Full report: [`dom-round11-report.md`](./dom-round11-report.md); audit and design: [`dom-round11-design.md`](./dom-round11-design.md).
+
+- **Audit:** Wega owned only the orchestration, and called `blitz_paint::paint_scene` and named `anyrender::Scene` directly; Blitz owns painting semantics and the display-list producer, Skia (via `wega-adapter-skia`, CPU only) rasterises on a dedicated thread, the browser UI process owns the window surface.
+- **Contracts:** `wega_dom::render::PaintSource` (`prepare_frame`, `record_scene`, `is_animating`; associated `Scene` type, so no painter or graphics type in the contract), implemented by `BlitzDocument`; `ViewportConfig` is the render viewport (device-pixel size, `scale * zoom`); typed `FrameRequest`/`FrameTarget` in the Skia adapter; `FrameState` owns dirty tracking. No new crate, no `Rasterizer` trait, no display-list abstraction (no consumer).
+- **Migrated:** frame initiation (`begin_paint` now takes `ViewportConfig` and `FrameTarget`), viewport/flush, paint recording (the `blitz_paint` call moved into the adapter; the engine drops `blitz-paint` and `anyrender`), surface submission, invalidation signalling. Behaviour identical: 42 frames bit-identical to Round 10.
+- **Findings:** idle pages repaint continuously (`poll()` marks dirty unconditionally; not safely fixable without canvas/media/resource producers invalidating first; pinned); resize recreates the Skia renderer (~20× per-frame cost); no damage tracking; empty scene while stylesheets load.
+- **Numbers:** 506 passed, 0 failed, 11 ignored (from 485/9); graph unchanged (13 members, 24 edges, 0 violations; informational ARCH-007 14 → 12); `engines/Cargo.lock` ±2 lines (dependency moved to the adapter, no external change); no new unsafe; Blitz reference lines 83 → 81. Release A/B at load 5.7–8.5: no measurable change (±4%); record 0.09 ms, rasterise 0.24 ms at 800×600; +2 MiB over 300 frames. Only macOS CPU rendering validated.
+- **Commits:** `9cd2ce5`, `f082a14`, report commit.
+- **Next (not started):** fix the idle repaint and pooled renderers before damage tracking; Round 12 scope per the plan.
