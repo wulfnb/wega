@@ -1522,37 +1522,37 @@
       return host("clientRects", this._id).map(rect=>DOMRect.fromRect(rect));
     }
     get clientWidth() {
-      return Math.round(host("box", this._id).clientWidth);
+      return Math.round(host("clientBox", this._id).width);
     }
     get clientHeight() {
-      return Math.round(host("box", this._id).clientHeight);
+      return Math.round(host("clientBox", this._id).height);
     }
     get clientLeft() {
-      return Math.round(host("box", this._id).clientLeft);
+      return Math.round(host("clientBox", this._id).left);
     }
     get clientTop() {
-      return Math.round(host("box", this._id).clientTop);
+      return Math.round(host("clientBox", this._id).top);
     }
     get offsetWidth() {
-      return Math.round(host("box", this._id).offsetWidth);
+      return Math.round(host("offsetBox", this._id).width);
     }
     get offsetHeight() {
-      return Math.round(host("box", this._id).offsetHeight);
+      return Math.round(host("offsetBox", this._id).height);
     }
     get offsetLeft() {
-      return Math.round(host("box", this._id).offsetLeft);
+      return Math.round(host("offsetBox", this._id).x);
     }
     get offsetTop() {
-      return Math.round(host("box", this._id).offsetTop);
+      return Math.round(host("offsetBox", this._id).y);
     }
     get offsetParent() {
-      return wrap(host("box", this._id).offsetParent);
+      return wrap(host("offsetBox", this._id).parent);
     }
     get scrollWidth() {
-      return Math.round(host("box", this._id).scrollWidth);
+      return Math.round(host("scrollSize", this._id).width);
     }
     get scrollHeight() {
-      return Math.round(host("box", this._id).scrollHeight);
+      return Math.round(host("scrollSize", this._id).height);
     }
     get value() {
       if (this.localName === "select")

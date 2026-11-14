@@ -43,7 +43,8 @@ pub trait InputControl: FocusState {
     fn set_focus(&mut self, key: NodeKey) -> Result<bool, MutationError>;
     /// Removes focus. Dispatches nothing.
     fn clear_focus(&mut self);
-    /// Hit-tests at page coordinates and updates hover state.
+    /// Hit-tests at **viewport-relative** coordinates (CSS pixels) and updates hover state;
+    /// the document converts to its own space, so callers never add the scroll offset.
     fn pointer_moved(&mut self, x: f32, y: f32) -> HoverChange;
     /// The pointer left the document: clears hover.
     fn pointer_left(&mut self) -> HoverChange;

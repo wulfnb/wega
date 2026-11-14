@@ -11,6 +11,10 @@ use blitz_traits::{
 use html5ever::{LocalName, QualName, ns};
 use url::Url;
 use wega_dom::input::{FocusState, HoverChange, InputControl};
+use wega_dom::layout::{
+    ClientBox, ContentBox, GeometryAccess, HitTest, LayoutControl, LayoutError, OffsetBox, Point,
+    Rect, Size, ViewportConfig, ViewportGeometry,
+};
 use wega_dom::style::{StyleAccess, StyleControl, StyleError};
 use wega_dom::{
     DocumentMutation, DocumentView, MutationError, Mutator, NewAttribute, NodeKey, NodeKind,
@@ -240,7 +244,10 @@ impl InputControl for BlitzDocument {
     }
     fn pointer_moved(&mut self, x: f32, y: f32) -> HoverChange {
         let previous = self.hovered();
-        self.0.set_hover_to(x, y);
+        // Blitz hit-tests in document space; the contract takes viewport coordinates.
+        let scroll = self.0.viewport_scroll();
+        self.0
+            .set_hover_to(x + scroll.x as f32, y + scroll.y as f32);
         HoverChange {
             previous,
             current: self.hovered(),
@@ -253,6 +260,199 @@ impl InputControl for BlitzDocument {
             previous,
             current: self.hovered(),
         }
+    }
+}
+
+fn rect(r: blitz_dom::BoundingRect) -> Rect {
+    Rect {
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+    }
+}
+impl BlitzDocument {
+    fn laid_out(&self, key: NodeKey) -> Result<&Node, LayoutError> {
+        self.0
+            .get_node(key.node_id())
+            .ok_or(LayoutError::Stale(key))
+    }
+}
+impl GeometryAccess for BlitzDocument {
+    fn has_boxes(&self, key: NodeKey) -> Result<bool, LayoutError> {
+        let node = self.laid_out(key)?;
+        // Blitz checks only the node's own `display`; an element below a `display: none`
+        // ancestor is never styled, so it has no primary style either.
+        Ok(node.has_boxes() && (!node.is_element() || node.primary_styles().is_some()))
+    }
+    fn bounding_rect(&self, key: NodeKey) -> Result<Rect, LayoutError> {
+        let node = self.laid_out(key)?;
+        if node.element_data().is_none() || !self.has_boxes(key)? {
+            return Ok(Rect::ZERO);
+        }
+        Ok(self
+            .0
+            .get_client_bounding_rect(key.node_id())
+            .map_or(Rect::ZERO, rect))
+    }
+    fn client_rects(&self, key: NodeKey, out: &mut Vec<Rect>) -> Result<(), LayoutError> {
+        if self.has_boxes(key)? {
+            out.extend(
+                self.0
+                    .node_client_rects(key.node_id())
+                    .into_iter()
+                    .map(rect),
+            );
+        }
+        Ok(())
+    }
+    fn client_box(&self, key: NodeKey) -> Result<ClientBox, LayoutError> {
+        let node = self.laid_out(key)?;
+        if !self.has_boxes(key)? {
+            return Ok(ClientBox::default());
+        }
+        let layout = node.final_layout();
+        Ok(ClientBox {
+            left: layout.border.left as f64,
+            top: layout.border.top as f64,
+            width: node.client_width() as f64,
+            height: node.client_height() as f64,
+        })
+    }
+    fn offset_box(&self, key: NodeKey) -> Result<OffsetBox, LayoutError> {
+        let node = self.laid_out(key)?;
+        if !self.has_boxes(key)? {
+            return Ok(OffsetBox {
+                rect: Rect::ZERO,
+                parent: None,
+            });
+        }
+        Ok(OffsetBox {
+            rect: self.0.offset_rect(key.node_id()).map_or(Rect::ZERO, rect),
+            parent: node.offset_parent().map(|parent| parent.id.key()),
+        })
+    }
+    fn scroll_size(&self, key: NodeKey) -> Result<Size, LayoutError> {
+        let node = self.laid_out(key)?;
+        if !self.has_boxes(key)? {
+            return Ok(Size::default());
+        }
+        Ok(Size {
+            width: node.scroll_width() as f64,
+            height: node.scroll_height() as f64,
+        })
+    }
+    fn scroll_offset(&self, key: NodeKey) -> Result<Point, LayoutError> {
+        let offset = self.laid_out(key)?.scroll_offset();
+        Ok(Point {
+            x: offset.x,
+            y: offset.y,
+        })
+    }
+    fn content_box(&self, key: NodeKey) -> Result<ContentBox, LayoutError> {
+        let node = self.laid_out(key)?;
+        if !self.has_boxes(key)? {
+            return Ok(ContentBox::default());
+        }
+        let layout = node.final_layout();
+        Ok(ContentBox {
+            size: Size {
+                width: layout.content_box_width() as f64,
+                height: layout.content_box_height() as f64,
+            },
+            padding_left: layout.padding.left as f64,
+            padding_top: layout.padding.top as f64,
+        })
+    }
+    fn viewport(&self) -> ViewportGeometry {
+        let viewport = self.0.viewport();
+        let scale = (viewport.hidpi_scale * viewport.zoom) as f64;
+        let scroll = self.0.viewport_scroll();
+        ViewportGeometry {
+            size: Size {
+                width: viewport.window_size.0 as f64 / scale,
+                height: viewport.window_size.1 as f64 / scale,
+            },
+            device_pixel_ratio: scale,
+            scroll: Point {
+                x: scroll.x,
+                y: scroll.y,
+            },
+        }
+    }
+}
+impl HitTest for BlitzDocument {
+    fn element_at(&self, point: Point) -> Option<NodeKey> {
+        let viewport = self.viewport();
+        if point.x < 0.0
+            || point.y < 0.0
+            || point.x > viewport.size.width
+            || point.y > viewport.size.height
+        {
+            return None;
+        }
+        // Blitz hit-tests in document space.
+        let hit = self.0.hit(
+            (point.x + viewport.scroll.x) as f32,
+            (point.y + viewport.scroll.y) as f32,
+        );
+        let Some(hit) = hit else {
+            return self.0.try_root_element().map(|root| root.id.key());
+        };
+        let mut id = self.0.nearest_non_anonymous_ancestor(hit.node_id)?;
+        loop {
+            let node = self.0.get_node(id)?;
+            if node.is_element() {
+                return Some(id.key());
+            }
+            id = node.parent?;
+        }
+    }
+}
+impl LayoutControl for BlitzDocument {
+    fn flush_layout(&mut self, animation_time: f64) {
+        self.0.resolve(animation_time);
+    }
+    fn set_viewport(&mut self, viewport: ViewportConfig) {
+        self.0.set_viewport(blitz_traits::shell::Viewport {
+            window_size: (viewport.width_px, viewport.height_px),
+            hidpi_scale: viewport.scale,
+            zoom: viewport.zoom,
+            color_scheme: if viewport.dark {
+                blitz_traits::shell::ColorScheme::Dark
+            } else {
+                blitz_traits::shell::ColorScheme::Light
+            },
+        });
+    }
+    fn set_viewport_scroll(&mut self, scroll: Point) {
+        self.0.set_viewport_scroll(blitz_dom::Point {
+            x: scroll.x,
+            y: scroll.y,
+        });
+    }
+    fn scroll_node_to(&mut self, key: NodeKey, scroll: Point) -> Result<(), LayoutError> {
+        self.laid_out(key)?;
+        self.0.scroll_to(
+            key.node_id(),
+            scroll.x,
+            scroll.y,
+            blitz_dom::ScrollBehavior::Instant,
+        );
+        Ok(())
+    }
+    fn scroll_node_into_view(&mut self, key: NodeKey) -> Result<(), LayoutError> {
+        self.laid_out(key)?;
+        self.0.scroll_into_view(
+            key.node_id(),
+            blitz_dom::ScrollBehavior::Instant,
+            blitz_dom::ScrollLogicalPosition::Start,
+            blitz_dom::ScrollLogicalPosition::Nearest,
+        );
+        Ok(())
+    }
+    fn scroll_to_fragment(&mut self, fragment: &str) -> bool {
+        self.0.scroll_to_fragment(fragment)
     }
 }
 

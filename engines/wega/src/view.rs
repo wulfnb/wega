@@ -36,6 +36,9 @@ use wega_adapter_blitz::{ToKey, ToNodeId};
 use wega_dom::Mutator as _;
 use wega_dom::NodeKey;
 use wega_dom::input::{FocusState as _, InputControl as _, element_chain};
+use wega_dom::layout::{
+    GeometryAccess as _, HitTest as _, LayoutControl as _, Point, ViewportConfig,
+};
 use wega_protocol::identity::FrameId;
 
 pub struct Frame {
@@ -1103,7 +1106,7 @@ impl View {
     pub fn accessibility_tree(&self) -> Option<String> {
         self.document
             .borrow_mut()
-            .resolve(self.started.elapsed().as_secs_f64());
+            .flush_layout(self.started.elapsed().as_secs_f64());
         let doc = self.document.borrow();
         let update = doc.build_accessibility_tree();
         serde_json::to_string(&update).ok()
@@ -1487,7 +1490,7 @@ impl View {
             .map_or(doc.root_node().id, ToNodeId::node_id)
     }
     fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
-        let scroll = self.document.borrow().viewport_scroll();
+        let scroll = self.document.borrow().viewport().scroll;
         (x + scroll.x as f32, y + scroll.y as f32)
     }
     fn pointer_event(&self, target: NodeId, pointer: &Pointer) -> Option<BlitzPointerEvent> {
@@ -1554,12 +1557,14 @@ impl View {
         // Hit testing needs current layout (scrolling and script change it).
         self.document
             .borrow_mut()
-            .resolve(self.started.elapsed().as_secs_f64());
-        let (page_x, page_y) = self.page_point(pointer.x, pointer.y);
+            .flush_layout(self.started.elapsed().as_secs_f64());
+        // The contract takes viewport coordinates and converts to document space itself.
         let change = if pointer.kind == PointerKind::Leave {
             self.document.borrow_mut().pointer_left()
         } else {
-            self.document.borrow_mut().pointer_moved(page_x, page_y)
+            self.document
+                .borrow_mut()
+                .pointer_moved(pointer.x, pointer.y)
         };
         let previous = change.previous.map(ToNodeId::node_id);
         let hovered = change.current.map(ToNodeId::node_id);
@@ -1567,7 +1572,7 @@ impl View {
             // Restyle for :hover so the cursor below reflects it.
             self.document
                 .borrow_mut()
-                .resolve(self.started.elapsed().as_secs_f64());
+                .flush_layout(self.started.elapsed().as_secs_f64());
             self.hover_changed(previous, hovered, &pointer);
         }
         let target = hovered.or_else(|| {
@@ -1712,7 +1717,7 @@ impl View {
         }
         self.document
             .borrow_mut()
-            .resolve(self.started.elapsed().as_secs_f64());
+            .flush_layout(self.started.elapsed().as_secs_f64());
         for kind in [PointerKind::Move, PointerKind::Down, PointerKind::Up] {
             let mut pointer = Pointer::new(kind, x, y);
             if kind == PointerKind::Down {
@@ -2268,10 +2273,13 @@ impl View {
             return;
         }
         let mut doc = self.document.borrow_mut();
+        // Viewport coordinates, like the pointer; the contract resolves the scroll offset.
         let target = doc
-            .hit(pointer_x, pointer_y)
-            .map(|hit| hit.node_id)
-            .unwrap_or(doc.root_element().id);
+            .element_at(Point {
+                x: pointer_x as f64,
+                y: pointer_y as f64,
+            })
+            .map_or(doc.root_element().id, ToNodeId::node_id);
         let mut events = vec![];
         doc.scroll_node_by(target, -x, -y, |event| events.push(event));
         drop(doc);
@@ -2284,8 +2292,8 @@ impl View {
             return;
         }
         let mut doc = self.document.borrow_mut();
-        let p = doc.viewport_scroll();
-        doc.set_viewport_scroll(blitz_dom::Point {
+        let p = doc.viewport().scroll;
+        doc.set_viewport_scroll(Point {
             x: p.x + x,
             y: p.y + y,
         });
@@ -2310,15 +2318,12 @@ impl View {
             return Err("Invalid or oversized viewport".into());
         }
         let mut doc = self.document.borrow_mut();
-        doc.set_viewport(Viewport {
-            window_size: (width, height),
-            hidpi_scale: scale,
+        doc.set_viewport(ViewportConfig {
+            width_px: width,
+            height_px: height,
+            scale,
             zoom,
-            color_scheme: if dark {
-                ColorScheme::Dark
-            } else {
-                ColorScheme::Light
-            },
+            dark,
         });
         let large = doc.tree().len() >= 512;
         doc.set_style_threading(if large {
@@ -2326,7 +2331,7 @@ impl View {
         } else {
             blitz_dom::StyleThreading::Sequential
         });
-        doc.resolve(self.started.elapsed().as_secs_f64());
+        doc.flush_layout(self.started.elapsed().as_secs_f64());
         drop(doc);
         let another_frame = if let Some(script) = &mut self.script
             && self.scheduler.script_allowed()
@@ -2342,15 +2347,15 @@ impl View {
             false
         };
         let mut doc = self.document.borrow_mut();
-        doc.resolve(self.started.elapsed().as_secs_f64());
+        doc.flush_layout(self.started.elapsed().as_secs_f64());
         if !self.reported_frames
             && doc.query_selector_all("iframe").is_ok_and(|ids| {
                 ids.iter().any(|id| {
                     doc.get_node(*id).is_some_and(|node| {
-                        let layout = node.final_layout();
-                        layout.content_box_width() > 1.0
-                            && layout.content_box_height() > 1.0
-                            && node.has_boxes()
+                        let content = doc.content_box(id.key()).unwrap_or_default();
+                        content.size.width > 1.0
+                            && content.size.height > 1.0
+                            && doc.has_boxes(id.key()).unwrap_or(false)
                             && node.primary_styles().is_some_and(|style| {
                                 style.clone_visibility()
                                     == style::computed_values::visibility::T::Visible

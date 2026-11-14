@@ -433,3 +433,126 @@ fn style_paths() {
     println!("BENCH styled document creation (300 items) + paint: {creation:.2} ms/document");
     println!("BENCH CSS.supports/matchMedia: {supports:.2} us/query");
 }
+
+/// Layout and geometry paths (Round 10): geometry queries with and without mutation, layout
+/// invalidation, scrolling, viewport resize, hit-testing and document layout. Uses only the
+/// script and `View` APIs, so the same file runs against the previous round for A/B runs.
+#[test]
+#[ignore]
+fn layout_paths() {
+    const GRID: &str = "<style>body{margin:0}.cell{width:30px;height:12px;margin:1px;padding:1px;border:1px solid}#scroller{width:120px;height:80px;overflow:auto}#fill{height:2000px}</style><div id=list></div><div id=scroller><div id=fill></div></div><div style=height:3000px></div><script>const l=document.getElementById('list');for(let i=0;i<300;i++){const d=document.createElement('div');d.className='cell';l.appendChild(d)}globalThis.cells=[...l.children];globalThis.sc=document.getElementById('scroller')</script>";
+    let mut page = input_page(GRID);
+    let run = |page: &mut View, js: &str, n: f64| {
+        let start = Instant::now();
+        page.evaluate_json(js).unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / n
+    };
+    let rect_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++){const b=cells[i%300].getBoundingClientRect();n+=b.width}return n})()",
+            3_000.0,
+        )
+    });
+    let rects_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++)n+=cells[i%300].getClientRects().length;return n})()",
+            3_000.0,
+        )
+    });
+    let offset_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++){const e=cells[i%300];n+=e.offsetWidth+e.offsetTop}return n})()",
+            6_000.0,
+        )
+    });
+    let client_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++){const e=cells[i%300];n+=e.clientWidth+e.clientHeight}return n})()",
+            6_000.0,
+        )
+    });
+    let scroll_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++)n+=sc.scrollHeight+sc.scrollTop;return n})()",
+            6_000.0,
+        )
+    });
+    let after_style = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{globalThis.k=(globalThis.k|0)+1;let n=0;for(let i=0;i<300;i++){const e=cells[i];e.style.width=(30+(i+k)%5)+'px';n+=e.getBoundingClientRect().width}return n})()",
+            300.0,
+        )
+    });
+    let thrash = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{globalThis.k=(globalThis.k|0)+1;let n=0;for(let i=0;i<300;i++){cells[i].style.height=(12+(i+k)%3)+'px'}for(let i=0;i<300;i++)n+=cells[i].offsetHeight;return n})()",
+            300.0,
+        )
+    });
+    let invalidation = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<300;i++){const e=cells[i];e.classList.toggle('wide');n+=e.offsetWidth}return n})()",
+            300.0,
+        )
+    });
+    let element_scroll = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<2000;i++){sc.scrollTop=i%500;n+=sc.scrollTop}return n})()",
+            2_000.0,
+        )
+    });
+    let viewport_scroll = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<2000;i++){scrollTo(0,i%500);n+=scrollY}scrollTo(0,0);return n})()",
+            2_000.0,
+        )
+    });
+    let resize = repeat(|| {
+        let start = Instant::now();
+        for i in 0..20 {
+            let width = if i % 2 == 0 { 300 } else { 240 };
+            page.paint(width, 200, 1.0, 1.0, false).unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 20.0
+    });
+    let wheel = repeat(|| {
+        let start = Instant::now();
+        for i in 0..200 {
+            page.scroll_at(0.0, if i % 2 == 0 { 5.0 } else { -5.0 }, 10.0, 60.0);
+        }
+        start.elapsed().as_secs_f64() * 1e6 / 200.0
+    });
+    let mut fresh = view();
+    let layout = repeat(|| {
+        let start = Instant::now();
+        for _ in 0..5 {
+            fresh.set_html(GRID).unwrap();
+            fresh.poll();
+            fresh.paint(300, 200, 1.0, 1.0, false).unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 5.0
+    });
+    println!("BENCH getBoundingClientRect, no mutation: {rect_read:.2} us/read");
+    println!("BENCH getClientRects, no mutation: {rects_read:.2} us/read");
+    println!("BENCH offsetWidth+offsetTop, no mutation: {offset_read:.2} us/read");
+    println!("BENCH clientWidth+clientHeight, no mutation: {client_read:.2} us/read");
+    println!("BENCH scrollHeight+scrollTop, no mutation: {scroll_read:.2} us/read");
+    println!("BENCH rect read after a style write: {after_style:.2} us/element");
+    println!("BENCH 300 style writes then 300 reads (batched): {thrash:.2} us/element");
+    println!("BENCH class toggle + offsetWidth: {invalidation:.2} us/toggle");
+    println!("BENCH element scrollTop write+read: {element_scroll:.2} us/op");
+    println!("BENCH viewport scrollTo+scrollY: {viewport_scroll:.2} us/op");
+    println!("BENCH viewport resize + layout + paint: {resize:.2} ms/frame");
+    println!("BENCH wheel scroll_at (hit-test + scroll): {wheel:.2} us/event");
+    println!("BENCH document layout (300 cells) + paint: {layout:.2} ms/document");
+}

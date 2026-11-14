@@ -20,6 +20,7 @@
 //!   finished or dropped. There is no rollback and no staging.
 #![forbid(unsafe_code)]
 pub mod input;
+pub mod layout;
 pub mod style;
 
 use html5ever::QualName;
