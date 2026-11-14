@@ -371,3 +371,16 @@ Full report: [`dom-round9-report.md`](./dom-round9-report.md); audit and design:
 - **Numbers:** 462 passed, 0 failed, 8 ignored (from 433/7); graph unchanged (13 members, 24 edges, 0 violations); Blitz reference lines 96 → 93; `engines/Cargo.lock` +3 lines; no new unsafe. Release A/B at load 12–14: within noise except `style.setProperty+removeProperty` +13% (validation and canonical serialization) and an intentional −98% for no-op writes. Only macOS validated.
 - **Commits:** `90aa968`, `d67317f`, report commit.
 - **Next:** layout geometry contract (including the style/layout flush), then form state; CSSOM and Shadow DOM styling are features.
+
+## 38. Round 10 (layout and geometry ownership)
+
+Full report: [`dom-round10-report.md`](./dom-round10-report.md); audit and design: [`dom-round10-design.md`](./dom-round10-design.md).
+
+- **Audit:** Blitz (Taffy/Parley) owns the layout tree, calculation and all geometry; the engine owned the JS surface, the flush schedule, one `layout_dirty` gate and 22 direct calls into Blitz. Invalidation authority is Blitz's damage flags plus that single engine gate; it was kept, no second dirty cache.
+- **Contracts:** `wega_dom::layout` (`GeometryAccess`, `HitTest`, `LayoutControl`) in `wega-dom`, implemented once by `BlitzDocument`. CSS pixels throughout; client, document, offset-parent and element-relative spaces defined; reads never relayout, `flush_layout` is the one flush; `NodeKey` only, stale keys rejected, no Blitz types. No `wega-layout` crate (same two dependents as `wega-dom`).
+- **Migrated:** bounding/client rects, offset/client/scroll measurements, element and viewport scrolling, viewport size/DPR, fragment scroll, ResizeObserver boxes, flush, viewport configuration, wheel hit-testing; `pointer_moved` now takes viewport coordinates. Not migrated: `scroll_node_by`, paint-side `Viewport`.
+- **Bugs fixed (tested):** boxless `getClientRects`/rects, a scrolled element's own rect shifted by its scroll (vendored patch), `scroll_at` hit coordinates, stale-node panic, stale geometry for removed/`display:none` elements.
+- **Gaps recorded:** transforms ignored by geometry, no shadow-tree layout, no `resize` event, no `elementFromPoint`, flush skipped while stylesheets load.
+- **Numbers:** 485 passed, 0 failed, 9 ignored (from 462/8); graph unchanged (13 members, 24 edges, 0 violations); lockfiles unchanged; no new unsafe; Blitz reference lines 93 → 83. Release A/B at load 3–10: `offset*`/`client*`/`scroll*` reads about 57–60% faster (the 15-field host op was split), everything else within noise. Only macOS validated.
+- **Commits:** `fe90755`, `9f62df7`, report commit.
+- **Next:** rendering extraction (paint scene, raster, paint viewport), then form state.
