@@ -15,6 +15,7 @@ use wega_dom::layout::{
     ClientBox, ContentBox, GeometryAccess, HitTest, LayoutControl, LayoutError, OffsetBox, Point,
     Rect, Size, ViewportConfig, ViewportGeometry,
 };
+use wega_dom::render::PaintSource;
 use wega_dom::style::{StyleAccess, StyleControl, StyleError};
 use wega_dom::{
     DocumentMutation, DocumentView, MutationError, Mutator, NewAttribute, NodeKey, NodeKind,
@@ -453,6 +454,37 @@ impl LayoutControl for BlitzDocument {
     }
     fn scroll_to_fragment(&mut self, fragment: &str) -> bool {
         self.0.scroll_to_fragment(fragment)
+    }
+}
+
+impl PaintSource for BlitzDocument {
+    type Scene = anyrender::Scene;
+    fn prepare_frame(&mut self, viewport: &ViewportConfig, animation_time: f64) {
+        self.set_viewport(*viewport);
+        // Large trees restyle on Stylo's thread pool; the hint is applied for painting only.
+        let large = self.0.tree().len() >= 512;
+        self.0.set_style_threading(if large {
+            blitz_dom::StyleThreading::Parallel
+        } else {
+            blitz_dom::StyleThreading::Sequential
+        });
+        self.flush_layout(animation_time);
+    }
+    fn record_scene(&mut self, viewport: &ViewportConfig) -> Self::Scene {
+        let mut scene = anyrender::Scene::new();
+        blitz_paint::paint_scene(
+            &mut scene,
+            &mut self.0,
+            (viewport.scale * viewport.zoom) as f64,
+            viewport.width_px,
+            viewport.height_px,
+            0,
+            0,
+        );
+        scene
+    }
+    fn is_animating(&self) -> bool {
+        self.0.is_animating()
     }
 }
 

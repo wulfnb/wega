@@ -556,3 +556,89 @@ fn layout_paths() {
     println!("BENCH wheel scroll_at (hit-test + scroll): {wheel:.2} us/event");
     println!("BENCH document layout (300 cells) + paint: {layout:.2} ms/document");
 }
+
+/// Rendering paths (Round 11): whole-frame paint cost (record + rasterise + return) for typical
+/// scenarios. Uses only `View::paint`, so the same file runs against the previous round.
+#[test]
+#[ignore]
+fn render_paths() {
+    const PAGE: &str = "<style>body{margin:0;font:13px sans-serif}.row{height:18px;padding:0 6px;border-bottom:1px solid #ddd;background:#fff}.row:nth-child(odd){background:#f6f6f6}.badge{display:inline-block;width:40px;height:12px;border-radius:6px;background:#3a7}#box{position:absolute;left:300px;top:20px;width:120px;height:80px;background:#e33;opacity:.8;transform:translate(4px,4px);overflow:hidden}#scroller{position:absolute;left:440px;top:20px;width:200px;height:200px;overflow:auto}#fill{height:2000px;background:linear-gradient(#fff,#888)}</style><div id=list></div><div id=box><div style='width:400px;height:400px;background:#3a7'></div></div><div id=scroller><div id=fill></div></div><script>const l=document.getElementById('list');for(let i=0;i<40;i++){const d=document.createElement('div');d.className='row';d.innerHTML='<span class=badge></span> Row number '+i+' with some body text';l.appendChild(d)}</script>";
+    let mut page = input_page(PAGE);
+    let paint = |page: &mut View, w: u32, h: u32, s: f32| {
+        let start = Instant::now();
+        page.paint(w, h, s, 1.0, false).unwrap();
+        start.elapsed().as_secs_f64() * 1e3
+    };
+    paint(&mut page, 800, 600, 1.0);
+    let full = repeat(|| {
+        let mut sum = 0.0;
+        for _ in 0..10 {
+            sum += paint(&mut page, 800, 600, 1.0);
+        }
+        sum / 10.0
+    });
+    let hidpi = repeat(|| {
+        let mut sum = 0.0;
+        for _ in 0..10 {
+            sum += paint(&mut page, 1600, 1200, 2.0);
+        }
+        sum / 10.0
+    });
+    let small_update = repeat(|| {
+        let mut sum = 0.0;
+        for i in 0..10 {
+            page.evaluate(&format!(
+                "document.getElementById('box').style.left='{}px'",
+                300 + i
+            ))
+            .unwrap();
+            sum += paint(&mut page, 800, 600, 1.0);
+        }
+        sum / 10.0
+    });
+    let scroll = repeat(|| {
+        let mut sum = 0.0;
+        for i in 0..10 {
+            page.evaluate(&format!(
+                "document.getElementById('scroller').scrollTop={}",
+                i * 37
+            ))
+            .unwrap();
+            sum += paint(&mut page, 800, 600, 1.0);
+        }
+        sum / 10.0
+    });
+    let resize = repeat(|| {
+        let mut sum = 0.0;
+        for i in 0..10 {
+            sum += if i % 2 == 0 {
+                paint(&mut page, 800, 600, 1.0)
+            } else {
+                paint(&mut page, 640, 480, 1.0)
+            };
+        }
+        sum / 10.0
+    });
+    let small_surface = repeat(|| {
+        let mut sum = 0.0;
+        for _ in 0..10 {
+            sum += paint(&mut page, 200, 150, 1.0);
+        }
+        sum / 10.0
+    });
+    let mut fresh = view();
+    let first = repeat(|| {
+        let start = Instant::now();
+        fresh.set_html(PAGE).unwrap();
+        fresh.poll();
+        fresh.paint(800, 600, 1.0, 1.0, false).unwrap();
+        start.elapsed().as_secs_f64() * 1e3
+    });
+    println!("BENCH paint 800x600 unchanged page: {full:.2} ms/frame");
+    println!("BENCH paint 1600x1200 at scale 2: {hidpi:.2} ms/frame");
+    println!("BENCH paint after a one-element move: {small_update:.2} ms/frame");
+    println!("BENCH paint after a container scroll: {scroll:.2} ms/frame");
+    println!("BENCH paint alternating two sizes: {resize:.2} ms/frame");
+    println!("BENCH paint 200x150: {small_surface:.2} ms/frame");
+    println!("BENCH document load + first paint 800x600: {first:.2} ms/document");
+}

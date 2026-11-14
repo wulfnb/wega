@@ -97,7 +97,8 @@ pub struct ViewportGeometry {
     pub scroll: Point,
 }
 
-/// The size a viewport is configured with (device pixels), as the embedder reports it.
+/// The size a viewport is configured with (device pixels), as the embedder reports it. Also the
+/// render viewport: the painter scale is `scale * zoom` (see `wega_dom::render`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ViewportConfig {
     pub width_px: u32,

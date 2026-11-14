@@ -7,6 +7,23 @@ pub enum Pixels {
     Owned(Vec<u8>),
     Shared { slot: u8, sequence: u64 },
 }
+/// Where a frame's pixels go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameTarget {
+    /// A fresh RGBA buffer returned to the caller (pipe transport and screenshots).
+    Owned,
+    /// A slot of the shared frame store, written in place by the raster thread.
+    Shared { slot: u8, sequence: u64 },
+}
+/// One frame to rasterise: the surface size in device pixels, the identity the result carries
+/// back, and where the pixels go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameRequest {
+    pub serial: u64,
+    pub width: u32,
+    pub height: u32,
+    pub target: FrameTarget,
+}
 pub struct Painted {
     pub serial: u64,
     pub width: u32,
@@ -14,13 +31,7 @@ pub struct Painted {
     pub pixels: Pixels,
 }
 enum Job {
-    Paint {
-        serial: u64,
-        width: u32,
-        height: u32,
-        scene: Scene,
-        target: Option<(u8, u64)>,
-    },
+    Paint { request: FrameRequest, scene: Scene },
     Store(wega_platform::FrameStore),
     Release,
 }
@@ -52,11 +63,14 @@ impl Raster {
                             wega_platform::trim_allocator();
                         }
                         Job::Paint {
-                            serial,
-                            width,
-                            height,
+                            request:
+                                FrameRequest {
+                                    serial,
+                                    width,
+                                    height,
+                                    target,
+                                },
                             scene,
-                            target,
                         } => {
                             let result =
                                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -66,8 +80,14 @@ impl Raster {
                                     }
                                     let renderer = renderer.as_mut().unwrap();
                                     renderer.reset();
+                                    let shared = match target {
+                                        FrameTarget::Shared { slot, sequence } => {
+                                            Some((slot, sequence))
+                                        }
+                                        FrameTarget::Owned => None,
+                                    };
                                     let pixels = if let (Some(store), Some((slot, sequence))) =
-                                        (&mut store, target)
+                                        (&mut store, shared)
                                     {
                                         let bytes = store
                                             .slot(
@@ -126,25 +146,12 @@ impl Raster {
             .send(Job::Store(store))
             .map_err(|_| "Raster worker stopped".into())
     }
-    pub fn start(
-        &mut self,
-        serial: u64,
-        width: u32,
-        height: u32,
-        scene: Scene,
-        target: Option<(u8, u64)>,
-    ) -> Result<(), String> {
+    pub fn start(&mut self, request: FrameRequest, scene: Scene) -> Result<(), String> {
         if self.pending {
             return Err("Raster worker is already painting".into());
         }
         self.jobs
-            .try_send(Job::Paint {
-                serial,
-                width,
-                height,
-                scene,
-                target,
-            })
+            .try_send(Job::Paint { request, scene })
             .map_err(|_| "Raster queue is full or stopped")?;
         self.pending = true;
         Ok(())

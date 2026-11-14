@@ -1,3 +1,4 @@
+use crate::frame::FrameState;
 use crate::{
     Limits,
     csp::Csp,
@@ -14,7 +15,6 @@ use blitz_traits::{
     },
     navigation::{NavigationOptions, NavigationProvider},
     net::{AbortController, AbortSignal, Body, Bytes, NetHandler, NetProvider, Request},
-    shell::{ColorScheme, Viewport},
 };
 use encoding_rs::Encoding;
 use html5ever::{LocalName, QualName, ns};
@@ -33,12 +33,14 @@ use std::{
 use url::Url;
 use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
 use wega_adapter_blitz::{ToKey, ToNodeId};
+use wega_adapter_skia::{FrameRequest, FrameTarget};
 use wega_dom::Mutator as _;
 use wega_dom::NodeKey;
 use wega_dom::input::{FocusState as _, InputControl as _, element_chain};
 use wega_dom::layout::{
     GeometryAccess as _, HitTest as _, LayoutControl as _, Point, ViewportConfig,
 };
+use wega_dom::render::PaintSource;
 use wega_protocol::identity::FrameId;
 
 pub struct Frame {
@@ -338,7 +340,7 @@ pub struct View {
     in_flight: Arc<AtomicUsize>,
     completed: Arc<Mutex<Vec<(String, bool)>>>,
     started: Instant,
-    dirty: bool,
+    frame: FrameState,
     reported_frames: bool,
     frozen: bool,
     refresh: Option<(Instant, Url)>,
@@ -406,7 +408,7 @@ impl View {
             in_flight: Arc::new(AtomicUsize::new(0)),
             completed: Arc::new(Mutex::new(Vec::new())),
             started: Instant::now(),
-            dirty: true,
+            frame: FrameState::new(),
             reported_frames: false,
             frozen: false,
             refresh: None,
@@ -695,7 +697,7 @@ impl View {
                 HtmlReport,
             ));
         }
-        self.dirty = true;
+        self.frame.invalidate();
         self.host.ready_event_sent = false;
         self.host.load_event_sent = false;
         self.host.ready_at = None;
@@ -755,7 +757,7 @@ impl View {
         let revision = self.revision.load(Ordering::Relaxed);
         if revision != self.last_revision {
             self.last_revision = revision;
-            self.dirty = true;
+            self.frame.invalidate();
         }
         use crate::event_loop::Task;
         for task in [Task::Parser, Task::Lifecycle, Task::Timers, Task::Resources] {
@@ -772,7 +774,7 @@ impl View {
                         if let Err(error) = result {
                             self.script_error(error);
                         }
-                        self.dirty = true;
+                        self.frame.invalidate();
                         self.drain_requests();
                     }
                 }
@@ -933,7 +935,7 @@ impl View {
             "wega:fragment",
         );
         self.url = self.document.borrow().url().clone();
-        self.dirty = true;
+        self.frame.invalidate();
     }
     /// Browser back/forward: handled within this document's history entries
     /// when possible, else reported back to the browser.
@@ -946,14 +948,14 @@ impl View {
             self.events.push_back(PageEvent::Traverse(delta));
         }
         self.url = self.document.borrow().url().clone();
-        self.dirty = true;
+        self.frame.invalidate();
     }
     fn notice(&mut self, error: String) {
         if self.notices.len() >= 16 {
             self.notices.pop_front();
         }
         self.notices.push_back(error);
-        self.dirty = true;
+        self.frame.invalidate();
     }
     fn load_error(&mut self, error: String) {
         let escaped = escape(&error);
@@ -1007,7 +1009,7 @@ impl View {
             if let Err(error) = result {
                 self.script_error(error);
             }
-            self.dirty = true;
+            self.frame.invalidate();
         }
     }
     pub fn evaluate(&mut self, source: &str) -> Result<String, String> {
@@ -1017,7 +1019,7 @@ impl View {
         let script = self.script.as_mut().ok_or("No script context")?;
         let result = script.run(source, "evaluate");
         let result = crate::script::finish_task(script.as_mut(), result);
-        self.dirty = true;
+        self.frame.invalidate();
         if let Err(error) = &result {
             self.script_error(error.clone());
         }
@@ -1031,7 +1033,7 @@ impl View {
         let script = self.script.as_mut().ok_or("No script context")?;
         let result = script.evaluate_json(source);
         let result = crate::script::finish_task(script.as_mut(), result);
-        self.dirty = true;
+        self.frame.invalidate();
         if let Err(error) = &result {
             self.script_error(error.clone());
         }
@@ -1118,7 +1120,7 @@ impl View {
                 let before = self.document.borrow().focused();
                 let _ = self.document.borrow_mut().set_focus(target_node.key());
                 self.focus_transition(before);
-                self.dirty = true;
+                self.frame.invalidate();
             }
             "default" | "click" => {
                 self.activate();
@@ -1155,7 +1157,7 @@ impl View {
                         NativeEvent::new("change", target_node.key()).init(init),
                     ]);
                     self.run(&source, "wega:accessibility-action");
-                    self.dirty = true;
+                    self.frame.invalidate();
                 }
             }
             _ => {}
@@ -1204,14 +1206,14 @@ impl View {
                     files_json
                 );
                 self.run(&source, "wega:file-input");
-                self.dirty = true;
+                self.frame.invalidate();
             }
         }
     }
     pub fn reset_form(&mut self, form: NodeId) {
         let mut doc = self.document.borrow_mut();
         crate::dom::Dom::reset_form_controls(&mut doc, form);
-        self.dirty = true;
+        self.frame.invalidate();
     }
     pub fn copy(&mut self) -> Option<String> {
         let text = self
@@ -1235,7 +1237,7 @@ impl View {
                 .push_back(PageEvent::ClipboardWrite(text.clone()));
         }
         let _ = self.evaluate_json("document.execCommand('cut')");
-        self.dirty = true;
+        self.frame.invalidate();
         text
     }
     pub fn paste(&mut self, text: &str) {
@@ -1243,11 +1245,11 @@ impl View {
         let _ = self.evaluate_json(&format!(
             "document.execCommand('paste', false, {text_json})"
         ));
-        self.dirty = true;
+        self.frame.invalidate();
     }
     pub fn select_all(&mut self) {
         let _ = self.evaluate_json("document.execCommand('selectAll')");
-        self.dirty = true;
+        self.frame.invalidate();
     }
     pub fn find_in_page(
         &mut self,
@@ -1278,7 +1280,7 @@ impl View {
             number_of_matches: total,
             query: query.to_string(),
         });
-        self.dirty = true;
+        self.frame.invalidate();
         (active, total)
     }
     pub fn notify_media_session_action(
@@ -1319,7 +1321,7 @@ impl View {
             "(() => {{ try {{ const origin = {origin_json}; const targetOrigin = {target_origin_json}; const currentOrigin = (window.location && window.location.origin) || ''; if (targetOrigin && targetOrigin !== '*' && targetOrigin !== '/' && targetOrigin !== currentOrigin) {{ return; }} let parsed; try {{ parsed = JSON.parse({message_json}); }} catch(_) {{ parsed = {message_json}; }} const MsgEvent = globalThis.MessageEvent || window.MessageEvent || Event; const event = new MsgEvent('message', {{ data: parsed, origin: origin, source: null }}); window.dispatchEvent(event); }} catch(e) {{ console.error('Frame postMessage dispatch error:', e); }} }})()"
         );
         let _ = self.evaluate_json(&code);
-        self.dirty = true;
+        self.frame.invalidate();
     }
     pub fn favicon_url(&self) -> Option<Url> {
         let doc = self.document.borrow();
@@ -1431,10 +1433,10 @@ impl View {
         self.script.as_ref().map(|script| script.budget())
     }
     pub fn needs_paint(&self) -> bool {
-        self.dirty && !self.frozen
+        self.frame.needs_paint(self.frozen)
     }
     pub fn request_redraw(&mut self) {
-        self.dirty = true;
+        self.frame.invalidate();
     }
     pub fn freeze(&mut self, freeze: bool) {
         let changed = self.frozen != freeze;
@@ -1459,7 +1461,7 @@ impl View {
             self.raster.release();
         }
         if !freeze {
-            self.dirty = true;
+            self.frame.invalidate();
         }
     }
     pub fn activate(&mut self) {
@@ -1481,7 +1483,7 @@ impl View {
         };
         let source = format!("__wega_focus_events({}, {})", id(before), id(after));
         self.run(&source, "wega:focus");
-        self.dirty = true;
+        self.frame.invalidate();
     }
     /// Where keyboard input goes: the focused node, else the document's fallback target.
     fn keyboard_target(&self) -> NodeId {
@@ -1634,7 +1636,7 @@ impl View {
             self.cursor = cursor.clone();
             self.events.push_back(PageEvent::Cursor(cursor));
         }
-        self.dirty = true;
+        self.frame.invalidate();
     }
     fn hover_changed(
         &mut self,
@@ -2018,7 +2020,7 @@ impl View {
                 }
             }
             if key == "Enter" && self.implicit_submission(target) {
-                self.dirty = true;
+                self.frame.invalidate();
                 return;
             }
             if key == " " || key == "Space" {
@@ -2076,7 +2078,7 @@ impl View {
                         NativeEvent::new("change", target.key()),
                     ]);
                     self.run(&source, "wega:native-toggle");
-                    self.dirty = true;
+                    self.frame.invalidate();
                     return;
                 }
             }
@@ -2114,7 +2116,7 @@ impl View {
             };
             self.generated_events(generated, input_options, None);
         }
-        self.dirty = true;
+        self.frame.invalidate();
     }
     /// Enter in a single-line field submits its form (HTML implicit submission):
     /// through the default button when there is one, else when the form has
@@ -2266,7 +2268,7 @@ impl View {
             generated
         };
         self.generated_events(generated, input_options, None);
-        self.dirty = true;
+        self.frame.invalidate();
     }
     pub fn scroll_at(&mut self, x: f64, y: f64, pointer_x: f32, pointer_y: f32) {
         if self.frozen || !self.scheduler.script_allowed() {
@@ -2284,7 +2286,7 @@ impl View {
         doc.scroll_node_by(target, -x, -y, |event| events.push(event));
         drop(doc);
         self.generated_events(events, serde_json::json!({}), None);
-        self.dirty = true;
+        self.frame.invalidate();
     }
     /// Scroll the viewport (or the scroll container under the pointer, via `wheel`).
     pub fn scroll(&mut self, x: f64, y: f64) {
@@ -2297,7 +2299,7 @@ impl View {
             x: p.x + x,
             y: p.y + y,
         });
-        self.dirty = true;
+        self.frame.invalidate();
     }
     fn record_paint(
         &mut self,
@@ -2306,7 +2308,7 @@ impl View {
         scale: f32,
         zoom: f32,
         dark: bool,
-    ) -> Result<anyrender::Scene, String> {
+    ) -> Result<<BlitzDocument as PaintSource>::Scene, String> {
         if width == 0
             || height == 0
             || width as usize * height as usize > self.limits.max_pixels
@@ -2317,21 +2319,15 @@ impl View {
         {
             return Err("Invalid or oversized viewport".into());
         }
-        let mut doc = self.document.borrow_mut();
-        doc.set_viewport(ViewportConfig {
+        let viewport = ViewportConfig {
             width_px: width,
             height_px: height,
             scale,
             zoom,
             dark,
-        });
-        let large = doc.tree().len() >= 512;
-        doc.set_style_threading(if large {
-            blitz_dom::StyleThreading::Parallel
-        } else {
-            blitz_dom::StyleThreading::Sequential
-        });
-        doc.flush_layout(self.started.elapsed().as_secs_f64());
+        };
+        let mut doc = self.document.borrow_mut();
+        doc.prepare_frame(&viewport, self.started.elapsed().as_secs_f64());
         drop(doc);
         let another_frame = if let Some(script) = &mut self.script
             && self.scheduler.script_allowed()
@@ -2369,17 +2365,8 @@ impl View {
                 "Visible iframe rendering is not implemented by Wega".into()
             });
         }
-        let mut scene = anyrender::Scene::new();
-        blitz_paint::paint_scene(
-            &mut scene,
-            &mut doc,
-            (scale * zoom) as f64,
-            width,
-            height,
-            0,
-            0,
-        );
-        self.dirty = another_frame || doc.is_animating();
+        let scene = doc.record_scene(&viewport);
+        self.frame.recorded(another_frame || doc.is_animating());
         if self.accessibility_enabled {
             let update = doc.build_accessibility_tree();
             if let Ok(json) = serde_json::to_string(&update) {
@@ -2406,21 +2393,30 @@ impl View {
     pub fn paint_pending(&self) -> bool {
         self.raster.pending()
     }
+    /// Records a frame for `viewport` and hands it to the raster thread; the result arrives
+    /// through [`Self::take_painted`] or [`Self::wait_painted`] carrying `serial`.
     pub fn begin_paint(
         &mut self,
-        viewport: Viewport,
+        viewport: ViewportConfig,
         serial: u64,
-        target: Option<(u8, u64)>,
+        target: FrameTarget,
     ) -> Result<(), String> {
-        let (width, height) = viewport.window_size;
         let scene = self.record_paint(
-            width,
-            height,
-            viewport.hidpi_scale,
+            viewport.width_px,
+            viewport.height_px,
+            viewport.scale,
             viewport.zoom,
-            matches!(viewport.color_scheme, ColorScheme::Dark),
+            viewport.dark,
         )?;
-        self.raster.start(serial, width, height, scene, target)
+        self.raster.start(
+            FrameRequest {
+                serial,
+                width: viewport.width_px,
+                height: viewport.height_px,
+                target,
+            },
+            scene,
+        )
     }
     pub fn take_painted(&mut self) -> Option<Result<crate::Painted, String>> {
         self.raster.take()
@@ -2440,18 +2436,15 @@ impl View {
             let _ = self.raster.wait();
         }
         self.begin_paint(
-            Viewport {
-                window_size: (width, height),
-                hidpi_scale: scale,
+            ViewportConfig {
+                width_px: width,
+                height_px: height,
+                scale,
                 zoom,
-                color_scheme: if dark {
-                    ColorScheme::Dark
-                } else {
-                    ColorScheme::Light
-                },
+                dark,
             },
             0,
-            None,
+            FrameTarget::Owned,
         )?;
         let result = self.raster.wait()?;
         if let crate::Pixels::Owned(rgba) = result.pixels {
