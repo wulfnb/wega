@@ -358,3 +358,16 @@ Full report: [`dom-round8-report.md`](./dom-round8-report.md); audit and design:
 - **Numbers:** 433 passed, 0 failed, 7 ignored; graph unchanged (13 members, 24 edges, 0 violations); Blitz reference lines 100 → 96; one regression found by A/B measurement and fixed; script `focus()` +228% by design (four events instead of one); other paths within noise at load ≈ 10.
 - **Commits:** `0406e51`, `9db9112`, `3f55e74`, `6162279`, `221a0fa`, `c777548`, `22dbc5a`, `6cab08f`, `fa1a5c5`, report commit.
 - **Next:** a default-action/click-synthesis contract, engine-owned input event types (drop `blitz-traits` events from `view.rs`), then layout geometry, style and form state.
+
+## 37. Round 9 (CSS and styling ownership)
+
+Full report: [`dom-round9-report.md`](./dom-round9-report.md); audit and design: [`dom-round9-design.md`](./dom-round9-design.md).
+
+- **Audit:** Stylo owns CSS semantics; Blitz owns all style state (`Stylist`, sheets, declaration blocks, computed values, invalidation); Wega owned only the JS surface plus seven host ops that named Blitz/Stylo types directly. CSSOM objects are not exposed; Shadow DOM styling is not implemented.
+- **Contract:** `wega_dom::style` (`StyleAccess`, `StyleControl`), implemented once by `BlitzDocument`; `NodeKey` only, stale keys rejected, no Blitz/Stylo type in signatures, no cache or copy. No `wega-style` crate (same two dependents as `wega-dom`) and no `wega-adapter-stylo` (Stylo is not separable from Blitz; limitation recorded). `StylesheetAccess`, `StyleInvalidation`, `ComputedStyleView` not added (no consumers).
+- **Migrated:** inline style read/write, `setProperty`/`removeProperty`, computed values, `CSS.supports`, `matchMedia`. Stylesheet insertion/removal and invalidation stay in the mutation contract/Blitz, now tested.
+- **Bugs fixed (tested):** invalid `setProperty` corrupted the `style` attribute and queued a mutation; non-canonical attribute text; computed `cssText` leaked inline style; detached/shadow `<style>` applied to the document (vendored Blitz patch).
+- **Shadow DOM:** not implemented, pinned by tests and listed in the report. **Other gaps:** `<style media>`, CSSOM objects, pseudo-element computed style, tree-order sheet ordering.
+- **Numbers:** 462 passed, 0 failed, 8 ignored (from 433/7); graph unchanged (13 members, 24 edges, 0 violations); Blitz reference lines 96 → 93; `engines/Cargo.lock` +3 lines; no new unsafe. Release A/B at load 12–14: within noise except `style.setProperty+removeProperty` +13% (validation and canonical serialization) and an intentional −98% for no-op writes. Only macOS validated.
+- **Commits:** `90aa968`, `d67317f`, report commit.
+- **Next:** layout geometry contract (including the style/layout flush), then form state; CSSOM and Shadow DOM styling are features.
