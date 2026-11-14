@@ -20,6 +20,7 @@
 //!   finished or dropped. There is no rollback and no staging.
 #![forbid(unsafe_code)]
 pub mod input;
+pub mod style;
 
 use html5ever::QualName;
 use url::Url;
@@ -382,8 +383,6 @@ pub trait Mutator {
         value: &str,
     ) -> Result<(), MutationError>;
     fn clear_attribute(&mut self, node: NodeKey, name: QualName) -> Result<(), MutationError>;
-    /// Removes one declaration from the element's inline `style` (`element.style`).
-    fn remove_style_property(&mut self, node: NodeKey, name: &str) -> Result<(), MutationError>;
     fn add_attributes_if_missing(
         &mut self,
         node: NodeKey,

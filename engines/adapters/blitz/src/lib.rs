@@ -8,9 +8,10 @@ use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
 };
-use html5ever::QualName;
+use html5ever::{LocalName, QualName, ns};
 use url::Url;
 use wega_dom::input::{FocusState, HoverChange, InputControl};
+use wega_dom::style::{StyleAccess, StyleControl, StyleError};
 use wega_dom::{
     DocumentMutation, DocumentView, MutationError, Mutator, NewAttribute, NodeKey, NodeKind,
     NodeView,
@@ -196,8 +197,14 @@ impl DocumentMutation for BlitzDocument {
         BlitzMutator(BaseDocument::mutate(&mut self.0))
     }
     fn refresh_style_element(&mut self, key: NodeKey) {
+        // A `<style>` outside the document (a fragment, a template, a shadow tree) has no
+        // stylesheet; it gets one when it is inserted.
         let id = key.node_id();
-        if self.0.get_node(id).is_some() {
+        if self
+            .0
+            .get_node(id)
+            .is_some_and(|node| node.flags.is_in_document())
+        {
             self.0.process_style_element(id);
         }
     }
@@ -246,6 +253,172 @@ impl InputControl for BlitzDocument {
             previous,
             current: self.hovered(),
         }
+    }
+}
+
+impl BlitzDocument {
+    /// The element behind `key`, for style reads.
+    fn styled(&self, key: NodeKey) -> Result<&blitz_dom::ElementData, StyleError> {
+        self.0
+            .get_node(key.node_id())
+            .ok_or(StyleError::Stale(key))?
+            .element_data()
+            .ok_or(StyleError::NotElement(key))
+    }
+}
+
+/// Styles are Stylo's, hosted by the Blitz document: the inline declaration block lives on
+/// the element, computed values in its Stylo data, and the stylist and device in the
+/// document. Nothing is cached or copied here.
+impl StyleAccess for BlitzDocument {
+    fn inline_style(&self, key: NodeKey, out: &mut String) -> Result<(), StyleError> {
+        if let Some(block) = self.styled(key)?.style_attribute.as_ref() {
+            let guard = self.0.guard().read();
+            let _ = block.read_with(&guard).to_css(out);
+        }
+        Ok(())
+    }
+    fn inline_property(
+        &self,
+        key: NodeKey,
+        property: &str,
+        out: &mut String,
+    ) -> Result<(), StyleError> {
+        let element = self.styled(key)?;
+        if let Ok(property) = style::properties::PropertyId::parse_enabled_for_all_content(property)
+            && let Some(block) = element.style_attribute.as_ref()
+        {
+            let guard = self.0.guard().read();
+            let _ = block
+                .read_with(&guard)
+                .property_value_to_css(&property, out);
+        }
+        Ok(())
+    }
+    fn resolved_value(
+        &self,
+        key: NodeKey,
+        property: &str,
+        out: &mut String,
+    ) -> Result<(), StyleError> {
+        self.styled(key)?;
+        out.push_str(&self.0.resolved_style_value(key.node_id(), property));
+        Ok(())
+    }
+    fn supports_condition(&self, condition: &str) -> bool {
+        self.0.css_supports_condition(condition)
+    }
+    fn supports_declaration(&self, property: &str, value: &str) -> bool {
+        // A declaration is supported when it survives parsing into an empty block.
+        self.0
+            .style_attr_set_property("", property, value, false)
+            .is_some_and(|css| !css.is_empty())
+    }
+}
+
+impl StyleControl for BlitzDocument {
+    fn set_inline_property(
+        &mut self,
+        key: NodeKey,
+        property: &str,
+        value: &str,
+        important: bool,
+    ) -> Result<bool, MutationError> {
+        use style::properties::declaration_block::{
+            Importance, SourcePropertyDeclarationUpdate, parse_one_declaration_into,
+        };
+        use style::properties::{PropertyId, SourcePropertyDeclaration};
+        use style::stylesheets::{CssRuleType, Origin, UrlExtraData};
+        let element = match self.styled(key) {
+            Ok(element) => element,
+            Err(StyleError::Stale(key)) => return Err(MutationError::Stale(key)),
+            Err(StyleError::NotElement(key)) => return Err(MutationError::NotElement(key)),
+        };
+        // Unknown property: CSSOM ignores the write.
+        let Ok(property) = PropertyId::parse_enabled_for_all_content(property) else {
+            return Ok(false);
+        };
+        // Work on a copy of the element's block and write it back through the `style`
+        // attribute, which is how Blitz keeps the attribute and the block in step and
+        // invalidates the element.
+        let mut block = match element.style_attribute.as_ref() {
+            Some(block) => block.read_with(&self.0.guard().read()).clone(),
+            None => Default::default(),
+        };
+        let changed = if value.trim().is_empty() {
+            match block.first_declaration_to_remove(&property) {
+                Some(first) => {
+                    block.remove_property(&property, first);
+                    true
+                }
+                None => false,
+            }
+        } else {
+            let mut source = SourcePropertyDeclaration::default();
+            let url_data = UrlExtraData(style::servo_arc::Arc::new(self.0.url().clone()));
+            // A value that does not parse (including one carrying `!important`) is ignored.
+            if parse_one_declaration_into(
+                &mut source,
+                property,
+                value,
+                Origin::Author,
+                &url_data,
+                None,
+                style_traits::ParsingMode::DEFAULT,
+                style::context::QuirksMode::NoQuirks,
+                CssRuleType::Style,
+            )
+            .is_err()
+            {
+                return Ok(false);
+            }
+            let importance = if important {
+                Importance::Important
+            } else {
+                Importance::Normal
+            };
+            // CSSOM update: an existing declaration keeps its position.
+            let mut updates = SourcePropertyDeclarationUpdate::default();
+            let changed = block.prepare_for_update(&source, importance, &mut updates);
+            if changed {
+                block.update(source.drain(), importance, &mut updates);
+            }
+            changed
+        };
+        if !changed {
+            return Ok(false);
+        }
+        let mut css = String::new();
+        let _ = block.to_css(&mut css);
+        self.mutate().set_attribute(
+            key,
+            QualName::new(None, ns!(), LocalName::from("style")),
+            &css,
+        )?;
+        Ok(true)
+    }
+    fn media_matches(&mut self, query: &str) -> bool {
+        use style::context::QuirksMode;
+        use style::stylesheets::{CssRuleType, CustomMediaEvaluator, Origin, UrlExtraData};
+        let url_data = UrlExtraData(style::servo_arc::Arc::new(self.0.url().clone()));
+        let mut context = style::parser::ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(CssRuleType::Media),
+            style_traits::ParsingMode::DEFAULT,
+            QuirksMode::NoQuirks,
+            std::borrow::Cow::Owned(Default::default()),
+            None,
+            None,
+            Default::default(),
+        );
+        let mut input = cssparser::Parser::new(query);
+        let media = style::media_queries::MediaList::parse(&mut context, &mut input);
+        media.evaluate(
+            self.0.stylist_device(),
+            QuirksMode::NoQuirks,
+            &mut CustomMediaEvaluator::none(),
+        )
     }
 }
 
@@ -466,11 +639,6 @@ impl Mutator for BlitzMutator<'_> {
     fn clear_attribute(&mut self, node: NodeKey, name: QualName) -> Result<(), MutationError> {
         let id = self.element(node)?;
         self.0.clear_attribute(id, name);
-        Ok(())
-    }
-    fn remove_style_property(&mut self, node: NodeKey, name: &str) -> Result<(), MutationError> {
-        let id = self.element(node)?;
-        self.0.remove_style_property(id, name);
         Ok(())
     }
     fn add_attributes_if_missing(

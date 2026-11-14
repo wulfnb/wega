@@ -305,3 +305,131 @@ fn event_paths() {
     println!("BENCH set_html document replacement: {replacement:.2} ms/document");
     println!("BENCH create_view construction: {construction:.2} ms/view");
 }
+
+/// Style paths (Round 9): inline style reads/writes, computed queries, selector matching,
+/// stylesheet insertion, invalidation, recalculation and styled document creation.
+#[test]
+#[ignore]
+fn style_paths() {
+    const ITEMS: &str = "<style>body{margin:0}.item{color:rgb(1,2,3);padding:1px}.item.on{color:rgb(4,5,6)}#list>.item:nth-child(odd){margin-left:2px}</style><div id=list></div><script>const l=document.getElementById('list');for(let i=0;i<300;i++){const d=document.createElement('div');d.className='item';d.style.cssText='width: 10px; height: 2px';l.appendChild(d)}globalThis.items=[...l.children]</script>";
+    let mut page = input_page(ITEMS);
+    let run = |page: &mut View, js: &str, n: f64| {
+        let start = Instant::now();
+        page.evaluate_json(js).unwrap();
+        start.elapsed().as_secs_f64() * 1e6 / n
+    };
+    let inline_read = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++){const s=items[i%300].style;n+=s.getPropertyValue('width').length+s.height.length}return n})()",
+            6_000.0,
+        )
+    });
+    let css_text = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++)n+=items[i%300].style.cssText.length;return n})()",
+            3_000.0,
+        )
+    });
+    let inline_write = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{for(let i=0;i<3000;i++)items[i%300].style.setProperty('width',(10+i%7)+'px');return 1})()",
+            3_000.0,
+        )
+    });
+    let inline_remove = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{for(let i=0;i<1500;i++){const s=items[i%300].style;s.setProperty('opacity','0.5');s.removeProperty('opacity')}return 1})()",
+            3_000.0,
+        )
+    });
+    let computed = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<3000;i++)n+=getComputedStyle(items[i%300]).getPropertyValue('color').length;return n})()",
+            3_000.0,
+        )
+    });
+    let computed_after_write = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{globalThis.round=(globalThis.round|0)+1;let n=0;for(let i=0;i<300;i++){const e=items[i];e.style.setProperty('height',(2+(i+round)%5)+'px');n+=getComputedStyle(e).getPropertyValue('height').length}return n})()",
+            300.0,
+        )
+    });
+    let matching = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<200;i++)n+=document.querySelectorAll('#list > .item:nth-child(odd)').length;for(let i=0;i<3000;i++)n+=items[i%300].matches('.item.on, div.item')?1:0;return n})()",
+            3_200.0,
+        )
+    });
+    let sheet = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<30;i++){const s=document.createElement('style');s.textContent='.item{outline:'+(i%3+1)+'px solid red}';document.head.appendChild(s);n+=getComputedStyle(items[0]).getPropertyValue('outline-width').length;s.remove()}return n})()",
+            30.0,
+        )
+    });
+    let invalidation = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<300;i++){const e=items[i];e.classList.toggle('on');n+=getComputedStyle(e).getPropertyValue('color').length}return n})()",
+            300.0,
+        )
+    });
+    let recalc = repeat(|| {
+        let start = Instant::now();
+        for i in 0..20 {
+            page.evaluate(if i % 2 == 0 {
+                "for(const e of items)e.classList.add('on')"
+            } else {
+                "for(const e of items)e.classList.remove('on')"
+            })
+            .unwrap();
+            page.paint(300, 200, 1.0, 1.0, false).unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 20.0
+    });
+    let mut fresh = view();
+    let creation = repeat(|| {
+        let start = Instant::now();
+        for _ in 0..5 {
+            fresh.set_html(ITEMS).unwrap();
+            fresh.poll();
+            fresh.paint(300, 200, 1.0, 1.0, false).unwrap();
+        }
+        start.elapsed().as_secs_f64() * 1e3 / 5.0
+    });
+    // The same value again: CSSOM makes this a no-op (no mutation, no restyle).
+    let unchanged = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<300;i++){const e=items[i];e.style.setProperty('display','block');n+=getComputedStyle(e).getPropertyValue('display').length}return n})()",
+            300.0,
+        )
+    });
+    let supports = repeat(|| {
+        run(
+            &mut page,
+            "(()=>{let n=0;for(let i=0;i<2000;i++)n+=(CSS.supports('display','grid')?1:0)+(CSS.supports('(display:grid) and (gap:1px)')?1:0)+(matchMedia('(min-width:100px)').matches?1:0);return n})()",
+            6_000.0,
+        )
+    });
+    println!("BENCH inline style property read: {inline_read:.2} us/read");
+    println!("BENCH inline style cssText read: {css_text:.2} us/read");
+    println!("BENCH inline style setProperty: {inline_write:.2} us/write");
+    println!("BENCH inline style set+removeProperty: {inline_remove:.2} us/op");
+    println!("BENCH getComputedStyle query, no mutation: {computed:.2} us/query");
+    println!("BENCH getComputedStyle after inline write: {computed_after_write:.2} us/query");
+    println!("BENCH getComputedStyle after an unchanged inline write: {unchanged:.2} us/query");
+    println!("BENCH selector matching (querySelectorAll, matches): {matching:.2} us/op");
+    println!("BENCH stylesheet insert+query+remove: {sheet:.2} us/sheet");
+    println!("BENCH class toggle invalidation + query: {invalidation:.2} us/toggle");
+    println!("BENCH restyle 300 elements + paint: {recalc:.2} ms/frame");
+    println!("BENCH styled document creation (300 items) + paint: {creation:.2} ms/document");
+    println!("BENCH CSS.supports/matchMedia: {supports:.2} us/query");
+}

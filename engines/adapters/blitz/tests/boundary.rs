@@ -9,6 +9,11 @@ const ALLOWED: &[&str] = &[
     "blitz-traits",
     "html5ever",
     "url",
+    // Stylo is hosted by the Blitz document (stylist, lock and sheets are its fields), so the
+    // style contract is implemented here: property ids and media queries need these.
+    "style",
+    "style_traits",
+    "cssparser",
 ];
 const ALLOWED_DEV: &[&str] = &["wega-html"];
 

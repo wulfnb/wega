@@ -12,6 +12,7 @@ use std::{
 };
 use wega_adapter_blitz::BlitzDocument;
 use wega_adapter_blitz::{ToKey, ToNodeId};
+use wega_dom::style::{StyleAccess, StyleControl, StyleError};
 use wega_dom::{DocumentView, Mutator, NodeKind, NodeView};
 
 /// A `<script>` element that script inserted into the document.
@@ -945,6 +946,7 @@ impl Dom {
                 | "createDocument"
                 | "setAttrNS"
                 | "styleSet"
+                | "styleSetImportant"
                 | "focus"
                 | "blur"
                 | "setChecked"
@@ -1051,7 +1053,7 @@ impl Dom {
             "createNS" => text(1).len() + text(2).len() + 32,
             "innerHTML" | "contextualFragment" => text(2).len() + 32,
             "write" => text(1).len(),
-            "styleSet" => text(2).len() + text(3).len() + 32,
+            "styleSet" | "styleSetImportant" => text(2).len() + text(3).len() + 32,
             _ => 0,
         };
         let next = self.used.get().saturating_add(charge);
@@ -1183,12 +1185,7 @@ impl Dom {
             "scrollIntoView"=>{let target=node_id()?;doc.scroll_into_view(target,blitz_dom::ScrollBehavior::Instant,blitz_dom::ScrollLogicalPosition::Start,blitz_dom::ScrollLogicalPosition::Nearest);Value::Null},
             "active"=>json!(wega_dom::input::FocusState::focused(&*doc).map(|key|key.to_string())),
             "history"=>{let url=doc.url().join(text(1)).map_err(|e|e.to_string())?;if url.origin()!=doc.url().origin()||!matches!(url.scheme(),"http"|"https"){return Err("SecurityError: history URL must have the same tuple origin".into());}doc.set_base_url(url.as_str());Value::Null},
-            "media"=>{
-                let url_data=style::stylesheets::UrlExtraData(style::servo_arc::Arc::new(doc.url().clone()));
-                let mut context=style::parser::ParserContext::new(style::stylesheets::Origin::Author,&url_data,Some(style::stylesheets::CssRuleType::Media),style_traits::ParsingMode::DEFAULT,style::context::QuirksMode::NoQuirks,std::borrow::Cow::Owned(Default::default()),None,None,Default::default());
-                let mut input=cssparser::Parser::new(text(1));let media=style::media_queries::MediaList::parse(&mut context,&mut input);
-                json!(media.evaluate(doc.stylist_device(),style::context::QuirksMode::NoQuirks,&mut style::stylesheets::CustomMediaEvaluator::none()))
-            },
+            "media"=>json!(StyleControl::media_matches(&mut *doc,text(1))),
             "subtree"=>json!(self.component_subtree(&doc,node_id()?).iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "documentDomain"=>{
                 if doc.url().origin().is_tuple() { Value::Null }
@@ -1273,16 +1270,17 @@ impl Dom {
                 self.components.borrow_mut().attribute(target.as_u64(), local, old.as_deref(), Some(&payload[1]), (!text(2).is_empty()).then_some(text(2)));
                 Value::Null
             },
-            "supports"=>json!(doc.css_supports_condition(text(1))),
-            "supportsProperty"=>json!(doc.style_attr_set_property("",text(1),text(2),false).is_some_and(|css|!css.is_empty())),
-            "inlineCSS"=>{let target=node_id()?;let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}json!(css)},
-            "inlineProperty"=>{let target=node_id()?;let mut css=String::new();if let Ok(property)=style::properties::PropertyId::parse_enabled_for_all_content(text(2)) && let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).property_value_to_css(&property,&mut css);}json!(css)},
-            "styleSet"=>{
-                let target=node_id()?;let old=Self::attribute(&doc,target,"style");wega_dom::mutate(&mut *doc).remove_style_property(target.key(),text(2)).map_err(Self::mutation_error)?;
-                let mut css=String::new();if let Some(block)=doc.get_node(target).unwrap().element_data().and_then(|e|e.style_attribute.as_ref()){let guard=doc.guard().read();let _=block.read_with(&guard).to_css(&mut css);}
-                if !text(3).is_empty(){css.push_str(&format!("{}: {};",text(2),text(3)));}
-                wega_dom::mutate(&mut *doc).set_attribute(target.key(),QualName::new(None,ns!(),LocalName::from("style")),&css).map_err(Self::mutation_error)?;
-                self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),Some(&css),None);Value::Null
+            "supports"=>json!(doc.supports_condition(text(1))),
+            "supportsProperty"=>json!(doc.supports_declaration(text(1),text(2))),
+            "inlineCSS"=>{let mut css=String::new();Self::style_text(doc.inline_style(node_id()?.key(),&mut css),css)?},
+            "inlineProperty"=>{let mut css=String::new();Self::style_text(doc.inline_property(node_id()?.key(),text(2),&mut css),css)?},
+            // CSSOM setProperty/removeProperty; `false` when the declaration was rejected or
+            // changed nothing, so script queues no mutation record for it.
+            "styleSet"|"styleSetImportant"=>{
+                let target=node_id()?;let old=Self::attribute(&doc,target,"style");
+                let changed=doc.set_inline_property(target.key(),text(2),text(3),text(0)=="styleSetImportant").map_err(Self::mutation_error)?;
+                if changed{let new=Self::attribute(&doc,target,"style");self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),new.as_deref(),None);}
+                json!(changed)
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
             "checked"=>json!(doc.get_node(node_id()?).unwrap().element_data().and_then(|e|e.checkbox_input_checked()).unwrap_or(false)),
@@ -1304,7 +1302,7 @@ impl Dom {
             "serialize"=>{let mut html=String::new();Self::serialize(&doc,node_id()?,&mut html);json!(html)},
             "computed"=>{
                 let target=node_id()?;self.resolve(&mut doc);
-                json!(doc.resolved_style_value(target,text(2)))
+                let mut css=String::new();Self::style_text(doc.resolved_value(target.key(),text(2),&mut css),css)?
             },
             "limits" => json!({"resourceBytes":self.limits.resource_bytes}),
             "windowNamed" => json!(blitz_dom::traversal::TreeTraverser::new(&doc).filter(|id| {
@@ -1621,6 +1619,13 @@ impl Dom {
     }
     fn subtree(doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
         wega_dom::subtree(doc, root.key(), ToNodeId::node_id)
+    }
+    /// A style read as a script value: nodes that are not elements have no style.
+    fn style_text(read: Result<(), StyleError>, css: String) -> Result<Value, String> {
+        match read {
+            Ok(()) | Err(StyleError::NotElement(_)) => Ok(json!(css)),
+            Err(error) => Err(error.to_string()),
+        }
     }
     fn attribute(doc: &BlitzDocument, id: NodeId, name: &str) -> Option<String> {
         wega_dom::attribute(doc, id.key(), name)

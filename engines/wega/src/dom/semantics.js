@@ -1173,7 +1173,8 @@
       });
     }
     get cssText() {
-      return host("inlineCSS", this._element._id);
+      // A computed declaration never answers from the inline style.
+      return this._computed ? "" : host("inlineCSS", this._element._id);
     }
     set cssText(value) {
       if (this._computed)
@@ -1202,14 +1203,18 @@
     setProperty(name, value, priority = "") {
       if (this._computed)
         fail("NoModificationAllowedError", "Computed style is readonly");
-      if (priority && String(priority).toLowerCase() !== "important") return;
+      priority = String(priority ?? "").toLowerCase();
+      if (priority && priority !== "important") return;
       const old = this._element.getAttribute("style");
-      host(
-        "styleSet",
+      // The host applies CSSOM rules: an invalid declaration or an unchanged block is
+      // not a mutation.
+      const changed = host(
+        priority ? "styleSetImportant" : "styleSet",
         this._element._id,
         String(name),
-        String(value === null ? "" : value) + (priority ? " !important" : ""),
+        String(value === null ? "" : value),
       );
+      if (!changed) return;
       notify(this._element, "attributes", {
         attributeName: "style",
         oldValue: old,
