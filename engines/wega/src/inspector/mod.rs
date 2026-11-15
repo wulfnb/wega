@@ -267,6 +267,17 @@ impl Backend {
         }
     }
 
+    /// Whether console entries are waiting beyond the delivery cursor. The engine loop uses it to
+    /// come back soon (instead of sleeping until the next unrelated event) while still doing at
+    /// most one budgeted batch per iteration.
+    pub fn has_backlog(&self, port: &dyn PagePort) -> bool {
+        self.sessions.live().is_some()
+            && self
+                .console
+                .as_ref()
+                .is_some_and(|cursor| cursor.after.saturating_add(1) < port.console_next_seq())
+    }
+
     /// Idempotent revocation requested by the browser. Unknown or stale ids change nothing.
     pub fn detach(&mut self, session: InspectorSessionId) {
         if self.sessions.detach(session) {

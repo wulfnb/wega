@@ -838,6 +838,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         let resource_delay = interval.saturating_sub(sampled.elapsed());
         delay = Some(delay.map_or(resource_delay, |delay| delay.min(resource_delay)));
+        // A console backlog is drained in small batches between other work, not by sleeping
+        // until something unrelated wakes the loop.
+        if version >= 23
+            && inspector
+                .as_ref()
+                .is_some_and(|backend| backend.has_backlog(&view))
+        {
+            let pace = Duration::from_millis(2);
+            delay = Some(delay.map_or(pace, |delay| delay.min(pace)));
+        }
         let queued = deferred.borrow_mut().pop_front();
         let work = if let Some(work) = queued {
             work
@@ -979,7 +989,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         // The whole payload is unusable, so no session can be named.
                         Err(error) => write(&Event::RequestFailed {
                             context,
-                            error: ProtocolError::new(ErrorCode::InvalidRequest, error.message),
+                            error: ProtocolError::new(
+                                if error.code
+                                    == protocol::inspector::InspectorErrorCode::UnsupportedVersion
+                                {
+                                    ErrorCode::Unsupported
+                                } else {
+                                    ErrorCode::InvalidRequest
+                                },
+                                error.message,
+                            ),
                         })?,
                         Ok(request) => {
                             let session = request.session;

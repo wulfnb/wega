@@ -1268,3 +1268,47 @@ fn context_and_drop_markers_are_console_stream_events() {
         .is_console()
     );
 }
+
+#[test]
+fn printing_a_command_or_payload_never_reveals_a_grant_token_or_expression() {
+    let secret = GrantToken([0xC3; 16]);
+    let request = with_args(
+        InspectorCommand::Evaluate,
+        InspectorArgs::Evaluate {
+            expression: "document.cookie".into(),
+            grant: secret,
+        },
+    );
+    let payload = InspectorPayload::new(&request);
+    let packet = Command::Inspector {
+        context: RequestContext {
+            document: DocumentId(0),
+            revision: DocumentRevision(0),
+            request: RequestId(1),
+        },
+        request: payload.clone(),
+    };
+    for rendered in [
+        format!("{payload:?}"),
+        format!("{packet:?}"),
+        format!("{request:?}"),
+        format!("{secret:?}"),
+    ] {
+        assert!(!rendered.contains("195"), "{rendered}");
+        assert!(
+            !rendered.contains("document.cookie") || rendered.contains("Evaluate {"),
+            "{rendered}"
+        );
+    }
+    assert!(!format!("{payload:?}").contains("cookie"));
+    assert!(!format!("{packet:?}").contains("cookie"));
+    // The grant request is just as quiet.
+    let grant = InspectorPayload::new(&with_args(
+        InspectorCommand::GrantEvaluation,
+        InspectorArgs::Grant {
+            token: secret,
+            opaque_override: true,
+        },
+    ));
+    assert!(!format!("{grant:?}").contains("195") && !format!("{grant:?}").contains("true"));
+}

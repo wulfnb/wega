@@ -24,6 +24,11 @@ pub struct Worker {
     pub context: Arc<Mutex<DocumentContext>>,
     pub next_request: u64,
     pub issuer: SessionIssuer,
+    /// Inspector events seen while waiting for something else (never dropped silently).
+    pub seen:
+        std::cell::RefCell<Vec<(InspectorSessionId, u64, protocol::inspector::InspectorEvent)>>,
+    /// Every content event seen while waiting (ScriptStopped and friends).
+    pub notes: std::cell::RefCell<Vec<protocol::ContentEvent>>,
     pub _store: wega_platform::FrameStore,
 }
 
@@ -87,6 +92,8 @@ impl Worker {
             context,
             next_request: 0,
             issuer: SessionIssuer::new(),
+            seen: Default::default(),
+            notes: Default::default(),
             _store: store,
         };
         worker.send(Command::Init {
@@ -137,10 +144,32 @@ impl Worker {
                 .events
                 .recv_timeout(until.saturating_duration_since(Instant::now()))
                 .expect("worker event deadline");
+            self.stash(&event);
             if test(&event) {
                 return event;
             }
         }
+    }
+    fn stash(&self, event: &Event) {
+        match event {
+            Event::InspectorEvent {
+                session,
+                seq,
+                event,
+                ..
+            } => self.seen.borrow_mut().push((*session, *seq, event.clone())),
+            Event::Content { event, .. } => self.notes.borrow_mut().push(event.clone()),
+            _ => {}
+        }
+    }
+    /// Read events until the pipe has been quiet for `quiet`, stashing inspector events.
+    pub fn pump(&self, quiet: Duration) {
+        while let Ok(event) = self.events.recv_timeout(quiet) {
+            self.stash(&event);
+        }
+    }
+    pub fn take_seen(&self) -> Vec<(InspectorSessionId, u64, protocol::inspector::InspectorEvent)> {
+        std::mem::take(&mut *self.seen.borrow_mut())
     }
     pub fn request_in(
         &mut self,
@@ -190,6 +219,27 @@ impl Worker {
         let context = self.context();
         self.request_with(context, session, command, args);
         self.reply(context)
+    }
+    /// Like `call_with`, keeping the error message (code, message).
+    pub fn call_detail(
+        &mut self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+    ) -> Result<InspectorResponse, (String, String)> {
+        let context = self.context();
+        self.request_with(context, session, command, args);
+        match self.until(|e| {
+            matches!(e, Event::InspectorResponse { context: c, .. } | Event::RequestFailed { context: c, .. } if *c == context)
+        }) {
+            Event::InspectorResponse { result, .. } => {
+                result.map_err(|e| (format!("{:?}", e.code), e.message))
+            }
+            Event::RequestFailed { error, .. } => {
+                Err((format!("failed:{:?}", error.code), error.message))
+            }
+            _ => unreachable!(),
+        }
     }
     pub fn reply(&mut self, context: RequestContext) -> Result<InspectorResponse, String> {
         match self.until(|e| {

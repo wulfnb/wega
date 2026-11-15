@@ -13,8 +13,8 @@ use wega::{
         authority::{FrameAuthority, Principal, TrustedRequest},
         identity::{FrameId, ProcessSessionId, SessionIdentity, TabId},
         inspector::{
-            self, InspectorCommand, InspectorError, InspectorErrorCode, InspectorEvent,
-            InspectorPayload, InspectorRequest, InspectorSessionId, TargetId,
+            self, GrantToken, InspectorArgs, InspectorCommand, InspectorError, InspectorErrorCode,
+            InspectorEvent, InspectorPayload, InspectorRequest, InspectorSessionId, TargetId,
             session::{Completed, HostSessions, SessionIssuer},
         },
         lifecycle::Lifecycle,
@@ -117,6 +117,11 @@ pub(crate) struct InspectorPoll {
     pub closed: bool,
     pub results: Vec<Completed>,
     pub events: Vec<InspectorEvent>,
+    /// Console-stream events (messages, exceptions, context changes, loss markers).
+    pub console: Vec<InspectorEvent>,
+    /// The document a live evaluation grant covers, and whether it overrides the opaque-origin
+    /// policy. Read from the browser's own registry, never from the engine.
+    pub grant: Option<(DocumentContext, bool)>,
 }
 
 impl Snapshot {
@@ -197,6 +202,10 @@ impl Snapshot {
                 };
                 self.frame_tree = protocol::browsing::FrameTree::new(context_key, parsed_url).ok();
             }
+        }
+        // Evaluation authority and console history belong to the document that is gone.
+        if let Some(sessions) = &mut self.inspector {
+            sessions.document_changed();
         }
         self.native.clear();
         self.grants.clear();
@@ -1480,6 +1489,118 @@ impl Page {
         session: InspectorSessionId,
         command: InspectorCommand,
     ) -> Result<(), InspectorError> {
+        self.inspector_request_args(session, command, InspectorArgs::None)
+    }
+
+    /// Browser-UI only. Mint an evaluation grant for `session` and the current document, record
+    /// it in this page's registry, and send it to the content process. The token comes from the
+    /// OS CSPRNG and exists only in the registry and on the pipe: it is never logged, shown or
+    /// handed to any other component.
+    pub fn inspector_grant(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+    ) -> Result<(), InspectorError> {
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes).map_err(|_| {
+            Self::inspector_error(InspectorErrorCode::Unavailable, "No secure random source")
+        })?;
+        let token = GrantToken(bytes);
+        {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let document = DocumentContext {
+                document: state.requests.document(),
+                revision: state.requests.revision(),
+            };
+            state
+                .inspector
+                .as_mut()
+                .ok_or_else(|| {
+                    Self::inspector_error(InspectorErrorCode::Unavailable, "No inspector")
+                })?
+                .install_grant(session, document, token, opaque_override)?;
+        }
+        let sent = self.inspector_request_args(
+            session,
+            InspectorCommand::GrantEvaluation,
+            InspectorArgs::Grant {
+                token,
+                opaque_override,
+            },
+        );
+        if sent.is_err()
+            && let Some(sessions) = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .inspector
+                .as_mut()
+        {
+            sessions.clear_grant();
+        }
+        sent
+    }
+
+    /// Browser-UI only. Withdraw evaluation authority (browser record first, then the engine's).
+    pub fn inspector_revoke_evaluation(&self, session: InspectorSessionId) {
+        if let Some(sessions) = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .inspector
+            .as_mut()
+        {
+            sessions.clear_grant();
+        }
+        let _ = self.inspector_request(session, InspectorCommand::RevokeEvaluation);
+    }
+
+    /// Browser-UI only. Evaluate in the page's main world. The browser attaches the grant it
+    /// holds for *this* session and the *current* document; with none there is nothing to send.
+    pub fn inspector_evaluate(
+        &self,
+        session: InspectorSessionId,
+        expression: &str,
+    ) -> Result<(), InspectorError> {
+        let token = {
+            let state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let document = DocumentContext {
+                document: state.requests.document(),
+                revision: state.requests.revision(),
+            };
+            state
+                .inspector
+                .as_ref()
+                .and_then(|sessions| sessions.grant_for(session, document))
+        };
+        let Some(grant) = token else {
+            return Err(Self::inspector_error(
+                InspectorErrorCode::Unauthorized,
+                "Evaluation is not enabled for this document",
+            ));
+        };
+        self.inspector_request_args(
+            session,
+            InspectorCommand::Evaluate,
+            InspectorArgs::Evaluate {
+                expression: expression.to_string(),
+                grant,
+            },
+        )
+    }
+
+    fn inspector_request_args(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+    ) -> Result<(), InspectorError> {
         let (packet, context, expired) = {
             let mut state = self
                 .state
@@ -1505,7 +1626,7 @@ impl Page {
                 .begin_inspector(
                     session,
                     command,
-                    std::time::Duration::from_millis(inspector::INSPECTOR_TIMEOUT_MS),
+                    std::time::Duration::from_millis(command.timeout_ms()),
                 )
                 .map_err(|error| InspectorError::from(&error))?;
             (
@@ -1516,6 +1637,7 @@ impl Page {
                         session,
                         target,
                         command,
+                        args,
                     }),
                 },
                 context,
@@ -1595,12 +1717,14 @@ impl Page {
                     .inspector
                     .as_ref()
                     .is_none_or(|sessions| sessions.registry().is_closed());
-            let (results, events) = state.inspector.as_mut().map_or_else(
-                || (Vec::new(), Vec::new()),
+            let (results, events, console, grant) = state.inspector.as_mut().map_or_else(
+                || (Vec::new(), Vec::new(), Vec::new(), None),
                 |sessions| {
                     (
                         sessions.take_results(session),
                         sessions.take_events(session),
+                        sessions.take_console(session),
+                        sessions.grant_state(session),
                     )
                 },
             );
@@ -1610,6 +1734,8 @@ impl Page {
                     closed,
                     results,
                     events,
+                    console,
+                    grant,
                 },
                 expired,
             )
@@ -2474,7 +2600,7 @@ mod tests {
     fn inspector_events_need_the_current_document_stamp_and_a_subscription() {
         let (mut state, doc, session) = inspected_state();
         let loading = InspectorEvent::LoadingChanged { loading: true };
-        state.inspector_event(doc, session, 1, loading);
+        state.inspector_event(doc, session, 1, loading.clone());
         assert_eq!(
             state.inspector.as_ref().unwrap().queued().0,
             0,
@@ -2487,18 +2613,18 @@ mod tests {
             InspectorCommand::SubscribeStatus,
             Ok(inspector::InspectorResponse::Subscribed),
         );
-        state.inspector_event(doc, session, 1, loading);
+        state.inspector_event(doc, session, 1, loading.clone());
         let stale = DocumentContext {
             revision: protocol::DocumentRevision(doc.revision.0 + 5),
             ..doc
         };
-        state.inspector_event(stale, session, 2, loading);
+        state.inspector_event(stale, session, 2, loading.clone());
         assert_eq!(
             state.inspector.as_ref().unwrap().queued().0,
             1,
             "stale stamp dropped"
         );
-        state.inspector_event(doc, session, 1, loading);
+        state.inspector_event(doc, session, 1, loading.clone());
         assert_eq!(
             state.inspector.as_ref().unwrap().queued().0,
             1,
@@ -2506,9 +2632,125 @@ mod tests {
         );
         // A flood from a hostile or buggy engine stays within the ring.
         for seq in 3..10_000 {
-            state.inspector_event(doc, session, seq, loading);
+            state.inspector_event(doc, session, seq, loading.clone());
         }
         assert!(state.inspector.as_ref().unwrap().queued().0 <= inspector::EVENT_RING);
+    }
+
+    #[test]
+    fn an_evaluation_grant_is_cleared_when_the_navigation_commits() {
+        let (mut state, doc, session) = inspected_state();
+        let token = GrantToken([0x42; 16]);
+        state
+            .inspector
+            .as_mut()
+            .unwrap()
+            .install_grant(session, doc, token, false)
+            .unwrap();
+        assert_eq!(
+            state.inspector.as_ref().unwrap().grant_for(session, doc),
+            Some(token)
+        );
+        let next = DocumentContext {
+            revision: protocol::DocumentRevision(doc.revision.0 + 1),
+            ..doc
+        };
+        state.bind_document(0, next.revision).unwrap();
+        let sessions = state.inspector.as_ref().unwrap();
+        assert_eq!(sessions.grant_for(session, doc), None);
+        assert_eq!(
+            sessions.grant_for(session, next),
+            None,
+            "not carried to the new document"
+        );
+        assert_eq!(sessions.grant_state(session), None);
+    }
+
+    #[test]
+    fn console_events_need_an_enabled_console_and_the_current_stamp_and_stay_bounded() {
+        use protocol::inspector::{ConsoleLevel, ConsoleMessage};
+        let (mut state, doc, session) = inspected_state();
+        let message = |seq: u64| {
+            InspectorEvent::ConsoleMessageAdded(Box::new(ConsoleMessage {
+                seq,
+                timestamp_ms: 1,
+                level: ConsoleLevel::Log,
+                method: "log".into(),
+                args: vec![],
+                text: "x".repeat(1000),
+                source: None,
+                exception: None,
+            }))
+        };
+        state.inspector_event(doc, session, 1, message(1));
+        assert_eq!(
+            state.inspector.as_ref().unwrap().console_queued().0,
+            0,
+            "console not enabled"
+        );
+        state.inspector.as_mut().unwrap().complete(
+            session,
+            InspectorCommand::EnableConsole,
+            Ok(inspector::InspectorResponse::ConsoleEnabled {
+                retained: 0,
+                first_seq: 1,
+            }),
+        );
+        state.inspector_event(doc, session, 2, message(2));
+        let stale = DocumentContext {
+            revision: protocol::DocumentRevision(doc.revision.0 + 3),
+            ..doc
+        };
+        state.inspector_event(stale, session, 3, message(3));
+        assert_eq!(
+            state.inspector.as_ref().unwrap().console_queued().0,
+            1,
+            "stale stamp dropped"
+        );
+        for seq in 4..50_000u64 {
+            state.inspector_event(doc, session, seq, message(seq));
+        }
+        let (entries, bytes) = state.inspector.as_ref().unwrap().console_queued();
+        assert!(
+            entries <= inspector::CONSOLE_QUEUE_ENTRIES && bytes <= inspector::CONSOLE_QUEUE_BYTES
+        );
+        let drained = state.inspector.as_mut().unwrap().take_console(session);
+        assert!(matches!(
+            drained[0],
+            InspectorEvent::ConsoleMessagesDropped { .. }
+        ));
+    }
+
+    #[test]
+    fn the_grant_token_never_reaches_a_debug_rendering_of_the_wire_command() {
+        let request = InspectorRequest {
+            version: inspector::INSPECTOR_VERSION,
+            session: InspectorSessionId(1),
+            target: TargetId::of(&SessionIdentity {
+                tab: TabId(1),
+                frame: FrameId(1),
+                process: ProcessSessionId([1; 16]),
+                service: None,
+            }),
+            command: InspectorCommand::Evaluate,
+            args: InspectorArgs::Evaluate {
+                expression: "1".into(),
+                grant: GrantToken([0xC3; 16]),
+            },
+        };
+        let command = Request::Inspector {
+            context: RequestContext {
+                document: protocol::DocumentId(0),
+                revision: protocol::DocumentRevision(0),
+                request: protocol::RequestId(1),
+            },
+            request: InspectorPayload::new(&request),
+        };
+        let rendered = format!("{command:?} {request:?}");
+        assert!(
+            !rendered.contains("195") && !rendered.to_lowercase().contains("c3"),
+            "{rendered}"
+        );
     }
 
     #[test]

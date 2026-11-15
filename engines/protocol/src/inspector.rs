@@ -239,9 +239,19 @@ impl InspectorRequest {
 /// A request as it crosses the pipe. It is decoded by the receiver so a malformed
 /// payload is answered with `InvalidPayload` instead of failing the whole packet (which
 /// would tear the content process down).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct InspectorPayload(pub serde_json::Value);
+
+/// A payload can carry an evaluation grant, so printing one never prints its contents.
+impl std::fmt::Debug for InspectorPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.command_hint() {
+            Some(command) => write!(f, "InspectorPayload({command:?}, ..)"),
+            None => f.write_str("InspectorPayload(..)"),
+        }
+    }
+}
 
 impl InspectorPayload {
     pub fn new(request: &InspectorRequest) -> Self {

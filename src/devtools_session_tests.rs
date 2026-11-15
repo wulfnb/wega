@@ -3,7 +3,10 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 use wega::engine_protocol::{
     DocumentId, DocumentRevision,
     identity::{FrameId, TabId},
-    inspector::{INSPECTOR_VERSION, InspectorErrorCode},
+    inspector::{
+        ConsoleLevel, ConsoleMessage, EvalOutcome, INSPECTOR_VERSION, InspectorErrorCode, Preview,
+        PreviewKind,
+    },
 };
 
 #[derive(Default)]
@@ -24,6 +27,10 @@ struct Inner {
     snapshot_target: Option<TargetId>,
     snapshot_document: Option<DocumentContext>,
     calls: usize,
+    console_events: Vec<InspectorEvent>,
+    granted: Option<(DocumentContext, bool)>,
+    evaluations: Vec<String>,
+    eval_error: Option<InspectorErrorCode>,
 }
 
 /// A scripted page: it enforces session liveness exactly like the real registry does.
@@ -59,7 +66,10 @@ impl Fake {
         }
     }
     fn navigate(&self) {
-        self.inner.borrow_mut().document += 1;
+        let mut inner = self.inner.borrow_mut();
+        inner.document += 1;
+        // The real page clears the grant at navigation commit.
+        inner.granted = None;
     }
     fn restart(&self, process: u8) {
         let tab = self.target.borrow().tab.0;
@@ -69,6 +79,7 @@ impl Fake {
         inner.closed_process = false;
         inner.pending.clear();
         inner.results.clear();
+        inner.granted = None;
     }
     fn crash(&self) {
         let mut inner = self.inner.borrow_mut();
@@ -169,6 +180,55 @@ impl InspectorPort for Fake {
         }
         inner.closed.push(session);
     }
+    fn grant(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+    ) -> Result<(), InspectorError> {
+        let document = self.document();
+        let mut inner = self.inner.borrow_mut();
+        inner.calls += 1;
+        if inner.live != Some(session) {
+            return Err(InspectorError::new(
+                InspectorErrorCode::StaleSession,
+                "not live",
+            ));
+        }
+        inner.granted = Some((document, opaque_override));
+        inner
+            .requests
+            .push((session, InspectorCommand::GrantEvaluation));
+        inner.pending.push(InspectorCommand::GrantEvaluation);
+        Ok(())
+    }
+    fn revoke_evaluation(&self, session: InspectorSessionId) {
+        let mut inner = self.inner.borrow_mut();
+        inner.calls += 1;
+        inner.granted = None;
+        inner
+            .requests
+            .push((session, InspectorCommand::RevokeEvaluation));
+    }
+    fn evaluate(
+        &self,
+        session: InspectorSessionId,
+        expression: &str,
+    ) -> Result<(), InspectorError> {
+        let document = self.document();
+        let mut inner = self.inner.borrow_mut();
+        inner.calls += 1;
+        // Exactly the real page's rule: a grant for this session's document, or nothing is sent.
+        if inner.live != Some(session) || inner.granted.is_none_or(|(d, _)| d != document) {
+            return Err(InspectorError::new(
+                InspectorErrorCode::Unauthorized,
+                "Evaluation is not enabled for this document",
+            ));
+        }
+        inner.evaluations.push(expression.to_string());
+        inner.requests.push((session, InspectorCommand::Evaluate));
+        inner.pending.push(InspectorCommand::Evaluate);
+        Ok(())
+    }
     fn poll(&self, session: InspectorSessionId) -> InspectorPoll {
         let snapshot = self.snapshot();
         let document = self.document();
@@ -187,6 +247,17 @@ impl InspectorPort for Fake {
                     InspectorCommand::GetStatusSnapshot => {
                         Ok(InspectorResponse::Status(Box::new(snapshot.clone())))
                     }
+                    InspectorCommand::EnableConsole => Ok(InspectorResponse::ConsoleEnabled {
+                        retained: 0,
+                        first_seq: 1,
+                    }),
+                    InspectorCommand::GrantEvaluation => Ok(InspectorResponse::EvaluationGranted),
+                    InspectorCommand::Evaluate => match inner.eval_error {
+                        Some(code) => Err(InspectorError::new(code, "scripted failure")),
+                        None => Ok(InspectorResponse::Evaluated(Box::new(EvalOutcome::Value {
+                            preview: Preview::simple(PreviewKind::Number, "2"),
+                        }))),
+                    },
                     _ => continue,
                 };
                 inner.results.push(Completed {
@@ -209,6 +280,12 @@ impl InspectorPort for Fake {
             } else {
                 Vec::new()
             },
+            console: if live {
+                std::mem::take(&mut inner.console_events)
+            } else {
+                Vec::new()
+            },
+            grant: if live { inner.granted } else { None },
         }
     }
 }
@@ -663,4 +740,315 @@ fn a_tab_with_an_open_inspector_is_not_discardable_by_the_view_contract() {
     assert!(!view.is_open() && view.target_tab().is_none());
     view.open(9);
     assert!(view.is_open() && view.target_tab() == Some(9));
+}
+
+// ---- D2: console and evaluation -------------------------------------------------------
+
+use crate::devtools_console::{ConsoleLine, HISTORY_ENTRIES};
+
+fn message(seq: u64, text: &str) -> InspectorEvent {
+    InspectorEvent::ConsoleMessageAdded(Box::new(ConsoleMessage {
+        seq,
+        timestamp_ms: 1,
+        level: ConsoleLevel::Log,
+        method: "log".into(),
+        args: vec![],
+        text: text.into(),
+        source: None,
+        exception: None,
+    }))
+}
+fn connected(tabs: &Tabs, clock: &Clock, tab: u64) -> DevtoolsView {
+    let mut view = DevtoolsView::default();
+    view.open(tab);
+    for step in 0..6 {
+        run(&mut view, tabs, clock, step, tab, false);
+    }
+    assert_eq!(view.state, ViewState::Attached);
+    view
+}
+fn texts(view: &DevtoolsView) -> Vec<String> {
+    view.console
+        .lines()
+        .map(|line| match line {
+            ConsoleLine::Message(m) => format!("msg:{}", m.text),
+            ConsoleLine::Input(t) => format!("in:{t}"),
+            ConsoleLine::Result(p) => format!("out:{}", p.text),
+            ConsoleLine::Failure(d) => format!("err:{}", d.message),
+            ConsoleLine::Notice(t) => format!("note:{t}"),
+        })
+        .collect()
+}
+
+#[test]
+fn opening_the_panel_enables_the_console_once_but_never_evaluation() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let view = connected(&tabs, &clock, 1);
+    assert_eq!(tabs.pages[&1].count(InspectorCommand::EnableConsole), 1);
+    assert!(view.console.enabled);
+    assert_eq!(tabs.pages[&1].count(InspectorCommand::GrantEvaluation), 0);
+    assert!(tabs.pages[&1].inner.borrow().granted.is_none());
+    assert!(view.console.grant.is_none());
+}
+
+#[test]
+fn console_events_become_history_in_order() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    tabs.pages[&1].inner.borrow_mut().console_events = vec![message(1, "a"), message(2, "b")];
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    assert_eq!(texts(&view), ["msg:a", "msg:b"]);
+}
+
+#[test]
+fn history_stays_bounded_under_a_flood_and_reports_loss() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    let mut seq = 0;
+    for tick in 0..60 {
+        let batch: Vec<_> = (0..256)
+            .map(|_| {
+                seq += 1;
+                message(seq, "flood")
+            })
+            .collect();
+        tabs.pages[&1].inner.borrow_mut().console_events = batch;
+        run(&mut view, &tabs, &clock, 100 + tick, 1, false);
+        assert!(view.console.len() <= HISTORY_ENTRIES);
+        assert!(view.console.bytes() <= 1024 * 1024);
+    }
+    assert_eq!(view.console.len(), HISTORY_ENTRIES);
+    assert_eq!(view.console.dropped as usize, 60 * 256 - HISTORY_ENTRIES);
+    tabs.pages[&1].inner.borrow_mut().console_events =
+        vec![InspectorEvent::ConsoleMessagesDropped { count: 7 }];
+    run(&mut view, &tabs, &clock, 400, 1, false);
+    assert_eq!(
+        view.console.dropped as usize,
+        60 * 256 - HISTORY_ENTRIES + 7
+    );
+}
+
+#[test]
+fn nothing_is_sent_for_evaluation_until_the_user_enables_it() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    let resolve = |key| tabs.resolve(key);
+    view.run_command(clock.at(200), "document.title", &resolve);
+    assert!(
+        tabs.pages[&1].inner.borrow().evaluations.is_empty(),
+        "no grant, nothing sent"
+    );
+    assert_eq!(tabs.pages[&1].count(InspectorCommand::Evaluate), 0);
+    assert!(
+        texts(&view).iter().any(|t| t.contains("not enabled")),
+        "{:?}",
+        texts(&view)
+    );
+    assert!(view.console.pending.is_none());
+}
+
+#[test]
+fn an_explicit_grant_allows_evaluation_and_the_result_is_shown() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    let resolve = |key| tabs.resolve(key);
+    view.enable_evaluation(false, &resolve);
+    run(&mut view, &tabs, &clock, 200, 1, false);
+    let current = tabs.pages[&1].document();
+    assert_eq!(view.console.evaluation_enabled(current), Some(false));
+    view.run_command(clock.at(210), "1+1", &resolve);
+    assert!(view.console.pending.is_some());
+    run(&mut view, &tabs, &clock, 220, 1, false);
+    assert!(view.console.pending.is_none());
+    assert_eq!(tabs.pages[&1].inner.borrow().evaluations, ["1+1"]);
+    assert_eq!(texts(&view), ["in:1+1", "out:2"]);
+    // A second command while the first runs is refused locally.
+    tabs.pages[&1].inner.borrow_mut().respond = false;
+    view.run_command(clock.at(230), "2+2", &resolve);
+    view.run_command(clock.at(231), "3+3", &resolve);
+    assert!(
+        texts(&view).last().unwrap().contains("already running"),
+        "{:?}",
+        texts(&view)
+    );
+    assert_eq!(tabs.pages[&1].inner.borrow().evaluations.len(), 2);
+}
+
+#[test]
+fn navigation_revokes_the_grant_and_the_next_command_is_refused() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    let resolve = |key| tabs.resolve(key);
+    view.enable_evaluation(false, &resolve);
+    run(&mut view, &tabs, &clock, 200, 1, false);
+    assert!(
+        view.console
+            .evaluation_enabled(tabs.pages[&1].document())
+            .is_some()
+    );
+    tabs.pages[&1].navigate();
+    run(&mut view, &tabs, &clock, 210, 1, false);
+    assert!(
+        view.console
+            .evaluation_enabled(tabs.pages[&1].document())
+            .is_none(),
+        "the indicator clears"
+    );
+    view.run_command(clock.at(220), "document.cookie", &resolve);
+    assert!(tabs.pages[&1].inner.borrow().evaluations.is_empty());
+    assert!(texts(&view).last().unwrap().contains("not enabled"));
+}
+
+#[test]
+fn a_stale_grant_record_is_not_shown_even_if_the_registry_lagged() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    view.console.grant = Some((tabs.pages[&1].document(), false));
+    tabs.pages[&1].navigate();
+    assert!(
+        view.console
+            .evaluation_enabled(tabs.pages[&1].document())
+            .is_none()
+    );
+}
+
+#[test]
+fn closing_or_switching_tabs_ends_evaluation_authority_and_history() {
+    let tabs = Tabs::new(&[1, 2]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    let resolve = |key| tabs.resolve(key);
+    tabs.pages[&1].inner.borrow_mut().console_events = vec![message(1, "tab one")];
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    view.enable_evaluation(false, &resolve);
+    run(&mut view, &tabs, &clock, 110, 1, false);
+    assert!(view.console.grant.is_some() && view.console.len() == 1);
+    // Select tab 2: tab 1's history and authority are gone before anything of tab 2 is shown.
+    tabs.pages[&2].inner.borrow_mut().respond = false;
+    run(&mut view, &tabs, &clock, 120, 2, false);
+    assert_eq!(view.console.len(), 0);
+    assert!(view.console.grant.is_none());
+    view.run_command(clock.at(121), "document.title", &resolve);
+    assert!(tabs.pages[&2].inner.borrow().evaluations.is_empty());
+    assert!(tabs.pages[&1].inner.borrow().evaluations.is_empty());
+    // Tab 1 still had a grant record, but it is detached from this view for good.
+    assert!(tabs.pages[&1].live().is_none());
+    // Closing the panel clears everything.
+    view.close(&resolve);
+    assert_eq!((view.console.len(), view.console.enabled), (0, false));
+    assert!(view.console.grant.is_none());
+}
+
+#[test]
+fn a_process_restart_clears_history_and_authority_and_reenables_the_console() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    let resolve = |key| tabs.resolve(key);
+    tabs.pages[&1].inner.borrow_mut().console_events = vec![message(1, "old process")];
+    view.enable_evaluation(false, &resolve);
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    tabs.pages[&1].restart(77);
+    for step in 0..6 {
+        run(&mut view, &tabs, &clock, 200 + step, 1, false);
+    }
+    assert!(view.console.grant.is_none());
+    assert!(!texts(&view).iter().any(|t| t.contains("old process")));
+    assert_eq!(
+        tabs.pages[&1].count(InspectorCommand::EnableConsole),
+        2,
+        "once per session"
+    );
+    view.run_command(clock.at(300), "1", &resolve);
+    assert!(tabs.pages[&1].inner.borrow().evaluations.is_empty());
+}
+
+#[test]
+fn evaluation_failures_are_explained_without_overclaiming() {
+    for (code, needle) in [
+        (InspectorErrorCode::Timeout, "not confirmed stopped"),
+        (InspectorErrorCode::Cancelled, "cancelled"),
+        (InspectorErrorCode::StaleDocument, "nothing was executed"),
+        (InspectorErrorCode::Unauthorized, "not authorised"),
+        (InspectorErrorCode::Unavailable, "scripted failure"),
+    ] {
+        let tabs = Tabs::new(&[1]);
+        let clock = Clock(Instant::now());
+        let mut view = connected(&tabs, &clock, 1);
+        let resolve = |key| tabs.resolve(key);
+        view.enable_evaluation(false, &resolve);
+        run(&mut view, &tabs, &clock, 100, 1, false);
+        tabs.pages[&1].inner.borrow_mut().eval_error = Some(code);
+        view.run_command(clock.at(110), "x", &resolve);
+        run(&mut view, &tabs, &clock, 120, 1, false);
+        assert!(view.console.pending.is_none(), "{code:?}");
+        let last = texts(&view).pop().unwrap();
+        assert!(last.contains(needle), "{code:?}: {last}");
+    }
+}
+
+#[test]
+fn a_stalled_page_keeps_the_evaluation_pending_and_the_view_responsive() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    let resolve = |key| tabs.resolve(key);
+    view.enable_evaluation(false, &resolve);
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    tabs.pages[&1].inner.borrow_mut().respond = false;
+    view.run_command(clock.at(110), "while(true){}", &resolve);
+    let started = Instant::now();
+    for step in 1..=300 {
+        run(&mut view, &tabs, &clock, 110 + step * 20, 1, false);
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "ticks never wait"
+    );
+    assert!(view.console.pending.is_some());
+    assert_eq!(view.state, ViewState::NotResponding);
+    // Input stays usable: further commands are refused locally, not queued behind the hang.
+    view.run_command(clock.at(9000), "1", &resolve);
+    assert_eq!(tabs.pages[&1].inner.borrow().evaluations.len(), 1);
+}
+
+#[test]
+fn a_new_document_event_clears_page_output_and_abandons_a_pending_evaluation() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = connected(&tabs, &clock, 1);
+    tabs.pages[&1].inner.borrow_mut().console_events = vec![message(1, "before")];
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    view.console.pending = Some(clock.at(100));
+    tabs.pages[&1].navigate();
+    let document = tabs.pages[&1].document();
+    tabs.pages[&1].inner.borrow_mut().console_events = vec![
+        InspectorEvent::ExecutionContextCreated { document },
+        message(1, "after"),
+    ];
+    run(&mut view, &tabs, &clock, 110, 1, false);
+    let lines = texts(&view);
+    assert!(!lines.iter().any(|t| t == "msg:before"), "{lines:?}");
+    assert!(lines.iter().any(|t| t == "msg:after"), "{lines:?}");
+    assert!(view.console.pending.is_none());
+}
+
+#[test]
+fn a_closed_panel_with_a_console_never_touches_any_page() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = DevtoolsView::default();
+    for step in 0..50 {
+        run(&mut view, &tabs, &clock, step * 100, 1, false);
+    }
+    view.run_command(clock.at(10), "1", &|key| tabs.resolve(key));
+    view.enable_evaluation(false, &|key| tabs.resolve(key));
+    assert_eq!(tabs.pages[&1].calls(), 0);
 }

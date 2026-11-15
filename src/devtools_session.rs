@@ -9,14 +9,17 @@
 //! * a new process for the same tab re-attaches with a new session id;
 //! * a snapshot is shown only if its target and document stamp match what the browser
 //!   currently knows, otherwise nothing is shown.
-use crate::wega_page::InspectorPoll;
+use crate::{
+    devtools_console::{ConsoleLine, ConsoleView},
+    wega_page::InspectorPoll,
+};
 use std::time::{Duration, Instant};
 use wega::engine_protocol::{
     DocumentContext,
     identity::ProcessSessionId,
     inspector::{
-        InspectorCommand, InspectorError, InspectorErrorCode, InspectorEvent, InspectorResponse,
-        InspectorSessionId, StatusSnapshot, TargetId, session::Completed,
+        EvalOutcome, InspectorCommand, InspectorError, InspectorErrorCode, InspectorEvent,
+        InspectorResponse, InspectorSessionId, StatusSnapshot, TargetId, session::Completed,
     },
 };
 
@@ -38,6 +41,15 @@ pub(crate) trait InspectorPort {
     ) -> Result<(), InspectorError>;
     fn close(&self, session: InspectorSessionId);
     fn poll(&self, session: InspectorSessionId) -> InspectorPoll;
+    /// Mint and send an evaluation grant (a trusted user action only).
+    fn grant(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+    ) -> Result<(), InspectorError>;
+    fn revoke_evaluation(&self, session: InspectorSessionId);
+    fn evaluate(&self, session: InspectorSessionId, expression: &str)
+    -> Result<(), InspectorError>;
 }
 
 impl InspectorPort for crate::wega_page::Page {
@@ -59,6 +71,23 @@ impl InspectorPort for crate::wega_page::Page {
     }
     fn poll(&self, session: InspectorSessionId) -> InspectorPoll {
         self.inspector_poll(session)
+    }
+    fn grant(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+    ) -> Result<(), InspectorError> {
+        self.inspector_grant(session, opaque_override)
+    }
+    fn revoke_evaluation(&self, session: InspectorSessionId) {
+        self.inspector_revoke_evaluation(session)
+    }
+    fn evaluate(
+        &self,
+        session: InspectorSessionId,
+        expression: &str,
+    ) -> Result<(), InspectorError> {
+        self.inspector_evaluate(session, expression)
     }
 }
 
@@ -100,6 +129,7 @@ struct Live {
     subscribing: bool,
     snapshot_pending_since: Option<Instant>,
     last_snapshot: Option<Instant>,
+    console_requested: bool,
 }
 
 #[derive(Debug)]
@@ -112,6 +142,7 @@ pub(crate) struct DevtoolsView {
     snapshot: Option<StatusSnapshot>,
     dropped_events: u64,
     next_open: Option<Instant>,
+    pub(crate) console: ConsoleView,
 }
 
 impl Default for DevtoolsView {
@@ -124,6 +155,7 @@ impl Default for DevtoolsView {
             snapshot: None,
             dropped_events: 0,
             next_open: None,
+            console: ConsoleView::default(),
         }
     }
 }
@@ -185,8 +217,83 @@ impl DevtoolsView {
     pub(crate) fn on_tab_closed(&mut self, key: u64) {
         if self.open && self.target_tab == Some(key) {
             self.live = None;
+            self.console.reset_session();
             self.snapshot = None;
             self.state = ViewState::TargetClosed;
+        }
+    }
+
+    fn live_page<'a>(
+        &self,
+        resolve: &dyn Fn(u64) -> Resolved<'a>,
+    ) -> Option<(&'a dyn InspectorPort, InspectorSessionId)> {
+        let live = self.live.as_ref().filter(|live| live.attached)?;
+        match resolve(self.target_tab?) {
+            Resolved::Page(page) => Some((page, live.session)),
+            _ => None,
+        }
+    }
+
+    /// The user's explicit action: authorise evaluation for the current document of the bound
+    /// tab. `opaque_override` is the user's separate confirmation for an opaque or internal page.
+    #[allow(dead_code)] // TEMPORARY: used by the Console panel in the next commit
+    pub(crate) fn enable_evaluation<'a>(
+        &mut self,
+        opaque_override: bool,
+        resolve: &dyn Fn(u64) -> Resolved<'a>,
+    ) {
+        let Some((page, session)) = self.live_page(resolve) else {
+            self.console.notice("The page is not connected.");
+            return;
+        };
+        if let Err(error) = page.grant(session, opaque_override) {
+            self.console
+                .notice(format!("Evaluation was not enabled: {}", error.message));
+        }
+    }
+
+    #[allow(dead_code)] // TEMPORARY: used by the Console panel in the next commit
+    pub(crate) fn revoke_evaluation<'a>(&mut self, resolve: &dyn Fn(u64) -> Resolved<'a>) {
+        if let Some((page, session)) = self.live_page(resolve) {
+            page.revoke_evaluation(session);
+        }
+        self.console.grant = None;
+    }
+
+    /// Run a command in the page. Refused here (and again by the page and the engine) unless a
+    /// grant for this session and document is live.
+    #[allow(dead_code)] // TEMPORARY: used by the Console panel in the next commit
+    pub(crate) fn run_command<'a>(
+        &mut self,
+        now: Instant,
+        expression: &str,
+        resolve: &dyn Fn(u64) -> Resolved<'a>,
+    ) {
+        let expression = expression.trim();
+        if expression.is_empty() {
+            return;
+        }
+        if self.console.pending.is_some() {
+            self.console.notice("An evaluation is already running.");
+            return;
+        }
+        let Some((page, session)) = self.live_page(resolve) else {
+            self.console
+                .notice("The page is not connected; nothing was run.");
+            return;
+        };
+        self.console.remember_command(expression);
+        self.console
+            .push(ConsoleLine::Input(expression.to_string()));
+        match page.evaluate(session, expression) {
+            Ok(()) => self.console.pending = Some(now),
+            Err(error) => self.console.notice(match error.code {
+                InspectorErrorCode::Unauthorized => {
+                    "Evaluation is not enabled for this document. Use \"Enable evaluation\" first."
+                        .to_string()
+                }
+                _ => format!("Not run: {}", error.message),
+            }),
         }
     }
 
@@ -196,6 +303,7 @@ impl DevtoolsView {
         {
             page.close(live.session);
         }
+        self.console.reset_session();
         self.snapshot = None;
     }
 
@@ -226,6 +334,7 @@ impl DevtoolsView {
         let page = match resolve(tab) {
             Resolved::Closed => {
                 self.live = None;
+                self.console.reset_session();
                 self.snapshot = None;
                 self.state = ViewState::TargetClosed;
                 return;
@@ -233,6 +342,7 @@ impl DevtoolsView {
             Resolved::Unloaded => {
                 // Nothing to revoke: the process (and its registry) is already gone.
                 self.live = None;
+                self.console.reset_session();
                 self.snapshot = None;
                 self.state = ViewState::NoPage;
                 return;
@@ -241,6 +351,7 @@ impl DevtoolsView {
         };
         let Some(target) = page.target().filter(|target| target.tab.0 == tab) else {
             self.live = None;
+            self.console.reset_session();
             self.snapshot = None;
             self.state = ViewState::Unavailable("The page has no inspector".into());
             return;
@@ -252,6 +363,7 @@ impl DevtoolsView {
             .is_some_and(|live| live.process != target.process)
         {
             self.live = None;
+            self.console.reset_session();
             self.snapshot = None;
             self.state = ViewState::Connecting;
         }
@@ -270,7 +382,9 @@ impl DevtoolsView {
                         subscribing: false,
                         snapshot_pending_since: None,
                         last_snapshot: None,
+                        console_requested: false,
                     });
+                    self.console.reset_session();
                     self.snapshot = None;
                     self.state = ViewState::Connecting;
                     self.next_open = None;
@@ -290,6 +404,7 @@ impl DevtoolsView {
         if poll.closed {
             // Crash, kill or shutdown: this process can never be inspected again.
             self.live = None;
+            self.console.reset_session();
             self.snapshot = None;
             self.state = ViewState::Unavailable("The content process stopped".into());
             self.next_open = Some(now + RETRY);
@@ -307,8 +422,28 @@ impl DevtoolsView {
                     self.dropped_events = self.dropped_events.saturating_add(count);
                     refresh = true;
                 }
+                // Console-stream events arrive through `poll.console`.
+                _ => {}
             }
         }
+        self.console.new_document(poll.document);
+        for event in poll.console {
+            match event {
+                InspectorEvent::ConsoleMessageAdded(message)
+                | InspectorEvent::ExceptionThrown(message) => {
+                    self.console.push(ConsoleLine::Message(message));
+                }
+                InspectorEvent::ConsoleMessagesDropped { count } => {
+                    self.console.dropped = self.console.dropped.saturating_add(count);
+                }
+                InspectorEvent::ExecutionContextCreated { document } => {
+                    self.console.new_document(document);
+                }
+                _ => {}
+            }
+        }
+        // The browser's own record, never the engine's word.
+        self.console.grant = poll.grant;
         for completed in poll.results {
             self.complete(completed, target, poll.document, page, now, &mut refresh);
             if self.live.is_none() {
@@ -326,6 +461,16 @@ impl DevtoolsView {
         {
             self.snapshot = None;
             refresh = true;
+        }
+        if live.attached && !live.console_requested {
+            // Console history exists whether or not anyone looks, so enabling is just a cursor:
+            // the engine backfills what was logged before this panel opened.
+            if page
+                .request(session, InspectorCommand::EnableConsole)
+                .is_ok()
+            {
+                live.console_requested = true;
+            }
         }
         if live.attached {
             if !live.subscribed && !live.subscribing {
@@ -406,6 +551,40 @@ impl DevtoolsView {
                 live.subscribing = false;
             }
             (InspectorCommand::SubscribeStatus, Err(_)) => live.subscribing = false,
+            (InspectorCommand::EnableConsole, Ok(_)) => self.console.enabled = true,
+            (InspectorCommand::EnableConsole, Err(error)) => {
+                if is_transient(error.code) {
+                    live.console_requested = false;
+                } else {
+                    self.console
+                        .notice(format!("The console is unavailable: {}", error.message));
+                }
+            }
+            (InspectorCommand::GrantEvaluation, Ok(_)) => {}
+            (InspectorCommand::GrantEvaluation, Err(error)) => {
+                self.console
+                    .notice(format!("Evaluation was not enabled: {}", error.message));
+            }
+            (InspectorCommand::Evaluate, Ok(InspectorResponse::Evaluated(outcome))) => {
+                self.console.pending = None;
+                self.console.push(match *outcome {
+                    EvalOutcome::Value { preview } => ConsoleLine::Result(preview),
+                    EvalOutcome::Exception { details } => ConsoleLine::Failure(Box::new(details)),
+                });
+            }
+            (InspectorCommand::Evaluate, Ok(_)) => self.console.pending = None,
+            (InspectorCommand::Evaluate, Err(error)) => {
+                self.console.pending = None;
+                self.console.notice(match error.code {
+                    InspectorErrorCode::Timeout => "No answer from the page in time. The evaluation may still be running: it was not confirmed stopped.".to_string(),
+                    InspectorErrorCode::Cancelled => "The evaluation was cancelled (navigation, detach or the page stopped).".to_string(),
+                    InspectorErrorCode::StaleDocument => "The page navigated before the evaluation ran; nothing was executed.".to_string(),
+                    InspectorErrorCode::Unauthorized | InspectorErrorCode::StaleSession => {
+                        format!("Evaluation is not authorised ({}). Enable it again for this document.", error.message)
+                    }
+                    _ => format!("Evaluation failed: {}", error.message),
+                });
+            }
             (InspectorCommand::GetStatusSnapshot, result) => {
                 live.snapshot_pending_since = None;
                 match result {
