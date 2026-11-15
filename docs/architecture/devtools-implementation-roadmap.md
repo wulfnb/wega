@@ -1,6 +1,6 @@
 # Wega DevTools implementation roadmap (D1–D7)
 
-Plan; **D1 is implemented** (see [`devtools-d1-report.md`](./devtools-d1-report.md)); D2–D7 are not started. Design: [`devtools-design.md`](./devtools-design.md). Evidence: [`devtools-pr58-deletion-audit.md`](./devtools-pr58-deletion-audit.md), [`devtools-current-capabilities.md`](./devtools-current-capabilities.md).
+Plan; **D1 and D2 are implemented** (see [`devtools-d1-report.md`](./devtools-d1-report.md), [`devtools-d2-report.md`](./devtools-d2-report.md)); D3–D7 are not started. Design: [`devtools-design.md`](./devtools-design.md). Evidence: [`devtools-pr58-deletion-audit.md`](./devtools-pr58-deletion-audit.md), [`devtools-current-capabilities.md`](./devtools-current-capabilities.md).
 
 **Complexity scale** (one engineer, rough, includes tests and docs): S ≤ 1 week, M 1–3 weeks, L 3–6 weeks, XL > 6 weeks. These are estimates, not measurements.
 
@@ -63,6 +63,10 @@ Done: protocol module, session authority, engine status backend, UI re-fed throu
 **Complexity.** M–L.
 
 **Non-goals.** The debugger (D5); Runtime on workers; autocompletion; source maps; evaluation in isolated worlds (the engine has one world).
+
+### D2 actual progress and deviations (implemented)
+
+Done: console capture (all five structured methods plus formatter output), bounded per-document history that also retains pre-DevTools output and uncaught errors, side-effect-free previews, exceptions with stack and location, explicit user-granted evaluation with an engine-verified grant, Console panel, real-V8, real-process, sandboxed-worker and native end-to-end tests, benchmarks. Commits `bdb9519`, `05f0d88`, `183aae6`, `6c7ab86`, `4371f47` (+ benchmarks and report). Deviations from the plan above: **no `Runtime.getProperties/releaseObject`, no `awaitPromise`, no `throwOnSideEffect`** (no handles in D2; see report §8); evaluation uses a `GrantEvaluation` token rather than the planned `DevtoolsAuthority` grant names; no credit window (budgeted engine delivery, paced wakeups, drop-oldest queues with in-band markers); `ExceptionThrown` reuses the console message type; `console.*` capture is always on (measured +5 to +14 us per call in release); the V8 inspector is not involved. Open items carried forward: Linux/Windows runs, the whole UI under the sandboxed worker, deciding whether to reduce the always-on capture cost, an evaluation capability for WebDriver (still unauthenticated), object handles (D3/D5).
 
 ## D3: DOM tree, selection, computed styles, CSS editing, layout highlighting
 
