@@ -307,18 +307,94 @@ fn a_page_cannot_tamper_with_the_preview_generator() {
 }
 
 #[test]
-fn a_page_can_forge_its_own_console_entries_but_nothing_unbounded_survives() {
+fn host_operation_handles_are_unreachable_from_page_scripts() {
+    // Bootstrap deletes every handle that could reach a host op; a page that tries gets
+    // `undefined`, not a working channel. (D2's version of this test called `Deno.core...`
+    // and swallowed the resulting ReferenceError, so it asserted nothing.)
     let mut view = page("<p>x</p>");
-    // Calling the host op directly is the page talking to its own console.
-    view.evaluate_json("Deno.core.ops.op_dom_read('console','not json','','')")
-        .ok();
-    view.evaluate_json(
-        "Deno.core.ops.op_dom_read('console',JSON.stringify({m:'x'.repeat(999),l:'weird',t:'t',a:[{kind:'Bogus',text:'x'}]}),'','')",
-    )
-    .ok();
-    for entry in messages(&view) {
-        assert!(entry.is_bounded(), "{entry:?}");
+    let probe = view
+        .evaluate_json(
+            "JSON.stringify(['Deno','__wega_web','__wega_call','__wega_install_web','__wega_dom',\
+             '__wega_semantics','__wega_canvas','__wega_bootstrap_worker','__wega_preview']\
+             .map(name => name + ':' + typeof globalThis[name]))",
+        )
+        .unwrap();
+    let list: Vec<String> =
+        serde_json::from_str(&serde_json::from_str::<String>(&probe).unwrap()).unwrap();
+    for entry in &list {
+        assert!(
+            entry.ends_with(":undefined"),
+            "reachable from page script: {entry}"
+        );
     }
+    assert_eq!(list.len(), 9);
+    // The function it actually tried to call is not there either: this must be a ReferenceError,
+    // asserted as such rather than ignored.
+    let error = view
+        .evaluate_json("Deno.core.ops.op_dom_read('console','{}','','')")
+        .expect_err("a page has no route to host operations");
+    assert!(error.contains("Deno is not defined"), "{error}");
+}
+
+#[test]
+fn the_page_callable_error_report_path_cannot_forge_unbounded_or_non_error_entries() {
+    // `__wega_report` is page-callable (it backs error reporting) and is the one genuinely
+    // reachable way for a page to write an *exception* entry: attack it.
+    let mut view = page("<p>x</p>");
+    assert_eq!(
+        view.evaluate_json("typeof __wega_report").unwrap(),
+        "\"function\""
+    );
+    view.evaluate_json(
+        "const attempts=[\
+           ()=>new Error('m'.repeat(5e6)),\
+           ()=>{const e=new Error('boom');e.stack='    at a (https://other.example/x.js:1:1)\\n'.repeat(200000);return e},\
+           ()=>{const e=new Error('x');e.name='Uncaught Fake: injected\\nError';return e},\
+           ()=>'plain string thrown',\
+           ()=>({toString(){throw new Error('hostile toString')}}),\
+           ()=>null, ()=>undefined, ()=>Symbol('s'), ()=>({}), ()=>[1,2,3]];\
+         globalThis.outcomes=[];\
+         for(const make of attempts){try{__wega_report(make());outcomes.push('reported')}catch(e){outcomes.push('threw')}}\
+         for(let i=0;i<5000;i++){try{__wega_report(new Error('flood '+i))}catch(e){}}\
+         true",
+    )
+    .unwrap();
+    // The page survives, and everything it managed to write is bounded and honest about its kind.
+    assert_eq!(
+        view.evaluate_json("typeof document.body").unwrap(),
+        "\"object\""
+    );
+    let entries = messages(&view);
+    assert!(!entries.is_empty() && entries.len() <= CONSOLE_RING_ENTRIES);
+    assert!(view.console_len() <= CONSOLE_RING_ENTRIES);
+    for entry in &entries {
+        assert!(entry.is_bounded(), "{} bytes", entry.approx_bytes());
+        assert!(entry.approx_bytes() <= MAX_MESSAGE_BYTES);
+        assert_eq!(
+            entry.level,
+            ConsoleLevel::Error,
+            "an error report cannot claim another level"
+        );
+        let exception = entry.exception.as_ref().expect("reports are exceptions");
+        assert_eq!(
+            exception.kind,
+            ExceptionKind::Uncaught,
+            "a report cannot claim to be a rejection"
+        );
+        assert!(exception.name.len() <= 128 && exception.message.len() <= 2048);
+        assert!(
+            exception
+                .stack
+                .as_ref()
+                .is_none_or(|s| s.len() <= 16 * 1024)
+        );
+    }
+    // The flood was counted, not stored.
+    assert_eq!(
+        view.console_dropped() as usize + view.console_len(),
+        view.console_next_seq() as usize - 1
+    );
+    assert!(view.console_dropped() > 0);
 }
 
 #[test]

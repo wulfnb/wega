@@ -248,3 +248,38 @@ fn exceptions_count_in_the_same_bounded_ring() {
             == ExceptionKind::UnhandledRejection
     );
 }
+
+#[test]
+fn byte_accounting_matches_the_stored_messages_after_a_single_size_pass() {
+    // The ring charges each message once, at its serialised size when stored. The only
+    // difference from re-measuring afterwards is the digits of the sequence number.
+    let mut log = ConsoleLog::new();
+    let mut shrunk = 0;
+    for i in 0..400 {
+        // Some entries are over one message's budget and go through shrinking.
+        let text = "w".repeat(if i % 7 == 0 { 3000 } else { 40 });
+        let wide: Vec<_> = (0..8)
+            .map(|k| serde_json::json!({"key": format!("k{k}"), "value": {"kind": "String", "text": text.clone()}}))
+            .collect();
+        let json = serde_json::json!({"m":"log","l":"log","t":text,
+            "a": (0..6).map(|_| serde_json::json!({"kind":"Object","text":"Object","props":wide.clone()})).collect::<Vec<_>>()})
+        .to_string();
+        let before = log.len();
+        log.ingest(&json, "");
+        shrunk += usize::from(log.len() > before);
+    }
+    assert!(shrunk > 0);
+    let stored = log.read_after(0, usize::MAX, usize::MAX);
+    let measured: usize = stored.iter().map(|m| m.approx_bytes()).sum();
+    assert!(measured >= log.bytes(), "{measured} < {}", log.bytes());
+    assert!(
+        measured - log.bytes() <= stored.len() * 8,
+        "accounting drifted: {} vs {measured}",
+        log.bytes()
+    );
+    assert!(
+        stored
+            .iter()
+            .all(|m| m.approx_bytes() <= MAX_MESSAGE_BYTES + 8)
+    );
+}

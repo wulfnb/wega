@@ -90,17 +90,21 @@ impl ConsoleLog {
         self.dropped
     }
 
-    /// Shrink a message until it fits one message's budget: previews first, then text.
-    fn shrink(message: &mut ConsoleMessage) {
-        if message.approx_bytes() <= MAX_MESSAGE_BYTES {
-            return;
+    /// Shrink a message until it fits one message's budget (previews first, then text) and
+    /// return its final serialised size. The common case, a message already within budget,
+    /// serialises exactly once; the size is the unit of every byte budget.
+    fn shrink(message: &mut ConsoleMessage) -> usize {
+        let size = message.approx_bytes();
+        if size <= MAX_MESSAGE_BYTES {
+            return size;
         }
         for arg in &mut message.args {
             arg.props.clear();
             arg.truncated = true;
         }
-        if message.approx_bytes() <= MAX_MESSAGE_BYTES {
-            return;
+        let size = message.approx_bytes();
+        if size <= MAX_MESSAGE_BYTES {
+            return size;
         }
         message.args.truncate(4);
         message.text = clip(&message.text, 1024);
@@ -108,15 +112,17 @@ impl ConsoleLog {
             exception.stack = exception.stack.as_ref().map(|s| clip(s, 2048));
             exception.message = clip(&exception.message, 1024);
         }
-        if message.approx_bytes() > MAX_MESSAGE_BYTES {
-            message.args.clear();
-            message.text = clip(&message.text, 256);
+        let size = message.approx_bytes();
+        if size <= MAX_MESSAGE_BYTES {
+            return size;
         }
+        message.args.clear();
+        message.text = clip(&message.text, 256);
+        message.approx_bytes()
     }
 
     fn push(&mut self, mut message: ConsoleMessage) {
-        Self::shrink(&mut message);
-        let size = message.approx_bytes();
+        let size = Self::shrink(&mut message);
         if size > CONSOLE_RING_BYTES {
             self.dropped = self.dropped.saturating_add(1);
             return;

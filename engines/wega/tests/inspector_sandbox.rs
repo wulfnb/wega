@@ -266,11 +266,12 @@ fn the_inspector_console_and_evaluation_work_inside_the_sandboxed_required_worke
         "{escape:?}"
     );
     // The log from the page load arrived, and so does output from an evaluation.
-    let _ = call(
+    call(
         InspectorCommand::Evaluate,
         eval("console.log('from sandboxed evaluation')", secret),
         id,
-    );
+    )
+    .expect("an evaluation that logs must succeed");
     std::thread::sleep(Duration::from_millis(300));
     while let Ok(event) = receiver.recv_timeout(Duration::from_millis(200)) {
         if let Event::InspectorEvent { event, .. } = event {

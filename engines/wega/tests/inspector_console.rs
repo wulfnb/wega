@@ -2,7 +2,6 @@
 mod support;
 use protocol::{
     Command, Event,
-    identity::{FrameId, ProcessSessionId, TabId},
     inspector::{
         CONSOLE_BATCH_ENTRIES, ConsoleLevel, ConsoleMessage, EvalOutcome, ExceptionKind,
         GrantToken, InspectorArgs, InspectorCommand, InspectorEvent, InspectorPayload,
@@ -847,5 +846,4 @@ fn with_devtools_closed_the_engine_collects_but_emits_nothing_and_old_workers_re
     );
     let result = grant(&mut old, session, TOKEN, true);
     assert_eq!(code(&result), "failed:Unsupported");
-    let _ = (FrameId(1), ProcessSessionId([0; 16]), TabId(0));
 }

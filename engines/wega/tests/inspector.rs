@@ -3,7 +3,7 @@
 //! so these tests exercise the actual authority and correlation code, not a mock.
 mod support;
 use protocol::{
-    Command, DocumentRevision, ErrorCode, Event,
+    Command, DocumentRevision, Event,
     identity::{FrameId, ProcessSessionId, TabId},
     inspector::{
         INSPECTOR_VERSION, InspectorArgs, InspectorCommand, InspectorErrorCode, InspectorEvent,
@@ -546,7 +546,6 @@ fn an_older_protocol_session_is_never_offered_the_inspector() {
         _ => unreachable!(),
     }
     assert!(worker.alive());
-    let _ = ErrorCode::Unsupported;
 }
 
 #[test]
