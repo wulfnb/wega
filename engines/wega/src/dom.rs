@@ -47,6 +47,10 @@ pub(crate) struct Requests {
     pub clipboard_writes: Vec<String>,
 }
 
+/// The deepest nesting a native edit may create. Laying out 121 nested blocks takes about 22 ms
+/// and 122 can hang a script-initiated first flush (roadmap B1), so edits stop at 121.
+pub(crate) const MAX_EDIT_DEPTH: usize = 121;
+
 pub(crate) struct Dom {
     pub network: crate::network::Network,
     pub hubs: crate::workers::Hubs,
@@ -186,6 +190,47 @@ impl Dom {
     }
     pub fn begin_task(&self) {
         self.invalidate();
+    }
+    /// The one place new nodes are checked against the document's node budget. Script host ops
+    /// and native (inspector) edits must both go through it, or they would count separately and
+    /// together exceed the limit. Checks only; `commit_nodes` records them once they exist.
+    pub(crate) fn reserve_nodes(&self, count: usize) -> Result<(), String> {
+        if self.allocated.get().saturating_add(count) > self.limits.dom_nodes {
+            return Err("DOM node limit exceeded".into());
+        }
+        Ok(())
+    }
+    pub(crate) fn commit_nodes(&self, count: usize) {
+        self.allocated
+            .set(self.allocated.get().saturating_add(count));
+    }
+    /// Check and record `bytes` of new text (attribute values, text nodes, markup, style) against
+    /// the text budget in one step.
+    pub(crate) fn charge_text(&self, bytes: usize) -> Result<(), String> {
+        let next = self.used.get().saturating_add(bytes);
+        if next > self.limits.dom_text_bytes {
+            return Err("DOM text allocation budget exceeded".into());
+        }
+        self.used.set(next);
+        Ok(())
+    }
+    /// Reserve everything a native edit will add: `nodes` new nodes, `text_bytes` of new text, and
+    /// a resulting nesting `depth`. The engine has no nesting budget for script (a known gap, see
+    /// `reliability.rs`); native edits may not make it worse than the deepest nesting known to
+    /// lay out, so an inspector edit can never be the way into the layout hang.
+    pub(crate) fn reserve_edit(
+        &self,
+        nodes: usize,
+        text_bytes: usize,
+        depth: usize,
+    ) -> Result<(), String> {
+        if depth > MAX_EDIT_DEPTH {
+            return Err("DOM nesting limit exceeded".into());
+        }
+        self.reserve_nodes(nodes)?;
+        self.charge_text(text_bytes)?;
+        self.commit_nodes(nodes);
+        Ok(())
     }
     fn invalidate(&self) {
         self.revision.set(self.revision.get().wrapping_add(1));
@@ -1068,11 +1113,7 @@ impl Dom {
             "styleSet" | "styleSetImportant" => text(2).len() + text(3).len() + 32,
             _ => 0,
         };
-        let next = self.used.get().saturating_add(charge);
-        if next > self.limits.dom_text_bytes {
-            return Err("DOM text allocation budget exceeded".into());
-        }
-        self.used.set(next);
+        self.charge_text(charge)?;
         let id = |index: usize| {
             text(index)
                 .parse::<u64>()
@@ -1128,7 +1169,7 @@ impl Dom {
             "customConstruct" => {
                 let definition: u64 = text(1).parse().map_err(|_| "Invalid definition ID")?;
                 let name = self.components.borrow().by_id(definition).ok_or("TypeError: Illegal constructor")?.name.clone();
-                if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
+                self.reserve_nodes(1)?;
                 let created = (wega_dom::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from(name)), [])).node_id();
                 self.allocated.set(self.allocated.get()+1); self.invalidate();
                 let mut registry = self.components.borrow_mut(); registry.begin(created.as_u64(), definition)?; registry.complete(created.as_u64(), true)?;
@@ -1147,7 +1188,7 @@ impl Dom {
                 let target = node_id()?;
                 if self.shadows.borrow().root(target.as_u64(), true).is_some() { return Err("NotSupportedError: shadow root already attached".into()); }
                 let tag = doc.node(target.key()).and_then(NodeView::element_name).ok_or("NotSupportedError: invalid shadow host")?.local.to_string();
-                if self.allocated.get() >= self.limits.dom_nodes { return Err("DOM node limit exceeded".into()); }
+                self.reserve_nodes(1)?;
                 let root = (wega_dom::mutate(&mut *doc).create_element(QualName::new(None, ns!(html), LocalName::from("#document-fragment")), [])).node_id();
                 let entry = match self.shadows.borrow_mut().attach(target.as_u64(), root.as_u64(), text(2), text(3) == "true", &tag) {
                     Ok(entry) => entry, Err(error) => { let _ = wega_dom::mutate(&mut *doc).remove_and_drop(root.key()); return Err(error); }
@@ -1247,7 +1288,7 @@ impl Dom {
             },
             "clone"=>{
                 let source=node_id()?;let deep=text(2)=="true";let count=if deep{Self::subtree(&doc,source).len()}else{1};
-                if self.allocated.get().saturating_add(count)>self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
+                self.reserve_nodes(count)?;
                 let bytes=doc.get_node(source).unwrap().outer_html().len();
                 if self.used.get().saturating_add(bytes)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}
                 let cloned=(wega_dom::mutate(&mut *doc).clone_node(source.key(),deep).map_err(|error|match error{wega_dom::MutationError::NotCloneable(_)=>"This node cannot be cloned".to_string(),other=>Self::mutation_error(other)})?).node_id();
@@ -1264,7 +1305,7 @@ impl Dom {
                 json!(child.as_u64().to_string())
             },
             "createNS"|"createComment"|"createFragment"|"createDocument"=>{
-                if self.allocated.get()>=self.limits.dom_nodes{return Err("DOM node limit exceeded".into());}
+                self.reserve_nodes(1)?;
                 let created=match text(0){
                     "createDocument"=>doc.create_node(NodeData::Document(Box::default())),
                     "createComment"=>(wega_dom::mutate(&mut *doc).create_comment(text(1))).node_id(),

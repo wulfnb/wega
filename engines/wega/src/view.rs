@@ -364,6 +364,9 @@ pub struct View {
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
     pub fullscreen: bool,
     console: Rc<RefCell<crate::console::ConsoleLog>>,
+    /// The current document's host environment, kept so native edits charge the same node and
+    /// text counters as script (see `reserve_dom_budget`).
+    dom: Option<Rc<crate::dom::Dom>>,
 }
 impl View {
     pub(crate) fn new(
@@ -431,6 +434,7 @@ impl View {
             permissions: Rc::new(RefCell::new(crate::permissions::PermissionRegistry::new())),
             fullscreen: false,
             console: Rc::new(RefCell::new(crate::console::ConsoleLog::new())),
+            dom: None,
         };
         view.load(url)?;
         Ok(view)
@@ -671,6 +675,7 @@ impl View {
             &self.limits,
             html.len(),
         ));
+        self.dom = Some(dom.clone());
         let mut host = crate::script::create(dom, &self.limits)?;
         host.allow_eval(self.csp().allows_eval());
         host.run(
@@ -999,6 +1004,7 @@ impl View {
             self.navigate.borrow_mut().clear();
             self.activation.set(None);
             self.script = None;
+            self.dom = None;
             self.host.blocking = None;
             self.host.deferred.clear();
             self.host.ordered.clear();
@@ -1438,6 +1444,22 @@ impl View {
     /// Cookies for a download of `url`, as Netscape cookie-file lines.
     pub fn download_cookies(&self, url: &Url) -> String {
         self.network.cookies.netscape(url)
+    }
+    /// Reserve the budget of a **native** (inspector) DOM edit before performing it: `nodes` new
+    /// nodes, `text_bytes` of new text and the resulting nesting `depth`. It charges the very same
+    /// counters script host ops charge, so script and native edits share one budget and a native
+    /// edit can neither exceed the node/text limits nor create nesting beyond what is known to lay
+    /// out (121). Edits must call this first and perform the mutation only on `Ok`.
+    pub fn reserve_dom_budget(
+        &self,
+        nodes: usize,
+        text_bytes: usize,
+        depth: usize,
+    ) -> Result<(), String> {
+        self.dom
+            .as_ref()
+            .ok_or_else(|| "The document has no script environment".to_string())?
+            .reserve_edit(nodes, text_bytes, depth)
     }
     /// The document's mutation epoch (`wega_dom::MutationEpoch`) as an integer: it changes when
     /// the DOM, inline styles or stylesheet set change through any Wega mutation path (script
