@@ -47,7 +47,7 @@ fn the_inspector_console_and_evaluation_work_inside_the_sandboxed_required_worke
                         stream.read_exact(&mut byte).unwrap();
                         header.push(byte[0]);
                     }
-                    let body = "<script>console.log('logged during sandboxed load', {n: 1})</script><p>sandbox</p>";
+                    let body = "<script>console.log('logged during sandboxed load', {n: 1})</script><style>p{color:red!important}</style><p>sandbox</p>";
                     write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
                     break;
                 }
@@ -213,6 +213,74 @@ fn the_inspector_console_and_evaluation_work_inside_the_sandboxed_required_worke
     assert_eq!(
         call(InspectorCommand::Attach, InspectorArgs::None, id),
         Ok(InspectorResponse::Attached)
+    );
+    // CSS reads share existing authorization and do not need an evaluation grant.
+    use protocol::inspector::styles::{StyleItem, StyleQuery};
+    let InspectorResponse::Style(sheets) = call(
+        InspectorCommand::InspectStyle,
+        InspectorArgs::Style {
+            query: StyleQuery::Sheets { offset: 0 },
+        },
+        id,
+    )
+    .unwrap() else {
+        panic!()
+    };
+    assert!(sheets.is_bounded());
+    let StyleItem::Sheet { reference, .. } = &sheets.items[0] else {
+        panic!()
+    };
+    let InspectorResponse::Style(rules) = call(
+        InspectorCommand::InspectStyle,
+        InspectorArgs::Style {
+            query: StyleQuery::Rules {
+                parent: reference.clone(),
+                offset: 0,
+            },
+        },
+        id,
+    )
+    .unwrap() else {
+        panic!()
+    };
+    assert!(rules.is_bounded());
+    let StyleItem::Rule { reference, .. } = &rules.items[0] else {
+        panic!()
+    };
+    let InspectorResponse::Style(decls) = call(
+        InspectorCommand::InspectStyle,
+        InspectorArgs::Style {
+            query: StyleQuery::Declarations {
+                rule: reference.clone(),
+                offset: 0,
+            },
+        },
+        id,
+    )
+    .unwrap() else {
+        panic!()
+    };
+    assert!(decls.items.iter().any(|i| matches!(
+        i,
+        StyleItem::Declaration {
+            important: Some(true),
+            ..
+        }
+    )));
+    let mut forged = reference.clone();
+    forged.scope.session = InspectorSessionId(99);
+    assert!(
+        call(
+            InspectorCommand::InspectStyle,
+            InspectorArgs::Style {
+                query: StyleQuery::Declarations {
+                    rule: forged,
+                    offset: 0
+                }
+            },
+            id
+        )
+        .is_err_and(|s| s.starts_with("Unauthorized"))
     );
     // Read-only DOM needs the existing session, but never an evaluation grant.
     let InspectorResponse::Dom(root) =

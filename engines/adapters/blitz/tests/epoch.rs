@@ -360,11 +360,8 @@ fn stylesheet_set_changes_are_part_of_the_epoch() {
 }
 
 #[test]
-fn known_gap_rule_edits_through_the_vendored_cssom_do_not_step_the_epoch() {
-    // The vendored CSSOM edits a sheet in place and does not bump Blitz's stylesheet generation
-    // (checked below), and it reaches the document through `DerefMut`, outside the Wega mutator.
-    // Nothing in Wega calls it today. A future rule-edit API must go through a Wega-owned wrapper
-    // that calls `record_external_mutation`; when such a wrapper exists, replace this test.
+fn rule_edits_through_the_vendored_cssom_step_the_epoch() {
+    // CSSOM now participates in the same mutation epoch.
     let mut doc = doc();
     let parent = key(&doc, "b");
     let style = wega_dom::mutate(&mut doc).create_element(attr("style"), []);
@@ -386,19 +383,8 @@ fn known_gap_rule_edits_through_the_vendored_cssom_do_not_step_the_epoch() {
         inserted.is_ok(),
         "the CSSOM insert itself must succeed: {inserted:?}"
     );
-    assert_eq!(
-        doc.stylesheet_generation(),
-        generation,
-        "Blitz does not count in-sheet rule edits"
-    );
-    assert_eq!(
-        epoch(&doc),
-        before,
-        "so the epoch does not see them either (known gap)"
-    );
-    // The hook for a Wega-owned wrapper makes the epoch honest again.
-    doc.record_external_mutation();
-    assert!(epoch(&doc) != before);
+    assert_ne!(doc.stylesheet_generation(), generation);
+    assert_ne!(epoch(&doc), before);
 }
 
 #[test]

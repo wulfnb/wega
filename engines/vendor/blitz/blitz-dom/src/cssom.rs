@@ -324,6 +324,7 @@ impl BaseDocument {
             return false;
         };
         if sheet.0.set_disabled(disabled) {
+            self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
             self.stylist
                 .force_stylesheet_origins_dirty(OriginSet::all());
         }
@@ -536,6 +537,7 @@ impl BaseDocument {
         let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
         self.stylist
             .rule_changed(&sheet, &new_rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(index)
     }
 
@@ -588,6 +590,7 @@ impl BaseDocument {
         let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
         self.stylist
             .rule_changed(&sheet, &removed_rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(())
     }
 
@@ -799,6 +802,7 @@ impl BaseDocument {
         let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
         self.stylist
             .rule_changed(&sheet, &rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(())
     }
 
@@ -853,6 +857,7 @@ impl BaseDocument {
         let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
         self.stylist
             .rule_changed(&sheet, &rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(removed_value)
     }
 
@@ -930,6 +935,7 @@ impl BaseDocument {
             RuleChangeKind::Generic,
             &ancestor_refs,
         );
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(())
     }
 
@@ -967,6 +973,7 @@ impl BaseDocument {
         };
         self.stylist
             .rule_changed(&sheet, &rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(())
     }
 }

@@ -15,6 +15,7 @@ use wega_protocol::{
     },
 };
 pub mod dom;
+pub mod styles;
 
 /// Everything a snapshot needs, gathered by the port only when a snapshot was requested.
 #[derive(Clone, Debug)]
@@ -44,6 +45,17 @@ pub struct Sampled {
 
 /// What the backend needs from the page. Implemented by the engine's `View`.
 pub trait PagePort {
+    fn inspect_style(
+        &self,
+        scope: wega_protocol::inspector::styles::StyleScope,
+        query: &wega_protocol::inspector::styles::StyleQuery,
+    ) -> Result<wega_protocol::inspector::styles::StylePage, InspectorError> {
+        let _ = (scope, query);
+        Err(refuse(
+            InspectorErrorCode::Unavailable,
+            "Style inspection unavailable",
+        ))
+    }
     fn inspect_dom(
         &self,
         document: DocumentContext,
@@ -139,6 +151,28 @@ impl Backend {
     ) -> Result<InspectorResponse, InspectorError> {
         self.sessions.authorize(request, self.own)?;
         match request.command {
+            InspectorCommand::InspectStyle => {
+                let InspectorArgs::Style { query } = &request.args else {
+                    return Err(refuse(
+                        InspectorErrorCode::InvalidPayload,
+                        "Missing style query",
+                    ));
+                };
+                if current.1 {
+                    return Err(refuse(InspectorErrorCode::Busy, "Document is loading"));
+                }
+                port.inspect_style(
+                    wega_protocol::inspector::styles::StyleScope {
+                        target: self.own,
+                        session: request.session,
+                        document: current.0,
+                        epoch: 0,
+                        generation: 0,
+                    },
+                    query,
+                )
+                .map(|p| InspectorResponse::Style(Box::new(p)))
+            }
             InspectorCommand::GetDomRoot
             | InspectorCommand::GetDomChildren
             | InspectorCommand::DescribeDomNode => {

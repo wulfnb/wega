@@ -407,6 +407,13 @@ impl HostSessions {
             return false;
         }
         match &result {
+            Ok(InspectorResponse::Style(page))
+                if !page.is_bounded()
+                    || page.scope.session != session
+                    || page.scope.target != self.registry.target() =>
+            {
+                return false;
+            }
             Ok(InspectorResponse::Dom(page)) if !page.is_bounded() => return false,
             Ok(InspectorResponse::Evaluated(outcome)) if !outcome.is_bounded() => return false,
             Ok(InspectorResponse::ConsoleHistory { messages, .. })

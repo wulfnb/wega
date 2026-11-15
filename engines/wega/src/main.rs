@@ -977,7 +977,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     };
                     match request.decode().and_then(|decoded| {
-                        if decoded.command.needs_dom_version() && version < 24 {
+                        if decoded.command.needs_style_version() && version < 25 {
+                            Err(protocol::inspector::InspectorError::new(
+                                protocol::inspector::InspectorErrorCode::UnsupportedVersion,
+                                "Styles need protocol 25",
+                            ))
+                        } else if decoded.command.needs_dom_version() && version < 24 {
                             Err(protocol::inspector::InspectorError::new(
                                 protocol::inspector::InspectorErrorCode::UnsupportedVersion,
                                 "DOM inspection needs protocol version 24",

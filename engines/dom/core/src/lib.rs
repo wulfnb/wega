@@ -20,6 +20,7 @@
 //!   finished or dropped. There is no rollback and no staging.
 #![forbid(unsafe_code)]
 pub mod input;
+pub mod inspect;
 pub mod layout;
 pub mod render;
 pub mod style;

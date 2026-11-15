@@ -14,10 +14,11 @@ use serde::{Deserialize, Serialize};
 pub mod dom;
 pub mod policy;
 pub mod session;
+pub mod styles;
 
 /// Message-set version, negotiated inside `Capability::Inspector`, independent of the
 /// engine protocol `VERSION`.
-pub const INSPECTOR_VERSION: u32 = 3;
+pub const INSPECTOR_VERSION: u32 = 4;
 pub const DOM_VERSION: u32 = 3;
 /// First inspector message-set version that carries console and evaluation commands.
 pub const CONSOLE_VERSION: u32 = 2;
@@ -99,12 +100,17 @@ pub enum InspectorCommand {
     GrantEvaluation,
     RevokeEvaluation,
     Evaluate,
+    InspectStyle,
     GetDomRoot,
     GetDomChildren,
     DescribeDomNode,
 }
 
 impl InspectorCommand {
+    pub fn needs_style_version(self) -> bool {
+        self == Self::InspectStyle
+    }
+
     pub fn needs_dom_version(self) -> bool {
         matches!(
             self,
@@ -183,6 +189,9 @@ pub enum InspectorArgs {
         expression: String,
         grant: GrantToken,
     },
+    Style {
+        query: styles::StyleQuery,
+    },
     DomNode {
         node: dom::InspectorNodeId,
     },
@@ -215,6 +224,12 @@ impl InspectorRequest {
                 message,
             ))
         };
+        if self.command.needs_style_version() && self.version < styles::STYLE_VERSION {
+            return Err(InspectorError::new(
+                InspectorErrorCode::UnsupportedVersion,
+                "Styles require inspector 4",
+            ));
+        }
         if self.command.needs_dom_version() && self.version < DOM_VERSION {
             return Err(InspectorError::new(
                 InspectorErrorCode::UnsupportedVersion,
@@ -228,6 +243,7 @@ impl InspectorRequest {
             ));
         }
         match (&self.command, &self.args) {
+            (C::InspectStyle, InspectorArgs::Style { query }) if query.valid() => Ok(()),
             (C::GetDomChildren, InspectorArgs::DomChildren { limit, .. }) => {
                 if *limit == 0 || *limit > dom::MAX_DOM_NODES as u32 {
                     return bad("DOM page size out of range");
@@ -585,6 +601,7 @@ pub enum InspectorResponse {
     EvaluationRevoked,
     Evaluated(Box<EvalOutcome>),
     Dom(Box<dom::DomPage>),
+    Style(Box<styles::StylePage>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

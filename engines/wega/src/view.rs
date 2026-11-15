@@ -2663,6 +2663,14 @@ fn clip_text(text: &str, max: usize) -> String {
 }
 
 impl crate::inspector::PagePort for View {
+    fn inspect_style(
+        &self,
+        scope: wega_protocol::inspector::styles::StyleScope,
+        query: &wega_protocol::inspector::styles::StyleQuery,
+    ) -> Result<wega_protocol::inspector::styles::StylePage, wega_protocol::inspector::InspectorError>
+    {
+        crate::inspector::styles::inspect(&*self.document.borrow(), scope, query)
+    }
     fn inspect_dom(
         &self,
         document: wega_protocol::DocumentContext,

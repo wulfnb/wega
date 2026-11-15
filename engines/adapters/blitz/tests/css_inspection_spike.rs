@@ -109,9 +109,9 @@ fn legacy_group_serialization_and_cssom_epoch_gap_are_measured() {
     let before = d.stylesheet_generation();
     d.stylesheet_insert_rule(owner, &[], "p{color:red}", 1)
         .unwrap();
-    assert_eq!(
+    assert_ne!(
         d.stylesheet_generation(),
         before,
-        "baseline gap, close before stamped rule refs"
+        "D3-B closes the runtime-proven baseline gap"
     );
 }
