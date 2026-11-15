@@ -11,7 +11,8 @@ cp tests/fixtures/interaction.html "$work/"
 trap 'kill "$(cat "$work/pid")" 2>/dev/null || true' EXIT
 sleep 1
 engine=${WEGA_ENGINE_BINARY:-engines/target/debug/wega-engine}
-WEGA_TEST_ALLOW_LOOPBACK=1 WEGA_UNSAFE_DEVELOPMENT_WORKER=1 WEGA_ENGINE_BINARY="$PWD/$engine" \
+case "$engine" in /*) ;; *) engine="$PWD/$engine" ;; esac
+WEGA_TEST_ALLOW_LOOPBACK=1 WEGA_UNSAFE_DEVELOPMENT_WORKER=1 WEGA_ENGINE_BINARY="$engine" \
     timeout 120 target/debug/wega --inspector-test --engine wega --profile-dir "$work/profile" \
     http://127.0.0.1:8791/interaction.html | tee "$work/log"
 grep -q "INSPECTOR TEST PASSED" "$work/log"

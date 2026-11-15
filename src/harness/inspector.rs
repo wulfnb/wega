@@ -9,6 +9,8 @@ pub struct Test {
     first_document: u64,
     first_session: Option<InspectorSessionId>,
     stalled_at: Option<Instant>,
+    unresponsive_after: Option<Duration>,
+    resumed_at: Option<Instant>,
     frames_while_stalled: u64,
     worker: u32,
 }
@@ -21,6 +23,8 @@ impl Test {
             first_document: 0,
             first_session: None,
             stalled_at: None,
+            unresponsive_after: None,
+            resumed_at: None,
             frames_while_stalled: 0,
             worker: 0,
         }
@@ -200,6 +204,9 @@ impl crate::browser::Browser {
                     self.harness.inspector_test.as_ref().unwrap().worker,
                     "-CONT",
                 );
+                let test = self.harness.inspector_test.as_mut().unwrap();
+                test.unresponsive_after = test.stalled_at.map(|at| at.elapsed());
+                test.resumed_at = Some(Instant::now());
                 next(self, 6);
             }
             6 => {
@@ -209,9 +216,13 @@ impl crate::browser::Browser {
                 }
                 let test = self.harness.inspector_test.as_ref().unwrap();
                 println!(
-                    "INSPECTOR TEST PASSED: attach, real status snapshot, navigation without stale data, detach revokes, reattach with a new session, stalled engine reported without freezing the UI ({} UI polls in {} ms)",
+                    "INSPECTOR TEST PASSED: attach, real status snapshot, navigation without stale data, detach revokes, reattach with a new session, stalled engine reported without freezing the UI"
+                );
+                println!(
+                    "inspector-test: stalled worker reported NotResponding after {} ms with {} UI polls; recovered {} ms after SIGCONT",
+                    test.unresponsive_after.map_or(0, |d| d.as_millis()),
                     test.frames_while_stalled,
-                    test.stalled_at.map_or(0, |at| at.elapsed().as_millis())
+                    test.resumed_at.map_or(0, |at| at.elapsed().as_millis())
                 );
                 self.harness.inspector_test = None;
                 event_loop.exit();
