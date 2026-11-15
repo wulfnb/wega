@@ -56,7 +56,11 @@ impl StyleView {
     }
     pub fn select(&mut self, node: Option<InspectorNodeId>) {
         if self.selection != node {
+            let binding = self.binding;
+            let pending = self.pending.take();
             self.reset();
+            self.binding = binding;
+            self.pending = pending;
             self.selection = node;
         }
     }
@@ -124,9 +128,18 @@ impl StyleView {
         self.select(selection);
         let binding = (target, session, document, epoch);
         if self.binding != Some(binding) {
+            let same_authority = self
+                .binding
+                .is_some_and(|b| b.0 == target && b.1 == session && b.2 == document);
+            let pending = if same_authority {
+                self.pending.take()
+            } else {
+                None
+            };
             let selection = self.selection;
             self.reset();
             self.selection = selection;
+            self.pending = pending;
             self.binding = Some(binding);
         }
         if self
@@ -322,6 +335,25 @@ mod tests {
         s.target.process = ProcessSessionId([9; 16]);
         v.complete(Ok(page(s, q)));
         assert!(v.page.is_none());
+    }
+    #[test]
+    fn selection_and_epoch_churn_wait_for_the_single_outstanding_read() {
+        let (mut v, q, s, now) = prepared();
+        let node = Some(InspectorNodeId {
+            document: s.document,
+            key: 7,
+        });
+        assert!(
+            v.prepare(now, s.target, s.session, s.document, s.epoch + 1, node)
+                .is_none()
+        );
+        assert!(v.pending());
+        v.complete(Ok(page(s, q)));
+        assert!(v.page.is_none());
+        assert!(
+            v.prepare(now, s.target, s.session, s.document, s.epoch + 1, node)
+                .is_some()
+        );
     }
     #[test]
     fn navigation_session_process_selection_and_epoch_clear_cached_rules() {
