@@ -125,6 +125,8 @@ impl Fake {
             protocol_version: 22,
             inspector_version: INSPECTOR_VERSION,
             engine: "fake".into(),
+            mutation_epoch: 0,
+            layout_pending: false,
         }
     }
 }

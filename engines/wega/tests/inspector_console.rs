@@ -928,3 +928,58 @@ fn with_devtools_closed_the_engine_collects_but_emits_nothing_and_old_workers_re
     let result = grant(&mut old, session, TOKEN, true);
     assert_eq!(code(&result), "failed:Unsupported");
 }
+
+#[test]
+fn the_snapshot_reports_the_mutation_epoch_and_layout_state_of_the_current_document() {
+    let mut worker = Worker::start();
+    let session = worker.attach();
+    load(&mut worker, 1, "<p id=a>one</p><p>two</p>");
+    let first = worker.snapshot(session);
+    assert!(
+        first.mutation_epoch > 0,
+        "parsing mutated through the contract"
+    );
+    // Reads and no-ops: unchanged.
+    for read in [
+        "document.getElementById('a').outerHTML",
+        "document.body.getBoundingClientRect().height",
+        "document.getElementById('a').setAttribute('id','a')",
+    ] {
+        worker.evaluate(read).unwrap();
+        assert_eq!(
+            worker.snapshot(session).mutation_epoch,
+            first.mutation_epoch,
+            "{read}"
+        );
+    }
+    // A script mutation, then a native-contract mutation (the same entry point an inspector edit
+    // will use) is not reachable from here; the script path proves the wiring end to end.
+    worker
+        .evaluate("document.getElementById('a').setAttribute('data-x','1')")
+        .unwrap();
+    let changed = worker.snapshot(session);
+    assert_ne!(changed.mutation_epoch, first.mutation_epoch);
+    assert_eq!(
+        changed.document, first.document,
+        "same document: only the epoch moved"
+    );
+    // Layout settles by itself (the worker paints); once it has, nothing is pending.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while worker.snapshot(session).layout_pending {
+        assert!(Instant::now() < deadline, "layout never settled");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // A new document is a new identity *and* a new epoch space: loading the same small page in a
+    // second process gives the same epoch, so it counts the document's own history, not the
+    // previous document's.
+    load(&mut worker, 2, "<i></i>");
+    let replaced = worker.snapshot(session);
+    assert_ne!(replaced.document, changed.document);
+    let mut other = Worker::start_with(8, 8, protocol::VERSION);
+    let other_session = other.attach();
+    load(&mut other, 1, "<i></i>");
+    assert_eq!(
+        replaced.mutation_epoch,
+        other.snapshot(other_session).mutation_epoch
+    );
+}

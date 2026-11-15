@@ -319,6 +319,15 @@ pub struct StatusSnapshot {
     pub protocol_version: u32,
     pub inspector_version: u32,
     pub engine: String,
+    /// The document's mutation epoch (`wega_dom::MutationEpoch`): changes whenever the DOM,
+    /// inline styles or stylesheet set change. Meaningful only together with `document`
+    /// (a replacement document starts again); compare for inequality, never for order.
+    #[serde(default)]
+    pub mutation_epoch: u64,
+    /// Style or layout work is pending, so geometry reports an older layout (or none yet). The
+    /// inspector never requests a flush: reading a pathological document must not hang it.
+    #[serde(default)]
+    pub layout_pending: bool,
 }
 
 impl StatusSnapshot {

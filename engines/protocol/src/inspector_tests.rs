@@ -365,6 +365,8 @@ fn snapshot(target: TargetId) -> InspectorResponse {
             protocol_version: crate::VERSION,
             inspector_version: INSPECTOR_VERSION,
             engine: "wega-engine".into(),
+            mutation_epoch: 0,
+            layout_pending: false,
         }
         .bounded(),
     ))

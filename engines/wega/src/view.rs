@@ -1439,6 +1439,18 @@ impl View {
     pub fn download_cookies(&self, url: &Url) -> String {
         self.network.cookies.netscape(url)
     }
+    /// The document's mutation epoch (`wega_dom::MutationEpoch`) as an integer: it changes when
+    /// the DOM, inline styles or stylesheet set change through any Wega mutation path (script
+    /// host ops, the HTML parser, native edits) and starts again with each new document.
+    pub fn mutation_epoch(&self) -> u64 {
+        use wega_dom::MutationClock as _;
+        self.document.borrow().mutation_epoch().as_u64()
+    }
+    /// Whether geometry currently reflects an older layout (or none). Never flushes.
+    pub fn layout_pending(&self) -> bool {
+        use wega_dom::layout::GeometryAccess as _;
+        self.document.borrow().layout_pending()
+    }
     pub fn node_count(&self) -> usize {
         TreeTraverser::new(&self.document.borrow()).count()
     }
@@ -2640,6 +2652,8 @@ impl crate::inspector::PagePort for View {
             js_heap_bytes: sampled.js_heap_bytes,
             can_go_back: history.0,
             can_go_forward: history.1,
+            mutation_epoch: self.mutation_epoch(),
+            layout_pending: self.layout_pending(),
         }
     }
     fn console_first_seq(&self) -> u64 {

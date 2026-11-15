@@ -97,6 +97,8 @@ impl PagePort for Port {
             js_heap_bytes: sampled.js_heap_bytes,
             can_go_back: false,
             can_go_forward: true,
+            mutation_epoch: 7,
+            layout_pending: false,
         }
     }
     fn console_first_seq(&self) -> u64 {

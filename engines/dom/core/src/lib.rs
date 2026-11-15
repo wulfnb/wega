@@ -27,6 +27,39 @@ pub mod style;
 use html5ever::QualName;
 use url::Url;
 
+/// The identity of a document's *state*: a counter that changes whenever the document is
+/// successfully changed through Wega's mutation contract (tree, text, attributes, inline style)
+/// or its stylesheet set changes. It is deliberately **not** document identity: a replacement
+/// document is a new object whose epoch starts again, so an epoch is only meaningful together
+/// with the stamp (`DocumentContext`) of the document it was read from.
+///
+/// Semantics (fixed by tests in `wega-adapter-blitz`):
+/// - one step per successful state-changing operation; a no-op (setting an attribute to the
+///   value it already has, removing an absent attribute, appending nothing) does not change it;
+///   a failed operation never changes it; creating a detached node does not change it;
+/// - **wrapping**: after 2^64 steps it wraps. Consumers must compare for *inequality only*
+///   (never order two epochs), so a wrap is indistinguishable from "no change" only if exactly
+///   2^64 steps happen between two reads, which is not reachable;
+/// - not covered (documented gap, not a bug): control state driven by user input or form
+///   submission (`value`, `checked`), focus/hover pseudo-state, scroll, animation-driven
+///   computed style, and image/font arrival. They do not change the DOM the inspector shows.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MutationEpoch(u64);
+
+impl MutationEpoch {
+    pub const fn from_u64(value: u64) -> Self {
+        Self(value)
+    }
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
+/// A document that reports its [`MutationEpoch`].
+pub trait MutationClock: DocumentView {
+    fn mutation_epoch(&self) -> MutationEpoch;
+}
+
 /// Stable node identity. Round-trips through `u64` and its decimal string form.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeKey(u64);

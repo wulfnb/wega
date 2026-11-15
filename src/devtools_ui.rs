@@ -114,6 +114,15 @@ impl Browser {
                 ));
             }
             ui.monospace(format!("DOM Nodes: {}", snapshot.nodes));
+            ui.monospace(format!(
+                "Layout: {} · DOM change counter: {}",
+                if snapshot.layout_pending {
+                    "pending"
+                } else {
+                    "current"
+                },
+                snapshot.mutation_epoch
+            ));
             ui.monospace(format!("JS Heap: {} KiB", snapshot.js_heap_bytes / 1024));
             ui.monospace(format!(
                 "History: back {} · forward {}",

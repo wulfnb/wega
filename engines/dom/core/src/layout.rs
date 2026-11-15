@@ -157,6 +157,11 @@ pub trait GeometryAccess: DocumentView {
     fn content_box(&self, key: NodeKey) -> Result<ContentBox, LayoutError>;
     /// The viewport size, zoom and scroll position.
     fn viewport(&self) -> ViewportGeometry;
+    /// Whether style or layout work is pending, so that the readers above report an *older*
+    /// layout (or none at all, before the first one). The readers never flush; a caller that must
+    /// not trigger layout (an inspector) reads this instead and reports "layout pending" rather
+    /// than asking for a flush, which on a pathological document may never finish.
+    fn layout_pending(&self) -> bool;
 }
 
 /// Hit-testing against the current layout.

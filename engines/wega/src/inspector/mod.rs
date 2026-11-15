@@ -27,6 +27,10 @@ pub struct StatusInput {
     pub js_heap_bytes: u64,
     pub can_go_back: bool,
     pub can_go_forward: bool,
+    /// `wega_dom::MutationClock::mutation_epoch` of the document, as a plain integer.
+    pub mutation_epoch: u64,
+    /// `wega_dom::layout::GeometryAccess::layout_pending`.
+    pub layout_pending: bool,
 }
 
 /// Values only the engine's main loop owns (periodic samples, the requested viewport).
@@ -172,6 +176,8 @@ impl Backend {
                         js_heap_bytes: input.js_heap_bytes,
                         can_go_back: input.can_go_back,
                         can_go_forward: input.can_go_forward,
+                        mutation_epoch: input.mutation_epoch,
+                        layout_pending: input.layout_pending,
                         protocol_version: self.protocol_version,
                         inspector_version: INSPECTOR_VERSION,
                         engine: engine_name(),

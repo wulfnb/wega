@@ -18,8 +18,8 @@ use wega_dom::layout::{
 use wega_dom::render::PaintSource;
 use wega_dom::style::{StyleAccess, StyleControl, StyleError};
 use wega_dom::{
-    DocumentMutation, DocumentView, MutationError, Mutator, NewAttribute, NodeKey, NodeKind,
-    NodeView,
+    DocumentMutation, DocumentView, MutationClock, MutationEpoch, MutationError, Mutator,
+    NewAttribute, NodeKey, NodeKind, NodeView,
 };
 
 /// `NodeKey` and Blitz's `NodeId` are both foreign to this module's eventual crate, so they
@@ -48,18 +48,41 @@ impl ToNodeId for NodeKey {
 /// extra allocation or indirection) in a local type so the Wega contract can be implemented
 /// for it. It dereferences to `BaseDocument`, so the layout, paint, style and form APIs that
 /// are not behind the contract yet stay reachable.
-pub struct BlitzDocument(BaseDocument);
+pub struct BlitzDocument(BaseDocument, u64);
 impl BlitzDocument {
     pub fn new(document: BaseDocument) -> Self {
-        Self(document)
+        Self(document, 0)
     }
     pub fn into_inner(self) -> BaseDocument {
         self.0
     }
+    /// Record that a state-changing operation was applied to the document *outside* the Wega
+    /// mutation contract (a Wega-owned wrapper over a Blitz API reached through `DerefMut`, such
+    /// as a future stylesheet-rule edit). Blitz does not bump its stylesheet generation for edits
+    /// inside an existing sheet, so such a wrapper must call this once per successful change.
+    pub fn record_external_mutation(&mut self) {
+        self.1 = self.1.wrapping_add(1);
+    }
+    /// Start the mutation counter at `epoch`. Only for tests of its wrap-around behaviour.
+    #[doc(hidden)]
+    pub fn with_mutation_epoch(mut self, epoch: u64) -> Self {
+        self.1 = epoch;
+        self
+    }
+}
+
+impl MutationClock for BlitzDocument {
+    /// The adapter's own count of successful mutations through the Wega contract, plus Blitz's
+    /// stylesheet-set generation, so CSSOM changes (which also reach the document through
+    /// `DerefMut`) are covered too. Both only ever step forward, so their sum changes whenever
+    /// either does.
+    fn mutation_epoch(&self) -> MutationEpoch {
+        MutationEpoch::from_u64(self.1.wrapping_add(self.0.stylesheet_generation()))
+    }
 }
 impl From<BaseDocument> for BlitzDocument {
     fn from(document: BaseDocument) -> Self {
-        Self(document)
+        Self(document, 0)
     }
 }
 impl std::ops::Deref for BlitzDocument {
@@ -109,15 +132,18 @@ impl DocumentSetup {
 impl BlitzDocument {
     /// A document parsed from `html` in one pass (the engine's initial blank page).
     pub fn from_html(html: &str, setup: DocumentSetup) -> Self {
-        Self(HtmlDocument::from_html(html, setup.config()).into_inner())
+        Self(
+            HtmlDocument::from_html(html, setup.config()).into_inner(),
+            0,
+        )
     }
     /// A document parsed from XML in one pass.
     pub fn from_xml(xml: &str, setup: DocumentSetup) -> Self {
-        Self(HtmlDocument::from_xml(xml, setup.config()).into_inner())
+        Self(HtmlDocument::from_xml(xml, setup.config()).into_inner(), 0)
     }
     /// An empty document that the incremental HTML parser then fills.
     pub fn empty(setup: DocumentSetup) -> Self {
-        Self(BaseDocument::new(setup.config()))
+        Self(BaseDocument::new(setup.config()), 0)
     }
 }
 
@@ -199,7 +225,7 @@ impl<'a> NodeView<'a> for BlitzNode<'a> {
 impl DocumentMutation for BlitzDocument {
     type Mutator<'a> = BlitzMutator<'a>;
     fn mutate(&mut self) -> BlitzMutator<'_> {
-        BlitzMutator(BaseDocument::mutate(&mut self.0))
+        BlitzMutator(BaseDocument::mutate(&mut self.0), &mut self.1)
     }
     fn refresh_style_element(&mut self, key: NodeKey) {
         // A `<style>` outside the document (a fragment, a template, a shadow tree) has no
@@ -364,6 +390,23 @@ impl GeometryAccess for BlitzDocument {
             padding_left: layout.padding.left as f64,
             padding_top: layout.padding.top as f64,
         })
+    }
+    fn layout_pending(&self) -> bool {
+        let root = self.0.root_node();
+        // Before the first resolve no element has a style; afterwards pending work shows as
+        // dirty descendants or damage on the root, and a document waiting on render-blocking
+        // resources is not resolved at all.
+        // `root_element()` unwraps, and an empty document (before parsing) has no element child.
+        let unresolved = root
+            .children
+            .iter()
+            .filter_map(|id| self.0.get_node(*id))
+            .find(|node| node.is_element())
+            .is_none_or(|element| element.primary_styles().is_none());
+        unresolved
+            || self.0.has_pending_critical_resources()
+            || root.has_dirty_descendants()
+            || root.damage().is_some_and(|damage| !damage.is_empty())
     }
     fn viewport(&self) -> ViewportGeometry {
         let viewport = self.0.viewport();
@@ -656,7 +699,7 @@ impl StyleControl for BlitzDocument {
 
 /// Blitz's `DocumentMutator` behind the Wega mutation contract. It has no `Drop` of its
 /// own: dropping it drops the inner mutator, which runs Blitz's deferred work.
-pub struct BlitzMutator<'a>(DocumentMutator<'a>);
+pub struct BlitzMutator<'a>(DocumentMutator<'a>, &'a mut u64);
 
 fn attributes(attrs: impl IntoIterator<Item = NewAttribute>) -> Vec<Attribute> {
     attrs
@@ -669,6 +712,19 @@ fn attributes(attrs: impl IntoIterator<Item = NewAttribute>) -> Vec<Attribute> {
 }
 
 impl BlitzMutator<'_> {
+    /// One successful, state-changing operation happened (see `MutationEpoch`).
+    fn stepped(&mut self) {
+        *self.1 = self.1.wrapping_add(1);
+    }
+    /// The element's current value of attribute `name`, if it has one.
+    fn attribute_value(&self, key: NodeKey, name: &QualName) -> Option<&str> {
+        let node = self.0.doc.get_node(key.node_id())?;
+        node.element_data()?
+            .attrs
+            .iter()
+            .find(|attr| attr.name == *name)
+            .map(|attr| &*attr.value)
+    }
     fn node(&self, key: NodeKey) -> Result<&Node, MutationError> {
         self.0
             .doc
@@ -772,6 +828,9 @@ impl Mutator for BlitzMutator<'_> {
         let parent_id = self.container(parent)?;
         self.check_children(parent, children)?;
         with_ids(children, |ids| self.0.append_children(parent_id, ids));
+        if !children.is_empty() {
+            self.stepped();
+        }
         Ok(())
     }
     fn insert_before(
@@ -783,6 +842,9 @@ impl Mutator for BlitzMutator<'_> {
         let parent = self.parent(anchor).ok_or(MutationError::Detached(anchor))?;
         self.check_children(parent, children)?;
         with_ids(children, |ids| self.0.insert_nodes_before(anchor_id, ids));
+        if !children.is_empty() {
+            self.stepped();
+        }
         Ok(())
     }
     fn replace_children(
@@ -792,7 +854,12 @@ impl Mutator for BlitzMutator<'_> {
     ) -> Result<(), MutationError> {
         let parent_id = self.container(parent)?;
         self.check_children(parent, children)?;
+        // Replacing nothing with nothing changes nothing.
+        let had_children = !self.node(parent)?.children.is_empty();
         with_ids(children, |ids| self.0.replace_children(parent_id, ids));
+        if had_children || !children.is_empty() {
+            self.stepped();
+        }
         Ok(())
     }
     fn clone_node(&mut self, key: NodeKey, deep: bool) -> Result<NodeKey, MutationError> {
@@ -821,11 +888,13 @@ impl Mutator for BlitzMutator<'_> {
     fn remove(&mut self, key: NodeKey) -> Result<(), MutationError> {
         let id = self.live(key)?;
         self.0.remove_node(id);
+        self.stepped();
         Ok(())
     }
     fn remove_and_drop(&mut self, key: NodeKey) -> Result<(), MutationError> {
         let id = self.live(key)?;
         self.0.remove_and_drop_node(id);
+        self.stepped();
         Ok(())
     }
     fn reparent_children(&mut self, from: NodeKey, to: NodeKey) -> Result<(), MutationError> {
@@ -837,16 +906,26 @@ impl Mutator for BlitzMutator<'_> {
                 child: from,
             });
         }
+        let moves = !self.node(from)?.children.is_empty();
         self.0.reparent_children(from_id, to_id);
+        if moves {
+            self.stepped();
+        }
         Ok(())
     }
 
     fn set_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError> {
         let id = self.live(node)?;
-        if BlitzNode(self.node(node)?).kind() != NodeKind::Text {
+        let current = self.node(node)?;
+        if BlitzNode(current).kind() != NodeKind::Text {
             return Err(MutationError::NotText(node));
         }
+        let unchanged =
+            matches!(&current.data, blitz_dom::node::NodeData::Text(t) if &*t.content == text);
         self.0.set_node_text(id, text);
+        if !unchanged {
+            self.stepped();
+        }
         Ok(())
     }
     fn append_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError> {
@@ -856,7 +935,11 @@ impl Mutator for BlitzMutator<'_> {
         }
         self.0
             .append_text_to_node(id, text)
-            .map_err(|_| MutationError::NotText(node))
+            .map_err(|_| MutationError::NotText(node))?;
+        if !text.is_empty() {
+            self.stepped();
+        }
+        Ok(())
     }
     fn set_attribute(
         &mut self,
@@ -865,12 +948,22 @@ impl Mutator for BlitzMutator<'_> {
         value: &str,
     ) -> Result<(), MutationError> {
         let id = self.element(node)?;
+        let unchanged = self
+            .attribute_value(node, &name)
+            .is_some_and(|current| current == value);
         self.0.set_attribute(id, name, value);
+        if !unchanged {
+            self.stepped();
+        }
         Ok(())
     }
     fn clear_attribute(&mut self, node: NodeKey, name: QualName) -> Result<(), MutationError> {
         let id = self.element(node)?;
+        let present = self.attribute_value(node, &name).is_some();
         self.0.clear_attribute(id, name);
+        if present {
+            self.stepped();
+        }
         Ok(())
     }
     fn add_attributes_if_missing(
@@ -879,7 +972,14 @@ impl Mutator for BlitzMutator<'_> {
         attrs: impl IntoIterator<Item = NewAttribute>,
     ) -> Result<(), MutationError> {
         let id = self.element(node)?;
-        self.0.add_attrs_if_missing(id, attributes(attrs));
+        let attrs = attributes(attrs);
+        let adds = attrs
+            .iter()
+            .any(|attr| self.attribute_value(node, &attr.name).is_none());
+        self.0.add_attrs_if_missing(id, attrs);
+        if adds {
+            self.stepped();
+        }
         Ok(())
     }
 }
