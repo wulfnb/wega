@@ -1,0 +1,2003 @@
+{
+  "base": "ac6928e",
+  "implementation_commits": [
+    "9b08a19",
+    "bee2cfb",
+    "dc32589",
+    "fdd3941",
+    "a2580a4"
+  ],
+  "environment": {
+    "date": "2026-11-15",
+    "os": "macOS 27.2.1 (26B131)",
+    "architecture": "arm64",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "profiles": [
+      "dev: debug=0, incremental=false",
+      "release: optimized"
+    ],
+    "benchmark_host": "own compiler/test dispatcher paused for five adjacent alternating pairs; other host load persisted (observed approximately 5.23 to 6.96)"
+  },
+  "engine_workspace": {
+    "targets": 87,
+    "passed": 690,
+    "failed": 0,
+    "ignored": 19,
+    "results": [
+      {
+        "target": "wega-engine-lib-wega_engine",
+        "status": 0,
+        "counts": [
+          [
+            68,
+            0,
+            0
+          ]
+        ],
+        "seconds": 40.44
+      },
+      {
+        "target": "wega-engine-bin-wega-engine",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 31.45
+      },
+      {
+        "target": "wega-engine-test-broker_websocket",
+        "status": 0,
+        "counts": [
+          [
+            1,
+            0,
+            0
+          ]
+        ],
+        "seconds": 38.64
+      },
+      {
+        "target": "wega-engine-test-cache_api",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 37.95
+      },
+      {
+        "target": "wega-engine-test-canvas2d",
+        "status": 0,
+        "counts": [
+          [
+            9,
+            0,
+            0
+          ]
+        ],
+        "seconds": 76.77
+      },
+      {
+        "target": "wega-engine-test-compat",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 32.25
+      },
+      {
+        "target": "wega-engine-test-console",
+        "status": 0,
+        "counts": [
+          [
+            14,
+            0,
+            0
+          ]
+        ],
+        "seconds": 50.94
+      },
+      {
+        "target": "wega-engine-test-console_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 36.58
+      },
+      {
+        "target": "wega-engine-test-css",
+        "status": 0,
+        "counts": [
+          [
+            21,
+            0,
+            0
+          ]
+        ],
+        "seconds": 66.25
+      },
+      {
+        "target": "wega-engine-test-css_wpt",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 52.39
+      },
+      {
+        "target": "wega-engine-test-custom_elements",
+        "status": 0,
+        "counts": [
+          [
+            12,
+            0,
+            0
+          ]
+        ],
+        "seconds": 37.99
+      },
+      {
+        "target": "wega-engine-test-document_host",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 42.95
+      },
+      {
+        "target": "wega-engine-test-documents",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 38.11
+      },
+      {
+        "target": "wega-engine-test-dom",
+        "status": 0,
+        "counts": [
+          [
+            30,
+            0,
+            0
+          ]
+        ],
+        "seconds": 86.55
+      },
+      {
+        "target": "wega-engine-test-dom_budgets",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 40.48
+      },
+      {
+        "target": "wega-engine-test-dom_identity",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 44.59
+      },
+      {
+        "target": "wega-engine-test-epoch",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 24.56
+      },
+      {
+        "target": "wega-engine-test-errors",
+        "status": 0,
+        "counts": [
+          [
+            10,
+            0,
+            0
+          ]
+        ],
+        "seconds": 38.65
+      },
+      {
+        "target": "wega-engine-test-events",
+        "status": 0,
+        "counts": [
+          [
+            20,
+            0,
+            0
+          ]
+        ],
+        "seconds": 27.38
+      },
+      {
+        "target": "wega-engine-test-forms",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 19.57
+      },
+      {
+        "target": "wega-engine-test-frames",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 18.14
+      },
+      {
+        "target": "wega-engine-test-harness_fixtures",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 27.59
+      },
+      {
+        "target": "wega-engine-test-history",
+        "status": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ],
+        "seconds": 25.78
+      },
+      {
+        "target": "wega-engine-test-hot_path_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            5
+          ]
+        ],
+        "seconds": 17.7
+      },
+      {
+        "target": "wega-engine-test-image_limits",
+        "status": 0,
+        "counts": [
+          [
+            1,
+            0,
+            0
+          ]
+        ],
+        "seconds": 15.5
+      },
+      {
+        "target": "wega-engine-test-inherited_broker",
+        "status": 0,
+        "counts": [
+          [
+            1,
+            0,
+            1
+          ]
+        ],
+        "seconds": 24.94
+      },
+      {
+        "target": "wega-engine-test-input",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 25.78
+      },
+      {
+        "target": "wega-engine-test-inspector",
+        "status": 0,
+        "counts": [
+          [
+            15,
+            0,
+            0
+          ]
+        ],
+        "seconds": 40.05
+      },
+      {
+        "target": "wega-engine-test-inspector_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            3
+          ]
+        ],
+        "seconds": 16.95
+      },
+      {
+        "target": "wega-engine-test-inspector_console",
+        "status": 0,
+        "counts": [
+          [
+            21,
+            0,
+            0
+          ]
+        ],
+        "seconds": 45.68
+      },
+      {
+        "target": "wega-engine-test-inspector_dom",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 33.6
+      },
+      {
+        "target": "wega-engine-test-inspector_dom_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 24.16
+      },
+      {
+        "target": "wega-engine-test-inspector_sandbox",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 14.86
+      },
+      {
+        "target": "wega-engine-test-inspector_styles",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 25.34
+      },
+      {
+        "target": "wega-engine-test-layout",
+        "status": 0,
+        "counts": [
+          [
+            15,
+            0,
+            0
+          ]
+        ],
+        "seconds": 24.0
+      },
+      {
+        "target": "wega-engine-test-media",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 21.62
+      },
+      {
+        "target": "wega-engine-test-mutation_epoch_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 500.85
+      },
+      {
+        "target": "wega-engine-test-pages",
+        "status": 0,
+        "counts": [
+          [
+            16,
+            0,
+            0
+          ]
+        ],
+        "seconds": 50.42
+      },
+      {
+        "target": "wega-engine-test-permissions",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 18.94
+      },
+      {
+        "target": "wega-engine-test-reliability",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 33.27
+      },
+      {
+        "target": "wega-engine-test-render",
+        "status": 0,
+        "counts": [
+          [
+            17,
+            0,
+            0
+          ]
+        ],
+        "seconds": 33.44
+      },
+      {
+        "target": "wega-engine-test-render_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 18.07
+      },
+      {
+        "target": "wega-engine-test-scripts",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 22.52
+      },
+      {
+        "target": "wega-engine-test-security",
+        "status": 0,
+        "counts": [
+          [
+            9,
+            0,
+            0
+          ]
+        ],
+        "seconds": 21.22
+      },
+      {
+        "target": "wega-engine-test-storage",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 20.55
+      },
+      {
+        "target": "wega-engine-test-style",
+        "status": 0,
+        "counts": [
+          [
+            16,
+            0,
+            0
+          ]
+        ],
+        "seconds": 31.44
+      },
+      {
+        "target": "wega-engine-test-web",
+        "status": 0,
+        "counts": [
+          [
+            10,
+            0,
+            0
+          ]
+        ],
+        "seconds": 22.35
+      },
+      {
+        "target": "wega-engine-test-web_workers",
+        "status": 0,
+        "counts": [
+          [
+            12,
+            0,
+            0
+          ]
+        ],
+        "seconds": 21.65
+      },
+      {
+        "target": "wega-engine-test-webgl",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 21.33
+      },
+      {
+        "target": "wega-engine-test-worker",
+        "status": 0,
+        "counts": [
+          [
+            17,
+            0,
+            0
+          ]
+        ],
+        "seconds": 36.73
+      },
+      {
+        "target": "wega-engine-test-worker_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 18.64
+      },
+      {
+        "target": "wega-engine-test-worker_runtime",
+        "status": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ],
+        "seconds": 18.99
+      },
+      {
+        "target": "wega-engine-test-wpt",
+        "status": 0,
+        "counts": [
+          [
+            1,
+            0,
+            0
+          ]
+        ],
+        "seconds": 29.37
+      },
+      {
+        "target": "wega-adapter-blitz-lib-wega_adapter_blitz",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.21
+      },
+      {
+        "target": "wega-adapter-blitz-test-boundary",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.76
+      },
+      {
+        "target": "wega-adapter-blitz-test-contract",
+        "status": 0,
+        "counts": [
+          [
+            11,
+            0,
+            2
+          ]
+        ],
+        "seconds": 3.43
+      },
+      {
+        "target": "wega-adapter-blitz-test-css_inspection_spike",
+        "status": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ],
+        "seconds": 3.2
+      },
+      {
+        "target": "wega-adapter-blitz-test-epoch",
+        "status": 0,
+        "counts": [
+          [
+            10,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.79
+      },
+      {
+        "target": "wega-adapter-blitz-test-html_parser",
+        "status": 0,
+        "counts": [
+          [
+            17,
+            0,
+            0
+          ]
+        ],
+        "seconds": 3.03
+      },
+      {
+        "target": "wega-adapter-blitz-test-input",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 3.09
+      },
+      {
+        "target": "wega-adapter-blitz-test-layout",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.43
+      },
+      {
+        "target": "wega-adapter-blitz-test-layout_safety",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 3.02
+      },
+      {
+        "target": "wega-adapter-blitz-test-style",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 3.22
+      },
+      {
+        "target": "wega-adapter-blitz-test-style_inspect",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.94
+      },
+      {
+        "target": "wega-dom-lib-wega_dom",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.94
+      },
+      {
+        "target": "wega-dom-test-boundary",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.85
+      },
+      {
+        "target": "wega-html-lib-wega_html",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.68
+      },
+      {
+        "target": "wega-html-test-boundary",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.95
+      },
+      {
+        "target": "wega-adapter-skia-lib-wega_adapter_skia",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.91
+      },
+      {
+        "target": "wega-platform-lib-wega_platform",
+        "status": 0,
+        "counts": [
+          [
+            18,
+            0,
+            0
+          ]
+        ],
+        "seconds": 1.44
+      },
+      {
+        "target": "wega-platform-bin-wega-containment-probe",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.59
+      },
+      {
+        "target": "wega-platform-bin-wega-content-bundle",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.58
+      },
+      {
+        "target": "wega-platform-bin-wega-native-debugger",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.6
+      },
+      {
+        "target": "wega-platform-test-browser_resources",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.67
+      },
+      {
+        "target": "wega-platform-test-inherited_channel",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.55
+      },
+      {
+        "target": "wega-platform-test-native_sandbox",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 0.19
+      },
+      {
+        "target": "wega-adapter-v8-lib-wega_adapter_v8",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 5.85
+      },
+      {
+        "target": "wega-network-lib-wega_network",
+        "status": 0,
+        "counts": [
+          [
+            15,
+            0,
+            0
+          ]
+        ],
+        "seconds": 9.0
+      },
+      {
+        "target": "wega-network-test-broker",
+        "status": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ],
+        "seconds": 3.66
+      },
+      {
+        "target": "wega-network-test-inherited",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 1.41
+      },
+      {
+        "target": "wega-network-test-security",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 1.94
+      },
+      {
+        "target": "wega-cookies-lib-wega_cookies",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 1.76
+      },
+      {
+        "target": "wega-protocol-lib-wega_protocol",
+        "status": 0,
+        "counts": [
+          [
+            87,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.37
+      },
+      {
+        "target": "wega-storage-lib-wega_storage",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.52
+      },
+      {
+        "target": "wega-security-lib-wega_security",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.9
+      },
+      {
+        "target": "wega-permissions-lib-wega_permissions",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.8
+      },
+      {
+        "target": "wega-engine-test-inspector_styles_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 20.13
+      }
+    ]
+  },
+  "other_tests": {
+    "root_harness_library": 113,
+    "root_harness_binary": 98,
+    "root_no_default_library": 109,
+    "architecture_tools": 14,
+    "webidl": 6,
+    "broker_mode": [
+      5,
+      4,
+      3,
+      8,
+      9
+    ],
+    "signed_inspector_sandbox": 1,
+    "required_worker_resource_grants": 1,
+    "native_sandbox_probe": 1,
+    "native_browser_scenario": 1,
+    "dom_wpt_assertions": [
+      1685,
+      1685
+    ],
+    "css_wpt_assertions": [
+      7,
+      7
+    ],
+    "css_pixel_reftest": 1
+  },
+  "gates": {
+    "architecture_members": 13,
+    "architecture_edges": 24,
+    "architecture_violations": 0,
+    "architecture_informational": 11,
+    "cycles": 0,
+    "verified_archives": 13,
+    "added_unsafe_code_lines": 0,
+    "manifest_or_lockfile_changes": 0
+  },
+  "spike": {
+    "tests_passed": 3,
+    "unbounded_group_bytes": 144016,
+    "unbounded_group_debug_us": 1953,
+    "matched_rule_result": "unsupported: declaration blocks retain insufficient rule and selector provenance"
+  },
+  "native": {
+    "css": "cached computed, sheets, rules, declarations in detached window",
+    "stall_ms": 2460,
+    "ui_polls": 406,
+    "recovery_ms": 110
+  },
+  "style_reader": {
+    "iterations_per_operation": 1000,
+    "fixtures": [
+      "small: 3 top-level rules, rendered",
+      "large: 20000 rules, last 32-rule page, rendered",
+      "huge-value: 1000000-character custom value, not rendered",
+      "deep: 1000 nested elements, outer selected node, not rendered"
+    ],
+    "rows": [
+      {
+        "fixture": "small",
+        "operation": "sheets",
+        "median_us": 5.083,
+        "p95_us": 5.292,
+        "max_us": 72.0,
+        "bytes": 749,
+        "refused": 0,
+        "rss_growth_mib": 0.047
+      },
+      {
+        "fixture": "small",
+        "operation": "rules",
+        "median_us": 14.042,
+        "p95_us": 14.334,
+        "max_us": 808.292,
+        "bytes": 1903,
+        "refused": 0,
+        "rss_growth_mib": 0.109
+      },
+      {
+        "fixture": "small",
+        "operation": "declarations",
+        "median_us": 4.917,
+        "p95_us": 5.042,
+        "max_us": 36.167,
+        "bytes": 736,
+        "refused": 0,
+        "rss_growth_mib": 0.031
+      },
+      {
+        "fixture": "small",
+        "operation": "computed",
+        "median_us": 18.833,
+        "p95_us": 21.5,
+        "max_us": 381.708,
+        "bytes": 2560,
+        "refused": 0,
+        "rss_growth_mib": 0.219
+      },
+      {
+        "fixture": "large",
+        "operation": "sheets",
+        "median_us": 5.875,
+        "p95_us": 6.042,
+        "max_us": 76.791,
+        "bytes": 753,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      },
+      {
+        "fixture": "large",
+        "operation": "rules",
+        "median_us": 108.625,
+        "p95_us": 129.542,
+        "max_us": 188.166,
+        "bytes": 14450,
+        "refused": 0,
+        "rss_growth_mib": 0.078
+      },
+      {
+        "fixture": "large",
+        "operation": "declarations",
+        "median_us": 6.5,
+        "p95_us": 6.625,
+        "max_us": 771.791,
+        "bytes": 820,
+        "refused": 0,
+        "rss_growth_mib": 0.062
+      },
+      {
+        "fixture": "large",
+        "operation": "computed",
+        "median_us": 21.583,
+        "p95_us": 22.084,
+        "max_us": 45.458,
+        "bytes": 2558,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      },
+      {
+        "fixture": "huge-value",
+        "operation": "sheets",
+        "median_us": 6.833,
+        "p95_us": 7.042,
+        "max_us": 34.375,
+        "bytes": 748,
+        "refused": 0,
+        "rss_growth_mib": 0.016
+      },
+      {
+        "fixture": "huge-value",
+        "operation": "rules",
+        "median_us": 10.709,
+        "p95_us": 10.958,
+        "max_us": 68.084,
+        "bytes": 1127,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      },
+      {
+        "fixture": "huge-value",
+        "operation": "declarations",
+        "median_us": 9.75,
+        "p95_us": 9.958,
+        "max_us": 34.833,
+        "bytes": 1326,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      },
+      {
+        "fixture": "huge-value",
+        "operation": "computed",
+        "median_us": 4.25,
+        "p95_us": 4.458,
+        "max_us": 33.917,
+        "bytes": 517,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      },
+      {
+        "fixture": "deep",
+        "operation": "sheets",
+        "median_us": 6.583,
+        "p95_us": 7.25,
+        "max_us": 88.25,
+        "bytes": 748,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      },
+      {
+        "fixture": "deep",
+        "operation": "rules",
+        "median_us": 10.416,
+        "p95_us": 10.792,
+        "max_us": 41.875,
+        "bytes": 1129,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      },
+      {
+        "fixture": "deep",
+        "operation": "declarations",
+        "median_us": 6.542,
+        "p95_us": 6.792,
+        "max_us": 39.542,
+        "bytes": 735,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      },
+      {
+        "fixture": "deep",
+        "operation": "computed",
+        "median_us": 4.084,
+        "p95_us": 4.208,
+        "max_us": 10.125,
+        "bytes": 517,
+        "refused": 0,
+        "rss_growth_mib": 0.0
+      }
+    ],
+    "retention": [
+      {
+        "fixture": "small",
+        "setup_rss_mib": 14.172,
+        "retained_reads_rss_mib": 0.438
+      },
+      {
+        "fixture": "large",
+        "setup_rss_mib": 14.531,
+        "retained_reads_rss_mib": 0.141
+      },
+      {
+        "fixture": "huge-value",
+        "setup_rss_mib": 0.469,
+        "retained_reads_rss_mib": 0.016
+      },
+      {
+        "fixture": "deep",
+        "setup_rss_mib": 0.453,
+        "retained_reads_rss_mib": 0.0
+      }
+    ],
+    "scope": "backend mapping, validation and encoding; no IPC/UI latency; RSS is incremental allocator retention, not total document size"
+  },
+  "paired_closed_cost": {
+    "pairs": 5,
+    "baseline_engine": "ac6928e",
+    "final_engine": "fdd3941",
+    "samples": [
+      {
+        "pair": 0,
+        "version": "before",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.24 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.50 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.30 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 1.60 ms",
+          "BENCH resident memory at start Some(55) MiB, before loop Some(79), after 300 frames Some(82)"
+        ]
+      },
+      {
+        "pair": 0,
+        "version": "before",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 25.18 us/call",
+          "BENCH console log(string, number) (p95): 60.53 us/call",
+          "BENCH console log(string, nested object) (median): 61.01 us/call",
+          "BENCH console log(string, nested object) (p95): 89.34 us/call",
+          "BENCH console warn(string, number) (median): 28.27 us/call",
+          "BENCH console warn(string, number) (p95): 32.32 us/call",
+          "BENCH console log(8 numbers) (median): 40.43 us/call",
+          "BENCH console log(8 numbers) (p95): 100.46 us/call",
+          "BENCH console log(100-property object) (median): 186.63 us/call",
+          "BENCH console log(100-property object) (p95): 241.27 us/call",
+          "BENCH console flood resident start: 75.0 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 85.5 MiB",
+          "BENCH console flood resident growth: 10.5 MiB"
+        ]
+      },
+      {
+        "pair": 0,
+        "version": "before",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0584 min_us=0.0504 max_us=0.0658",
+          "MUTATION_BENCH text: median_us=0.0347 min_us=0.0347 max_us=0.0355"
+        ]
+      },
+      {
+        "pair": 0,
+        "version": "before",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=2.125 p95_us=2.250 max_us=279.167 response_bytes=289 refused=0 rss_growth_mib=0.094",
+          "DOM_BENCH small children: median_us=34.417 p95_us=38.625 max_us=408.333 response_bytes=4141 refused=0 rss_growth_mib=0.188",
+          "DOM_BENCH small describe: median_us=2.666 p95_us=2.750 max_us=30.958 response_bytes=358 refused=0 rss_growth_mib=0.031",
+          "DOM_BENCH small: document_rss_mib=7.844 after_inspection_rss_mib=0.312",
+          "DOM_BENCH large root: median_us=2.042 p95_us=2.125 max_us=14.959 response_bytes=289 refused=0 rss_growth_mib=0.031",
+          "DOM_BENCH large children: median_us=124.375 p95_us=174.416 max_us=774.834 response_bytes=16097 refused=0 rss_growth_mib=0.047",
+          "DOM_BENCH large describe: median_us=2.708 p95_us=2.833 max_us=35.667 response_bytes=361 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large: document_rss_mib=14.328 after_inspection_rss_mib=0.078",
+          "DOM_BENCH deep root: median_us=2.083 p95_us=2.125 max_us=11.833 response_bytes=289 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH deep children: median_us=3.042 p95_us=3.167 max_us=46.875 response_bytes=364 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep describe: median_us=5.583 p95_us=7.000 max_us=97.084 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.188 after_inspection_rss_mib=0.016"
+        ]
+      },
+      {
+        "pair": 0,
+        "version": "after",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.23 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.58 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.35 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 1.79 ms",
+          "BENCH resident memory at start Some(54) MiB, before loop Some(81), after 300 frames Some(82)"
+        ]
+      },
+      {
+        "pair": 0,
+        "version": "after",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 18.77 us/call",
+          "BENCH console log(string, number) (p95): 30.77 us/call",
+          "BENCH console log(string, nested object) (median): 50.90 us/call",
+          "BENCH console log(string, nested object) (p95): 51.97 us/call",
+          "BENCH console warn(string, number) (median): 19.16 us/call",
+          "BENCH console warn(string, number) (p95): 23.87 us/call",
+          "BENCH console log(8 numbers) (median): 15.94 us/call",
+          "BENCH console log(8 numbers) (p95): 16.46 us/call",
+          "BENCH console log(100-property object) (median): 137.60 us/call",
+          "BENCH console log(100-property object) (p95): 179.29 us/call",
+          "BENCH console flood resident start: 75.2 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 86.6 MiB",
+          "BENCH console flood resident growth: 11.3 MiB"
+        ]
+      },
+      {
+        "pair": 0,
+        "version": "after",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0659 min_us=0.0654 max_us=0.0711",
+          "MUTATION_BENCH text: median_us=0.0345 min_us=0.0319 max_us=0.0362"
+        ]
+      },
+      {
+        "pair": 0,
+        "version": "after",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=2.125 p95_us=2.250 max_us=305.583 response_bytes=289 refused=0 rss_growth_mib=0.125",
+          "DOM_BENCH small children: median_us=33.834 p95_us=40.042 max_us=407.792 response_bytes=4141 refused=0 rss_growth_mib=0.141",
+          "DOM_BENCH small describe: median_us=2.667 p95_us=2.709 max_us=16.000 response_bytes=358 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH small: document_rss_mib=7.984 after_inspection_rss_mib=0.266",
+          "DOM_BENCH large root: median_us=2.042 p95_us=2.209 max_us=31.125 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large children: median_us=123.667 p95_us=165.500 max_us=1580.041 response_bytes=16097 refused=0 rss_growth_mib=0.047",
+          "DOM_BENCH large describe: median_us=2.625 p95_us=2.667 max_us=54.333 response_bytes=361 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large: document_rss_mib=14.391 after_inspection_rss_mib=0.047",
+          "DOM_BENCH deep root: median_us=2.083 p95_us=2.125 max_us=18.334 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep children: median_us=2.959 p95_us=3.167 max_us=955.500 response_bytes=364 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep describe: median_us=5.541 p95_us=5.667 max_us=125.792 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.125 after_inspection_rss_mib=0.000"
+        ]
+      },
+      {
+        "pair": 1,
+        "version": "before",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.19 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.39 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.23 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 1.12 ms",
+          "BENCH resident memory at start Some(55) MiB, before loop Some(81), after 300 frames Some(82)"
+        ]
+      },
+      {
+        "pair": 1,
+        "version": "before",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 13.80 us/call",
+          "BENCH console log(string, number) (p95): 19.03 us/call",
+          "BENCH console log(string, nested object) (median): 47.75 us/call",
+          "BENCH console log(string, nested object) (p95): 50.35 us/call",
+          "BENCH console warn(string, number) (median): 18.73 us/call",
+          "BENCH console warn(string, number) (p95): 23.70 us/call",
+          "BENCH console log(8 numbers) (median): 18.47 us/call",
+          "BENCH console log(8 numbers) (p95): 20.27 us/call",
+          "BENCH console log(100-property object) (median): 142.64 us/call",
+          "BENCH console log(100-property object) (p95): 156.57 us/call",
+          "BENCH console flood resident start: 73.5 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 84.2 MiB",
+          "BENCH console flood resident growth: 10.7 MiB"
+        ]
+      },
+      {
+        "pair": 1,
+        "version": "before",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0370 min_us=0.0369 max_us=0.0378",
+          "MUTATION_BENCH text: median_us=0.0253 min_us=0.0253 max_us=0.0296"
+        ]
+      },
+      {
+        "pair": 1,
+        "version": "before",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=2.125 p95_us=2.209 max_us=18.292 response_bytes=289 refused=0 rss_growth_mib=0.125",
+          "DOM_BENCH small children: median_us=33.666 p95_us=36.625 max_us=98.333 response_bytes=4141 refused=0 rss_growth_mib=0.172",
+          "DOM_BENCH small describe: median_us=2.666 p95_us=2.750 max_us=12.333 response_bytes=358 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH small: document_rss_mib=7.953 after_inspection_rss_mib=0.312",
+          "DOM_BENCH large root: median_us=2.000 p95_us=2.042 max_us=18.791 response_bytes=289 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH large children: median_us=122.292 p95_us=133.833 max_us=220.500 response_bytes=16097 refused=0 rss_growth_mib=0.047",
+          "DOM_BENCH large describe: median_us=2.625 p95_us=2.750 max_us=26.709 response_bytes=361 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH large: document_rss_mib=13.766 after_inspection_rss_mib=0.078",
+          "DOM_BENCH deep root: median_us=2.041 p95_us=2.125 max_us=22.375 response_bytes=289 refused=0 rss_growth_mib=0.031",
+          "DOM_BENCH deep children: median_us=3.041 p95_us=3.167 max_us=28.334 response_bytes=364 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep describe: median_us=6.917 p95_us=7.042 max_us=27.417 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.234 after_inspection_rss_mib=0.031"
+        ]
+      },
+      {
+        "pair": 1,
+        "version": "after",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.15 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.34 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.21 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 1.10 ms",
+          "BENCH resident memory at start Some(55) MiB, before loop Some(81), after 300 frames Some(83)"
+        ]
+      },
+      {
+        "pair": 1,
+        "version": "after",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 19.27 us/call",
+          "BENCH console log(string, number) (p95): 23.35 us/call",
+          "BENCH console log(string, nested object) (median): 51.03 us/call",
+          "BENCH console log(string, nested object) (p95): 53.65 us/call",
+          "BENCH console warn(string, number) (median): 25.91 us/call",
+          "BENCH console warn(string, number) (p95): 27.77 us/call",
+          "BENCH console log(8 numbers) (median): 26.32 us/call",
+          "BENCH console log(8 numbers) (p95): 29.37 us/call",
+          "BENCH console log(100-property object) (median): 159.97 us/call",
+          "BENCH console log(100-property object) (p95): 189.45 us/call",
+          "BENCH console flood resident start: 73.9 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 84.8 MiB",
+          "BENCH console flood resident growth: 10.9 MiB"
+        ]
+      },
+      {
+        "pair": 1,
+        "version": "after",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0378 min_us=0.0370 max_us=0.0383",
+          "MUTATION_BENCH text: median_us=0.0253 min_us=0.0252 max_us=0.0259"
+        ]
+      },
+      {
+        "pair": 1,
+        "version": "after",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=2.125 p95_us=2.500 max_us=38.541 response_bytes=289 refused=0 rss_growth_mib=0.094",
+          "DOM_BENCH small children: median_us=33.666 p95_us=36.625 max_us=103.625 response_bytes=4141 refused=0 rss_growth_mib=0.156",
+          "DOM_BENCH small describe: median_us=2.667 p95_us=2.750 max_us=38.834 response_bytes=358 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH small: document_rss_mib=7.875 after_inspection_rss_mib=0.250",
+          "DOM_BENCH large root: median_us=2.042 p95_us=2.167 max_us=39.541 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large children: median_us=122.167 p95_us=141.834 max_us=192.291 response_bytes=16097 refused=0 rss_growth_mib=0.062",
+          "DOM_BENCH large describe: median_us=2.625 p95_us=2.667 max_us=12.292 response_bytes=361 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large: document_rss_mib=13.719 after_inspection_rss_mib=0.062",
+          "DOM_BENCH deep root: median_us=2.042 p95_us=2.125 max_us=31.334 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep children: median_us=3.000 p95_us=3.167 max_us=17.542 response_bytes=364 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep describe: median_us=6.917 p95_us=7.041 max_us=29.708 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.172 after_inspection_rss_mib=0.000"
+        ]
+      },
+      {
+        "pair": 2,
+        "version": "before",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.09 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.24 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.10 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 0.61 ms",
+          "BENCH resident memory at start Some(54) MiB, before loop Some(80), after 300 frames Some(82)"
+        ]
+      },
+      {
+        "pair": 2,
+        "version": "before",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 17.80 us/call",
+          "BENCH console log(string, number) (p95): 19.39 us/call",
+          "BENCH console log(string, nested object) (median): 42.55 us/call",
+          "BENCH console log(string, nested object) (p95): 49.65 us/call",
+          "BENCH console warn(string, number) (median): 18.80 us/call",
+          "BENCH console warn(string, number) (p95): 19.25 us/call",
+          "BENCH console log(8 numbers) (median): 16.03 us/call",
+          "BENCH console log(8 numbers) (p95): 16.15 us/call",
+          "BENCH console log(100-property object) (median): 130.95 us/call",
+          "BENCH console log(100-property object) (p95): 136.96 us/call",
+          "BENCH console flood resident start: 73.6 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 84.1 MiB",
+          "BENCH console flood resident growth: 10.6 MiB"
+        ]
+      },
+      {
+        "pair": 2,
+        "version": "before",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0516 min_us=0.0509 max_us=0.0593",
+          "MUTATION_BENCH text: median_us=0.0350 min_us=0.0348 max_us=0.0375"
+        ]
+      },
+      {
+        "pair": 2,
+        "version": "before",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=1.542 p95_us=1.708 max_us=17.250 response_bytes=289 refused=0 rss_growth_mib=0.109",
+          "DOM_BENCH small children: median_us=25.208 p95_us=26.250 max_us=51.792 response_bytes=4141 refused=0 rss_growth_mib=0.109",
+          "DOM_BENCH small describe: median_us=2.250 p95_us=2.292 max_us=27.958 response_bytes=358 refused=0 rss_growth_mib=0.031",
+          "DOM_BENCH small: document_rss_mib=7.781 after_inspection_rss_mib=0.250",
+          "DOM_BENCH large root: median_us=1.459 p95_us=1.583 max_us=10.542 response_bytes=289 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH large children: median_us=87.416 p95_us=94.875 max_us=185.875 response_bytes=16097 refused=0 rss_growth_mib=0.047",
+          "DOM_BENCH large describe: median_us=1.917 p95_us=2.000 max_us=6.958 response_bytes=361 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH large: document_rss_mib=14.359 after_inspection_rss_mib=0.078",
+          "DOM_BENCH deep root: median_us=1.500 p95_us=1.542 max_us=7.917 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep children: median_us=2.209 p95_us=2.292 max_us=6.083 response_bytes=364 refused=0 rss_growth_mib=0.031",
+          "DOM_BENCH deep describe: median_us=5.000 p95_us=5.166 max_us=18.083 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.188 after_inspection_rss_mib=0.031"
+        ]
+      },
+      {
+        "pair": 2,
+        "version": "after",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.14 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.35 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.14 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 0.87 ms",
+          "BENCH resident memory at start Some(54) MiB, before loop Some(79), after 300 frames Some(82)"
+        ]
+      },
+      {
+        "pair": 2,
+        "version": "after",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 18.86 us/call",
+          "BENCH console log(string, number) (p95): 20.37 us/call",
+          "BENCH console log(string, nested object) (median): 50.12 us/call",
+          "BENCH console log(string, nested object) (p95): 52.69 us/call",
+          "BENCH console warn(string, number) (median): 25.06 us/call",
+          "BENCH console warn(string, number) (p95): 27.02 us/call",
+          "BENCH console log(8 numbers) (median): 18.90 us/call",
+          "BENCH console log(8 numbers) (p95): 23.63 us/call",
+          "BENCH console log(100-property object) (median): 119.88 us/call",
+          "BENCH console log(100-property object) (p95): 175.07 us/call",
+          "BENCH console flood resident start: 74.0 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 84.3 MiB",
+          "BENCH console flood resident growth: 10.3 MiB"
+        ]
+      },
+      {
+        "pair": 2,
+        "version": "after",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0543 min_us=0.0511 max_us=0.0636",
+          "MUTATION_BENCH text: median_us=0.0345 min_us=0.0345 max_us=0.0355"
+        ]
+      },
+      {
+        "pair": 2,
+        "version": "after",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=1.792 p95_us=1.917 max_us=49.875 response_bytes=289 refused=0 rss_growth_mib=0.094",
+          "DOM_BENCH small children: median_us=27.834 p95_us=29.167 max_us=87.000 response_bytes=4141 refused=0 rss_growth_mib=0.172",
+          "DOM_BENCH small describe: median_us=2.000 p95_us=2.083 max_us=15.083 response_bytes=358 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH small: document_rss_mib=7.797 after_inspection_rss_mib=0.266",
+          "DOM_BENCH large root: median_us=1.709 p95_us=1.792 max_us=11.208 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large children: median_us=101.583 p95_us=108.250 max_us=155.708 response_bytes=16097 refused=0 rss_growth_mib=0.047",
+          "DOM_BENCH large describe: median_us=1.958 p95_us=2.042 max_us=6.542 response_bytes=361 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large: document_rss_mib=14.188 after_inspection_rss_mib=0.047",
+          "DOM_BENCH deep root: median_us=1.459 p95_us=1.541 max_us=8.250 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep children: median_us=2.209 p95_us=2.292 max_us=17.333 response_bytes=364 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH deep describe: median_us=5.000 p95_us=5.167 max_us=15.542 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.141 after_inspection_rss_mib=0.016"
+        ]
+      },
+      {
+        "pair": 3,
+        "version": "before",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.14 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.34 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.15 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 0.85 ms",
+          "BENCH resident memory at start Some(55) MiB, before loop Some(81), after 300 frames Some(82)"
+        ]
+      },
+      {
+        "pair": 3,
+        "version": "before",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 13.13 us/call",
+          "BENCH console log(string, number) (p95): 17.02 us/call",
+          "BENCH console log(string, nested object) (median): 37.67 us/call",
+          "BENCH console log(string, nested object) (p95): 43.84 us/call",
+          "BENCH console warn(string, number) (median): 20.82 us/call",
+          "BENCH console warn(string, number) (p95): 23.41 us/call",
+          "BENCH console log(8 numbers) (median): 16.30 us/call",
+          "BENCH console log(8 numbers) (p95): 18.85 us/call",
+          "BENCH console log(100-property object) (median): 155.92 us/call",
+          "BENCH console log(100-property object) (p95): 176.26 us/call",
+          "BENCH console flood resident start: 73.3 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 83.9 MiB",
+          "BENCH console flood resident growth: 10.6 MiB"
+        ]
+      },
+      {
+        "pair": 3,
+        "version": "before",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0516 min_us=0.0509 max_us=0.0603",
+          "MUTATION_BENCH text: median_us=0.0367 min_us=0.0347 max_us=0.0444"
+        ]
+      },
+      {
+        "pair": 3,
+        "version": "before",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=2.125 p95_us=2.209 max_us=41.250 response_bytes=289 refused=0 rss_growth_mib=0.094",
+          "DOM_BENCH small children: median_us=34.292 p95_us=36.291 max_us=127.459 response_bytes=4141 refused=0 rss_growth_mib=0.172",
+          "DOM_BENCH small describe: median_us=2.666 p95_us=3.750 max_us=9.625 response_bytes=358 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH small: document_rss_mib=7.922 after_inspection_rss_mib=0.281",
+          "DOM_BENCH large root: median_us=2.083 p95_us=2.208 max_us=15.084 response_bytes=289 refused=0 rss_growth_mib=0.031",
+          "DOM_BENCH large children: median_us=123.541 p95_us=145.292 max_us=216.917 response_bytes=16097 refused=0 rss_growth_mib=0.062",
+          "DOM_BENCH large describe: median_us=2.667 p95_us=2.833 max_us=25.875 response_bytes=361 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large: document_rss_mib=13.453 after_inspection_rss_mib=0.094",
+          "DOM_BENCH deep root: median_us=2.084 p95_us=2.208 max_us=28.958 response_bytes=289 refused=0 rss_growth_mib=0.016",
+          "DOM_BENCH deep children: median_us=3.083 p95_us=3.208 max_us=9.666 response_bytes=364 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep describe: median_us=6.917 p95_us=7.083 max_us=14.500 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.250 after_inspection_rss_mib=0.016"
+        ]
+      },
+      {
+        "pair": 3,
+        "version": "after",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.18 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.38 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.27 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 1.34 ms",
+          "BENCH resident memory at start Some(54) MiB, before loop Some(81), after 300 frames Some(83)"
+        ]
+      },
+      {
+        "pair": 3,
+        "version": "after",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 19.96 us/call",
+          "BENCH console log(string, number) (p95): 21.34 us/call",
+          "BENCH console log(string, nested object) (median): 48.85 us/call",
+          "BENCH console log(string, nested object) (p95): 50.68 us/call",
+          "BENCH console warn(string, number) (median): 24.98 us/call",
+          "BENCH console warn(string, number) (p95): 29.86 us/call",
+          "BENCH console log(8 numbers) (median): 26.10 us/call",
+          "BENCH console log(8 numbers) (p95): 27.45 us/call",
+          "BENCH console log(100-property object) (median): 164.24 us/call",
+          "BENCH console log(100-property object) (p95): 174.99 us/call",
+          "BENCH console flood resident start: 74.2 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 84.8 MiB",
+          "BENCH console flood resident growth: 10.6 MiB"
+        ]
+      },
+      {
+        "pair": 3,
+        "version": "after",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0523 min_us=0.0512 max_us=0.0537",
+          "MUTATION_BENCH text: median_us=0.0334 min_us=0.0334 max_us=0.0338"
+        ]
+      },
+      {
+        "pair": 3,
+        "version": "after",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=2.125 p95_us=2.209 max_us=31.541 response_bytes=289 refused=0 rss_growth_mib=0.125",
+          "DOM_BENCH small children: median_us=33.333 p95_us=35.708 max_us=89.709 response_bytes=4141 refused=0 rss_growth_mib=0.203",
+          "DOM_BENCH small describe: median_us=2.750 p95_us=2.875 max_us=8.291 response_bytes=358 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH small: document_rss_mib=7.688 after_inspection_rss_mib=0.328",
+          "DOM_BENCH large root: median_us=2.125 p95_us=2.250 max_us=44.292 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large children: median_us=104.042 p95_us=127.375 max_us=166.875 response_bytes=16097 refused=0 rss_growth_mib=0.078",
+          "DOM_BENCH large describe: median_us=1.958 p95_us=2.000 max_us=8.375 response_bytes=361 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large: document_rss_mib=14.469 after_inspection_rss_mib=0.078",
+          "DOM_BENCH deep root: median_us=1.750 p95_us=1.834 max_us=245.625 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep children: median_us=2.583 p95_us=2.667 max_us=26.583 response_bytes=364 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep describe: median_us=4.834 p95_us=5.875 max_us=28.125 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.188 after_inspection_rss_mib=0.000"
+        ]
+      },
+      {
+        "pair": 4,
+        "version": "before",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.20 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.40 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.26 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 1.26 ms",
+          "BENCH resident memory at start Some(55) MiB, before loop Some(81), after 300 frames Some(82)"
+        ]
+      },
+      {
+        "pair": 4,
+        "version": "before",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 18.15 us/call",
+          "BENCH console log(string, number) (p95): 19.96 us/call",
+          "BENCH console log(string, nested object) (median): 49.35 us/call",
+          "BENCH console log(string, nested object) (p95): 55.07 us/call",
+          "BENCH console warn(string, number) (median): 25.13 us/call",
+          "BENCH console warn(string, number) (p95): 26.81 us/call",
+          "BENCH console log(8 numbers) (median): 23.19 us/call",
+          "BENCH console log(8 numbers) (p95): 27.12 us/call",
+          "BENCH console log(100-property object) (median): 133.62 us/call",
+          "BENCH console log(100-property object) (p95): 160.36 us/call",
+          "BENCH console flood resident start: 73.6 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 84.2 MiB",
+          "BENCH console flood resident growth: 10.6 MiB"
+        ]
+      },
+      {
+        "pair": 4,
+        "version": "before",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0377 min_us=0.0375 max_us=0.0381",
+          "MUTATION_BENCH text: median_us=0.0253 min_us=0.0252 max_us=0.0264"
+        ]
+      },
+      {
+        "pair": 4,
+        "version": "before",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=2.125 p95_us=2.250 max_us=56.083 response_bytes=289 refused=0 rss_growth_mib=0.125",
+          "DOM_BENCH small children: median_us=33.209 p95_us=36.459 max_us=146.250 response_bytes=4141 refused=0 rss_growth_mib=0.109",
+          "DOM_BENCH small describe: median_us=2.583 p95_us=2.667 max_us=7.917 response_bytes=358 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH small: document_rss_mib=8.062 after_inspection_rss_mib=0.234",
+          "DOM_BENCH large root: median_us=2.083 p95_us=2.167 max_us=29.292 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large children: median_us=122.041 p95_us=187.625 max_us=495.417 response_bytes=16097 refused=0 rss_growth_mib=0.062",
+          "DOM_BENCH large describe: median_us=2.625 p95_us=2.750 max_us=27.458 response_bytes=361 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large: document_rss_mib=13.344 after_inspection_rss_mib=0.062",
+          "DOM_BENCH deep root: median_us=2.000 p95_us=2.042 max_us=12.666 response_bytes=289 refused=0 rss_growth_mib=0.031",
+          "DOM_BENCH deep children: median_us=3.042 p95_us=3.333 max_us=26.333 response_bytes=364 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep describe: median_us=6.875 p95_us=7.000 max_us=30.958 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.203 after_inspection_rss_mib=0.031"
+        ]
+      },
+      {
+        "pair": 4,
+        "version": "after",
+        "benchmark": "render_bench",
+        "lines": [
+          "BENCH 800x600 @1x record scene (flush+paint prep): 0.19 ms",
+          "BENCH 800x600 @1x rasterise and return pixels: 0.39 ms",
+          "BENCH 1600x1200 @2x record scene (flush+paint prep): 0.24 ms",
+          "BENCH 1600x1200 @2x rasterise and return pixels: 1.09 ms",
+          "BENCH resident memory at start Some(54) MiB, before loop Some(81), after 300 frames Some(83)"
+        ]
+      },
+      {
+        "pair": 4,
+        "version": "after",
+        "benchmark": "console_bench",
+        "lines": [
+          "BENCH console log(string, number) (median): 11.24 us/call",
+          "BENCH console log(string, number) (p95): 13.10 us/call",
+          "BENCH console log(string, nested object) (median): 32.33 us/call",
+          "BENCH console log(string, nested object) (p95): 33.07 us/call",
+          "BENCH console warn(string, number) (median): 15.99 us/call",
+          "BENCH console warn(string, number) (p95): 16.19 us/call",
+          "BENCH console log(8 numbers) (median): 15.94 us/call",
+          "BENCH console log(8 numbers) (p95): 16.10 us/call",
+          "BENCH console log(100-property object) (median): 120.38 us/call",
+          "BENCH console log(100-property object) (p95): 120.74 us/call",
+          "BENCH console flood resident start: 73.2 MiB",
+          "BENCH console flood resident peak after 100,000 calls: 83.8 MiB",
+          "BENCH console flood resident growth: 10.5 MiB"
+        ]
+      },
+      {
+        "pair": 4,
+        "version": "after",
+        "benchmark": "mutation_epoch_bench",
+        "lines": [
+          "MUTATION_BENCH attribute: median_us=0.0379 min_us=0.0369 max_us=0.0413",
+          "MUTATION_BENCH text: median_us=0.0238 min_us=0.0231 max_us=0.0258"
+        ]
+      },
+      {
+        "pair": 4,
+        "version": "after",
+        "benchmark": "inspector_dom_bench",
+        "lines": [
+          "DOM_BENCH small root: median_us=2.084 p95_us=2.209 max_us=31.542 response_bytes=289 refused=0 rss_growth_mib=0.094",
+          "DOM_BENCH small children: median_us=34.125 p95_us=58.125 max_us=227.583 response_bytes=4141 refused=0 rss_growth_mib=0.172",
+          "DOM_BENCH small describe: median_us=2.625 p95_us=2.708 max_us=8.458 response_bytes=358 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH small: document_rss_mib=7.906 after_inspection_rss_mib=0.266",
+          "DOM_BENCH large root: median_us=2.042 p95_us=2.084 max_us=13.792 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large children: median_us=122.666 p95_us=160.125 max_us=397.250 response_bytes=16097 refused=0 rss_growth_mib=0.094",
+          "DOM_BENCH large describe: median_us=2.708 p95_us=2.833 max_us=32.584 response_bytes=361 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH large: document_rss_mib=13.312 after_inspection_rss_mib=0.094",
+          "DOM_BENCH deep root: median_us=2.041 p95_us=2.167 max_us=21.292 response_bytes=289 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep children: median_us=3.084 p95_us=3.250 max_us=36.375 response_bytes=364 refused=0 rss_growth_mib=0.000",
+          "DOM_BENCH deep describe: median_us=5.542 p95_us=6.959 max_us=25.083 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+          "DOM_BENCH deep: document_rss_mib=0.188 after_inspection_rss_mib=0.000"
+        ]
+      }
+    ],
+    "console_cpu": [
+      {
+        "pair": 0,
+        "version": "before",
+        "user_seconds": 6.620208,
+        "system_seconds": 1.184883,
+        "wall_seconds": 7.6373260830005165
+      },
+      {
+        "pair": 0,
+        "version": "after",
+        "user_seconds": 6.1042629999999996,
+        "system_seconds": 1.101587,
+        "wall_seconds": 7.05748908300302
+      },
+      {
+        "pair": 1,
+        "version": "after",
+        "user_seconds": 6.557782000000001,
+        "system_seconds": 1.2084009999999998,
+        "wall_seconds": 7.6204872079979395
+      },
+      {
+        "pair": 1,
+        "version": "before",
+        "user_seconds": 4.5647780000000004,
+        "system_seconds": 0.8838080000000001,
+        "wall_seconds": 5.282777000000351
+      },
+      {
+        "pair": 2,
+        "version": "before",
+        "user_seconds": 5.5251079999999995,
+        "system_seconds": 0.9929389999999998,
+        "wall_seconds": 6.376185041008284
+      },
+      {
+        "pair": 2,
+        "version": "after",
+        "user_seconds": 7.4193979999999975,
+        "system_seconds": 1.3213840000000001,
+        "wall_seconds": 8.717326250000042
+      },
+      {
+        "pair": 3,
+        "version": "after",
+        "user_seconds": 6.629254000000003,
+        "system_seconds": 1.223395,
+        "wall_seconds": 7.752632832998643
+      },
+      {
+        "pair": 3,
+        "version": "before",
+        "user_seconds": 6.1290890000000005,
+        "system_seconds": 1.1188289999999999,
+        "wall_seconds": 7.105332749997615
+      },
+      {
+        "pair": 4,
+        "version": "before",
+        "user_seconds": 7.081339999999997,
+        "system_seconds": 1.2930770000000003,
+        "wall_seconds": 8.232382417001645
+      },
+      {
+        "pair": 4,
+        "version": "after",
+        "user_seconds": 6.597245999999998,
+        "system_seconds": 1.1739739999999994,
+        "wall_seconds": 7.647597792005399
+      }
+    ],
+    "limitations": "Noisy shared host. Render/DOM/mutation ranges overlap. Console warning median +20%, aggregate CPU median +7.2%; no causal attribution or tight no-regression guarantee. Capture hot-path files unchanged."
+  },
+  "limitations": [
+    "Matched-rule extraction deliberately stopped after runtime counterexample",
+    "23 cached scalar longhands only; no layout flush or freshness guarantee",
+    "Author sheets only; other origins and imported child sheets unsupported",
+    "Known depth-122 first-layout hang remains; no D3-C work",
+    "macOS arm64 only; no visual screenshot review or full upstream WPT suite"
+  ]
+}

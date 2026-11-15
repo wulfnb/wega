@@ -1,6 +1,6 @@
 # Wega DevTools implementation roadmap (D1–D7)
 
-Plan; **D1, D2 and the read-only D3-A slice are implemented locally** (see [`devtools-d1-report.md`](./devtools-d1-report.md), [`devtools-d2-report.md`](./devtools-d2-report.md), [`devtools-d3-a-report.md`](./devtools-d3-a-report.md)). D3-B/C and D4–D7 are not started. Design: [`devtools-design.md`](./devtools-design.md). Evidence: [`devtools-pr58-deletion-audit.md`](./devtools-pr58-deletion-audit.md), [`devtools-current-capabilities.md`](./devtools-current-capabilities.md).
+Plan; **D1, D2, read-only D3-A and the supported read-only D3-B scope are implemented locally** (see [`devtools-d1-report.md`](./devtools-d1-report.md), [`devtools-d2-report.md`](./devtools-d2-report.md), [`devtools-d3-a-report.md`](./devtools-d3-a-report.md), [`devtools-d3-b-report.md`](./devtools-d3-b-report.md)). D3-B matched rules remain explicitly unsupported after the runtime feasibility stop. D3-C and D4–D7 are not started. Design: [`devtools-design.md`](./devtools-design.md). Evidence: [`devtools-pr58-deletion-audit.md`](./devtools-pr58-deletion-audit.md), [`devtools-current-capabilities.md`](./devtools-current-capabilities.md).
 
 **Complexity scale** (one engineer, rough, includes tests and docs): S ≤ 1 week, M 1–3 weeks, L 3–6 weeks, XL > 6 weeks. These are estimates, not measurements.
 
@@ -99,10 +99,31 @@ Design was committed first (`2c71136`); implementation stages `9bc0c35`, `f18d0c
 `678a002`, `ed8e688`. Both prerequisite investigations and the full local validation
 matrix are recorded in [`devtools-d3-a-report.md`](./devtools-d3-a-report.md).
 
-D3-B can start with read-only styles design/adapter work. In-sheet CSSOM epoch
-coverage must be fixed before editing; D3-C geometry work remains constrained by
-the known depth-122 first-flush hang. None of the combined D3 editing, CSS or
-highlighting scope above is implied complete by D3-A.
+D3-B subsequently closed the in-sheet CSSOM generation gap in the existing
+invalidation paths. D3-C geometry work remains constrained by the known
+depth-122 first-flush hang. None of the combined D3 editing or highlighting
+scope above is implied complete by D3-A/B.
+
+### D3-B actual progress (implemented locally, supported scope)
+
+The Elements panel now exposes author stylesheet/rule/declaration pages, inline
+declarations and 23 cached scalar computed longhands through Wega-owned borrowed
+contracts. Engine protocol 25 / inspector 4. Reads never request layout, selector
+matching or page JavaScript; references bind the existing target/session/document
+authority plus mutation epoch and stylesheet generation. Traversal, serialization,
+response bytes, UI retention and pending work are bounded.
+
+Design and executable spike were committed first (`9b08a19`). The spike disproved
+reliable matched-rule recovery from retained declaration blocks, so that subfeature
+stopped with explicit Unsupported responses. No guessed selectors, specificity or
+cascade winners are shown. See the design and report for the runtime counterexample,
+two narrow documented vendor patches, exact tests and measurements. Shared-host
+console timing uncertainty remains recorded in the report.
+
+D3-C must first resolve the layout hang or prove a bounded/cancellable geometry
+contract. Matched rules need a separate provenance/matching design, and wider
+computed values need bounded serialization and freshness semantics. No editing,
+picker, overlay or D3-C work was added, and nothing was pushed.
 
 ## D4: Network request and response inspection, timing, filtering, safe body access
 
