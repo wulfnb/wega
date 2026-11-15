@@ -89,8 +89,32 @@ fn row_byte_edge_and_pending_limits_survive_repeated_pagination() {
         complete(&mut m, read, nodes, Some((i + 1) * 64));
         assert!(m.rows.len() <= CACHE_NODES && m.bytes <= CACHE_BYTES);
         assert!(m.rows.values().map(|r| r.children.len()).sum::<usize>() <= CACHE_NODES);
+        assert!(m.rows.len() <= 65, "old pages must be evicted");
     }
     assert!(m.next().is_none());
+    assert!(m.notice.is_empty());
+    // Independent descriptions cannot grow the cache without a bound either.
+    for key in 2000..2600 {
+        let mut value = node(key);
+        value.attributes = (0..MAX_DOM_ATTRIBUTES)
+            .map(|i| DomAttribute {
+                name: format!("a{i}"),
+                namespace: String::new(),
+                value: "x".repeat(MAX_DOM_TEXT),
+            })
+            .collect();
+        complete(&mut m, Read::Describe(node(key).id), vec![value], None);
+    }
+    assert!(
+        m.rows.len() < 128 && m.bytes <= CACHE_BYTES,
+        "byte cap applies before the row cap"
+    );
+    assert!(m.notice.contains("limit"));
+    m = model();
+    for key in 2..600 {
+        complete(&mut m, Read::Describe(node(key).id), vec![node(key)], None);
+    }
+    assert_eq!(m.rows.len(), CACHE_NODES);
     assert!(m.notice.contains("limit"));
     m.clear_cache();
     assert!(matches!(m.next(), Some(Read::Root)));
@@ -102,6 +126,33 @@ fn row_byte_edge_and_pending_limits_survive_repeated_pagination() {
     assert!(m.next().is_none());
     m.status_changed(doc(), 5);
     assert!(m.next().is_some());
+}
+#[test]
+fn pagination_reaches_late_siblings_and_keeps_an_off_page_selection() {
+    let mut m = model();
+    let read = m.next().unwrap();
+    complete(&mut m, read, vec![node(2)], Some(1));
+    m.select(node(2).id);
+    complete(&mut m, Read::Describe(node(2).id), vec![node(2)], None);
+    for offset in 1..1000 {
+        m.more(1);
+        let read = m.next().unwrap();
+        assert!(matches!(read, Read::Children {offset: at, ..} if at == offset));
+        complete(
+            &mut m,
+            read,
+            vec![node(offset as u64 + 2)],
+            (offset < 999).then_some(offset + 1),
+        );
+        assert!(m.rows.len() <= 3);
+    }
+    assert_eq!(m.selected, Some(node(2).id));
+    assert_eq!(
+        m.visible().iter().map(|r| r.0).collect::<Vec<_>>(),
+        vec![1, 1001]
+    );
+    m.first(1);
+    assert!(matches!(m.next(), Some(Read::Children { offset: 0, .. })));
 }
 #[test]
 fn mutation_race_foreign_responses_and_removed_selection_fail_safely() {

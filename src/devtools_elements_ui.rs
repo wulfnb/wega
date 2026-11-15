@@ -62,8 +62,10 @@ pub(crate) fn draw(ui: &mut Ui, model: &mut ElementsView) {
                     label.push_str(" · depth limit");
                 }
                 let next = row.next;
+                let has_previous = row.offset > 0;
                 let mut select = false;
                 let mut more = false;
+                let mut first = false;
                 ui.push_id(key, |ui| {
                     ui.horizontal(|ui| {
                         ui.add_space((depth as f32 * 12.0).min(240.0));
@@ -78,7 +80,10 @@ pub(crate) fn draw(ui: &mut Ui, model: &mut ElementsView) {
                             .selectable_label(selected, RichText::new(label).monospace())
                             .clicked();
                         if expand && next.is_some() {
-                            more = ui.small_button("More children").clicked();
+                            more = ui.small_button("Next children").clicked();
+                        }
+                        if expand && has_previous {
+                            first = ui.small_button("First children").clicked();
                         }
                     });
                 });
@@ -90,6 +95,9 @@ pub(crate) fn draw(ui: &mut Ui, model: &mut ElementsView) {
                 }
                 if more {
                     model.more(key);
+                }
+                if first {
+                    model.first(key);
                 }
             }
         });

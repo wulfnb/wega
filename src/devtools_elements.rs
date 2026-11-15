@@ -1,6 +1,6 @@
 //! A bounded presentation cache. The content document is authoritative; this cache
 //! owns only protocol values and drops everything when its document/session changes.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 use wega::engine_protocol::{
     DocumentContext,
@@ -15,6 +15,7 @@ pub(crate) struct Row {
     pub expanded: bool,
     pub children: Vec<u64>,
     pub next: Option<u32>,
+    pub offset: u32,
     pub observed_epoch: u64,
     epoch: Option<u64>,
     bytes: usize,
@@ -72,7 +73,7 @@ pub(crate) struct ElementsView {
     bytes: usize,
     blocked: bool,
     retry_on_status: bool,
-    more: Option<u64>,
+    more: Option<(u64, u32)>,
 }
 impl ElementsView {
     pub fn begin(&mut self, read: Read, now: Instant) {
@@ -128,9 +129,34 @@ impl ElementsView {
         }
     }
     pub fn more(&mut self, key: u64) {
-        if self.rows.contains_key(&key) {
-            self.more = Some(key);
+        if let Some(offset) = self.rows.get(&key).and_then(|r| r.next) {
+            self.more = Some((key, offset));
         }
+    }
+    pub fn first(&mut self, key: u64) {
+        if self.rows.contains_key(&key) {
+            self.more = Some((key, 0));
+        }
+    }
+    /// Evict old page values, retaining only bounded cached branches reachable
+    /// from the displayed root, incoming page or current selection. Never reads DOM.
+    fn prune(&mut self, incoming: &[u64]) {
+        let mut keep = BTreeSet::new();
+        let mut stack = incoming.to_vec();
+        stack.extend(self.root);
+        stack.extend(self.selected.map(|n| n.key));
+        while let Some(key) = stack.pop() {
+            if keep.len() >= CACHE_NODES {
+                break;
+            }
+            if keep.insert(key)
+                && let Some(row) = self.rows.get(&key)
+            {
+                stack.extend(&row.children);
+            }
+        }
+        self.rows.retain(|key, _| keep.contains(key));
+        self.bytes = self.rows.values().map(|r| r.bytes).sum();
     }
     pub fn next(&self) -> Option<Read> {
         if self.pending.is_some() || self.blocked {
@@ -155,8 +181,8 @@ impl ElementsView {
                         offset: 0,
                     });
                 }
-                if self.more == Some(key)
-                    && let Some(offset) = row.next
+                if let Some((parent, offset)) = self.more
+                    && parent == key
                 {
                     return Some(Read::Children {
                         node: row.node.id,
@@ -258,14 +284,16 @@ impl ElementsView {
             self.blocked = true;
             return;
         }
-        if let Read::Children { node, offset, .. } = read {
+        if let Read::Children { node, .. } = read {
+            // Page windows, rather than indefinite append, let the UI reach the
+            // end of arbitrarily wide parents without exceeding the cache cap.
+            if let Some(parent) = self.rows.get_mut(&node.key) {
+                parent.children.clear();
+            }
+            let incoming = page.nodes.iter().map(|n| n.id.key).collect::<Vec<_>>();
+            self.prune(&incoming);
             let edges: usize = self.rows.values().map(|r| r.children.len()).sum();
-            let replaced = if offset == 0 {
-                self.rows.get(&node.key).map_or(0, |r| r.children.len())
-            } else {
-                0
-            };
-            if edges - replaced + page.nodes.len() > CACHE_NODES {
+            if edges + page.nodes.len() > CACHE_NODES {
                 self.notice = "Elements cache limit reached. Reset the tree to continue.".into();
                 self.blocked = true;
                 return;
@@ -303,6 +331,7 @@ impl ElementsView {
                         expanded: false,
                         children: vec![],
                         next: None,
+                        offset: 0,
                         epoch: None,
                         observed_epoch: page.epoch,
                         bytes: size,
@@ -323,9 +352,8 @@ impl ElementsView {
             Read::Describe(_) => self.selected_epoch = Some(page.epoch),
             Read::Children { node, offset, .. } => {
                 if let Some(parent) = self.rows.get_mut(&node.key) {
-                    if offset == 0 {
-                        parent.children.clear();
-                    }
+                    parent.children.clear();
+                    parent.offset = offset;
                     // Total edge storage is also bounded, even for forged duplicates.
                     for key in keys {
                         if key != node.key
