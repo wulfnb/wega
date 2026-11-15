@@ -221,6 +221,62 @@ impl crate::browser::Browser {
                 };
                 assert_eq!(failure.name, "TypeError");
                 assert!(failure.stack.as_deref().unwrap_or("").contains("failing"));
+                self.tools.elements_tab = true;
+                self.tools.console_tab = false;
+                self.devtools.elements_active = true;
+                next(self, 15);
+            }
+            15 => {
+                self.window.request_redraw();
+                // Expand through real protocol pages, using no page JS for inspection.
+                for row in self.devtools.elements.rows.values_mut() {
+                    row.expanded = true;
+                }
+                let selected = self
+                    .devtools
+                    .elements
+                    .rows
+                    .values()
+                    .find(|r| {
+                        r.node
+                            .attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "counter")
+                    })
+                    .map(|r| r.node.id);
+                let Some(selected) = selected else { return };
+                self.devtools.elements.select(selected);
+                self.apply(wega::application::Command::Dock(
+                    crate::tool_window::Dock::Window,
+                ));
+                next(self, 16);
+            }
+            16 => {
+                self.window.request_redraw();
+                let Some(window) = &self.tool_window else {
+                    return;
+                };
+                if window.frames < 2 || self.devtools.elements.pending.is_some() {
+                    return;
+                }
+                assert!(self.devtools.elements.selected.is_some());
+                assert!(self.devtools.elements.rows.len() > 5);
+                assert_eq!(self.devtools.elements.document, self.devtools_document());
+                let target = self.devtools.target_tab();
+                // A detached window stays pinned while the browser selects another tab.
+                self.new_tab();
+                self.devtools_tick(&egui::Context::default());
+                assert_eq!(self.devtools.target_tab(), target);
+                self.select_tab(0);
+                self.apply(wega::application::Command::Dock(
+                    crate::tool_window::Dock::Bottom,
+                ));
+                println!(
+                    "inspector-test: Elements expanded, selected, drawn in detached OS window and pinned across a real tab switch"
+                );
+                next(self, 17);
+            }
+            17 => {
                 let mut url = self.tab().url().to_string();
                 url.push_str("?second");
                 if let Ok(url) = url::Url::parse(&url) {
@@ -238,6 +294,10 @@ impl crate::browser::Browser {
                 };
                 if snapshot.document.document.0 > first {
                     assert!(snapshot.url.ends_with("?second"), "{}", snapshot.url);
+                    assert!(
+                        self.devtools.elements.selected.is_none(),
+                        "selection survived document replacement"
+                    );
                     // Navigation revoked evaluation authority and started a fresh history.
                     let document = self.devtools_document().unwrap();
                     assert!(
@@ -326,7 +386,7 @@ impl crate::browser::Browser {
                 }
                 let test = self.harness.inspector_test.as_ref().unwrap();
                 println!(
-                    "INSPECTOR TEST PASSED: attach, real status snapshot, console backfill and live capture, evaluation refused until explicitly enabled, evaluation result and exception, navigation revokes the grant and clears history, detach revokes, reattach with a new session, stalled engine reported without freezing the UI"
+                    "INSPECTOR TEST PASSED: attach, status, console and evaluation; Elements tree expansion and selection, detached OS window and pinned real tab switch; navigation clears selection and authority; detach, reattach and stalled-worker recovery"
                 );
                 println!(
                     "inspector-test: stalled worker reported NotResponding after {} ms with {} UI polls; recovered {} ms after SIGCONT",

@@ -1647,7 +1647,7 @@ impl Page {
         )
     }
 
-    fn inspector_request_args(
+    pub(crate) fn inspector_request_args(
         &self,
         session: InspectorSessionId,
         command: InspectorCommand,
@@ -1673,6 +1673,28 @@ impl Page {
                 sessions.registry().authorize(session, target)?;
                 target
             };
+            InspectorRequest {
+                version: inspector::INSPECTOR_VERSION,
+                session,
+                target,
+                command,
+                args: args.clone(),
+            }
+            .validate()?;
+            if let InspectorArgs::DomNode { node } | InspectorArgs::DomChildren { node, .. } = &args
+            {
+                if node.document
+                    != (DocumentContext {
+                        document: state.requests.document(),
+                        revision: state.requests.revision(),
+                    })
+                {
+                    return Err(Self::inspector_error(
+                        InspectorErrorCode::StaleDocument,
+                        "DOM node belongs to an old document",
+                    ));
+                }
+            }
             let context = state
                 .requests
                 .begin_inspector(

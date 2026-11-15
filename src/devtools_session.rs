@@ -18,8 +18,9 @@ use wega::engine_protocol::{
     DocumentContext,
     identity::ProcessSessionId,
     inspector::{
-        EvalOutcome, InspectorCommand, InspectorError, InspectorErrorCode, InspectorEvent,
-        InspectorResponse, InspectorSessionId, StatusSnapshot, TargetId, session::Completed,
+        EvalOutcome, InspectorArgs, InspectorCommand, InspectorError, InspectorErrorCode,
+        InspectorEvent, InspectorResponse, InspectorSessionId, StatusSnapshot, TargetId,
+        session::Completed,
     },
 };
 
@@ -32,6 +33,18 @@ const MAX_ATTACH_RETRIES: u8 = 3;
 
 /// What the view needs from a page. `Page` implements it; tests use a scripted fake.
 pub(crate) trait InspectorPort {
+    fn request_args(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+    ) -> Result<(), InspectorError> {
+        let _ = (session, command, args);
+        Err(InspectorError::new(
+            InspectorErrorCode::Unavailable,
+            "DOM unavailable",
+        ))
+    }
     fn target(&self) -> Option<TargetId>;
     fn open(&self) -> Result<InspectorSessionId, InspectorError>;
     fn request(
@@ -53,6 +66,14 @@ pub(crate) trait InspectorPort {
 }
 
 impl InspectorPort for crate::wega_page::Page {
+    fn request_args(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+    ) -> Result<(), InspectorError> {
+        self.inspector_request_args(session, command, args)
+    }
     fn target(&self) -> Option<TargetId> {
         self.inspector_target()
     }
@@ -143,6 +164,8 @@ pub(crate) struct DevtoolsView {
     dropped_events: u64,
     next_open: Option<Instant>,
     pub(crate) console: ConsoleView,
+    pub(crate) elements: crate::devtools_elements::ElementsView,
+    pub(crate) elements_active: bool,
 }
 
 impl Default for DevtoolsView {
@@ -156,6 +179,8 @@ impl Default for DevtoolsView {
             dropped_events: 0,
             next_open: None,
             console: ConsoleView::default(),
+            elements: Default::default(),
+            elements_active: false,
         }
     }
 }
@@ -179,6 +204,9 @@ impl DevtoolsView {
     }
     #[cfg(any(test, feature = "test-harness"))]
     pub(crate) fn session(&self) -> Option<InspectorSessionId> {
+        self.session_id()
+    }
+    pub(crate) fn session_id(&self) -> Option<InspectorSessionId> {
         self.live.as_ref().map(|live| live.session)
     }
     pub(crate) fn dropped_events(&self) -> u64 {
@@ -218,6 +246,7 @@ impl DevtoolsView {
         if self.open && self.target_tab == Some(key) {
             self.live = None;
             self.console.reset_session();
+            self.elements.reset();
             self.snapshot = None;
             self.state = ViewState::TargetClosed;
         }
@@ -301,6 +330,7 @@ impl DevtoolsView {
             page.close(live.session);
         }
         self.console.reset_session();
+        self.elements.reset();
         self.snapshot = None;
     }
 
@@ -332,6 +362,7 @@ impl DevtoolsView {
             Resolved::Closed => {
                 self.live = None;
                 self.console.reset_session();
+                self.elements.reset();
                 self.snapshot = None;
                 self.state = ViewState::TargetClosed;
                 return;
@@ -340,6 +371,7 @@ impl DevtoolsView {
                 // Nothing to revoke: the process (and its registry) is already gone.
                 self.live = None;
                 self.console.reset_session();
+                self.elements.reset();
                 self.snapshot = None;
                 self.state = ViewState::NoPage;
                 return;
@@ -349,6 +381,7 @@ impl DevtoolsView {
         let Some(target) = page.target().filter(|target| target.tab.0 == tab) else {
             self.live = None;
             self.console.reset_session();
+            self.elements.reset();
             self.snapshot = None;
             self.state = ViewState::Unavailable("The page has no inspector".into());
             return;
@@ -361,6 +394,7 @@ impl DevtoolsView {
         {
             self.live = None;
             self.console.reset_session();
+            self.elements.reset();
             self.snapshot = None;
             self.state = ViewState::Connecting;
         }
@@ -382,6 +416,7 @@ impl DevtoolsView {
                         console_requested: false,
                     });
                     self.console.reset_session();
+                    self.elements.reset();
                     self.snapshot = None;
                     self.state = ViewState::Connecting;
                     self.next_open = None;
@@ -402,6 +437,7 @@ impl DevtoolsView {
             // Crash, kill or shutdown: this process can never be inspected again.
             self.live = None;
             self.console.reset_session();
+            self.elements.reset();
             self.snapshot = None;
             self.state = ViewState::Unavailable("The content process stopped".into());
             self.next_open = Some(now + RETRY);
@@ -424,6 +460,8 @@ impl DevtoolsView {
             }
         }
         self.console.new_document(poll.document);
+        self.elements.document(poll.document);
+        self.elements.expire(now);
         for event in poll.console {
             match event {
                 InspectorEvent::ConsoleMessageAdded(message)
@@ -506,6 +544,16 @@ impl DevtoolsView {
         } else {
             ViewState::Updating
         };
+        if self.elements_active && self.state == ViewState::Attached {
+            if let Some(read) = self.elements.next() {
+                let (command, args) = read.request();
+                match page.request_args(session, command, args) {
+                    Ok(()) => self.elements.begin(read, now),
+                    Err(error) if error.code == InspectorErrorCode::Busy => {}
+                    Err(error) => self.elements.notice = error.message,
+                }
+            }
+        }
     }
 
     fn complete(
@@ -521,6 +569,10 @@ impl DevtoolsView {
             return;
         };
         if completed.session != live.session {
+            return;
+        }
+        if completed.command.needs_dom_version() {
+            self.elements.complete(completed.command, completed.result);
             return;
         }
         match (completed.command, completed.result) {
@@ -594,6 +646,8 @@ impl DevtoolsView {
                             && snapshot.is_bounded() =>
                     {
                         live.last_snapshot = Some(now);
+                        self.elements
+                            .status_changed(document, snapshot.mutation_epoch);
                         self.snapshot = Some(*snapshot);
                     }
                     // A stale or foreign snapshot is dropped and asked for again.

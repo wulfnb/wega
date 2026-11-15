@@ -4,6 +4,7 @@ pub struct Toolbox {
     pub error: Option<String>,
     /// The Console tab is selected (otherwise Status).
     pub console_tab: bool,
+    pub elements_tab: bool,
 }
 impl Default for Toolbox {
     fn default() -> Self {
@@ -11,6 +12,7 @@ impl Default for Toolbox {
             panel_rect: egui::Rect::NOTHING,
             error: None,
             console_tab: false,
+            elements_tab: false,
         }
     }
 }

@@ -11,6 +11,8 @@ mod components;
 mod containers_ui;
 mod devtools_console;
 mod devtools_console_ui;
+mod devtools_elements;
+mod devtools_elements_ui;
 mod devtools_session;
 mod devtools_ui;
 mod page_safety;

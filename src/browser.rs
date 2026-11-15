@@ -489,7 +489,11 @@ impl Browser {
             .inspector
             .as_ref()
             .map(|sessions| sessions.registry().target());
-        (target == Some(snapshot.target) && snapshot.document == current).then_some(snapshot)
+        let live = state.inspector.as_ref().and_then(|s| s.registry().live());
+        (target == Some(snapshot.target)
+            && snapshot.document == current
+            && live == self.devtools.session_id())
+        .then_some(snapshot)
     }
     /// Title and process facts of the tab the developer tools are bound to.
     pub(crate) fn devtools_target(&self) -> Option<(&Tab, Option<&crate::wega_page::Page>)> {

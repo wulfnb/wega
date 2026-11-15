@@ -86,10 +86,37 @@ impl Browser {
             ));
         }
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.tools.console_tab, false, "Status");
-            ui.selectable_value(&mut self.tools.console_tab, true, "Console");
+            if ui
+                .selectable_label(self.tools.elements_tab, "Elements")
+                .clicked()
+            {
+                self.tools.elements_tab = true;
+                self.tools.console_tab = false;
+            }
+            if ui
+                .selectable_label(
+                    !self.tools.elements_tab && !self.tools.console_tab,
+                    "Status",
+                )
+                .clicked()
+            {
+                self.tools.elements_tab = false;
+                self.tools.console_tab = false;
+            }
+            if ui
+                .selectable_label(self.tools.console_tab, "Console")
+                .clicked()
+            {
+                self.tools.elements_tab = false;
+                self.tools.console_tab = true;
+            }
         });
+        self.devtools.elements_active = self.tools.elements_tab;
         self.devtools_state_line(ui);
+        if self.tools.elements_tab {
+            self.elements_tab(ui);
+            return;
+        }
         if self.tools.console_tab {
             self.console_tab(ui);
             return;
