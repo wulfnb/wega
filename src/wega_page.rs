@@ -1695,6 +1695,31 @@ impl Page {
                     ));
                 }
             }
+            if let InspectorArgs::Style { query } = &args {
+                let current = DocumentContext {
+                    document: state.requests.document(),
+                    revision: state.requests.revision(),
+                };
+                if query.node().is_some_and(|n| n.document != current)
+                    || query
+                        .reference()
+                        .is_some_and(|r| r.scope.document != current)
+                {
+                    return Err(Self::inspector_error(
+                        InspectorErrorCode::StaleDocument,
+                        "Style reference belongs to a replaced document",
+                    ));
+                }
+                if query
+                    .reference()
+                    .is_some_and(|r| r.scope.target != target || r.scope.session != session)
+                {
+                    return Err(Self::inspector_error(
+                        InspectorErrorCode::Unauthorized,
+                        "Style reference belongs to another inspector",
+                    ));
+                }
+            }
             let context = state
                 .requests
                 .begin_inspector(

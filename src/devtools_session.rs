@@ -166,6 +166,7 @@ pub(crate) struct DevtoolsView {
     pub(crate) console: ConsoleView,
     pub(crate) elements: crate::devtools_elements::ElementsView,
     pub(crate) elements_active: bool,
+    pub(crate) styles: crate::devtools_styles::StyleView,
 }
 
 impl Default for DevtoolsView {
@@ -181,6 +182,7 @@ impl Default for DevtoolsView {
             console: ConsoleView::default(),
             elements: Default::default(),
             elements_active: false,
+            styles: Default::default(),
         }
     }
 }
@@ -247,6 +249,7 @@ impl DevtoolsView {
             self.live = None;
             self.console.reset_session();
             self.elements.reset();
+            self.styles.reset();
             self.snapshot = None;
             self.state = ViewState::TargetClosed;
         }
@@ -331,6 +334,7 @@ impl DevtoolsView {
         }
         self.console.reset_session();
         self.elements.reset();
+        self.styles.reset();
         self.snapshot = None;
     }
 
@@ -363,6 +367,7 @@ impl DevtoolsView {
                 self.live = None;
                 self.console.reset_session();
                 self.elements.reset();
+                self.styles.reset();
                 self.snapshot = None;
                 self.state = ViewState::TargetClosed;
                 return;
@@ -372,6 +377,7 @@ impl DevtoolsView {
                 self.live = None;
                 self.console.reset_session();
                 self.elements.reset();
+                self.styles.reset();
                 self.snapshot = None;
                 self.state = ViewState::NoPage;
                 return;
@@ -382,6 +388,7 @@ impl DevtoolsView {
             self.live = None;
             self.console.reset_session();
             self.elements.reset();
+            self.styles.reset();
             self.snapshot = None;
             self.state = ViewState::Unavailable("The page has no inspector".into());
             return;
@@ -395,6 +402,7 @@ impl DevtoolsView {
             self.live = None;
             self.console.reset_session();
             self.elements.reset();
+            self.styles.reset();
             self.snapshot = None;
             self.state = ViewState::Connecting;
         }
@@ -417,6 +425,7 @@ impl DevtoolsView {
                     });
                     self.console.reset_session();
                     self.elements.reset();
+                    self.styles.reset();
                     self.snapshot = None;
                     self.state = ViewState::Connecting;
                     self.next_open = None;
@@ -438,6 +447,7 @@ impl DevtoolsView {
             self.live = None;
             self.console.reset_session();
             self.elements.reset();
+            self.styles.reset();
             self.snapshot = None;
             self.state = ViewState::Unavailable("The content process stopped".into());
             self.next_open = Some(now + RETRY);
@@ -554,6 +564,33 @@ impl DevtoolsView {
                 }
             }
         }
+        if self.elements_active && self.state == ViewState::Attached {
+            if let Some(epoch) = self.elements.epoch {
+                if let Some(query) = self.styles.prepare(
+                    now,
+                    target,
+                    session,
+                    poll.document,
+                    epoch,
+                    self.elements.selected,
+                ) {
+                    match page.request_args(
+                        session,
+                        InspectorCommand::InspectStyle,
+                        InspectorArgs::Style {
+                            query: query.clone(),
+                        },
+                    ) {
+                        Ok(()) => self.styles.begin(query, now),
+                        Err(error) if error.code == InspectorErrorCode::Busy => {}
+                        Err(error) => {
+                            self.styles.begin(query, now);
+                            self.styles.complete(Err(error));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn complete(
@@ -569,6 +606,10 @@ impl DevtoolsView {
             return;
         };
         if completed.session != live.session {
+            return;
+        }
+        if completed.command.needs_style_version() {
+            self.styles.complete(completed.result);
             return;
         }
         if completed.command.needs_dom_version() {

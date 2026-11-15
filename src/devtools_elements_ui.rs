@@ -137,7 +137,21 @@ impl Browser {
         let valid = self.devtools_snapshot().is_some()
             && self.devtools_document() == self.devtools.elements.document;
         if valid {
-            draw(ui, &mut self.devtools.elements);
+            let valid_style = self.devtools.styles.page.as_ref().is_none_or(|p| {
+                self.devtools_snapshot().is_some_and(|s| {
+                    p.scope.target == s.target
+                        && p.scope.document == s.document
+                        && Some(p.scope.session) == self.devtools.session_id()
+                })
+            });
+            if !valid_style {
+                self.devtools.styles.reset();
+            }
+            ui.columns(2, |columns| {
+                draw(&mut columns[0], &mut self.devtools.elements);
+                self.devtools.styles.select(self.devtools.elements.selected);
+                crate::devtools_styles_ui::draw(&mut columns[1], &mut self.devtools.styles);
+            });
         } else {
             ui.label("Waiting for the current document…");
         }

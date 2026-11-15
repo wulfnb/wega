@@ -14,6 +14,8 @@ mod devtools_console_ui;
 mod devtools_elements;
 mod devtools_elements_ui;
 mod devtools_session;
+mod devtools_styles;
+mod devtools_styles_ui;
 mod devtools_ui;
 mod page_safety;
 use wega::downloads;

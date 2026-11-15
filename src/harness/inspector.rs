@@ -246,6 +246,9 @@ impl crate::browser::Browser {
                     .map(|r| r.node.id);
                 let Some(selected) = selected else { return };
                 self.devtools.elements.select(selected);
+                self.devtools
+                    .styles
+                    .change_mode(crate::devtools_styles::Mode::Computed);
                 self.apply(wega::application::Command::Dock(
                     crate::tool_window::Dock::Window,
                 ));
@@ -262,6 +265,74 @@ impl crate::browser::Browser {
                 assert!(self.devtools.elements.selected.is_some());
                 assert!(self.devtools.elements.rows.len() > 5);
                 assert_eq!(self.devtools.elements.document, self.devtools_document());
+                let Some(style) = self.devtools.styles.page.as_ref() else {
+                    return;
+                };
+                assert_eq!(
+                    style.availability,
+                    wega::engine_protocol::inspector::styles::StyleAvailability::Cached
+                );
+                assert!(style.items.iter().any(|d|matches!(d,wega::engine_protocol::inspector::styles::StyleItem::Declaration{name,..}if name=="color")));
+                self.devtools
+                    .styles
+                    .change_mode(crate::devtools_styles::Mode::Sheets);
+                next(self, 18);
+            }
+            18 => {
+                self.window.request_redraw();
+                let Some(page) = &self.devtools.styles.page else {
+                    return;
+                };
+                let Some(reference) = page.items.iter().find_map(|i| {
+                    if let wega::engine_protocol::inspector::styles::StyleItem::Sheet {
+                        reference,
+                        ..
+                    } = i
+                    {
+                        Some(reference.clone())
+                    } else {
+                        None
+                    }
+                }) else {
+                    return;
+                };
+                self.devtools.styles.show_rules(reference, false);
+                next(self, 19);
+            }
+            19 => {
+                self.window.request_redraw();
+                let Some(page) = &self.devtools.styles.page else {
+                    return;
+                };
+                let Some(reference) = page.items.iter().find_map(|i| {
+                    if let wega::engine_protocol::inspector::styles::StyleItem::Rule {
+                        reference,
+                        declarations,
+                        ..
+                    } = i
+                    {
+                        (*declarations > 0).then_some(reference.clone())
+                    } else {
+                        None
+                    }
+                }) else {
+                    return;
+                };
+                self.devtools.styles.show_rules(reference, true);
+                next(self, 20);
+            }
+            20 => {
+                self.window.request_redraw();
+                let Some(page) = &self.devtools.styles.page else {
+                    return;
+                };
+                assert!(page.items.iter().any(|d| matches!(
+                    d,
+                    wega::engine_protocol::inspector::styles::StyleItem::Declaration { .. }
+                )));
+                println!(
+                    "inspector-test: CSS cached computed, author sheets, rules and declarations passed in detached window"
+                );
                 let target = self.devtools.target_tab();
                 // A detached window stays pinned while the browser selects another tab.
                 self.new_tab();
