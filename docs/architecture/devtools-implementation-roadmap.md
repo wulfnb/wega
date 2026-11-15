@@ -188,3 +188,8 @@ D2, D3 and D4 are independent after D1 and can proceed in parallel. D5 carries t
 | Observers cost performance | zero-cost-when-closed rule gated by the benchmark runner in every round |
 | Scope creep toward Chrome parity | each round's non-goals list; new domains need a design note |
 | Sensitive-data mistakes | redaction at the source, grant model, default-off bodies, a dedicated security validation in D7 and per-round negative tests |
+
+
+## D3.0 status
+
+D3.0 prerequisites are complete locally; see `devtools-d3-0-report.md` for results, risks and the recommended D3-A/B/C boundaries.
