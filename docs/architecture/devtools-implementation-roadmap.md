@@ -1,6 +1,6 @@
 # Wega DevTools implementation roadmap (D1–D7)
 
-Plan; **D1 and D2 are implemented** (see [`devtools-d1-report.md`](./devtools-d1-report.md), [`devtools-d2-report.md`](./devtools-d2-report.md)); D3–D7 are not started. Design: [`devtools-design.md`](./devtools-design.md). Evidence: [`devtools-pr58-deletion-audit.md`](./devtools-pr58-deletion-audit.md), [`devtools-current-capabilities.md`](./devtools-current-capabilities.md).
+Plan; **D1, D2 and the read-only D3-A slice are implemented locally** (see [`devtools-d1-report.md`](./devtools-d1-report.md), [`devtools-d2-report.md`](./devtools-d2-report.md), [`devtools-d3-a-report.md`](./devtools-d3-a-report.md)). D3-B/C and D4–D7 are not started. Design: [`devtools-design.md`](./devtools-design.md). Evidence: [`devtools-pr58-deletion-audit.md`](./devtools-pr58-deletion-audit.md), [`devtools-current-capabilities.md`](./devtools-current-capabilities.md).
 
 **Complexity scale** (one engineer, rough, includes tests and docs): S ≤ 1 week, M 1–3 weeks, L 3–6 weeks, XL > 6 weeks. These are estimates, not measurements.
 
@@ -87,6 +87,22 @@ Done: console capture (all five structured methods plus formatter output), bound
 **Complexity.** XL (the `inspect` contract and adapter dominate).
 
 **Non-goals.** Pseudo-element styles, event-listener inspector (needs a registry export from `semantics.js`; tracked separately), shadow-tree styling, animation inspection, computed-style *tracing* (which rule won each property beyond order and specificity), accessibility tree viewer (data exists; separate small panel after D7).
+
+### D3-A actual progress (implemented locally)
+
+The D3-A slice is deliberately **read-only**: expandable paginated Elements tree,
+metadata/attributes/own-text previews and selection, using the authoritative Wega
+DOM, stamped generation-bearing IDs and D3.0's separate mutation epoch. Engine
+protocol 24 / inspector 3. Bounded backend, UI cache/page windows and existing
+browser session authorization; no injected inspection JavaScript or layout flush.
+Design was committed first (`2c71136`); implementation stages `9bc0c35`, `f18d0c0`,
+`678a002`, `ed8e688`. Both prerequisite investigations and the full local validation
+matrix are recorded in [`devtools-d3-a-report.md`](./devtools-d3-a-report.md).
+
+D3-B can start with read-only styles design/adapter work. In-sheet CSSOM epoch
+coverage must be fixed before editing; D3-C geometry work remains constrained by
+the known depth-122 first-flush hang. None of the combined D3 editing, CSS or
+highlighting scope above is implied complete by D3-A.
 
 ## D4: Network request and response inspection, timing, filtering, safe body access
 
