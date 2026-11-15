@@ -2,8 +2,8 @@
 //! content process. Names no engine, DOM, script or embedder type, so any backend can
 //! implement it and the UI never sees engine internals.
 //!
-//! The command set is closed: there is no evaluation, no free-form method name and no
-//! generic payload that a backend could interpret. Only the browser process writes
+//! The command set is closed: evaluation requires a browser-owned grant, and there is
+//! no free-form dispatch method or generic backend payload. Only the browser process writes
 //! [`crate::Command`]s; a page can neither construct nor submit one.
 use crate::{
     DocumentContext,
@@ -81,8 +81,8 @@ impl TargetId {
 #[serde(transparent)]
 pub struct InspectorSessionId(pub u64);
 
-/// The complete command set. Every command is parameterless: the session, target and
-/// document stamp travel in the envelope, so there is nothing for a backend to interpret.
+/// The complete command set. Parameters use the closed `InspectorArgs` enum; session,
+/// target and document stamp are independently checked by the envelope and authority.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InspectorCommand {
     Attach,

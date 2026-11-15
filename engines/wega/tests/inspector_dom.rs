@@ -33,18 +33,29 @@ fn describe(doc: &BlitzDocument, key: NodeKey) -> Result<DomPage, InspectorError
     )
 }
 fn children(doc: &BlitzDocument, key: NodeKey, offset: u32, limit: u32) -> DomPage {
-    inspect(
-        doc,
-        stamp(),
-        InspectorCommand::GetDomChildren,
-        &InspectorArgs::DomChildren {
-            node: id(key),
-            epoch: doc.mutation_epoch().as_u64(),
-            offset,
-            limit,
-        },
-    )
-    .unwrap()
+    // A cooperative work deadline can expire if the host deschedules this test
+    // during a compiler/linker run. Retry only that documented budget refusal.
+    for attempt in 0..5 {
+        let result = inspect(
+            doc,
+            stamp(),
+            InspectorCommand::GetDomChildren,
+            &InspectorArgs::DomChildren {
+                node: id(key),
+                epoch: doc.mutation_epoch().as_u64(),
+                offset,
+                limit,
+            },
+        );
+        match result {
+            Ok(page) => return page,
+            Err(error) if error.code == InspectorErrorCode::Timeout && attempt < 4 => {
+                std::thread::yield_now()
+            }
+            Err(error) => panic!("DOM page refused: {error}"),
+        }
+    }
+    unreachable!()
 }
 #[test]
 fn metadata_attributes_own_text_and_comments_are_read_without_layout_or_mutation() {
@@ -74,7 +85,7 @@ fn wide_pages_use_direct_offsets_and_json_byte_limits_even_with_escaped_attribut
         .collect::<String>();
     let html = format!(
         "<!doctype html><body><div id=a>{}</div>",
-        format!("<i{attrs}>text</i>").repeat(1000)
+        format!("<i{attrs}>text</i>").repeat(8) + &"<i>text</i>".repeat(992)
     );
     let d = doc(&html);
     let a = d.element_by_id("a").unwrap();

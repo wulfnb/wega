@@ -1054,3 +1054,39 @@ fn a_closed_panel_with_a_console_never_touches_any_page() {
     view.enable_evaluation(false, &|key| tabs.resolve(key));
     assert_eq!(tabs.pages[&1].calls(), 0);
 }
+
+#[test]
+fn elements_selection_and_pending_reads_follow_navigation_process_and_pinned_window_lifecycle() {
+    use crate::devtools_elements::Read;
+    use wega::engine_protocol::inspector::dom::InspectorNodeId;
+    let tabs = Tabs::new(&[1, 2]);
+    let clock = Clock(Instant::now());
+    let mut view = DevtoolsView::default();
+    view.open(1);
+    for step in 0..4 {
+        run(&mut view, &tabs, &clock, step * 10, 1, false);
+    }
+    let seed = |view: &mut DevtoolsView, document| {
+        view.elements.observe(document, 5);
+        view.elements.selected = Some(InspectorNodeId { document, key: 77 });
+        view.elements.pending = Some(Read::Root);
+    };
+    seed(&mut view, tabs.pages[&1].document());
+    run(&mut view, &tabs, &clock, 50, 2, true);
+    assert_eq!(view.target_tab(), Some(1));
+    assert!(view.elements.selected.is_some());
+    tabs.pages[&1].navigate();
+    run(&mut view, &tabs, &clock, 60, 1, false);
+    assert!(view.elements.selected.is_none() && view.elements.pending.is_none());
+    seed(&mut view, tabs.pages[&1].document());
+    tabs.pages[&1].restart(9);
+    run(&mut view, &tabs, &clock, 70, 1, false);
+    assert!(view.elements.selected.is_none() && view.elements.pending.is_none());
+    seed(&mut view, tabs.pages[&1].document());
+    run(&mut view, &tabs, &clock, 80, 2, false);
+    assert_eq!(view.target_tab(), Some(2));
+    assert!(view.elements.selected.is_none() && view.elements.pending.is_none());
+    seed(&mut view, tabs.pages[&2].document());
+    view.close(&|key| tabs.resolve(key));
+    assert!(view.elements.selected.is_none() && view.elements.pending.is_none());
+}

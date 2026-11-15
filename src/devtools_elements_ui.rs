@@ -58,6 +58,9 @@ pub(crate) fn draw(ui: &mut Ui, model: &mut ElementsView) {
                 if Some(row.observed_epoch) != model.epoch {
                     label.push_str(" · cached");
                 }
+                if has_children && depth >= MAX_DOM_DEPTH {
+                    label.push_str(" · depth limit");
+                }
                 let next = row.next;
                 let mut select = false;
                 let mut more = false;
@@ -94,6 +97,9 @@ pub(crate) fn draw(ui: &mut Ui, model: &mut ElementsView) {
     if let Some(id) = model.selected
         && let Some(row) = model.rows.get(&id.key)
     {
+        if Some(row.observed_epoch) != model.epoch {
+            ui.weak("Cached selection; refreshing…");
+        }
         ui.monospace(format!("Selected: {} · node {}", row.node.name, id.key));
         ui.weak(format!(
             "Type {} · namespace {} · prefix {} · {} children",
@@ -106,7 +112,8 @@ pub(crate) fn draw(ui: &mut Ui, model: &mut ElementsView) {
                     ui.monospace(&row.node.text);
                 }
                 for attr in &row.node.attributes {
-                    ui.monospace(format!("{} = {:?}", attr.name, attr.value));
+                    ui.monospace(format!("{} = {:?}", attr.name, attr.value))
+                        .on_hover_text(format!("Namespace: {}", attr.namespace));
                 }
                 if row.node.truncated {
                     ui.weak("Preview truncated by inspection limits");

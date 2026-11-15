@@ -281,6 +281,7 @@ fn inspect_budget<D: MutationClock>(
             "DOM response byte limit reached",
         ));
     }
+    budget.check()?;
     Ok(page)
 }
 
