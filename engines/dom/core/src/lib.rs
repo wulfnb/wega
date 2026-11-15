@@ -100,6 +100,8 @@ pub const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 /// A borrowed, `Copy` handle to one node of a document.
 pub trait NodeView<'a>: Copy {
     fn kind(self) -> NodeKind;
+    /// Own text/comment data only; never concatenates descendants or flushes layout.
+    fn text(self) -> Option<&'a str>;
     /// The qualified name of an element (or anonymous block).
     fn qual_name(self) -> Option<&'a QualName>;
     /// `Some` for elements (and anonymous blocks).

@@ -11,12 +11,14 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+pub mod dom;
 pub mod policy;
 pub mod session;
 
 /// Message-set version, negotiated inside `Capability::Inspector`, independent of the
 /// engine protocol `VERSION`.
-pub const INSPECTOR_VERSION: u32 = 2;
+pub const INSPECTOR_VERSION: u32 = 3;
+pub const DOM_VERSION: u32 = 3;
 /// First inspector message-set version that carries console and evaluation commands.
 pub const CONSOLE_VERSION: u32 = 2;
 /// Browser-side cap on in-flight inspector requests, a sub-cap of `requests::MAX_PENDING`
@@ -97,9 +99,18 @@ pub enum InspectorCommand {
     GrantEvaluation,
     RevokeEvaluation,
     Evaluate,
+    GetDomRoot,
+    GetDomChildren,
+    DescribeDomNode,
 }
 
 impl InspectorCommand {
+    pub fn needs_dom_version(self) -> bool {
+        matches!(
+            self,
+            Self::GetDomRoot | Self::GetDomChildren | Self::DescribeDomNode
+        )
+    }
     /// Whether the command needs inspector message-set version 2.
     pub fn needs_console_version(self) -> bool {
         !matches!(
@@ -172,6 +183,15 @@ pub enum InspectorArgs {
         expression: String,
         grant: GrantToken,
     },
+    DomNode {
+        node: dom::InspectorNodeId,
+    },
+    DomChildren {
+        node: dom::InspectorNodeId,
+        epoch: u64,
+        offset: u32,
+        limit: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,6 +215,12 @@ impl InspectorRequest {
                 message,
             ))
         };
+        if self.command.needs_dom_version() && self.version < DOM_VERSION {
+            return Err(InspectorError::new(
+                InspectorErrorCode::UnsupportedVersion,
+                "Command needs inspector version 3",
+            ));
+        }
         if self.command.needs_console_version() && self.version < CONSOLE_VERSION {
             return Err(InspectorError::new(
                 InspectorErrorCode::UnsupportedVersion,
@@ -202,6 +228,13 @@ impl InspectorRequest {
             ));
         }
         match (&self.command, &self.args) {
+            (C::GetDomChildren, InspectorArgs::DomChildren { limit, .. }) => {
+                if *limit == 0 || *limit > dom::MAX_DOM_NODES as u32 {
+                    return bad("DOM page size out of range");
+                }
+                Ok(())
+            }
+            (C::DescribeDomNode, InspectorArgs::DomNode { .. }) => Ok(()),
             (C::GetConsoleHistory, InspectorArgs::History { limit, .. }) => {
                 if *limit == 0 || *limit > MAX_HISTORY_PAGE {
                     return bad("History page size out of range");
@@ -242,6 +275,7 @@ impl InspectorRequest {
                 | C::RevokeEvaluation,
                 InspectorArgs::None,
             ) => Ok(()),
+            (C::GetDomRoot, InspectorArgs::None) => Ok(()),
             _ => bad("Arguments do not match the command"),
         }
     }
@@ -550,6 +584,7 @@ pub enum InspectorResponse {
     EvaluationGranted,
     EvaluationRevoked,
     Evaluated(Box<EvalOutcome>),
+    Dom(Box<dom::DomPage>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -602,6 +637,9 @@ pub enum InspectorErrorCode {
     /// The session existed and was revoked or superseded.
     StaleSession,
     StaleDocument,
+    StaleNode,
+    StaleMutation,
+    BudgetExceeded,
     /// The process is gone, closing or restarting, or the inspector is not offered.
     Unavailable,
     UnsupportedVersion,

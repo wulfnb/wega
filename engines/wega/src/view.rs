@@ -2663,6 +2663,15 @@ fn clip_text(text: &str, max: usize) -> String {
 }
 
 impl crate::inspector::PagePort for View {
+    fn inspect_dom(
+        &self,
+        document: wega_protocol::DocumentContext,
+        command: wega_protocol::inspector::InspectorCommand,
+        args: &wega_protocol::inspector::InspectorArgs,
+    ) -> Result<wega_protocol::inspector::dom::DomPage, wega_protocol::inspector::InspectorError>
+    {
+        crate::inspector::dom::inspect(&*self.document.borrow(), document, command, args)
+    }
     fn status_input(&self, sampled: crate::inspector::Sampled) -> crate::inspector::StatusInput {
         let history = self.document_history();
         crate::inspector::StatusInput {

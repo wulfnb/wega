@@ -175,6 +175,13 @@ impl DocumentView for BlitzDocument {
 }
 
 impl<'a> NodeView<'a> for BlitzNode<'a> {
+    fn text(self) -> Option<&'a str> {
+        match &self.0.data {
+            NodeData::Text(text) => Some(&text.content),
+            NodeData::Comment { contents } => Some(contents),
+            _ => None,
+        }
+    }
     #[inline]
     fn kind(self) -> NodeKind {
         match &self.0.data {

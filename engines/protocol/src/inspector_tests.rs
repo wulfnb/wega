@@ -165,16 +165,18 @@ fn unsupported_inspector_versions_are_refused() {
 
 #[test]
 fn the_capability_and_version_are_negotiated() {
-    assert_eq!(crate::VERSION, 23);
+    assert_eq!(crate::VERSION, 24);
     assert!(!crate::capabilities(21).contains(&crate::Capability::Inspector));
     assert!(crate::capabilities(22).contains(&crate::Capability::Inspector));
     assert!(
         crate::supports_version(21) && crate::supports_version(22) && crate::supports_version(23)
     );
-    assert!(!crate::supports_version(24));
-    assert_eq!(INSPECTOR_VERSION, 2);
+    assert!(crate::supports_version(24));
+    assert!(!crate::supports_version(25));
+    assert_eq!(INSPECTOR_VERSION, 3);
     assert!(supports_inspector_version(1) && supports_inspector_version(2));
-    assert!(!supports_inspector_version(3) && !supports_inspector_version(0));
+    assert!(supports_inspector_version(3));
+    assert!(!supports_inspector_version(4) && !supports_inspector_version(0));
 }
 
 #[test]

@@ -214,6 +214,38 @@ fn the_inspector_console_and_evaluation_work_inside_the_sandboxed_required_worke
         call(InspectorCommand::Attach, InspectorArgs::None, id),
         Ok(InspectorResponse::Attached)
     );
+    // Read-only DOM needs the existing session, but never an evaluation grant.
+    let InspectorResponse::Dom(root) =
+        call(InspectorCommand::GetDomRoot, InspectorArgs::None, id).unwrap()
+    else {
+        panic!("DOM root missing")
+    };
+    assert!(root.is_bounded());
+    assert_eq!(root.document, document);
+    let root_id = root.nodes[0].id;
+    assert!(matches!(
+        call(
+            InspectorCommand::GetDomChildren,
+            InspectorArgs::DomChildren {
+                node: root_id,
+                epoch: root.epoch,
+                offset: 0,
+                limit: 64
+            },
+            id
+        ),
+        Ok(InspectorResponse::Dom(_))
+    ));
+    let mut stale = root_id;
+    stale.document.revision = protocol::DocumentRevision(u64::MAX);
+    assert!(
+        call(
+            InspectorCommand::DescribeDomNode,
+            InspectorArgs::DomNode { node: stale },
+            id
+        )
+        .is_err_and(|e| e.starts_with("StaleDocument"))
+    );
     assert!(matches!(
         call(InspectorCommand::EnableConsole, InspectorArgs::None, id),
         Ok(InspectorResponse::ConsoleEnabled { retained, .. }) if retained >= 1

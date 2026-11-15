@@ -14,6 +14,7 @@ use wega_protocol::{
         session::ContentSessions,
     },
 };
+pub mod dom;
 
 /// Everything a snapshot needs, gathered by the port only when a snapshot was requested.
 #[derive(Clone, Debug)]
@@ -43,6 +44,18 @@ pub struct Sampled {
 
 /// What the backend needs from the page. Implemented by the engine's `View`.
 pub trait PagePort {
+    fn inspect_dom(
+        &self,
+        document: DocumentContext,
+        command: InspectorCommand,
+        args: &InspectorArgs,
+    ) -> Result<wega_protocol::inspector::dom::DomPage, InspectorError> {
+        let _ = (document, command, args);
+        Err(refuse(
+            InspectorErrorCode::Unavailable,
+            "DOM inspection unavailable",
+        ))
+    }
     fn status_input(&self, sampled: Sampled) -> StatusInput;
     fn console_first_seq(&self) -> u64;
     fn console_next_seq(&self) -> u64;
@@ -126,6 +139,15 @@ impl Backend {
     ) -> Result<InspectorResponse, InspectorError> {
         self.sessions.authorize(request, self.own)?;
         match request.command {
+            InspectorCommand::GetDomRoot
+            | InspectorCommand::GetDomChildren
+            | InspectorCommand::DescribeDomNode => {
+                if current.1 {
+                    return Err(refuse(InspectorErrorCode::Busy, "Document is loading"));
+                }
+                port.inspect_dom(current.0, request.command, &request.args)
+                    .map(|page| InspectorResponse::Dom(Box::new(page)))
+            }
             InspectorCommand::Attach => {
                 // A new (or re-attached) session starts from the current document.
                 if self.last_document.is_none() {
