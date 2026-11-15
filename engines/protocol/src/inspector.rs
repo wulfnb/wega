@@ -11,6 +11,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+pub mod policy;
 pub mod session;
 
 /// Message-set version, negotiated inside `Capability::Inspector`, independent of the
@@ -162,6 +163,10 @@ pub enum InspectorArgs {
         token: GrantToken,
         /// The user explicitly allowed an opaque or internal document.
         opaque_override: bool,
+        /// The tuple origin of the committed principal the browser authorised, or `None` for
+        /// an opaque document with the user's override. The content process checks it against
+        /// its own document; it is a consistency check, not the authority.
+        origin: Option<String>,
     },
     Evaluate {
         expression: String,
@@ -203,9 +208,15 @@ impl InspectorRequest {
                 }
                 Ok(())
             }
-            (C::GrantEvaluation, InspectorArgs::Grant { token, .. }) => {
+            (C::GrantEvaluation, InspectorArgs::Grant { token, origin, .. }) => {
                 if token.is_zero() {
                     return bad("Empty grant token");
+                }
+                if origin
+                    .as_deref()
+                    .is_some_and(|o| !policy::well_formed_origin(o))
+                {
+                    return bad("Malformed origin in the grant");
                 }
                 Ok(())
             }
@@ -590,6 +601,9 @@ pub enum InspectorErrorCode {
     InvalidPayload,
     Busy,
     SessionLimit,
+    /// The security policy refuses the action (opaque origin without an override, no
+    /// established principal, or a grant that does not match the document).
+    PolicyDenied,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -15,6 +15,7 @@ use wega::{
         inspector::{
             self, GrantToken, InspectorArgs, InspectorCommand, InspectorError, InspectorErrorCode,
             InspectorEvent, InspectorPayload, InspectorRequest, InspectorSessionId, TargetId,
+            policy,
             session::{Completed, HostSessions, SessionIssuer},
         },
         lifecycle::Lifecycle,
@@ -437,6 +438,57 @@ impl Snapshot {
         if let Some(sessions) = &mut self.inspector {
             sessions.event(session, seq, event);
         }
+    }
+
+    /// The committed security principal of the current document, from the browser's own
+    /// `FrameAuthority` (bound at commit from the broker's observation). `None` when the document
+    /// is not committed, was replaced, or was never bound. It is never read from the renderer.
+    fn current_principal(&self) -> Option<(DocumentContext, protocol::authority::Principal)> {
+        let context = DocumentContext {
+            document: self.requests.document(),
+            revision: self.requests.revision(),
+        };
+        if !self.lifecycle.accepts_content() {
+            return None;
+        }
+        self.authority
+            .as_ref()?
+            .resolve(context)
+            .map(|trusted| (context, trusted.principal))
+    }
+
+    /// The grant decision: from the committed principal, with the user's explicit override only
+    /// for an opaque one. Returns what to record and what to send.
+    fn evaluation_scope(
+        &self,
+        opaque_override: bool,
+    ) -> Result<
+        (
+            DocumentContext,
+            protocol::authority::Principal,
+            policy::GrantScope,
+        ),
+        InspectorError,
+    > {
+        let current = self.current_principal();
+        let scope = policy::authorise(
+            current.as_ref().map(|(_, principal)| principal),
+            opaque_override,
+        )?;
+        let (context, principal) = current.ok_or_else(|| {
+            InspectorError::new(InspectorErrorCode::PolicyDenied, "No committed principal")
+        })?;
+        Ok((context, principal, scope))
+    }
+
+    /// The token to send for an evaluation, only if the grant was issued for this session, this
+    /// document and **the principal the document has right now** (a document re-bound to another
+    /// principal, or no longer bound at all, gets nothing).
+    fn evaluation_token(&self, session: InspectorSessionId) -> Option<GrantToken> {
+        let (context, principal) = self.current_principal()?;
+        self.inspector
+            .as_ref()?
+            .grant_for(session, context, &principal)
     }
 
     /// The process is gone: nothing may ever be authorised against it again.
@@ -1506,29 +1558,29 @@ impl Page {
             Self::inspector_error(InspectorErrorCode::Unavailable, "No secure random source")
         })?;
         let token = GrantToken(bytes);
-        {
+        let scope = {
             let mut state = self
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let document = DocumentContext {
-                document: state.requests.document(),
-                revision: state.requests.revision(),
-            };
+            // The decision is made from the committed principal, not from any URL.
+            let (document, principal, scope) = state.evaluation_scope(opaque_override)?;
             state
                 .inspector
                 .as_mut()
                 .ok_or_else(|| {
                     Self::inspector_error(InspectorErrorCode::Unavailable, "No inspector")
                 })?
-                .install_grant(session, document, token, opaque_override)?;
-        }
+                .install_grant(session, document, token, principal, scope.clone())?;
+            scope
+        };
         let sent = self.inspector_request_args(
             session,
             InspectorCommand::GrantEvaluation,
             InspectorArgs::Grant {
                 token,
-                opaque_override,
+                opaque_override: scope.opaque_override,
+                origin: scope.origin,
             },
         );
         if sent.is_err()
@@ -1542,6 +1594,15 @@ impl Page {
             sessions.clear_grant();
         }
         sent
+    }
+
+    /// The committed principal of the current document (what the Console panel shows).
+    pub fn inspector_principal(&self) -> Option<protocol::authority::Principal> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .current_principal()
+            .map(|(_, principal)| principal)
     }
 
     /// Browser-UI only. Withdraw evaluation authority (browser record first, then the engine's).
@@ -1565,20 +1626,11 @@ impl Page {
         session: InspectorSessionId,
         expression: &str,
     ) -> Result<(), InspectorError> {
-        let token = {
-            let state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let document = DocumentContext {
-                document: state.requests.document(),
-                revision: state.requests.revision(),
-            };
-            state
-                .inspector
-                .as_ref()
-                .and_then(|sessions| sessions.grant_for(session, document))
-        };
+        let token = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .evaluation_token(session);
         let Some(grant) = token else {
             return Err(Self::inspector_error(
                 InspectorErrorCode::Unauthorized,
@@ -2637,29 +2689,207 @@ mod tests {
         assert!(state.inspector.as_ref().unwrap().queued().0 <= inspector::EVENT_RING);
     }
 
-    #[test]
-    fn an_evaluation_grant_is_cleared_when_the_navigation_commits() {
-        let (mut state, doc, session) = inspected_state();
-        let token = GrantToken([0x42; 16]);
-        state
+    fn principal_of(origin: protocol::authority::Origin) -> Principal {
+        Principal {
+            origin,
+            top_level_site: None,
+        }
+    }
+    fn tuple_principal() -> Principal {
+        principal_of(protocol::authority::Origin::Tuple(
+            "https://page.test".into(),
+        ))
+    }
+    /// A committed document bound to `principal`, with a live inspector session.
+    fn inspected_with(principal: Principal) -> (Snapshot, DocumentContext, InspectorSessionId) {
+        let (mut state, _) = committed_state();
+        let target = state
+            .authority
+            .as_ref()
+            .map(|a| TargetId::of(&a.session()))
+            .unwrap();
+        state.inspector = Some(HostSessions::new(target));
+        let revision = protocol::DocumentRevision(5);
+        state.bind_principal(0, revision, principal).unwrap();
+        let doc = DocumentContext {
+            document: protocol::DocumentId(0),
+            revision,
+        };
+        // The browser has one issuer for every tab, so ids never collide across pages.
+        let (session, _) = state
             .inspector
             .as_mut()
             .unwrap()
-            .install_grant(session, doc, token, false)
+            .open(SessionIssuer::shared())
             .unwrap();
-        assert_eq!(
-            state.inspector.as_ref().unwrap().grant_for(session, doc),
-            Some(token)
+        (state, doc, session)
+    }
+    fn grant_in(
+        state: &mut Snapshot,
+        session: InspectorSessionId,
+        token: GrantToken,
+        opaque_override: bool,
+    ) -> Result<policy::GrantScope, InspectorError> {
+        let (document, principal, scope) = state.evaluation_scope(opaque_override)?;
+        state.inspector.as_mut().unwrap().install_grant(
+            session,
+            document,
+            token,
+            principal,
+            scope.clone(),
+        )?;
+        Ok(scope)
+    }
+
+    #[test]
+    fn the_grant_decision_follows_the_committed_principal() {
+        // A tuple principal: allowed, scoped to the principal's own origin, no override stored.
+        let (mut state, _, session) = inspected_with(tuple_principal());
+        let scope = grant_in(&mut state, session, GrantToken([1; 16]), true).unwrap();
+        assert_eq!(scope.origin.as_deref(), Some("https://page.test"));
+        assert!(!scope.opaque_override);
+        // An opaque principal (file:, data:, about:, an uncorroborated commit): refused without
+        // the user's explicit override, allowed with it.
+        let (mut state, _, session) =
+            inspected_with(principal_of(protocol::authority::Origin::Opaque));
+        let refused = grant_in(&mut state, session, GrantToken([2; 16]), false).unwrap_err();
+        assert_eq!(refused.code, InspectorErrorCode::PolicyDenied);
+        assert!(
+            state.evaluation_token(session).is_none(),
+            "a refused grant stores nothing"
         );
+        let scope = grant_in(&mut state, session, GrantToken([2; 16]), true).unwrap();
+        assert_eq!((scope.origin, scope.opaque_override), (None, true));
+        assert_eq!(state.evaluation_token(session), Some(GrantToken([2; 16])));
+    }
+
+    #[test]
+    fn a_document_without_an_established_principal_can_never_be_granted_evaluation() {
+        // Not bound at all (authority missing), replaced (navigation advanced the stamp), and
+        // not yet committed: all refuse, with and without the override.
+        let (mut state, _, session) = inspected_with(tuple_principal());
+        state.authority = None;
+        for flag in [false, true] {
+            assert_eq!(
+                grant_in(&mut state, session, GrantToken([3; 16]), flag)
+                    .unwrap_err()
+                    .code,
+                InspectorErrorCode::PolicyDenied
+            );
+        }
+        let (mut state, _, session) = inspected_with(tuple_principal());
+        let next = state.requests.next_document().unwrap();
+        state.requests.navigate(next).unwrap(); // stamp advanced, no principal bound yet
+        assert!(state.current_principal().is_none());
+        for flag in [false, true] {
+            assert_eq!(
+                grant_in(&mut state, session, GrantToken([3; 16]), flag)
+                    .unwrap_err()
+                    .code,
+                InspectorErrorCode::PolicyDenied
+            );
+        }
+        let (mut state, _, session) = inspected_with(tuple_principal());
+        state.lifecycle.crash();
+        assert!(grant_in(&mut state, session, GrantToken([3; 16]), true).is_err());
+    }
+
+    #[test]
+    fn a_grant_is_dead_the_moment_the_principal_changes_even_for_the_same_document_stamp() {
+        let (mut state, doc, session) = inspected_with(tuple_principal());
+        let token = GrantToken([4; 16]);
+        grant_in(&mut state, session, token, false).unwrap();
+        assert_eq!(state.evaluation_token(session), Some(token));
+        // The authority re-binds the *same* document context to another principal.
+        let other = principal_of(protocol::authority::Origin::Tuple(
+            "https://other.test".into(),
+        ));
+        state.authority.as_mut().unwrap().bind(doc, other);
+        assert_eq!(
+            state.evaluation_token(session),
+            None,
+            "stale principal/document combination"
+        );
+        // And to opaque, and back to the original: the original grant is still bound to it.
+        state
+            .authority
+            .as_mut()
+            .unwrap()
+            .bind(doc, principal_of(protocol::authority::Origin::Opaque));
+        assert_eq!(state.evaluation_token(session), None);
+        state
+            .authority
+            .as_mut()
+            .unwrap()
+            .bind(doc, tuple_principal());
+        assert_eq!(state.evaluation_token(session), Some(token));
+        // A forged principal cannot be injected from the engine side: the only way in is
+        // `FrameAuthority::bind`, which the browser calls with a broker-observed principal.
+        assert!(
+            state
+                .authority
+                .as_ref()
+                .unwrap()
+                .resolve(DocumentContext {
+                    revision: protocol::DocumentRevision(doc.revision.0 + 1),
+                    ..doc
+                })
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn grants_of_two_tabs_never_unlock_each_other() {
+        let (mut a, doc_a, session_a) = inspected_with(tuple_principal());
+        let (mut b, doc_b, session_b) = inspected_with(tuple_principal());
+        assert_eq!(
+            doc_a, doc_b,
+            "identical counters in both tabs: only the registry separates them"
+        );
+        grant_in(&mut a, session_a, GrantToken([5; 16]), false).unwrap();
+        assert!(a.evaluation_token(session_a).is_some());
+        assert!(
+            b.evaluation_token(session_b).is_none(),
+            "B was never granted"
+        );
+        assert!(
+            b.evaluation_token(session_a).is_none(),
+            "A's session id means nothing in B"
+        );
+        assert!(
+            a.evaluation_token(session_b).is_none(),
+            "B's session id means nothing in A"
+        );
+        // Even installing A's identifiers into B is refused: A's session is not live there.
+        let (document, principal, scope) = b.evaluation_scope(false).unwrap();
+        assert!(
+            b.inspector
+                .as_mut()
+                .unwrap()
+                .install_grant(session_a, document, GrantToken([5; 16]), principal, scope)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn an_evaluation_grant_is_cleared_when_the_navigation_commits() {
+        let (mut state, doc, session) = inspected_with(tuple_principal());
+        let token = GrantToken([0x42; 16]);
+        grant_in(&mut state, session, token, false).unwrap();
+        assert_eq!(state.evaluation_token(session), Some(token));
         let next = DocumentContext {
             revision: protocol::DocumentRevision(doc.revision.0 + 1),
             ..doc
         };
-        state.bind_document(0, next.revision).unwrap();
+        // The next document commits with the same principal: the grant still does not carry over.
+        state
+            .bind_principal(0, next.revision, tuple_principal())
+            .unwrap();
+        assert_eq!(state.evaluation_token(session), None);
         let sessions = state.inspector.as_ref().unwrap();
-        assert_eq!(sessions.grant_for(session, doc), None);
+        assert_eq!(sessions.grant_for(session, doc, &tuple_principal()), None);
         assert_eq!(
-            sessions.grant_for(session, next),
+            sessions.grant_for(session, next, &tuple_principal()),
             None,
             "not carried to the new document"
         );

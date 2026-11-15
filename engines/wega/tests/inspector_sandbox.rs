@@ -31,6 +31,7 @@ fn the_inspector_console_and_evaluation_work_inside_the_sandboxed_required_worke
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
+    let origin = url.trim_end_matches('/').to_string();
     let serving = std::thread::spawn(move || {
         let until = Instant::now() + Duration::from_secs(20);
         loop {
@@ -230,13 +231,45 @@ fn the_inspector_console_and_evaluation_work_inside_the_sandboxed_required_worke
             .is_err_and(|e| e.starts_with("Unauthorized")),
         "{refused:?}"
     );
+    // The browser's claim is checked against the sandboxed engine's own document: a forged
+    // origin, a claim for another port, and a missing claim without the user's override are all
+    // refused, and refusing stores nothing.
+    for (claimed, override_) in [
+        (Some("http://127.0.0.1:1".to_string()), false),
+        (Some("https://example.test".to_string()), false),
+        (None, false),
+    ] {
+        let refused = call(
+            InspectorCommand::GrantEvaluation,
+            InspectorArgs::Grant {
+                token: secret,
+                opaque_override: override_,
+                origin: claimed.clone(),
+            },
+            id,
+        );
+        assert!(
+            refused
+                .as_ref()
+                .is_err_and(|e| e.starts_with("PolicyDenied")),
+            "{claimed:?}: {refused:?}"
+        );
+    }
+    let still_refused = call(InspectorCommand::Evaluate, eval("6*7", secret), id);
+    assert!(
+        still_refused
+            .as_ref()
+            .is_err_and(|e| e.starts_with("Unauthorized")),
+        "{still_refused:?}"
+    );
     // An http origin is a tuple origin: no override is needed.
     assert_eq!(
         call(
             InspectorCommand::GrantEvaluation,
             InspectorArgs::Grant {
                 token: secret,
-                opaque_override: false
+                opaque_override: false,
+                origin: Some(origin.clone()),
             },
             id
         ),

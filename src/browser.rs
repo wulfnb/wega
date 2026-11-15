@@ -448,6 +448,11 @@ impl Browser {
                 Self::resolve_tab(session, key)
             });
     }
+    /// The committed security principal of the document the developer tools are bound to, as the
+    /// browser's own authority holds it (never derived from the tab's URL).
+    pub(crate) fn devtools_principal(&self) -> Option<wega::engine_protocol::authority::Principal> {
+        self.devtools_target()?.1?.inspector_principal()
+    }
     /// The document stamp of the page the developer tools are bound to.
     pub(crate) fn devtools_document(&self) -> Option<wega::engine_protocol::DocumentContext> {
         let (_, page) = self.devtools_target()?;

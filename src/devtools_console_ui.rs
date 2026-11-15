@@ -174,10 +174,12 @@ impl Browser {
             ViewState::Attached | ViewState::Updating | ViewState::NotResponding
         );
         let document: Option<DocumentContext> = self.devtools_document();
-        let opaque = self
-            .devtools_target()
-            .and_then(|(tab, _)| url::Url::parse(&tab.url()).ok())
-            .is_none_or(|url| !matches!(url.scheme(), "http" | "https" | "file"));
+        // The decision comes from the committed principal, not from the tab's URL.
+        let principal = self.devtools_principal();
+        let established = principal.is_some();
+        let opaque = principal
+            .as_ref()
+            .is_none_or(|p| matches!(p.origin, wega::engine_protocol::authority::Origin::Opaque));
         let enabled =
             document.and_then(|document| self.devtools.console.evaluation_enabled(document));
         let mut enable = None;
@@ -207,13 +209,18 @@ impl Browser {
             }
             None => {
                 ui.weak("Commands run with full page authority.");
-                let label = if opaque {
+                let label = if !established {
+                    "Evaluation unavailable"
+                } else if opaque {
                     "Enable anyway (opaque origin)…"
                 } else {
                     "Enable evaluation"
                 };
                 if ui
-                    .add_enabled(connected && document.is_some(), egui::Button::new(label))
+                    .add_enabled(
+                        connected && document.is_some() && established,
+                        egui::Button::new(label),
+                    )
                     .on_hover_text(
                         "Allow JavaScript commands in this page's current document only.",
                     )

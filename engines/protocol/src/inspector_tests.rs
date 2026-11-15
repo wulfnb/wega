@@ -1,3 +1,4 @@
+use super::policy;
 use super::session::*;
 use super::*;
 use crate::{
@@ -660,6 +661,24 @@ fn protocol_inspector_module_names_no_engine_types() {
 
 // ---- D2: console, evaluation, grants -------------------------------------------------
 
+fn tuple() -> crate::authority::Principal {
+    crate::authority::Principal {
+        origin: crate::authority::Origin::Tuple("https://e.test".into()),
+        top_level_site: None,
+    }
+}
+fn opaque() -> crate::authority::Principal {
+    crate::authority::Principal {
+        origin: crate::authority::Origin::Opaque,
+        top_level_site: None,
+    }
+}
+fn scope() -> policy::GrantScope {
+    policy::GrantScope {
+        origin: Some("https://e.test".into()),
+        opaque_override: false,
+    }
+}
 fn token(byte: u8) -> GrantToken {
     GrantToken([byte; 16])
 }
@@ -720,7 +739,8 @@ fn arguments_must_match_the_command_and_stay_within_limits() {
         C::GrantEvaluation,
         InspectorArgs::Grant {
             token: token(1),
-            opaque_override: false
+            opaque_override: false,
+            origin: None
         }
     ));
     assert!(ok(
@@ -760,7 +780,8 @@ fn arguments_must_match_the_command_and_stay_within_limits() {
         C::GrantEvaluation,
         InspectorArgs::Grant {
             token: GrantToken([0; 16]),
-            opaque_override: false
+            opaque_override: false,
+            origin: None
         }
     ));
     assert!(!ok(
@@ -844,7 +865,8 @@ fn the_grant_token_never_appears_in_debug_output_and_compares_fully() {
             InspectorCommand::GrantEvaluation,
             InspectorArgs::Grant {
                 token: secret,
-                opaque_override: false
+                opaque_override: false,
+                origin: None
             },
         )
     );
@@ -954,54 +976,71 @@ fn host_grant_is_bound_to_session_and_document_and_cleared_on_every_boundary() {
     let (a, _) = host.open(&issuer).unwrap();
     let doc = stamp(1, 1);
     assert!(
-        host.install_grant(InspectorSessionId(77), doc, token(3), false)
+        host.install_grant(InspectorSessionId(77), doc, token(3), tuple(), scope())
             .is_err(),
         "not live"
     );
     assert!(
-        host.install_grant(a, doc, GrantToken([0; 16]), false)
+        host.install_grant(a, doc, GrantToken([0; 16]), tuple(), scope())
             .is_err()
     );
-    host.install_grant(a, doc, token(3), false).unwrap();
-    assert_eq!(host.grant_for(a, doc), Some(token(3)));
-    assert_eq!(host.grant_for(a, stamp(1, 2)), None, "another revision");
-    assert_eq!(host.grant_for(a, stamp(2, 1)), None, "another document");
-    assert_eq!(host.grant_for(InspectorSessionId(a.0 + 1), doc), None);
+    host.install_grant(a, doc, token(3), tuple(), scope())
+        .unwrap();
+    assert_eq!(host.grant_for(a, doc, &tuple()), Some(token(3)));
+    assert_eq!(
+        host.grant_for(a, stamp(1, 2), &tuple()),
+        None,
+        "another revision"
+    );
+    assert_eq!(
+        host.grant_for(a, stamp(2, 1), &tuple()),
+        None,
+        "another document"
+    );
+    assert_eq!(
+        host.grant_for(InspectorSessionId(a.0 + 1), doc, &tuple()),
+        None
+    );
     assert_eq!(host.grant_state(a), Some((doc, false)));
     // Navigation.
     host.document_changed();
-    assert_eq!(host.grant_for(a, doc), None);
+    assert_eq!(host.grant_for(a, doc, &tuple()), None);
     // Supersede.
-    host.install_grant(a, doc, token(4), true).unwrap();
+    host.install_grant(a, doc, token(4), tuple(), scope())
+        .unwrap();
     let (b, _) = host.open(&issuer).unwrap();
-    assert_eq!(host.grant_for(a, doc), None);
-    assert_eq!(host.grant_for(b, doc), None);
+    assert_eq!(host.grant_for(a, doc, &tuple()), None);
+    assert_eq!(host.grant_for(b, doc, &tuple()), None);
     // Revoke.
-    host.install_grant(b, doc, token(5), false).unwrap();
+    host.install_grant(b, doc, token(5), tuple(), scope())
+        .unwrap();
     assert!(host.revoke(b));
-    assert_eq!(host.grant_for(b, doc), None);
+    assert_eq!(host.grant_for(b, doc, &tuple()), None);
     // Process death.
     let (c, _) = host.open(&issuer).unwrap();
-    host.install_grant(c, doc, token(6), false).unwrap();
+    host.install_grant(c, doc, token(6), tuple(), scope())
+        .unwrap();
     host.close();
-    assert_eq!(host.grant_for(c, doc), None);
+    assert_eq!(host.grant_for(c, doc, &tuple()), None);
     // An explicit revoke response and a refused grant both clear it.
     let mut host = HostSessions::new(mine);
     let (s, _) = host.open(&issuer).unwrap();
-    host.install_grant(s, doc, token(7), false).unwrap();
+    host.install_grant(s, doc, token(7), tuple(), scope())
+        .unwrap();
     host.complete(
         s,
         InspectorCommand::RevokeEvaluation,
         Ok(InspectorResponse::EvaluationRevoked),
     );
-    assert_eq!(host.grant_for(s, doc), None);
-    host.install_grant(s, doc, token(7), false).unwrap();
+    assert_eq!(host.grant_for(s, doc, &tuple()), None);
+    host.install_grant(s, doc, token(7), tuple(), scope())
+        .unwrap();
     host.complete(
         s,
         InspectorCommand::GrantEvaluation,
         Err(InspectorError::new(InspectorErrorCode::Unauthorized, "no")),
     );
-    assert_eq!(host.grant_for(s, doc), None);
+    assert_eq!(host.grant_for(s, doc, &tuple()), None);
 }
 
 #[test]
@@ -1308,7 +1347,202 @@ fn printing_a_command_or_payload_never_reveals_a_grant_token_or_expression() {
         InspectorArgs::Grant {
             token: secret,
             opaque_override: true,
+            origin: None,
         },
     ));
     assert!(!format!("{grant:?}").contains("195") && !format!("{grant:?}").contains("true"));
+}
+
+// ---- D3.0: principal-based evaluation policy ------------------------------------------
+
+fn policy_code<T: std::fmt::Debug>(result: Result<T, InspectorError>) -> InspectorErrorCode {
+    result.unwrap_err().code
+}
+
+#[test]
+fn the_browser_decides_from_the_committed_principal_only() {
+    // Established tuple origin: allowed, scoped to that origin, a stray override is dropped.
+    for stray in [false, true] {
+        let scope = policy::authorise(Some(&tuple()), stray).unwrap();
+        assert_eq!(scope.origin.as_deref(), Some("https://e.test"));
+        assert!(
+            !scope.opaque_override,
+            "an override is meaningless for a tuple origin"
+        );
+    }
+    // Opaque (file:, data:, about:, uncorroborated commit, internal): refused without the
+    // user's explicit override, allowed (and recorded as an override) with it.
+    assert_eq!(
+        policy_code(policy::authorise(Some(&opaque()), false)),
+        InspectorErrorCode::PolicyDenied
+    );
+    let scope = policy::authorise(Some(&opaque()), true).unwrap();
+    assert_eq!((scope.origin, scope.opaque_override), (None, true));
+    // No principal (not committed, replaced, unbound): refused even with the override.
+    for flag in [false, true] {
+        assert_eq!(
+            policy_code(policy::authorise(None, flag)),
+            InspectorErrorCode::PolicyDenied
+        );
+    }
+}
+
+#[test]
+fn the_engine_checks_consistency_with_its_own_document_and_never_decides() {
+    let ok = |origin: Option<&str>, over, engine: Option<&str>| {
+        policy::verify_scope(origin, over, engine)
+    };
+    // A claim matching the engine's document.
+    assert!(ok(Some("https://e.test"), false, Some("https://e.test")).is_ok());
+    assert!(
+        ok(
+            Some("http://127.0.0.1:8080"),
+            false,
+            Some("http://127.0.0.1:8080")
+        )
+        .is_ok()
+    );
+    // A forged or stale claim: another origin, or a tuple claim for a document with none.
+    assert_eq!(
+        policy_code(ok(Some("https://evil.test"), false, Some("https://e.test"))),
+        InspectorErrorCode::PolicyDenied
+    );
+    assert_eq!(
+        policy_code(ok(Some("https://e.test"), true, None)),
+        InspectorErrorCode::PolicyDenied
+    );
+    assert_eq!(
+        policy_code(ok(
+            Some("https://e.test:8443"),
+            false,
+            Some("https://e.test")
+        )),
+        InspectorErrorCode::PolicyDenied
+    );
+    // Malformed claims are invalid payloads, not policy decisions.
+    for bad in [
+        "",
+        "e.test",
+        "https://",
+        "https://e.test/path",
+        "https://e.test?x",
+        "https://e.test#x",
+        "https://e t",
+        "://x",
+        "https://e.test\n",
+    ] {
+        assert_eq!(
+            policy_code(ok(Some(bad), false, Some(bad))),
+            InspectorErrorCode::InvalidPayload,
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        policy_code(ok(Some(&"a".repeat(3000)), false, None)),
+        InspectorErrorCode::InvalidPayload
+    );
+    // No origin: needs the override. The browser's principal may be stricter than the engine's
+    // URL (an https page the broker could not corroborate), and the override is honoured then.
+    assert_eq!(
+        policy_code(ok(None, false, None)),
+        InspectorErrorCode::PolicyDenied
+    );
+    assert_eq!(
+        policy_code(ok(None, false, Some("https://e.test"))),
+        InspectorErrorCode::PolicyDenied
+    );
+    assert!(ok(None, true, None).is_ok());
+    assert!(ok(None, true, Some("https://e.test")).is_ok());
+}
+
+#[test]
+fn origin_shapes_are_validated_in_the_grant_arguments() {
+    let grant = |origin: Option<&str>| {
+        with_args(
+            InspectorCommand::GrantEvaluation,
+            InspectorArgs::Grant {
+                token: token(1),
+                opaque_override: origin.is_none(),
+                origin: origin.map(str::to_string),
+            },
+        )
+        .validate()
+    };
+    assert!(grant(None).is_ok() && grant(Some("https://e.test")).is_ok());
+    assert_eq!(
+        grant(Some("https://e.test/x")).unwrap_err().code,
+        InspectorErrorCode::InvalidPayload
+    );
+    assert_eq!(
+        grant(Some("")).unwrap_err().code,
+        InspectorErrorCode::InvalidPayload
+    );
+}
+
+#[test]
+fn a_grant_belongs_to_the_principal_it_was_authorised_for() {
+    let issuer = SessionIssuer::new();
+    let mut host = HostSessions::new(target(1, 1));
+    let (session, _) = host.open(&issuer).unwrap();
+    let doc = stamp(1, 1);
+    host.install_grant(session, doc, token(2), tuple(), scope())
+        .unwrap();
+    assert_eq!(host.grant_for(session, doc, &tuple()), Some(token(2)));
+    // The same document context re-bound to another principal (or to opaque): no token.
+    let other = crate::authority::Principal {
+        origin: crate::authority::Origin::Tuple("https://other.test".into()),
+        top_level_site: None,
+    };
+    assert_eq!(host.grant_for(session, doc, &other), None);
+    assert_eq!(host.grant_for(session, doc, &opaque()), None);
+    // A different top-level site (partition) is a different principal too.
+    let mut partitioned = tuple();
+    partitioned.top_level_site = Some(("https".into(), "e.test".into()));
+    assert_eq!(host.grant_for(session, doc, &partitioned), None);
+    // The override is reported for the indicator, and only for an opaque grant.
+    assert_eq!(host.grant_state(session), Some((doc, false)));
+    host.install_grant(
+        session,
+        doc,
+        token(3),
+        opaque(),
+        policy::authorise(Some(&opaque()), true).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(host.grant_state(session), Some((doc, true)));
+    assert_eq!(host.grant_for(session, doc, &opaque()), Some(token(3)));
+    assert_eq!(host.grant_for(session, doc, &tuple()), None);
+}
+
+#[test]
+fn grants_of_different_tabs_never_cross() {
+    let issuer = SessionIssuer::new();
+    let (mut a, mut b) = (
+        HostSessions::new(target(1, 1)),
+        HostSessions::new(target(2, 2)),
+    );
+    let (sa, _) = a.open(&issuer).unwrap();
+    let (sb, _) = b.open(&issuer).unwrap();
+    let doc = stamp(1, 1);
+    a.install_grant(sa, doc, token(9), tuple(), scope())
+        .unwrap();
+    // B has no grant; A's session id and document stamp do not unlock anything in B.
+    assert_eq!(b.grant_for(sb, doc, &tuple()), None);
+    assert_eq!(b.grant_for(sa, doc, &tuple()), None);
+    assert!(
+        b.install_grant(sa, doc, token(9), tuple(), scope())
+            .is_err(),
+        "A's session is not live in B"
+    );
+    assert_eq!(a.grant_for(sb, doc, &tuple()), None);
+}
+
+#[test]
+fn policy_denied_survives_the_wire() {
+    let error = InspectorError::new(InspectorErrorCode::PolicyDenied, "no");
+    let json = serde_json::to_string(&error).unwrap();
+    assert_eq!(
+        serde_json::from_str::<InspectorError>(&json).unwrap(),
+        error
+    );
 }

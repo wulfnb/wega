@@ -47,6 +47,7 @@ fn grant(
         InspectorArgs::Grant {
             token,
             opaque_override: opaque,
+            origin: None,
         },
     )
 }
@@ -426,11 +427,82 @@ fn evaluation_is_denied_without_authorisation_and_never_runs() {
 }
 
 #[test]
+fn a_forged_principal_claim_is_refused_by_the_engine_in_a_real_process() {
+    // about:blank has no tuple origin. A grant that *claims* one (a forged or stale principal
+    // from the browser side) contradicts the engine's own document and is refused, and a refused
+    // grant leaves nothing behind. The engine cannot authenticate the browser; it can refuse a
+    // claim that is inconsistent with its own document, and it does.
+    let mut worker = Worker::start();
+    let session = worker.attach();
+    for claim in [
+        "https://example.test",
+        "http://127.0.0.1:80",
+        "https://evil.test:1",
+    ] {
+        let result = worker.call_detail(
+            session,
+            InspectorCommand::GrantEvaluation,
+            InspectorArgs::Grant {
+                token: TOKEN,
+                opaque_override: false,
+                origin: Some(claim.into()),
+            },
+        );
+        assert_eq!(code(&result), "PolicyDenied", "{claim}: {result:?}");
+        // Even with the user's override flag set, a *tuple* claim is checked against the document.
+        let result = worker.call_detail(
+            session,
+            InspectorCommand::GrantEvaluation,
+            InspectorArgs::Grant {
+                token: TOKEN,
+                opaque_override: true,
+                origin: Some(claim.into()),
+            },
+        );
+        assert_eq!(
+            code(&result),
+            "PolicyDenied",
+            "{claim} + override: {result:?}"
+        );
+    }
+    assert_eq!(
+        code(&eval(&mut worker, session, TOKEN, "globalThis.pwned=1")),
+        "Unauthorized"
+    );
+    assert_eq!(
+        worker.evaluate("typeof globalThis.pwned"),
+        Ok("\"undefined\"".into())
+    );
+    // Malformed claims never reach the policy.
+    let result = worker.call_detail(
+        session,
+        InspectorCommand::GrantEvaluation,
+        InspectorArgs::Grant {
+            token: TOKEN,
+            opaque_override: false,
+            origin: Some("https://example.test/path".into()),
+        },
+    );
+    assert_eq!(code(&result), "failed:InvalidRequest", "{result:?}");
+    // Without any claim and without the override: denied by policy, not by luck.
+    assert_eq!(
+        code(&grant(&mut worker, session, TOKEN, false)),
+        "PolicyDenied"
+    );
+    // The explicit override still works on this opaque document.
+    assert!(matches!(
+        grant(&mut worker, session, TOKEN, true),
+        Ok(InspectorResponse::EvaluationGranted)
+    ));
+    assert_eq!(text_of(eval(&mut worker, session, TOKEN, "1+1")), "2");
+}
+
+#[test]
 fn an_opaque_document_needs_the_explicit_override_and_then_evaluation_runs() {
     let mut worker = Worker::start(); // about:blank is opaque
     let session = worker.attach();
     let refused = grant(&mut worker, session, TOKEN, false);
-    assert_eq!(code(&refused), "Unauthorized");
+    assert_eq!(code(&refused), "PolicyDenied");
     assert!(refused.unwrap_err().1.contains("opaque"));
     assert_eq!(
         code(&eval(&mut worker, session, TOKEN, "1")),
@@ -696,6 +768,11 @@ fn a_replacement_process_never_honours_the_old_sessions_authority() {
     // The browser-side registry dies with the old process.
     let mut host = HostSessions::new(old.target());
     let (host_session, _) = host.open(&old.issuer).unwrap();
+    let principal = protocol::authority::Principal {
+        origin: protocol::authority::Origin::Opaque,
+        top_level_site: None,
+    };
+    let scope = protocol::inspector::policy::authorise(Some(&principal), true).unwrap();
     host.install_grant(
         host_session,
         protocol::DocumentContext {
@@ -703,11 +780,15 @@ fn a_replacement_process_never_honours_the_old_sessions_authority() {
             revision: protocol::DocumentRevision(0),
         },
         TOKEN,
-        true,
+        principal.clone(),
+        scope,
     )
     .unwrap();
     host.close();
-    assert!(host.grant_for(host_session, old.document()).is_none());
+    assert!(
+        host.grant_for(host_session, old.document(), &principal)
+            .is_none()
+    );
 }
 
 #[test]

@@ -6,7 +6,7 @@ use super::{
     InspectorError, InspectorErrorCode, InspectorEvent, InspectorResponse, InspectorSessionId,
     RESULT_RING, TargetId, supports_inspector_version,
 };
-use crate::DocumentContext;
+use crate::{DocumentContext, authority::Principal};
 use std::{
     collections::VecDeque,
     sync::atomic::{AtomicU64, Ordering},
@@ -229,12 +229,15 @@ pub struct Completed {
 /// is destroyed with the process it protects.
 /// The browser's record of an evaluation grant. Never leaves the browser except as the
 /// token inside `GrantEvaluation` / `Evaluate` commands on the authenticated pipe.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct HostGrant {
     session: InspectorSessionId,
     document: DocumentContext,
     token: GrantToken,
-    opaque_override: bool,
+    /// The committed principal the grant was authorised for. It is compared again at every use,
+    /// so a document re-bound to a different principal never inherits the grant.
+    principal: Principal,
+    scope: super::policy::GrantScope,
 }
 
 /// Console-stream queue bounded by entries and bytes; overflow drops the oldest and counts.
@@ -325,7 +328,8 @@ impl HostSessions {
         session: InspectorSessionId,
         document: DocumentContext,
         token: GrantToken,
-        opaque_override: bool,
+        principal: Principal,
+        scope: super::policy::GrantScope,
     ) -> Result<(), InspectorError> {
         if !self.registry.is_live(session) {
             return Err(err(InspectorErrorCode::StaleSession, "Session is not live"));
@@ -337,7 +341,8 @@ impl HostSessions {
             session,
             document,
             token,
-            opaque_override,
+            principal,
+            scope,
         });
         Ok(())
     }
@@ -347,12 +352,15 @@ impl HostSessions {
         &self,
         session: InspectorSessionId,
         document: DocumentContext,
+        principal: &Principal,
     ) -> Option<GrantToken> {
         self.grant
+            .as_ref()
             .filter(|grant| {
                 self.registry.is_live(session)
                     && grant.session == session
                     && grant.document == document
+                    && grant.principal == *principal
             })
             .map(|grant| grant.token)
     }
@@ -360,8 +368,9 @@ impl HostSessions {
     /// the opaque-origin policy.
     pub fn grant_state(&self, session: InspectorSessionId) -> Option<(DocumentContext, bool)> {
         self.grant
+            .as_ref()
             .filter(|grant| grant.session == session && self.registry.is_live(session))
-            .map(|grant| (grant.document, grant.opaque_override))
+            .map(|grant| (grant.document, grant.scope.opaque_override))
     }
     pub fn clear_grant(&mut self) {
         self.grant = None;

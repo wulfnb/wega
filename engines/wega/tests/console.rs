@@ -576,14 +576,36 @@ fn the_script_watchdog_still_bounds_evaluation_and_reports_the_termination_it_co
 }
 
 #[test]
-fn evaluation_refuses_a_document_that_is_suspended_or_has_no_script() {
+fn the_engines_own_document_origin_follows_the_brokers_http_https_rule() {
+    // `file:` is *not* a tuple origin for the broker's principal; the engine's view must agree,
+    // or a file page would be treated as evaluable here and opaque in the browser.
     let mut view = page("<p>x</p>");
     assert_eq!(value(&mut view, "1").text, "1");
-    assert!(view.origin_allows_evaluation(), "https is a tuple origin");
-    view.url = Url::parse("about:blank").unwrap();
-    assert!(!view.origin_allows_evaluation());
-    view.url = Url::parse("data:text/html,x").unwrap();
-    assert!(!view.origin_allows_evaluation());
-    view.url = Url::parse("file:///tmp/a.html").unwrap();
-    assert!(view.origin_allows_evaluation());
+    let origin = |view: &mut View, url: &str| {
+        view.url = Url::parse(url).unwrap();
+        view.document_origin()
+    };
+    assert_eq!(
+        origin(&mut view, "https://fixture.test/a?b#c").as_deref(),
+        Some("https://fixture.test")
+    );
+    assert_eq!(
+        origin(&mut view, "http://127.0.0.1:8080/x").as_deref(),
+        Some("http://127.0.0.1:8080")
+    );
+    assert_eq!(
+        origin(&mut view, "https://fixture.test:8443/").as_deref(),
+        Some("https://fixture.test:8443")
+    );
+    for opaque in [
+        "about:blank",
+        "data:text/html,x",
+        "file:///tmp/a.html",
+        "blob:https://fixture.test/uuid",
+        "javascript:1",
+        "wega://settings",
+        "ftp://example.test/",
+    ] {
+        assert_eq!(origin(&mut view, opaque), None, "{opaque}");
+    }
 }

@@ -9,7 +9,9 @@ use wega_protocol::{
         CONSOLE_BATCH_BYTES, CONSOLE_BATCH_ENTRIES, EvalOutcome, INSPECTOR_VERSION, InspectorArgs,
         InspectorCommand, InspectorError, InspectorErrorCode, InspectorEvent, InspectorRequest,
         InspectorResponse, InspectorSessionId, MAX_HISTORY_BYTES, StatusSnapshot, TargetId,
-        TargetInfo, Viewport, session::ContentSessions,
+        TargetInfo, Viewport,
+        policy::{self, GrantScope},
+        session::ContentSessions,
     },
 };
 
@@ -49,9 +51,10 @@ pub trait PagePort {
         max_bytes: usize,
     ) -> Vec<wega_protocol::inspector::ConsoleMessage>;
     fn console_clear(&mut self);
-    /// Whether the document has a tuple origin (http, https, file). Opaque and internal
-    /// documents need an explicit user override.
-    fn origin_allows_evaluation(&self) -> bool;
+    /// The tuple origin of this document as the engine itself knows it (`http`/`https` only,
+    /// the same rule the broker applies to commits), or `None`. Used to check the browser's
+    /// claim for consistency; it is not an authority on the document's principal.
+    fn document_origin(&self) -> Option<String>;
     /// Run `expression` in the main world under the script watchdog. `Err` means the
     /// evaluation could not return an outcome; the text says what is known to have happened.
     fn evaluate(&mut self, expression: &str) -> Result<EvalOutcome, String>;
@@ -71,7 +74,9 @@ pub struct Backend {
     baseline: Option<(DocumentContext, bool)>,
     last_document: Option<DocumentContext>,
     console: Option<Cursor>,
-    opaque_override: bool,
+    /// What the live grant covers. A scope without a matching grant is never used: the grant
+    /// check fails first, and the next grant replaces it.
+    scope: Option<GrantScope>,
 }
 
 fn engine_name() -> String {
@@ -91,7 +96,7 @@ impl Backend {
             baseline: None,
             last_document: None,
             console: None,
-            opaque_override: false,
+            scope: None,
         }
     }
 
@@ -103,7 +108,7 @@ impl Backend {
         self.baseline = None;
         self.console = None;
         self.last_document = None;
-        self.opaque_override = false;
+        self.scope = None;
     }
 
     /// Execute a decoded, shape-validated request. `current` is the document stamp and loading
@@ -214,26 +219,29 @@ impl Backend {
                 let InspectorArgs::Grant {
                     token,
                     opaque_override,
-                } = request.args
+                    origin,
+                } = &request.args
                 else {
                     return Err(refuse(
                         InspectorErrorCode::InvalidPayload,
                         "Missing grant arguments",
                     ));
                 };
-                if !port.origin_allows_evaluation() && !opaque_override {
-                    return Err(refuse(
-                        InspectorErrorCode::Unauthorized,
-                        "Evaluation is not permitted for an opaque or internal document",
-                    ));
-                }
-                self.sessions.store_grant(request.session, current.0, token);
-                self.opaque_override = opaque_override;
+                // The browser decided from the committed principal; the engine only refuses a
+                // claim that contradicts its own document.
+                let scope = policy::verify_scope(
+                    origin.as_deref(),
+                    *opaque_override,
+                    port.document_origin().as_deref(),
+                )?;
+                self.sessions
+                    .store_grant(request.session, current.0, *token);
+                self.scope = Some(scope);
                 Ok(InspectorResponse::EvaluationGranted)
             }
             InspectorCommand::RevokeEvaluation => {
                 self.sessions.clear_grant();
-                self.opaque_override = false;
+                self.scope = None;
                 Ok(InspectorResponse::EvaluationRevoked)
             }
             InspectorCommand::Evaluate => {
@@ -247,12 +255,18 @@ impl Backend {
                 // document: nothing earlier in the pipeline is trusted.
                 self.sessions
                     .check_grant(request.session, current.0, *grant)?;
-                if !port.origin_allows_evaluation() && !self.opaque_override {
+                // ...and the scope it was granted for must still match this document.
+                let Some(scope) = &self.scope else {
                     return Err(refuse(
                         InspectorErrorCode::Unauthorized,
-                        "Evaluation is not permitted for an opaque or internal document",
+                        "Evaluation has no recorded scope",
                     ));
-                }
+                };
+                policy::verify_scope(
+                    scope.origin.as_deref(),
+                    scope.opaque_override,
+                    port.document_origin().as_deref(),
+                )?;
                 if current.1 {
                     return Err(refuse(
                         InspectorErrorCode::Busy,
@@ -303,7 +317,7 @@ impl Backend {
             && previous != document
         {
             self.sessions.clear_grant();
-            self.opaque_override = false;
+            self.scope = None;
             if let Some(cursor) = &mut self.console {
                 cursor.after = port.console_first_seq().saturating_sub(1);
                 events.push(InspectorEvent::ExecutionContextDestroyed { document: previous });

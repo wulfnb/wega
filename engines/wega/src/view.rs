@@ -2667,8 +2667,9 @@ impl crate::inspector::PagePort for View {
     fn console_clear(&mut self) {
         self.console.borrow_mut().clear();
     }
-    fn origin_allows_evaluation(&self) -> bool {
-        matches!(self.url.scheme(), "http" | "https" | "file")
+    fn document_origin(&self) -> Option<String> {
+        matches!(self.url.scheme(), "http" | "https")
+            .then(|| self.url.origin().ascii_serialization())
     }
     fn evaluate(
         &mut self,

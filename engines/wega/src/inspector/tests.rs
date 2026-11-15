@@ -30,7 +30,7 @@ struct Port {
     status_calls: Cell<u32>,
     reads: Cell<u32>,
     evaluations: RefCell<Vec<String>>,
-    opaque: bool,
+    origin: Option<String>,
     outcome: RefCell<Result<EvalOutcome, String>>,
     messages: RefCell<Vec<ConsoleMessage>>,
     first: Cell<u64>,
@@ -43,7 +43,7 @@ impl Port {
             status_calls: Cell::new(0),
             reads: Cell::new(0),
             evaluations: RefCell::new(Vec::new()),
-            opaque: false,
+            origin: Some("https://example.test".into()),
             outcome: RefCell::new(Ok(EvalOutcome::Value {
                 preview: Preview::simple(PreviewKind::Number, "2"),
             })),
@@ -130,8 +130,8 @@ impl PagePort for Port {
         self.messages.borrow_mut().clear();
         self.first.set(self.next.get());
     }
-    fn origin_allows_evaluation(&self) -> bool {
-        !self.opaque
+    fn document_origin(&self) -> Option<String> {
+        self.origin.clone()
     }
     fn evaluate(&mut self, expression: &str) -> Result<EvalOutcome, String> {
         self.evaluations.borrow_mut().push(expression.into());
@@ -200,6 +200,7 @@ fn granted(backend: &mut Backend, port: &mut Port, at: DocumentContext) {
         InspectorArgs::Grant {
             token: token(9),
             opaque_override: false,
+            origin: Some("https://example.test".into()),
         },
         (at, false),
     )
@@ -484,62 +485,65 @@ fn a_grant_for_one_session_is_useless_to_another() {
     assert!(port.evaluations.borrow().is_empty());
 }
 
-#[test]
-fn opaque_and_internal_documents_need_an_explicit_override() {
-    let mut backend = Backend::new(own(), 23);
-    let mut port = Port::new();
-    port.opaque = true;
-    simple(&mut backend, &mut port, 1, InspectorCommand::Attach).unwrap();
-    let grant = |override_| InspectorArgs::Grant {
+fn grant_args(origin: Option<&str>, opaque_override: bool) -> InspectorArgs {
+    InspectorArgs::Grant {
         token: token(4),
-        opaque_override: override_,
-    };
-    assert_eq!(
-        code(run(
-            &mut backend,
-            &mut port,
-            1,
-            InspectorCommand::GrantEvaluation,
-            grant(false),
-            (doc(0, 0), false)
-        )),
-        InspectorErrorCode::Unauthorized
-    );
-    // Without a stored grant evaluation stays denied.
-    let (command, args) = evaluate(1, token(4));
-    assert!(
-        run(
-            &mut backend,
-            &mut port,
-            1,
-            command,
-            args,
-            (doc(0, 0), false)
-        )
-        .is_err()
-    );
+        opaque_override,
+        origin: origin.map(str::to_string),
+    }
+}
+fn try_grant(
+    backend: &mut Backend,
+    port: &mut Port,
+    origin: Option<&str>,
+    opaque_override: bool,
+) -> Result<InspectorResponse, InspectorError> {
     run(
-        &mut backend,
-        &mut port,
+        backend,
+        port,
         1,
         InspectorCommand::GrantEvaluation,
-        grant(true),
+        grant_args(origin, opaque_override),
         (doc(0, 0), false),
     )
-    .unwrap();
+}
+fn evaluates(backend: &mut Backend, port: &mut Port) -> bool {
     let (command, args) = evaluate(1, token(4));
-    assert!(
-        run(
-            &mut backend,
-            &mut port,
-            1,
-            command,
-            args,
-            (doc(0, 0), false)
-        )
-        .is_ok()
+    run(backend, port, 1, command, args, (doc(0, 0), false)).is_ok()
+}
+
+#[test]
+fn an_opaque_document_needs_the_users_override_and_a_tuple_claim_for_it_is_a_forgery() {
+    let mut backend = Backend::new(own(), 23);
+    let mut port = Port::new();
+    port.origin = None; // the engine's document has no tuple origin (about:, data:, file:...)
+    simple(&mut backend, &mut port, 1, InspectorCommand::Attach).unwrap();
+    // No override.
+    assert_eq!(
+        code(try_grant(&mut backend, &mut port, None, false)),
+        InspectorErrorCode::PolicyDenied
     );
-    // The override does not survive navigation.
+    // The browser claims a tuple origin for a document the engine knows has none.
+    for claim in [
+        "https://example.test",
+        "https://evil.test",
+        "http://127.0.0.1",
+    ] {
+        assert_eq!(
+            code(try_grant(&mut backend, &mut port, Some(claim), false)),
+            InspectorErrorCode::PolicyDenied,
+            "{claim}"
+        );
+    }
+    assert!(
+        !evaluates(&mut backend, &mut port),
+        "a refused grant stores nothing"
+    );
+    // The user's explicit override.
+    try_grant(&mut backend, &mut port, None, true).unwrap();
+    assert!(evaluates(&mut backend, &mut port));
+    assert_eq!(port.evaluations.borrow().len(), 1);
+    // It does not survive navigation.
     backend.observe(doc(1, 1), false, &port);
     let (command, args) = evaluate(1, token(4));
     assert!(
@@ -554,6 +558,94 @@ fn opaque_and_internal_documents_need_an_explicit_override() {
         .is_err()
     );
     assert_eq!(port.evaluations.borrow().len(), 1);
+}
+
+#[test]
+fn a_tuple_grant_must_match_the_engines_own_origin_at_grant_time_and_at_execution() {
+    let mut backend = Backend::new(own(), 23);
+    let mut port = Port::new();
+    simple(&mut backend, &mut port, 1, InspectorCommand::Attach).unwrap();
+    // Wrong origin, wrong port, wrong scheme: refused; nothing stored.
+    for claim in [
+        "https://evil.test",
+        "https://example.test:8443",
+        "http://example.test",
+    ] {
+        assert_eq!(
+            code(try_grant(&mut backend, &mut port, Some(claim), false)),
+            InspectorErrorCode::PolicyDenied,
+            "{claim}"
+        );
+    }
+    assert!(!evaluates(&mut backend, &mut port));
+    // A tuple claim without an override is enough for a matching tuple document...
+    try_grant(&mut backend, &mut port, Some("https://example.test"), false).unwrap();
+    assert!(evaluates(&mut backend, &mut port));
+    // ...but if the document's origin is no longer what the grant covered (same stamp, e.g. the
+    // engine's URL moved), execution is refused and the page is not touched.
+    port.origin = Some("https://other.test".into());
+    let (command, args) = evaluate(1, token(4));
+    assert_eq!(
+        code(run(
+            &mut backend,
+            &mut port,
+            1,
+            command,
+            args,
+            (doc(0, 0), false)
+        )),
+        InspectorErrorCode::PolicyDenied
+    );
+    assert_eq!(port.evaluations.borrow().len(), 1);
+    port.origin = None;
+    let (command, args) = evaluate(1, token(4));
+    assert_eq!(
+        code(run(
+            &mut backend,
+            &mut port,
+            1,
+            command,
+            args,
+            (doc(0, 0), false)
+        )),
+        InspectorErrorCode::PolicyDenied
+    );
+}
+
+#[test]
+fn the_override_is_honoured_when_the_browsers_principal_is_stricter_than_the_engines_url() {
+    // An https document the broker could not corroborate has an opaque principal in the
+    // browser; the engine sees a tuple URL. The user's override must still work.
+    let mut backend = Backend::new(own(), 23);
+    let mut port = Port::new();
+    simple(&mut backend, &mut port, 1, InspectorCommand::Attach).unwrap();
+    assert_eq!(
+        code(try_grant(&mut backend, &mut port, None, false)),
+        InspectorErrorCode::PolicyDenied
+    );
+    try_grant(&mut backend, &mut port, None, true).unwrap();
+    assert!(evaluates(&mut backend, &mut port));
+}
+
+#[test]
+fn a_malformed_origin_in_a_grant_is_an_invalid_payload() {
+    let mut backend = Backend::new(own(), 23);
+    let mut port = Port::new();
+    simple(&mut backend, &mut port, 1, InspectorCommand::Attach).unwrap();
+    // The protocol rejects it before the backend sees it; the backend also refuses it directly.
+    let request = request(
+        1,
+        InspectorCommand::GrantEvaluation,
+        grant_args(Some("https://example.test/x"), false),
+    );
+    assert_eq!(
+        request.validate().unwrap_err().code,
+        InspectorErrorCode::InvalidPayload
+    );
+    assert_eq!(
+        code(backend.handle(&request, (doc(0, 0), false), Sampled::default(), &mut port)),
+        InspectorErrorCode::InvalidPayload
+    );
 }
 
 #[test]

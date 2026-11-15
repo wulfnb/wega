@@ -576,6 +576,9 @@ impl DevtoolsView {
                     InspectorErrorCode::Timeout => "No answer from the page in time. The evaluation may still be running: it was not confirmed stopped.".to_string(),
                     InspectorErrorCode::Cancelled => "The evaluation was cancelled (navigation, detach or the page stopped).".to_string(),
                     InspectorErrorCode::StaleDocument => "The page navigated before the evaluation ran; nothing was executed.".to_string(),
+                    InspectorErrorCode::PolicyDenied => {
+                        format!("Evaluation is not permitted: {}", error.message)
+                    }
                     InspectorErrorCode::Unauthorized | InspectorErrorCode::StaleSession => {
                         format!("Evaluation is not authorised ({}). Enable it again for this document.", error.message)
                     }

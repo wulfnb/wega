@@ -244,6 +244,7 @@ fn console_ipc_paths() {
             InspectorArgs::Grant {
                 token,
                 opaque_override: true,
+                origin: None,
             },
         )
         .unwrap();
