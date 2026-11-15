@@ -16,6 +16,7 @@ pub use url::Url;
 
 pub mod canvas;
 mod components;
+mod console;
 mod cookies;
 mod csp;
 #[path = "../../../src/diagnostic_event.rs"]
@@ -36,6 +37,7 @@ mod view;
 pub mod webgl;
 pub mod workers;
 pub use dom::{DialogHandler, DocumentDialogHandler};
+pub use inspector::PagePort;
 pub use network::NetworkPolicy;
 pub use view::{Frame, View};
 pub use view::{PageEvent, Pointer, PointerKind};

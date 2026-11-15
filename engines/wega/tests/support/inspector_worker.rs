@@ -5,8 +5,8 @@ use protocol::{
     Command, DocumentContext, DocumentId, DocumentRevision, Event, RequestContext, RequestId,
     identity::{FrameId, ProcessSessionId, SessionIdentity, TabId},
     inspector::{
-        INSPECTOR_VERSION, InspectorCommand, InspectorPayload, InspectorRequest, InspectorResponse,
-        InspectorSessionId, StatusSnapshot, TargetId, session::SessionIssuer,
+        INSPECTOR_VERSION, InspectorArgs, InspectorCommand, InspectorPayload, InspectorRequest,
+        InspectorResponse, InspectorSessionId, StatusSnapshot, TargetId, session::SessionIssuer,
     },
 };
 use std::{
@@ -148,11 +148,21 @@ impl Worker {
         session: InspectorSessionId,
         command: InspectorCommand,
     ) -> RequestContext {
+        self.request_with(context, session, command, InspectorArgs::None)
+    }
+    pub fn request_with(
+        &mut self,
+        context: RequestContext,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+    ) -> RequestContext {
         let request = InspectorRequest {
             version: INSPECTOR_VERSION,
             session,
             target: self.target(),
             command,
+            args,
         };
         self.send(Command::Inspector {
             context,
@@ -168,6 +178,17 @@ impl Worker {
     ) -> Result<InspectorResponse, String> {
         let context = self.context();
         self.request_in(context, session, command);
+        self.reply(context)
+    }
+    /// Send with arguments and wait for the matching reply.
+    pub fn call_with(
+        &mut self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+    ) -> Result<InspectorResponse, String> {
+        let context = self.context();
+        self.request_with(context, session, command, args);
         self.reply(context)
     }
     pub fn reply(&mut self, context: RequestContext) -> Result<InspectorResponse, String> {

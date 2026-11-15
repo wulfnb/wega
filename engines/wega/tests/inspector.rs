@@ -6,8 +6,9 @@ use protocol::{
     Command, DocumentRevision, ErrorCode, Event,
     identity::{FrameId, ProcessSessionId, TabId},
     inspector::{
-        INSPECTOR_VERSION, InspectorCommand, InspectorErrorCode, InspectorEvent, InspectorPayload,
-        InspectorRequest, InspectorResponse, InspectorSessionId, TargetId, session::HostSessions,
+        INSPECTOR_VERSION, InspectorArgs, InspectorCommand, InspectorErrorCode, InspectorEvent,
+        InspectorPayload, InspectorRequest, InspectorResponse, InspectorSessionId, TargetId,
+        session::HostSessions,
     },
 };
 use std::time::{Duration, Instant};
@@ -132,6 +133,7 @@ fn forged_unknown_and_cross_tab_requests_are_refused_without_effect() {
                 session,
                 target,
                 command: InspectorCommand::GetStatusSnapshot,
+                args: InspectorArgs::None,
             }),
         });
         assert_eq!(worker.reply(context), Err("UnknownTarget".into()));
@@ -254,6 +256,7 @@ fn unsupported_versions_and_malformed_payloads_are_answered_and_the_worker_survi
                 session,
                 target: worker.target(),
                 command: InspectorCommand::GetStatusSnapshot,
+                args: InspectorArgs::None,
             }),
         });
         assert_eq!(worker.reply(context), Err("UnsupportedVersion".into()));
@@ -263,6 +266,7 @@ fn unsupported_versions_and_malformed_payloads_are_answered_and_the_worker_survi
         session,
         target: worker.target(),
         command: InspectorCommand::Attach,
+        args: InspectorArgs::None,
     })
     .unwrap();
     let mut variants = vec![
@@ -564,6 +568,7 @@ fn host_registry_and_a_real_worker_agree_when_a_tab_restarts() {
         session,
         target: first.target(),
         command: InspectorCommand::GetStatusSnapshot,
+        args: InspectorArgs::None,
     };
     assert!(
         host.registry()

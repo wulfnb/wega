@@ -363,6 +363,7 @@ pub struct View {
     pub selected_files: std::collections::HashMap<NodeId, Vec<String>>,
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
     pub fullscreen: bool,
+    console: Rc<RefCell<crate::console::ConsoleLog>>,
 }
 impl View {
     pub(crate) fn new(
@@ -429,6 +430,7 @@ impl View {
             selected_files: std::collections::HashMap::new(),
             permissions: Rc::new(RefCell::new(crate::permissions::PermissionRegistry::new())),
             fullscreen: false,
+            console: Rc::new(RefCell::new(crate::console::ConsoleLog::new())),
         };
         view.load(url)?;
         Ok(view)
@@ -643,6 +645,8 @@ impl View {
         self.document_revision = document_revision;
         self.scheduler.replace(document_revision);
         self.document_generation = Rc::new(Cell::new(self.navigation_generation));
+        // A new document starts a new console history; the old one is dropped with its realm.
+        self.console = Rc::new(RefCell::new(crate::console::ConsoleLog::new()));
         self.events.clear();
         self.navigate.borrow_mut().clear();
         self.refresh = response
@@ -662,6 +666,7 @@ impl View {
                 activation: self.activation.clone(),
                 started_scripts: self.host.started_scripts.clone(),
                 permissions: self.permissions.clone(),
+                console: self.console.clone(),
             },
             &self.limits,
             html.len(),
@@ -976,6 +981,15 @@ impl View {
             Some(self.url.to_string()),
         )
         .emit();
+        // Non-fatal script errors already reach the console history through `__wega_report`;
+        // a fatal stop never does, and is exactly what the next DevTools session must show.
+        if error.fatal {
+            self.console.borrow_mut().exception(
+                wega_protocol::inspector::ExceptionKind::Uncaught,
+                &error.message,
+                self.url.as_str(),
+            );
+        }
         if !error.fatal && error.message.contains("; missing:") {
             self.compatibility
                 .get_or_insert_with(|| error.message.clone());
@@ -2600,6 +2614,120 @@ fn encode_body(body: &Body, content_type: Option<&str>) -> (Vec<u8>, String) {
                 "application/x-www-form-urlencoded".into(),
             )
         }
+    }
+}
+
+fn clip_text(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_string();
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_string()
+}
+
+impl crate::inspector::PagePort for View {
+    fn status_input(&self, sampled: crate::inspector::Sampled) -> crate::inspector::StatusInput {
+        let history = self.document_history();
+        crate::inspector::StatusInput {
+            url: self.url.to_string(),
+            title: self.title(),
+            loading: self.loading,
+            viewport: sampled.viewport,
+            nodes: sampled.nodes,
+            js_heap_bytes: sampled.js_heap_bytes,
+            can_go_back: history.0,
+            can_go_forward: history.1,
+        }
+    }
+    fn console_first_seq(&self) -> u64 {
+        self.console.borrow().first_seq()
+    }
+    fn console_next_seq(&self) -> u64 {
+        self.console.borrow().next_seq()
+    }
+    fn console_len(&self) -> usize {
+        self.console.borrow().len()
+    }
+    fn console_dropped(&self) -> u64 {
+        self.console.borrow().dropped()
+    }
+    fn console_read(
+        &self,
+        after: u64,
+        max_entries: usize,
+        max_bytes: usize,
+    ) -> Vec<wega_protocol::inspector::ConsoleMessage> {
+        self.console
+            .borrow()
+            .read_after(after, max_entries, max_bytes)
+    }
+    fn console_clear(&mut self) {
+        self.console.borrow_mut().clear();
+    }
+    fn origin_allows_evaluation(&self) -> bool {
+        matches!(self.url.scheme(), "http" | "https" | "file")
+    }
+    fn evaluate(
+        &mut self,
+        expression: &str,
+    ) -> Result<wega_protocol::inspector::EvalOutcome, String> {
+        use wega_adapter_v8::InspectOutcome;
+        use wega_protocol::inspector::{
+            EvalOutcome, ExceptionDetails, ExceptionKind, Preview, PreviewKind, SourceLocation,
+        };
+        if !self.scheduler.script_allowed() {
+            return Err("The document is suspended for navigation".into());
+        }
+        let script = self
+            .script
+            .as_mut()
+            .ok_or("The page has no script context")?;
+        let result = script.evaluate_inspect(expression);
+        let result = crate::script::finish_task(script.as_mut(), result);
+        self.frame.invalidate();
+        let outcome = match result {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                let fatal = error.fatal;
+                let message = error.message.clone();
+                if fatal {
+                    self.script_error(error);
+                    return Err(format!(
+                        "The page's script runtime was terminated and the tab stopped: {}",
+                        clip_text(&message, 512)
+                    ));
+                }
+                return Err(clip_text(&message, 512));
+            }
+        };
+        self.drain_requests();
+        Ok(match outcome {
+            InspectOutcome::Value { preview_json } => {
+                let preview = serde_json::from_str::<Preview>(&preview_json)
+                    .ok()
+                    .filter(Preview::is_bounded)
+                    .unwrap_or_else(|| {
+                        Preview::simple(PreviewKind::Unavailable, "preview unavailable")
+                    });
+                EvalOutcome::Value { preview }
+            }
+            InspectOutcome::Exception(error) => EvalOutcome::Exception {
+                details: ExceptionDetails {
+                    kind: ExceptionKind::Evaluation,
+                    name: clip_text(&error.name, 128),
+                    message: clip_text(&error.message, 2048),
+                    stack: error.stack.map(|stack| clip_text(&stack, 4096)),
+                    source: error.url.map(|url| SourceLocation {
+                        url: clip_text(&url, 4096),
+                        line: error.line,
+                        column: error.column,
+                    }),
+                },
+            },
+        })
     }
 }
 

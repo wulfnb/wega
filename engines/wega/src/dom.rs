@@ -79,6 +79,7 @@ pub(crate) struct Dom {
     pub webgl_engine: RefCell<crate::webgl::WebGLEngine>,
     pub media_engine: RefCell<crate::media::MediaEngine>,
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
+    pub console: Rc<RefCell<crate::console::ConsoleLog>>,
     // The DOM thread cannot receive parser/input mutations during script. Start
     // a fresh epoch at each host step, then invalidate synchronously on writes.
     revision: Cell<u64>,
@@ -144,6 +145,7 @@ impl Dom {
             webgl_engine: RefCell::new(crate::webgl::WebGLEngine::new(limits.max_pixels * 8)),
             media_engine: RefCell::new(crate::media::MediaEngine::new(limits.resource_bytes * 8)),
             permissions: context.permissions,
+            console: context.console,
             revision: Cell::new(0),
             layout_dirty: Cell::new(true),
         }
@@ -967,7 +969,16 @@ impl Dom {
         ) {
             self.invalidate();
         }
-        if text(0) == "error" {
+        if matches!(text(0), "error" | "rejection") {
+            self.console.borrow_mut().exception(
+                if text(0) == "rejection" {
+                    wega_protocol::inspector::ExceptionKind::UnhandledRejection
+                } else {
+                    wega_protocol::inspector::ExceptionKind::Uncaught
+                },
+                text(1),
+                self.document.borrow().url().as_str(),
+            );
             crate::diagnostics::Diagnostic::error(
                 crate::diagnostics::Category::Javascript,
                 text(1),
@@ -1601,6 +1612,10 @@ impl Dom {
                 Value::Null
             }
             "now" => json!(self.start.elapsed().as_secs_f64() * 1000.0),
+            "console" => {
+                self.console.borrow_mut().ingest(text(1), doc.url().as_str());
+                Value::Null
+            }
             "log" => {
                 if matches!(text(2), "2" | "3") {
                     let mut diagnostic = crate::diagnostics::Diagnostic::error(

@@ -2,7 +2,7 @@
 use crate::{
     env::ScriptEnvironment,
     runtime::{RuntimeKind, RuntimeSpec, configure_secure_context, create_runtime},
-    script::{ScriptError, ScriptHost},
+    script::{InspectException, InspectOutcome, ScriptError, ScriptHost},
 };
 use deno_core::JsRuntime;
 use serde_json::json;
@@ -227,6 +227,9 @@ pub struct V8Host<E: ScriptEnvironment> {
     heap_limit: usize,
     timer: Option<Instant>,
     polled_at: Instant,
+    /// The preview generator, captured before any page script ran and removed from the
+    /// global, so a page can neither call it nor replace it.
+    preview: Option<deno_core::v8::Global<deno_core::v8::Function>>,
 }
 impl<E: ScriptEnvironment> V8Host<E> {
     /// The document environment is created and owned by the view and injected here;
@@ -262,6 +265,7 @@ impl<E: ScriptEnvironment> V8Host<E> {
             .map_err(|error| error.to_string())?;
         runtime.op_state().borrow_mut().put(String::new());
         configure_secure_context(&mut runtime, &document_url)?;
+        let preview = capture_preview(&mut runtime);
         let bootstrap_heap = heap_bytes(&mut runtime);
         let oom = Arc::new(AtomicBool::new(false));
         let flag = oom.clone();
@@ -291,6 +295,7 @@ impl<E: ScriptEnvironment> V8Host<E> {
             heap_limit: bootstrap_heap.saturating_add(limits.js_heap_bytes),
             timer: None,
             polled_at: Instant::now(),
+            preview,
         })
     }
     /// Run one bounded step of script; reports a notice when it is slow.
@@ -313,6 +318,22 @@ impl<E: ScriptEnvironment> V8Host<E> {
             ));
         }
         (result, fired)
+    }
+    /// A heap or deadline overrun: fatal for the realm.
+    fn limit_failure(&self, name: &str, timed_out: bool) -> Option<ScriptError> {
+        if self.oom.load(Ordering::Relaxed) || self.heap > self.heap_limit {
+            return Some(ScriptError {
+                fatal: true,
+                message: format!(
+                    "{name}: V8 heap limit exceeded ({} > {} bytes including bootstrap)",
+                    self.heap, self.heap_limit
+                ),
+            });
+        }
+        timed_out.then(|| ScriptError {
+            fatal: true,
+            message: format!("{name}: Script deadline exceeded"),
+        })
     }
     fn execute_value(
         &mut self,
@@ -340,20 +361,8 @@ impl<E: ScriptEnvironment> V8Host<E> {
             self.heap = heap_bytes(self.runtime.as_mut().unwrap());
         }
         drop(entered);
-        if self.oom.load(Ordering::Relaxed) || self.heap > self.heap_limit {
-            return Err(ScriptError {
-                fatal: true,
-                message: format!(
-                    "{name}: V8 heap limit exceeded ({} > {} bytes including bootstrap)",
-                    self.heap, self.heap_limit
-                ),
-            });
-        }
-        if timed_out {
-            return Err(ScriptError {
-                fatal: true,
-                message: format!("{name}: Script deadline exceeded"),
-            });
+        if let Some(failure) = self.limit_failure(name, timed_out) {
+            return Err(failure);
         }
         result.map_err(|error| {
             let text = error.to_string();
@@ -368,6 +377,23 @@ impl<E: ScriptEnvironment> V8Host<E> {
             .map(|value| format!("{value:?}"))
     }
 }
+const UNAVAILABLE_PREVIEW: &str = r#"{"kind":"Unavailable","text":"preview unavailable"}"#;
+
+/// Take the preview generator out of the global before any page script can see it.
+fn capture_preview(
+    runtime: &mut JsRuntime,
+) -> Option<deno_core::v8::Global<deno_core::v8::Function>> {
+    deno_core::scope!(scope, runtime);
+    let context = scope.get_current_context();
+    let global = context.global(scope);
+    let key = deno_core::v8::String::new(scope, "__wega_preview")?;
+    let value = global.get(scope, key.into())?;
+    let function = deno_core::v8::Local::<deno_core::v8::Function>::try_from(value).ok()?;
+    let handle = deno_core::v8::Global::new(scope, function);
+    global.delete(scope, key.into());
+    Some(handle)
+}
+
 impl<E: ScriptEnvironment> ScriptHost for V8Host<E> {
     type Requests = E::Requests;
     fn checkpoint(&mut self) -> Result<(), ScriptError> {
@@ -503,6 +529,89 @@ impl<E: ScriptEnvironment> ScriptHost for V8Host<E> {
         Ok(output?
             .filter(|text| text != "undefined")
             .unwrap_or_else(|| "null".into()))
+    }
+    fn evaluate_inspect(&mut self, source: &str) -> Result<InspectOutcome, ScriptError> {
+        const NAME: &str = "devtools:evaluate";
+        if self.runtime.is_none() {
+            return Err(ScriptError {
+                fatal: false,
+                message: "Module graph is loading".into(),
+            });
+        }
+        let executor = self.executor.clone();
+        let entered = executor.enter();
+        let (result, timed_out) = self.bounded(NAME, |host| {
+            host.runtime
+                .as_mut()
+                .unwrap()
+                .execute_script(NAME, source.to_owned())
+        });
+        self.polled_at = Instant::now();
+        self.heap = heap_bytes(self.runtime.as_mut().unwrap());
+        if self.heap > self.heap_limit && !self.oom.load(Ordering::Relaxed) {
+            collect_garbage(self.runtime.as_mut().unwrap(), false);
+            self.heap = heap_bytes(self.runtime.as_mut().unwrap());
+        }
+        drop(entered);
+        if let Some(failure) = self.limit_failure(NAME, timed_out) {
+            return Err(failure);
+        }
+        let value = match result {
+            Ok(value) => value,
+            Err(error) => {
+                let text = error.to_string();
+                if text.contains("Maximum call stack size exceeded") {
+                    return Err(ScriptError {
+                        fatal: true,
+                        message: format!("{NAME}: {text}"),
+                    });
+                }
+                let frame = error.frames.first();
+                return Ok(InspectOutcome::Exception(InspectException {
+                    name: error.name.clone().unwrap_or_else(|| "Error".into()),
+                    message: error
+                        .message
+                        .clone()
+                        .unwrap_or_else(|| error.exception_message.clone()),
+                    stack: error.stack.clone(),
+                    url: frame.and_then(|f| f.file_name.clone()),
+                    line: frame
+                        .and_then(|f| f.line_number)
+                        .map_or(0, |n| n.clamp(0, i64::from(u32::MAX)) as u32),
+                    column: frame
+                        .and_then(|f| f.column_number)
+                        .map_or(0, |n| n.clamp(0, i64::from(u32::MAX)) as u32),
+                }));
+            }
+        };
+        let Some(function) = self.preview.clone() else {
+            return Ok(InspectOutcome::Value {
+                preview_json: UNAVAILABLE_PREVIEW.into(),
+            });
+        };
+        let executor = self.executor.clone();
+        let entered = executor.enter();
+        let (text, timed_out) = self.bounded("devtools:preview", |host| {
+            deno_core::scope!(scope, host.runtime.as_mut().unwrap());
+            deno_core::v8::tc_scope!(let scope, scope);
+            let function = deno_core::v8::Local::new(scope, &function);
+            let argument = deno_core::v8::Local::new(scope, &value);
+            let receiver = deno_core::v8::undefined(scope).into();
+            function
+                .call(scope, receiver, &[argument])
+                .filter(|result| result.is_string())
+                .map(|result| result.to_rust_string_lossy(scope))
+        });
+        self.heap = heap_bytes(self.runtime.as_mut().unwrap());
+        drop(entered);
+        if let Some(failure) = self.limit_failure("devtools:preview", timed_out) {
+            return Err(failure);
+        }
+        Ok(InspectOutcome::Value {
+            preview_json: text
+                .filter(|text| text.len() <= 32 * 1024)
+                .unwrap_or_else(|| UNAVAILABLE_PREVIEW.into()),
+        })
     }
     fn tick(&mut self) -> Result<(), ScriptError> {
         if self.frozen {

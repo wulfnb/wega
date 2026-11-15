@@ -146,8 +146,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             Command::CaptureDocument { .. } | Command::NavigateDocument { .. }
                         ) {
                             protocol::HARNESS_TIMEOUT_MS
-                        } else if matches!(&command, Command::Inspector { .. }) {
-                            protocol::inspector::INSPECTOR_TIMEOUT_MS
+                        } else if let Command::Inspector { request, .. } = &command {
+                            request
+                                .command_hint()
+                                .map_or(protocol::inspector::INSPECTOR_TIMEOUT_MS, |c| {
+                                    c.timeout_ms()
+                                })
                         } else {
                             protocol::EVALUATION_TIMEOUT_MS
                         };
@@ -580,7 +584,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         {
             // One branch when no session is subscribed; never queues anything.
             let context = document_context(&view, serial, version);
-            for (session, seq, event) in backend.observe(context, view.loading) {
+            for (session, seq, event) in backend.observe(context, view.loading, &view) {
                 write(&Event::InspectorEvent {
                     context,
                     session,
@@ -962,7 +966,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         })?;
                         continue;
                     };
-                    match request.decode() {
+                    match request.decode().and_then(|decoded| {
+                        if decoded.command.needs_console_version() && version < 23 {
+                            Err(protocol::inspector::InspectorError::new(
+                                protocol::inspector::InspectorErrorCode::UnsupportedVersion,
+                                "Console and evaluation need protocol version 23",
+                            ))
+                        } else {
+                            Ok(decoded)
+                        }
+                    }) {
                         // The whole payload is unusable, so no session can be named.
                         Err(error) => write(&Event::RequestFailed {
                             context,
@@ -971,26 +984,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(request) => {
                             let session = request.session;
                             let current = (document_context(&view, serial, version), view.loading);
-                            let result = backend.handle(&request, current, || {
-                                let history = view.document_history();
-                                wega_engine::inspector::StatusInput {
-                                    url: view.url.to_string(),
-                                    title: view.title(),
-                                    loading: view.loading,
-                                    // The viewport the browser last requested (applied at the
-                                    // next paint), in CSS pixels. No layout is consulted.
-                                    viewport: {
-                                        let (w, h, scale, zoom, _) = viewport;
-                                        let dpr = f64::from(scale) * f64::from(zoom);
-                                        (dpr.is_finite() && dpr > 0.0 && w > 0 && h > 0)
-                                            .then(|| (f64::from(w) / dpr, f64::from(h) / dpr, dpr))
-                                    },
-                                    nodes: metrics.0 as u64,
-                                    js_heap_bytes: metrics.1 as u64,
-                                    can_go_back: history.0,
-                                    can_go_forward: history.1,
-                                }
-                            });
+                            let sampled = wega_engine::inspector::Sampled {
+                                nodes: metrics.0 as u64,
+                                js_heap_bytes: metrics.1 as u64,
+                                // The viewport the browser last requested (applied at the next
+                                // paint), in CSS pixels. No layout is consulted.
+                                viewport: {
+                                    let (w, h, scale, zoom, _) = viewport;
+                                    let dpr = f64::from(scale) * f64::from(zoom);
+                                    (dpr.is_finite() && dpr > 0.0 && w > 0 && h > 0)
+                                        .then(|| (f64::from(w) / dpr, f64::from(h) / dpr, dpr))
+                                },
+                            };
+                            let result = backend.handle(&request, current, sampled, &mut view);
                             write(&Event::InspectorResponse {
                                 context,
                                 session,

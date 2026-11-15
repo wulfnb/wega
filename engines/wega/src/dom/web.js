@@ -38,7 +38,7 @@
   core.setReportExceptionCallback((error) => globalThis.__wega_report(error));
   core.setUnhandledPromiseRejectionHandler((promise, reason) => {
     core.ops.op_dom_read(
-      "error", String(reason) + "\n" + String(reason?.stack || ""), "", "",
+      "rejection", String(reason) + "\n" + String(reason?.stack || ""), "", "",
     );
     globalThis.dispatchEvent(new event.PromiseRejectionEvent("unhandledrejection", {
       promise, reason, cancelable: true,
@@ -743,9 +743,283 @@
   globals.ServiceWorker = ServiceWorker;
   globals.serviceWorkerContainer = container;
 
-  globals.console = new console.Console((message, level) =>
-    core.ops.op_dom_read("log", message, String(level), ""),
-  );
+  // ---- DevTools console capture and value previews (D2). ----
+  // This runs in the page realm, so it relies only on intrinsics captured *now*, before any
+  // page script, and never calls a method found on a page object or reads an accessor:
+  // values are described through own data descriptors only, proxies are never inspected,
+  // and JSON is assembled by hand (an object serialised with JSON.stringify would consult a
+  // page-defined toJSON). Anything it cannot describe safely becomes a type-only preview.
+  const devtools = (() => {
+    const op = core.ops.op_dom_read;
+    const isProxy = core.isProxy;
+    const promiseDetails = core.getPromiseDetails;
+    const callSite = core.currentUserCallSite;
+    const gopd = Object.getOwnPropertyDescriptor;
+    const gopn = Object.getOwnPropertyNames;
+    const gpo = Object.getPrototypeOf;
+    const hasOwn = Object.hasOwn;
+    const sameValue = Object.is;
+    const defineProperty = Object.defineProperty;
+    const isArray = Array.isArray;
+    const isView = ArrayBuffer.isView;
+    const reflectApply = Reflect.apply;
+    const slice = String.prototype.slice;
+    const quote = JSON.stringify; // only ever applied to primitive strings
+    const symbolToString = Symbol.prototype.toString;
+    const bigintToString = BigInt.prototype.toString;
+    const dateToISO = Date.prototype.toISOString;
+    const regexpSource = gopd(RegExp.prototype, "source").get;
+    const mapSize = gopd(Map.prototype, "size").get;
+    const setSize = gopd(Set.prototype, "size").get;
+    const typedLength = gopd(gpo(Uint8Array.prototype), "length").get;
+    const protoError = Error.prototype;
+    const protoDate = Date.prototype;
+    const protoRegExp = RegExp.prototype;
+    const protoMap = Map.prototype;
+    const protoSet = Set.prototype;
+    const protoPromise = Promise.prototype;
+    const MAX_DEPTH = 3, MAX_PROPS = 8, MAX_NODES = 64, MAX_TEXT = 256;
+    const UNAVAILABLE = '{"kind":"Unavailable","text":"unavailable"}';
+
+    function clip(s, max) {
+      return s.length > max ? reflectApply(slice, s, [0, max]) : s;
+    }
+    function leaf(kind, s, forceCut) {
+      const cut = s.length > MAX_TEXT;
+      return '{"kind":"' + kind + '","text":' + quote(clip(s, MAX_TEXT)) +
+        (cut || forceCut ? ',"truncated":true' : "") + "}";
+    }
+    function composite(kind, s, props, more) {
+      const cut = s.length > MAX_TEXT;
+      return '{"kind":"' + kind + '","text":' + quote(clip(s, MAX_TEXT)) +
+        (cut ? ',"truncated":true' : "") +
+        (props === "" ? "" : ',"props":[' + props + "]") +
+        (more > 0 ? ',"more":' + more : "") + "}";
+    }
+    function prop(key, json) {
+      return '{"key":' + quote(clip(key, 128)) + ',"value":' + json + "}";
+    }
+    // Data value of an own property, or undefined plus a flag when it is an accessor.
+    function dataOf(object, key) {
+      const d = gopd(object, key);
+      if (d === undefined) return { has: false };
+      if (hasOwn(d, "value")) return { has: true, data: true, value: d.value };
+      return { has: true, data: false, get: typeof d.get === "function", set: typeof d.set === "function" };
+    }
+    function accessor(slot) {
+      return slot.get && slot.set ? "(getter/setter)" : slot.get ? "(getter)" : "(setter)";
+    }
+    function functionName(fn) {
+      if (isProxy(fn)) return "";
+      const slot = dataOf(fn, "name");
+      return slot.data && typeof slot.value === "string" ? slot.value : "";
+    }
+    function className(object) {
+      const proto = gpo(object);
+      if (proto === null) return "Object: null prototype";
+      const slot = dataOf(proto, "constructor");
+      if (slot.data && typeof slot.value === "function") {
+        const name = functionName(slot.value);
+        if (name !== "") return name;
+      }
+      return "Object";
+    }
+    function chainString(object, key, fallback) {
+      let at = object;
+      for (let i = 0; i < 8 && at !== null && at !== undefined; i++) {
+        const slot = dataOf(at, key);
+        if (slot.has) return slot.data && typeof slot.value === "string" ? slot.value : "";
+        at = gpo(at);
+      }
+      return fallback;
+    }
+    function kindOf(object) {
+      let at = gpo(object);
+      for (let i = 0; i < 32 && at !== null; i++) {
+        if (at === protoError) return "Error";
+        if (at === protoDate) return "Date";
+        if (at === protoRegExp) return "RegExp";
+        if (at === protoMap) return "Map";
+        if (at === protoSet) return "Set";
+        if (at === protoPromise) return "Promise";
+        at = gpo(at);
+      }
+      return "";
+    }
+
+    function describe(value, depth, ctx) {
+      ctx.nodes++;
+      if (ctx.nodes > MAX_NODES) return leaf("Unavailable", "\u2026", true);
+      switch (typeof value) {
+        case "undefined": return leaf("Undefined", "undefined");
+        case "boolean": return leaf("Boolean", value ? "true" : "false");
+        case "number": return leaf("Number", sameValue(value, -0) ? "-0" : "" + value);
+        case "string": return leaf("String", value);
+        case "bigint": return leaf("BigInt", reflectApply(bigintToString, value, []) + "n");
+        case "symbol": return leaf("Symbol", reflectApply(symbolToString, value, []));
+        case "function": {
+          if (isProxy(value)) return leaf("Proxy", "Proxy");
+          return leaf("Function", "\u0192 " + functionName(value) + "()");
+        }
+        case "object": break;
+        default: return leaf("Unavailable", "unknown");
+      }
+      if (value === null) return leaf("Null", "null");
+      if (isProxy(value)) return leaf("Proxy", "Proxy");
+      for (let i = 0; i < ctx.count; i++) {
+        if (ctx.seen[i] === value) return leaf("Circular", "[Circular]");
+      }
+      const kind = kindOf(value);
+      if (kind === "Error") {
+        const name = chainString(value, "name", "Error");
+        const own = dataOf(value, "message");
+        const message = own.data && typeof own.value === "string" ? own.value : "";
+        return leaf("Error", message === "" ? name : name + ": " + message);
+      }
+      if (kind === "Date") {
+        try { return leaf("Date", reflectApply(dateToISO, value, [])); } catch { return leaf("Date", "Invalid Date"); }
+      }
+      if (kind === "RegExp") {
+        try { return leaf("RegExp", "/" + reflectApply(regexpSource, value, []) + "/"); } catch { return leaf("RegExp", "RegExp"); }
+      }
+      if (kind === "Map" || kind === "Set") {
+        try {
+          const size = reflectApply(kind === "Map" ? mapSize : setSize, value, []);
+          return leaf(kind, kind + "(" + size + ")");
+        } catch { return leaf(kind, kind); }
+      }
+      if (kind === "Promise") {
+        let state = "pending";
+        try {
+          const details = promiseDetails(value);
+          state = details[0] === 1 ? "fulfilled" : details[0] === 2 ? "rejected" : "pending";
+        } catch { /* unknown */ }
+        return leaf("Promise", "Promise {<" + state + ">}");
+      }
+      if (isView(value)) {
+        let length = "";
+        try { length = "" + reflectApply(typedLength, value, []); } catch { /* DataView */ }
+        return leaf("Object", className(value) + (length === "" ? "" : "(" + length + ")"));
+      }
+      ctx.seen[ctx.count++] = value;
+      try {
+        if (isArray(value)) {
+          const lengthSlot = dataOf(value, "length");
+          const length = lengthSlot.data && typeof lengthSlot.value === "number" ? lengthSlot.value : 0;
+          const shown = length < MAX_PROPS ? length : MAX_PROPS;
+          let props = "";
+          if (depth + 1 < MAX_DEPTH) {
+            for (let i = 0; i < shown; i++) {
+              const slot = dataOf(value, "" + i);
+              const json = !slot.has ? leaf("Unavailable", "<empty>")
+                : slot.data ? describe(slot.value, depth + 1, ctx)
+                : leaf("Unavailable", accessor(slot));
+              props += (i === 0 ? "" : ",") + prop("" + i, json);
+            }
+            return composite("Array", "Array(" + length + ")", props, length - shown);
+          }
+          return composite("Array", "Array(" + length + ")", "", length);
+        }
+        const names = gopn(value);
+        const total = names.length;
+        const name = className(value);
+        if (depth + 1 >= MAX_DEPTH) return composite("Object", name, "", total);
+        const shown = total < MAX_PROPS ? total : MAX_PROPS;
+        let props = "";
+        for (let i = 0; i < shown; i++) {
+          const key = names[i];
+          const slot = dataOf(value, key);
+          const json = slot.data ? describe(slot.value, depth + 1, ctx) : leaf("Unavailable", accessor(slot));
+          props += (i === 0 ? "" : ",") + prop(key, json);
+        }
+        return composite("Object", name, props, total - shown);
+      } finally {
+        ctx.count--;
+      }
+    }
+    function preview(value) {
+      try {
+        return describe(value, 0, { nodes: 0, seen: [], count: 0 });
+      } catch {
+        return UNAVAILABLE;
+      }
+    }
+
+    // One-line summary for the message text: primitives only, never objects.
+    function summary(args, n) {
+      let text = "";
+      for (let i = 0; i < n && text.length < 1024; i++) {
+        const v = args[i];
+        const t = typeof v;
+        const part = t === "string" ? v
+          : t === "number" || t === "boolean" || t === "undefined" ? "" + v
+          : v === null ? "null"
+          : t === "bigint" ? reflectApply(bigintToString, v, []) + "n"
+          : t === "function" ? "\u0192"
+          : "[" + t + "]";
+        text += (i === 0 ? "" : " ") + part;
+      }
+      return clip(text, 1024);
+    }
+    let busy = false;
+    let suppress = 0;
+    function record(method, level, args, text) {
+      if (busy) return;
+      busy = true;
+      try {
+        const n = args.length < 16 ? args.length : 16;
+        let list = "[";
+        for (let i = 0; i < n; i++) list += (i === 0 ? "" : ",") + preview(args[i]);
+        list += "]";
+        const site = callSite();
+        const url = site && typeof site.fileName === "string" ? site.fileName : "";
+        op(
+          "console",
+          '{"m":' + quote(method) + ',"l":' + quote(level) + ',"t":' +
+            quote(text === undefined ? summary(args, n) : clip(text, 1024)) +
+            ',"a":' + list + ',"u":' + quote(clip(url, 1024)) +
+            ',"n":' + ((site && site.lineNumber) >>> 0) + ',"c":' + ((site && site.columnNumber) >>> 0) + "}",
+          "", "",
+        );
+      } catch { /* a missing host op (worker realms) or a full ring never breaks console.log */ } finally {
+        busy = false;
+      }
+    }
+    function fromFormatter(message, level) {
+      if (suppress !== 0) return;
+      let text = "" + message;
+      if (text.length !== 0 && text[text.length - 1] === "\n") text = reflectApply(slice, text, [0, text.length - 1]);
+      record("log", level === 0 ? "debug" : level === 2 ? "warn" : level === 3 ? "error" : "log", [], text);
+    }
+    function wrap(target) {
+      for (const [method, level] of [["log", "log"], ["info", "info"], ["warn", "warn"], ["error", "error"], ["debug", "debug"]]) {
+        const original = target[method];
+        if (typeof original !== "function") continue;
+        const wrapper = function(...args) {
+          record(method, level, args, undefined);
+          suppress++;
+          try {
+            return reflectApply(original, this, args);
+          } finally {
+            suppress--;
+          }
+        };
+        defineProperty(wrapper, "name", { value: method, configurable: true });
+        target[method] = wrapper;
+      }
+    }
+    return { preview, fromFormatter, wrap };
+  })();
+  Object.defineProperty(globalThis, "__wega_preview", {
+    configurable: true,
+    value: (value) => devtools.preview(value),
+  });
+
+  globals.console = new console.Console((message, level) => {
+    core.ops.op_dom_read("log", message, String(level), "");
+    devtools.fromFormatter(message, level);
+  });
+  devtools.wrap(globals.console);
   Object.defineProperty(globalThis, "__wega_web", {
     configurable: true,
     value: { ...globals, event, messageEvent, brand: internals.webidlBrand, codec, base64Encode, base64Decode, op, here, timers, cacheResponse(entry) {

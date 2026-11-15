@@ -22,6 +22,8 @@ pub(crate) struct HostContext {
     /// Script elements already prepared ("already started"), shared with the view.
     pub started_scripts: Rc<RefCell<std::collections::HashSet<NodeId>>>,
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
+    /// This document's console history, owned by the view and dropped with the document.
+    pub console: Rc<RefCell<crate::console::ConsoleLog>>,
 }
 
 /// Trusted bootstrap factories shared by document and worker realms, built by `build.rs`.
