@@ -217,3 +217,165 @@ fn event_queue_bounds() {
     );
     assert!(peak <= EVENT_RING);
 }
+
+fn rss_kib(pid: u32) -> u64 {
+    let out = std::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse()
+        .unwrap_or(0)
+}
+
+#[test]
+#[ignore = "BENCH: console and evaluation paths over a real worker pipe (debug engine)"]
+fn console_ipc_paths() {
+    use protocol::inspector::{GrantToken, InspectorArgs};
+    let mut worker = Worker::start();
+    wait_idle(&mut worker);
+    let session = worker.attach();
+    let token = GrantToken([0x33; 16]);
+    worker
+        .call_with(
+            session,
+            InspectorCommand::GrantEvaluation,
+            InspectorArgs::Grant {
+                token,
+                opaque_override: true,
+            },
+        )
+        .unwrap();
+    // Evaluation round trip.
+    let mut eval = Vec::new();
+    for _ in 0..300 {
+        let start = Instant::now();
+        worker
+            .call_with(
+                session,
+                InspectorCommand::Evaluate,
+                InspectorArgs::Evaluate {
+                    expression: "1+1".into(),
+                    grant: token,
+                },
+            )
+            .unwrap();
+        eval.push(start.elapsed().as_secs_f64() * 1e3);
+    }
+    report("inspector evaluate(1+1) round trip", &mut eval, "ms");
+    // History retrieval over a full ring.
+    worker
+        .evaluate("for(let i=0;i<1000;i++)console.log('h',i,{i});true")
+        .unwrap();
+    let mut history = Vec::new();
+    for _ in 0..200 {
+        let start = Instant::now();
+        worker
+            .call_with(
+                session,
+                InspectorCommand::GetConsoleHistory,
+                InspectorArgs::History {
+                    after: 0,
+                    limit: 100,
+                },
+            )
+            .unwrap();
+        history.push(start.elapsed().as_secs_f64() * 1e3);
+    }
+    report(
+        "inspector console history page (100 entries)",
+        &mut history,
+        "ms",
+    );
+    // Flood: task time with the console disabled vs enabled, then delivery.
+    let pid = worker.child.id();
+    let flood = "for(let i=0;i<20000;i++)console.log('flood',i,{i});true";
+    let rss_start = rss_kib(pid);
+    let start = Instant::now();
+    worker.evaluate(flood).unwrap();
+    let disabled = start.elapsed().as_secs_f64() * 1e3;
+    worker
+        .call_with(session, InspectorCommand::ClearConsole, InspectorArgs::None)
+        .unwrap();
+    println!("BENCH flood task time, console not enabled (20,000 calls): {disabled:.0} ms");
+    assert!(matches!(
+        worker.call_with(
+            session,
+            InspectorCommand::EnableConsole,
+            InspectorArgs::None
+        ),
+        Ok(InspectorResponse::ConsoleEnabled { .. })
+    ));
+    let _ = worker.take_seen();
+    let start = Instant::now();
+    worker.evaluate(flood).unwrap();
+    let enabled = start.elapsed().as_secs_f64() * 1e3;
+    println!("BENCH flood task time, console enabled (20,000 calls): {enabled:.0} ms");
+    // Delivery: how long until the engine has delivered what survived, and how much arrived.
+    let settle = Instant::now();
+    worker.pump(Duration::from_millis(250));
+    let seen = worker.take_seen();
+    let delivered = seen
+        .iter()
+        .filter(|(_, _, e)| matches!(e, InspectorEvent::ConsoleMessageAdded(_)))
+        .count();
+    let dropped: u64 = seen
+        .iter()
+        .filter_map(|(_, _, e)| match e {
+            InspectorEvent::ConsoleMessagesDropped { count } => Some(*count),
+            _ => None,
+        })
+        .sum();
+    println!(
+        "BENCH flood delivered events after the task: {delivered} messages, {dropped} reported dropped, {} ms to quiesce",
+        settle.elapsed().as_millis().saturating_sub(250)
+    );
+    println!(
+        "BENCH engine resident growth over two 20,000-call floods: {} KiB",
+        rss_kib(pid).saturating_sub(rss_start)
+    );
+    // A snapshot request while a backlog drains (fairness).
+    worker.evaluate(flood).unwrap();
+    let start = Instant::now();
+    worker.snapshot(session);
+    println!(
+        "BENCH status snapshot latency while a console backlog drains: {:.1} ms",
+        start.elapsed().as_secs_f64() * 1e3
+    );
+    worker.pump(Duration::from_millis(250));
+    // Navigation with and without a subscribed, console-enabled session.
+    let navigate = |worker: &mut Worker, serial: u64| {
+        let start = Instant::now();
+        worker.send(Command::Load {
+            url: "about:blank".into(),
+            serial,
+            bypass_cache: false,
+        });
+        worker
+            .until(|e| matches!(e, Event::State { serial: s, loading: false, .. } if *s == serial));
+        start.elapsed().as_secs_f64() * 1e3
+    };
+    let mut serial = 0;
+    let mut with_console = Vec::new();
+    for _ in 0..30 {
+        serial += 1;
+        with_console.push(navigate(&mut worker, serial));
+    }
+    report("navigation, console enabled", &mut with_console, "ms");
+    // Idle CPU, 10 s: console enabled with an empty ring.
+    let before = cpu_seconds(pid);
+    std::thread::sleep(Duration::from_secs(10));
+    println!(
+        "BENCH idle engine CPU, console enabled: {:.2} %",
+        (cpu_seconds(pid) - before) * 10.0
+    );
+    worker
+        .call_with(
+            session,
+            InspectorCommand::DisableConsole,
+            InspectorArgs::None,
+        )
+        .unwrap();
+    println!("NOTE debug engine; `ps` CPU resolution is 10 ms");
+}
