@@ -113,6 +113,7 @@ pub struct Browser {
     last_window_title: String,
     pub(crate) tool_window: Option<crate::tool_window::ToolWindow>,
     pub(crate) tools: crate::toolbox::Toolbox,
+    pub(crate) devtools: crate::devtools_session::DevtoolsView,
     pub(crate) dialogs: crate::capabilities::Dialogs,
     pub(crate) status: Option<String>,
     pub(crate) accessibility: crate::accessibility::State,
@@ -266,6 +267,7 @@ impl Browser {
             download_ui: Default::default(),
             tool_window: None,
             tools,
+            devtools: Default::default(),
             dialogs: Default::default(),
             accessibility: Default::default(),
             status: warning,
@@ -287,7 +289,10 @@ impl Browser {
             internal_state: Default::default(),
         };
         let restore = options.url.is_none() && !options.test_mode();
-        let urls = if (options.smoke_test || options.theme_test || options.capabilities_test)
+        let urls = if (options.smoke_test
+            || options.inspector_test
+            || options.theme_test
+            || options.capabilities_test)
             && options.url.is_none()
         {
             vec![
@@ -386,6 +391,75 @@ impl Browser {
     ) -> Result<(), String> {
         self.application
             .start_download(&mut self.downloads, url, filename, connections, cookies)
+    }
+
+    fn resolve_tab(session: &Session<Tab>, key: u64) -> crate::devtools_session::Resolved<'_> {
+        use crate::devtools_session::Resolved;
+        match session.tabs().iter().find(|tab| tab.key == key) {
+            None => Resolved::Closed,
+            Some(tab) => tab
+                .wega
+                .as_ref()
+                .map_or(Resolved::Unloaded, |page| Resolved::Page(page)),
+        }
+    }
+    /// The developer-tools session exists exactly while a surface that shows it is open.
+    pub(crate) fn devtools_sync(&mut self) {
+        let wanted = self.chrome.show_console || self.features.diagnostics;
+        let key = self.tab().key;
+        let session = &self.session;
+        if wanted && !self.devtools.is_open() {
+            self.devtools.open(key);
+        } else if !wanted && self.devtools.is_open() {
+            self.devtools.close(&|key| Self::resolve_tab(session, key));
+        }
+    }
+    /// Called by whichever surface renders the developer tools, once per frame.
+    pub(crate) fn devtools_tick(&mut self, ctx: &egui::Context) {
+        self.devtools_sync();
+        if !self.devtools.is_open() {
+            return;
+        }
+        let selected = self.tab().key;
+        let pinned = self.profile().devtools_dock == wega::model::Dock::Window;
+        let session = &self.session;
+        self.devtools
+            .tick(Instant::now(), selected, pinned, &|key| {
+                Self::resolve_tab(session, key)
+            });
+        // The only periodic work, and only while the tools are visible.
+        ctx.request_repaint_after(crate::devtools_session::REFRESH);
+    }
+    /// The snapshot to display, re-validated against the page *now*: its target process and
+    /// document stamp must equal the live page's. The view validates at each tick, but a
+    /// navigation can land between a tick and a paint, so display never trusts the tick alone.
+    pub(crate) fn devtools_snapshot(
+        &self,
+    ) -> Option<&wega::engine_protocol::inspector::StatusSnapshot> {
+        let snapshot = self.devtools.snapshot()?;
+        let (_, page) = self.devtools_target()?;
+        let page = page?;
+        let state = page
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current = wega::engine_protocol::DocumentContext {
+            document: state.requests.document(),
+            revision: state.requests.revision(),
+        };
+        // Read the target from the guard already held: `Page::inspector_target` locks the same
+        // (non-reentrant) mutex.
+        let target = state
+            .inspector
+            .as_ref()
+            .map(|sessions| sessions.registry().target());
+        (target == Some(snapshot.target) && snapshot.document == current).then_some(snapshot)
+    }
+    /// Title and process facts of the tab the developer tools are bound to.
+    pub(crate) fn devtools_target(&self) -> Option<(&Tab, Option<&crate::wega_page::Page>)> {
+        let key = self.devtools.target_tab()?;
+        let tab = self.session.tabs().iter().find(|tab| tab.key == key)?;
+        Some((tab, tab.wega.as_ref()))
     }
 
     pub(crate) fn tab(&self) -> &Tab {
@@ -540,6 +614,8 @@ impl Browser {
     /// Whether unloading this tab could lose something the user would notice.
     fn tab_busy(&self, tab: &Tab) -> bool {
         tab.opened_by_page
+            // A pinned developer-tools window is attached to this tab.
+            || (self.devtools.is_open() && self.devtools.target_tab() == Some(tab.key))
             || tab.loading()
             || tab.crash.is_some()
             || self.features.media_owner == Some(tab.key)
@@ -696,6 +772,8 @@ impl Browser {
             self.chrome.closed_tabs.remove(0);
         }
         let closed_tab = &self.session.tabs()[index];
+        // The page (and its inspector authority) is dropped with the tab; clear the view now.
+        self.devtools.on_tab_closed(closed_tab.key);
         if let Some(pending) = &self.automation_navigation
             && pending.tab_key == closed_tab.key
         {

@@ -13,6 +13,7 @@ pub struct Options {
     pub smoke_test: bool,
     pub download_test: bool,
     pub toolbox_test: bool,
+    pub inspector_test: bool,
     pub theme_test: bool,
     pub capabilities_test: bool,
     pub capture: Option<PathBuf>,
@@ -32,6 +33,7 @@ impl Options {
             || self.theme_test
             || self.capabilities_test
             || self.engine_test
+            || self.inspector_test
     }
 
     pub fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
@@ -87,6 +89,7 @@ impl Options {
                 "--smoke-test" => result.smoke_test = true,
                 "--download-test" => result.download_test = true,
                 "--toolbox-test" => result.toolbox_test = true,
+                "--inspector-test" => result.inspector_test = true,
                 "--capabilities-test" => result.capabilities_test = true,
                 "--theme-test" => result.theme_test = true,
                 "--engine-test" => result.engine_test = true,
@@ -126,6 +129,7 @@ impl Options {
             || result.smoke_test
             || result.download_test
             || result.toolbox_test
+            || result.inspector_test
             || result.theme_test
             || result.capabilities_test)
             && result.profile_dir.is_none()
@@ -142,6 +146,7 @@ impl Options {
             result.theme_test,
             result.capabilities_test,
             result.engine_test,
+            result.inspector_test,
         ]
         .into_iter()
         .filter(|enabled| *enabled)

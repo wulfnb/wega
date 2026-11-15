@@ -9,6 +9,7 @@ mod capabilities_ui;
 mod capture;
 mod components;
 mod containers_ui;
+mod devtools_session;
 mod devtools_ui;
 mod page_safety;
 use wega::downloads;

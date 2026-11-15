@@ -12,6 +12,11 @@ use wega::{
         Event, ProtocolError, RequestContext,
         authority::{FrameAuthority, Principal, TrustedRequest},
         identity::{FrameId, ProcessSessionId, SessionIdentity, TabId},
+        inspector::{
+            self, InspectorCommand, InspectorError, InspectorErrorCode, InspectorEvent,
+            InspectorPayload, InspectorRequest, InspectorSessionId, TargetId,
+            session::{Completed, HostSessions, SessionIssuer},
+        },
         lifecycle::Lifecycle,
         requests::{DocumentRequests, PendingRequest, RequestKind},
     },
@@ -99,6 +104,19 @@ pub(crate) struct Snapshot {
     pub pending_file_dialog: Option<(u64, bool, Vec<String>)>,
     pub find_result: Option<(u32, u32, String)>,
     pub frame_tree: Option<protocol::browsing::FrameTree>,
+    /// Browser-owned inspector authority and bounded inbound queues for this process.
+    /// Lives here so it is destroyed with the process it protects.
+    pub inspector: Option<HostSessions>,
+}
+
+/// What the UI thread reads on a tick: drained results/events and the current stamp.
+#[derive(Debug)]
+pub(crate) struct InspectorPoll {
+    pub document: DocumentContext,
+    /// The process is gone or closing; the session cannot be used again.
+    pub closed: bool,
+    pub results: Vec<Completed>,
+    pub events: Vec<InspectorEvent>,
 }
 
 impl Snapshot {
@@ -354,6 +372,68 @@ impl Snapshot {
             RequestKind::Capture | RequestKind::Navigate => {
                 self.harness_result(request.context, Err(error))
             }
+            RequestKind::Inspector { session, command } => {
+                if let Some(sessions) = &mut self.inspector {
+                    sessions.complete(session, command, Err(InspectorError::from(&error)));
+                }
+            }
+        }
+    }
+
+    /// A reply from the content process. Late, duplicate, cross-session and mismatched
+    /// replies are dropped; none of them is a protocol violation worth killing the page for.
+    fn inspector_response(
+        &mut self,
+        context: RequestContext,
+        session: InspectorSessionId,
+        result: Result<inspector::InspectorResponse, InspectorError>,
+    ) {
+        let Some(request) = self.requests.take(context) else {
+            return;
+        };
+        match request.kind {
+            RequestKind::Inspector {
+                session: expected,
+                command,
+            } if expected == session => {
+                let result = if request.deadline <= std::time::Instant::now() {
+                    Err(InspectorError::new(
+                        InspectorErrorCode::Timeout,
+                        "Inspector request timed out",
+                    ))
+                } else {
+                    result
+                };
+                if let Some(sessions) = &mut self.inspector {
+                    sessions.complete(session, command, result);
+                }
+            }
+            _ => self.request_failed(
+                request,
+                ProtocolError::new(ErrorCode::InvalidRequest, "Mismatched inspector response"),
+            ),
+        }
+    }
+
+    fn inspector_event(
+        &mut self,
+        context: DocumentContext,
+        session: InspectorSessionId,
+        seq: u64,
+        event: InspectorEvent,
+    ) {
+        if !self.accepts_context(context) {
+            return;
+        }
+        if let Some(sessions) = &mut self.inspector {
+            sessions.event(session, seq, event);
+        }
+    }
+
+    /// The process is gone: nothing may ever be authorised against it again.
+    fn close_inspector(&mut self) {
+        if let Some(sessions) = &mut self.inspector {
+            sessions.close();
         }
     }
 
@@ -446,6 +526,7 @@ fn failed(state: &Arc<Mutex<Snapshot>>, message: String, proxy: &EventLoopProxy<
     state.compatibility.get_or_insert_with(|| message.clone());
     state.recovery_reason.get_or_insert_with(|| message.clone());
     state.lifecycle.crash();
+    state.close_inspector();
     state.native.clear();
     state.dialog = None;
     state.frame = None;
@@ -620,6 +701,7 @@ impl Page {
         };
         identity.validate().map_err(|error| error.message)?;
         let state = Arc::new(Mutex::new(Snapshot {
+            inspector: Some(HostSessions::new(TargetId::of(&identity))),
             authority: Some(FrameAuthority::new(identity)),
             url: url.to_string(),
             notices: if development {
@@ -1064,6 +1146,27 @@ impl Page {
                         Event::Compatibility { .. } => {
                             return Err("Unscoped compatibility event".into());
                         }
+                        Event::InspectorResponse {
+                            context,
+                            session,
+                            result,
+                        } => {
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .inspector_response(context, session, result);
+                        }
+                        Event::InspectorEvent {
+                            context,
+                            session,
+                            seq,
+                            event,
+                        } => {
+                            shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .inspector_event(context, session, seq, event);
+                        }
                         Event::Frame {
                             serial,
                             revision,
@@ -1304,6 +1407,215 @@ impl Page {
                 let _ = sender.try_send(Request::CancelRequest(context));
             }
         }
+    }
+
+    fn inspector_error(code: InspectorErrorCode, message: &str) -> InspectorError {
+        InspectorError::new(code, message)
+    }
+
+    /// The target this page's sessions are scoped to (tab, frame, process).
+    pub fn inspector_target(&self) -> Option<TargetId> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .inspector
+            .as_ref()
+            .map(|sessions| sessions.registry().target())
+    }
+
+    /// Browser-UI only. Opens a session for this page's process (superseding any previous
+    /// one, whose requests are cancelled and which the engine is told to drop) and starts
+    /// the attach handshake. Never blocks; the reply is read by `inspector_poll`.
+    pub fn inspector_open(&self) -> Result<InspectorSessionId, InspectorError> {
+        let (session, superseded, expired) = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let expired = state.expire_requests();
+            if !state.lifecycle.accepts_requests() {
+                return Err(Self::inspector_error(
+                    InspectorErrorCode::Unavailable,
+                    "Content worker is stopped",
+                ));
+            }
+            let Some(sessions) = state.inspector.as_mut() else {
+                return Err(Self::inspector_error(
+                    InspectorErrorCode::Unavailable,
+                    "Inspector is not available for this page",
+                ));
+            };
+            let (session, superseded) = sessions.open(SessionIssuer::shared())?;
+            let mut cancelled = expired;
+            if let Some(old) = superseded {
+                cancelled.extend(
+                    state
+                        .requests
+                        .cancel_inspector(old)
+                        .into_iter()
+                        .map(|r| r.context),
+                );
+            }
+            (session, superseded, cancelled)
+        };
+        self.cancel_queued(expired);
+        if let Some(old) = superseded
+            && let Some(sender) = &self.requests
+        {
+            let _ = sender.try_send(Request::InspectorDetach { session: old });
+        }
+        match self.inspector_request(session, InspectorCommand::Attach) {
+            Ok(()) => Ok(session),
+            Err(error) => {
+                self.inspector_close(session);
+                Err(error)
+            }
+        }
+    }
+
+    /// Browser-UI only. Validates `session` against this page's registry before anything is
+    /// written, so a stale, forged or other-tab id never reaches the pipe.
+    pub fn inspector_request(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+    ) -> Result<(), InspectorError> {
+        let (packet, context, expired) = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let expired = state.expire_requests();
+            if !state.lifecycle.accepts_requests() {
+                return Err(Self::inspector_error(
+                    InspectorErrorCode::Unavailable,
+                    "Content worker is stopped",
+                ));
+            }
+            let target = {
+                let sessions = state.inspector.as_ref().ok_or_else(|| {
+                    Self::inspector_error(InspectorErrorCode::Unavailable, "No inspector")
+                })?;
+                let target = sessions.registry().target();
+                sessions.registry().authorize(session, target)?;
+                target
+            };
+            let context = state
+                .requests
+                .begin_inspector(
+                    session,
+                    command,
+                    std::time::Duration::from_millis(inspector::INSPECTOR_TIMEOUT_MS),
+                )
+                .map_err(|error| InspectorError::from(&error))?;
+            (
+                Request::Inspector {
+                    context,
+                    request: InspectorPayload::new(&InspectorRequest {
+                        version: inspector::INSPECTOR_VERSION,
+                        session,
+                        target,
+                        command,
+                    }),
+                },
+                context,
+                expired,
+            )
+        };
+        self.cancel_queued(expired);
+        let sent = self
+            .requests
+            .as_ref()
+            .ok_or_else(|| {
+                Self::inspector_error(InspectorErrorCode::Unavailable, "Worker is closed")
+            })?
+            .try_send(packet);
+        if sent.is_err() {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(request) = state.requests.take(context) {
+                state.request_failed(
+                    request,
+                    ProtocolError::new(ErrorCode::ResourceLimit, "Worker command was not queued"),
+                );
+            }
+            return Err(Self::inspector_error(
+                InspectorErrorCode::Busy,
+                "Wega engine is busy or stopped",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Browser-UI only. Revokes first (every later reply or event for the id is dropped),
+    /// cancels its pending requests, then tells the engine. Idempotent.
+    pub fn inspector_close(&self, session: InspectorSessionId) {
+        let cancelled = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let revoked = state
+                .inspector
+                .as_mut()
+                .is_some_and(|sessions| sessions.revoke(session));
+            if !revoked {
+                return;
+            }
+            state
+                .requests
+                .cancel_inspector(session)
+                .into_iter()
+                .map(|request| request.context)
+                .collect::<Vec<_>>()
+        };
+        self.cancel_queued(cancelled);
+        if let Some(sender) = &self.requests {
+            let _ = sender.try_send(Request::InspectorDetach { session });
+        }
+    }
+
+    /// Drain what arrived for `session`. Expires timed-out requests first, so a hung engine
+    /// yields `Timeout` here even though nothing else is being sent.
+    pub(crate) fn inspector_poll(&self, session: InspectorSessionId) -> InspectorPoll {
+        let (poll, expired) = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let expired = state.expire_requests();
+            let document = DocumentContext {
+                document: state.requests.document(),
+                revision: state.requests.revision(),
+            };
+            let closed = !state.lifecycle.accepts_requests()
+                || state
+                    .inspector
+                    .as_ref()
+                    .is_none_or(|sessions| sessions.registry().is_closed());
+            let (results, events) = state.inspector.as_mut().map_or_else(
+                || (Vec::new(), Vec::new()),
+                |sessions| {
+                    (
+                        sessions.take_results(session),
+                        sessions.take_events(session),
+                    )
+                },
+            );
+            (
+                InspectorPoll {
+                    document,
+                    closed,
+                    results,
+                    events,
+                },
+                expired,
+            )
+        };
+        self.cancel_queued(expired);
+        poll
     }
 
     pub fn send(&self, request: Request) -> Result<(), String> {
@@ -1986,6 +2298,245 @@ mod tests {
                 revision: protocol::DocumentRevision(1),
             },
         )
+    }
+
+    fn inspected_state() -> (Snapshot, DocumentContext, InspectorSessionId) {
+        let (mut state, context) = committed_state();
+        let target = state
+            .authority
+            .as_ref()
+            .map(|a| TargetId::of(&a.session()))
+            .unwrap();
+        state.inspector = Some(HostSessions::new(target));
+        let (session, _) = state
+            .inspector
+            .as_mut()
+            .unwrap()
+            .open(&SessionIssuer::new())
+            .unwrap();
+        (state, context, session)
+    }
+    fn begin(state: &mut Snapshot, session: InspectorSessionId, ms: u64) -> RequestContext {
+        state
+            .requests
+            .begin_inspector(
+                session,
+                InspectorCommand::GetTargetInfo,
+                std::time::Duration::from_millis(ms),
+            )
+            .unwrap()
+    }
+    fn info(state: &Snapshot, context: DocumentContext) -> inspector::InspectorResponse {
+        inspector::InspectorResponse::TargetInfo(inspector::TargetInfo {
+            target: state.inspector.as_ref().unwrap().registry().target(),
+            document: context,
+            protocol_version: protocol::VERSION,
+            inspector_version: inspector::INSPECTOR_VERSION,
+            engine: "test".into(),
+        })
+    }
+    fn drain(state: &mut Snapshot, session: InspectorSessionId) -> Vec<Completed> {
+        state.inspector.as_mut().unwrap().take_results(session)
+    }
+
+    #[test]
+    fn inspector_replies_complete_once_and_only_for_the_issuing_session_and_context() {
+        let (mut state, doc, session) = inspected_state();
+        let context = begin(&mut state, session, 5_000);
+        // A reply naming another session consumes the request but delivers nothing.
+        let other = InspectorSessionId(session.0 + 1);
+        let reply = info(&state, doc);
+        state.inspector_response(context, other, Ok(reply.clone()));
+        let refused = drain(&mut state, session);
+        assert_eq!(
+            refused.len(),
+            1,
+            "the issuing request fails, it does not hang"
+        );
+        assert_eq!(
+            refused[0].result.as_ref().unwrap_err().code,
+            InspectorErrorCode::InvalidPayload,
+            "no data from a mismatched reply is delivered"
+        );
+        assert_eq!(state.requests.inspector_pending(), 0);
+        // A real reply, once.
+        let context = begin(&mut state, session, 5_000);
+        state.inspector_response(context, session, Ok(reply.clone()));
+        state.inspector_response(context, session, Ok(reply.clone()));
+        let results = drain(&mut state, session);
+        assert_eq!(results.len(), 1, "a duplicate reply must not deliver twice");
+        assert_eq!(results[0].session, session);
+        // A reply for a request that was never issued is ignored.
+        let forged = RequestContext {
+            request: protocol::RequestId(9_999),
+            ..context
+        };
+        state.inspector_response(forged, session, Ok(reply));
+        assert!(drain(&mut state, session).is_empty());
+    }
+
+    #[test]
+    fn a_reply_that_matches_another_request_kind_is_refused_without_killing_the_page() {
+        let (mut state, doc, session) = inspected_state();
+        let evaluation = state
+            .requests
+            .begin(RequestKind::Evaluate, std::time::Duration::from_secs(5))
+            .unwrap();
+        let reply = info(&state, doc);
+        state.inspector_response(evaluation, session, Ok(reply));
+        assert!(drain(&mut state, session).is_empty());
+        assert!(state.evaluations.back().unwrap().1.is_err());
+        assert!(state.lifecycle.accepts_requests());
+    }
+
+    #[test]
+    fn a_reply_arriving_after_detach_is_dropped() {
+        let (mut state, doc, session) = inspected_state();
+        let context = begin(&mut state, session, 5_000);
+        state.inspector.as_mut().unwrap().revoke(session);
+        let reply = info(&state, doc);
+        state.inspector_response(context, session, Ok(reply));
+        assert!(drain(&mut state, session).is_empty());
+        assert_eq!(state.inspector.as_ref().unwrap().queued(), (0, 0));
+    }
+
+    #[test]
+    fn navigation_turns_pending_inspector_requests_into_stale_document_errors() {
+        let (mut state, doc, session) = inspected_state();
+        let context = begin(&mut state, session, 5_000);
+        state
+            .bind_document(0, protocol::DocumentRevision(doc.revision.0 + 1))
+            .unwrap();
+        let results = drain(&mut state, session);
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].result.as_ref().unwrap_err().code,
+            InspectorErrorCode::StaleDocument
+        );
+        // The engine's late answer for the old document is ignored.
+        let reply = info(&state, doc);
+        state.inspector_response(context, session, Ok(reply));
+        assert!(drain(&mut state, session).is_empty());
+    }
+
+    #[test]
+    fn an_unanswered_inspector_request_times_out_without_any_further_send() {
+        let (mut state, _, session) = inspected_state();
+        begin(&mut state, session, 0);
+        let expired = state.expire_requests();
+        assert_eq!(expired.len(), 1);
+        let results = drain(&mut state, session);
+        assert_eq!(
+            results[0].result.as_ref().unwrap_err().code,
+            InspectorErrorCode::Timeout
+        );
+        assert_eq!(state.requests.inspector_pending(), 0);
+    }
+
+    #[test]
+    fn a_reply_after_its_deadline_is_reported_as_a_timeout_not_data() {
+        let (mut state, doc, session) = inspected_state();
+        let context = begin(&mut state, session, 0);
+        let reply = info(&state, doc);
+        state.inspector_response(context, session, Ok(reply));
+        let results = drain(&mut state, session);
+        assert_eq!(
+            results[0].result.as_ref().unwrap_err().code,
+            InspectorErrorCode::Timeout
+        );
+    }
+
+    #[test]
+    fn pending_inspector_requests_are_capped_below_the_shared_limit() {
+        let (mut state, _, session) = inspected_state();
+        for _ in 0..inspector::MAX_INSPECTOR_PENDING {
+            begin(&mut state, session, 5_000);
+        }
+        assert!(
+            state
+                .requests
+                .begin_inspector(
+                    session,
+                    InspectorCommand::GetTargetInfo,
+                    std::time::Duration::from_secs(1)
+                )
+                .is_err()
+        );
+        assert!(
+            state
+                .requests
+                .begin(RequestKind::Evaluate, std::time::Duration::from_secs(1))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn inspector_events_need_the_current_document_stamp_and_a_subscription() {
+        let (mut state, doc, session) = inspected_state();
+        let loading = InspectorEvent::LoadingChanged { loading: true };
+        state.inspector_event(doc, session, 1, loading);
+        assert_eq!(
+            state.inspector.as_ref().unwrap().queued().0,
+            0,
+            "not subscribed"
+        );
+        let context = begin(&mut state, session, 5_000);
+        let _ = context;
+        state.inspector.as_mut().unwrap().complete(
+            session,
+            InspectorCommand::SubscribeStatus,
+            Ok(inspector::InspectorResponse::Subscribed),
+        );
+        state.inspector_event(doc, session, 1, loading);
+        let stale = DocumentContext {
+            revision: protocol::DocumentRevision(doc.revision.0 + 5),
+            ..doc
+        };
+        state.inspector_event(stale, session, 2, loading);
+        assert_eq!(
+            state.inspector.as_ref().unwrap().queued().0,
+            1,
+            "stale stamp dropped"
+        );
+        state.inspector_event(doc, session, 1, loading);
+        assert_eq!(
+            state.inspector.as_ref().unwrap().queued().0,
+            1,
+            "replayed seq dropped"
+        );
+        // A flood from a hostile or buggy engine stays within the ring.
+        for seq in 3..10_000 {
+            state.inspector_event(doc, session, seq, loading);
+        }
+        assert!(state.inspector.as_ref().unwrap().queued().0 <= inspector::EVENT_RING);
+    }
+
+    #[test]
+    fn a_dead_process_never_authorises_an_inspector_session_again() {
+        let (mut state, doc, session) = inspected_state();
+        begin(&mut state, session, 5_000);
+        state.lifecycle.crash();
+        state.close_inspector();
+        let sessions = state.inspector.as_mut().unwrap();
+        assert!(sessions.registry().is_closed());
+        assert!(sessions.open(&SessionIssuer::new()).is_err());
+        assert!(
+            sessions
+                .registry()
+                .authorize(session, sessions.registry().target())
+                .is_err()
+        );
+        let reply = info(&state, doc);
+        state.inspector_response(
+            RequestContext {
+                document: doc.document,
+                revision: doc.revision,
+                request: protocol::RequestId(1),
+            },
+            session,
+            Ok(reply),
+        );
+        assert!(drain(&mut state, session).is_empty());
     }
 
     #[test]

@@ -63,6 +63,8 @@ impl Browser {
         self.tools.panel_rect = shown.response.rect.shrink(8.0);
     }
     pub fn devtools_contents(&mut self, ui: &mut Ui) {
+        use crate::devtools_session::ViewState;
+        self.devtools_tick(ui.ctx());
         panel_style(ui);
         ui.horizontal(|ui| {
             ui.heading("Wega Developer Tools");
@@ -74,28 +76,92 @@ impl Browser {
         if let Some(error) = &self.tools.error {
             ui.label(error);
         }
-        let Some(page) = self.tab().wega.as_ref() else {
-            ui.label("Open a web page to inspect its worker.");
-            return;
-        };
-        let state = page
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        ui.monospace(format!("URL: {}", state.url));
-        ui.monospace(format!("Title: {}", state.title));
-        ui.monospace(format!("PID: {}", page.pid()));
-        ui.monospace(format!(
-            "Worker RSS: {} KiB",
-            page.resident_bytes().unwrap_or(0) / 1024
-        ));
-        ui.monospace(format!("JS Heap: {} KiB", state.js_heap / 1024));
-        ui.monospace(format!("DOM Nodes: {}", state.nodes));
-        ui.monospace(format!("Phase: {:?}", state.lifecycle.phase()));
-        if let Some(reason) = &state.compatibility {
-            ui.label(reason);
+        let pinned = self.profile().devtools_dock == crate::tool_window::Dock::Window;
+        if let Some((tab, _)) = self.devtools_target() {
+            let title = tab.title();
+            ui.monospace(format!(
+                "Target: {} (tab {}){}",
+                if title.is_empty() { tab.url() } else { title },
+                tab.key,
+                if pinned { " · pinned" } else { "" }
+            ));
         }
-        ui.weak("Worker inspection is available through WebDriver. The embedded-backend inspector and debugger have been removed.");
+        match &self.devtools.state {
+            ViewState::Idle => {}
+            ViewState::Connecting => {
+                ui.weak("Connecting to the page…");
+            }
+            ViewState::Updating => {
+                ui.weak("Updating…");
+            }
+            ViewState::NotResponding => {
+                ui.label("The page is not responding to the inspector. The browser is unaffected.");
+            }
+            ViewState::Unavailable(reason) => {
+                ui.label(format!("Disconnected: {reason}"));
+            }
+            ViewState::TargetClosed => {
+                ui.label("The inspected tab was closed.");
+            }
+            ViewState::NoPage => {
+                ui.label("Open a web page to inspect its worker.");
+            }
+            ViewState::Attached => {}
+        }
+        // Everything below the line is either engine data that passed the session's target
+        // and document-stamp checks, or browser-side supervisor facts labelled as such.
+        if let Some(snapshot) = self.devtools_snapshot() {
+            ui.monospace(format!("URL: {}", snapshot.url));
+            ui.monospace(format!("Title: {}", snapshot.title));
+            ui.monospace(format!(
+                "Loading: {}",
+                if snapshot.loading { "yes" } else { "no" }
+            ));
+            ui.monospace(format!(
+                "Document: {} (revision {})",
+                snapshot.document.document.0, snapshot.document.revision.0
+            ));
+            if let Some(viewport) = snapshot.viewport {
+                ui.monospace(format!(
+                    "Viewport: {:.0} × {:.0} CSS px @ {:.2}x",
+                    viewport.width, viewport.height, viewport.device_pixel_ratio
+                ));
+            }
+            ui.monospace(format!("DOM Nodes: {}", snapshot.nodes));
+            ui.monospace(format!("JS Heap: {} KiB", snapshot.js_heap_bytes / 1024));
+            ui.monospace(format!(
+                "History: back {} · forward {}",
+                if snapshot.can_go_back { "yes" } else { "no" },
+                if snapshot.can_go_forward { "yes" } else { "no" }
+            ));
+            ui.weak(format!(
+                "{} · protocol {} · inspector {}",
+                snapshot.engine, snapshot.protocol_version, snapshot.inspector_version
+            ));
+        }
+        if self.devtools.dropped_events() > 0 {
+            ui.weak(format!(
+                "{} inspector events were dropped (slow consumer).",
+                self.devtools.dropped_events()
+            ));
+        }
+        if let Some((_, Some(page))) = self.devtools_target() {
+            let state = page
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            ui.add_space(4.0);
+            ui.weak("Browser-side process facts");
+            ui.monospace(format!("PID: {}", page.pid()));
+            ui.monospace(format!(
+                "Worker RSS: {} KiB",
+                page.resident_bytes().unwrap_or(0) / 1024
+            ));
+            ui.monospace(format!("Phase: {:?}", state.lifecycle.phase()));
+            if let Some(reason) = &state.compatibility {
+                ui.label(reason);
+            }
+        }
     }
 }
 

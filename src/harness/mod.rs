@@ -1,5 +1,6 @@
 pub mod coverage_ui;
 pub mod download;
+pub mod inspector;
 // Standalone native integration harness.
 use std::time::{Duration, Instant};
 #[derive(Default)]
@@ -7,6 +8,7 @@ pub struct Harness {
     start: Option<Instant>,
     evaluated: bool,
     pub(crate) download_test: Option<download::Test>,
+    pub(crate) inspector_test: Option<inspector::Test>,
 }
 impl Harness {
     pub fn new(options: &wega::options::Options) -> Self {
@@ -14,15 +16,17 @@ impl Harness {
             start: (options.smoke_test || options.engine_test).then(Instant::now),
             evaluated: false,
             download_test: options.download_test.then(download::Test::new),
+            inspector_test: options.inspector_test.then(inspector::Test::new),
         }
     }
     pub fn running(&self) -> bool {
-        self.start.is_some() || self.download_test.is_some()
+        self.start.is_some() || self.download_test.is_some() || self.inspector_test.is_some()
     }
 }
 impl crate::browser::Browser {
     pub fn check_smoke_test(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         self.check_download_test(event_loop);
+        self.check_inspector_test(event_loop);
         let Some(start) = self.harness.start else {
             return;
         };

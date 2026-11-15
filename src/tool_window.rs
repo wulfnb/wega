@@ -28,6 +28,8 @@ impl Drop for ToolWindow {
 impl Browser {
     pub fn close_developer_tools(&mut self) {
         self.chrome.show_console = false;
+        // Detach now rather than at the next frame: the session ends with the panel.
+        self.devtools_sync();
         self.window.request_redraw();
     }
     pub fn toggle_developer_tools(&mut self) {
