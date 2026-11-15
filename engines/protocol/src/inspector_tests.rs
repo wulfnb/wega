@@ -25,6 +25,7 @@ fn request(session: u64, target: TargetId, command: InspectorCommand) -> Inspect
         session: InspectorSessionId(session),
         target,
         command,
+        args: InspectorArgs::None,
     }
 }
 fn code(result: Result<(), InspectorError>) -> InspectorErrorCode {
@@ -105,7 +106,15 @@ fn there_is_no_representable_arbitrary_command() {
     for command in ALL {
         assert!(serde_json::to_value(command).unwrap().is_string());
     }
-    for forged in ["Evaluate", "Eval", "RunScript", "Navigate", "attach", ""] {
+    for forged in [
+        "Eval",
+        "RunScript",
+        "Navigate",
+        "attach",
+        "evaluate",
+        "RunCommand",
+        "",
+    ] {
         assert!(serde_json::from_value::<InspectorCommand>(serde_json::json!(forged)).is_err());
     }
 }
@@ -155,11 +164,16 @@ fn unsupported_inspector_versions_are_refused() {
 
 #[test]
 fn the_capability_and_version_are_negotiated() {
-    assert_eq!(crate::VERSION, 22);
+    assert_eq!(crate::VERSION, 23);
     assert!(!crate::capabilities(21).contains(&crate::Capability::Inspector));
     assert!(crate::capabilities(22).contains(&crate::Capability::Inspector));
-    assert!(crate::supports_version(21) && crate::supports_version(22));
-    assert!(!crate::supports_version(23));
+    assert!(
+        crate::supports_version(21) && crate::supports_version(22) && crate::supports_version(23)
+    );
+    assert!(!crate::supports_version(24));
+    assert_eq!(INSPECTOR_VERSION, 2);
+    assert!(supports_inspector_version(1) && supports_inspector_version(2));
+    assert!(!supports_inspector_version(3) && !supports_inspector_version(0));
 }
 
 #[test]
@@ -642,4 +656,615 @@ fn protocol_inspector_module_names_no_engine_types() {
             assert!(!code.contains(word), "source {index} mentions `{word}`");
         }
     }
+}
+
+// ---- D2: console, evaluation, grants -------------------------------------------------
+
+fn token(byte: u8) -> GrantToken {
+    GrantToken([byte; 16])
+}
+fn stamp(document: u64, revision: u64) -> DocumentContext {
+    DocumentContext {
+        document: DocumentId(document),
+        revision: DocumentRevision(revision),
+    }
+}
+fn with_args(command: InspectorCommand, args: InspectorArgs) -> InspectorRequest {
+    InspectorRequest {
+        args,
+        ..request(1, target(1, 1), command)
+    }
+}
+fn message(seq: u64, text: &str) -> ConsoleMessage {
+    ConsoleMessage {
+        seq,
+        timestamp_ms: 1,
+        level: ConsoleLevel::Log,
+        method: "log".into(),
+        args: vec![Preview::simple(PreviewKind::String, text)],
+        text: text.into(),
+        source: None,
+        exception: None,
+    }
+}
+fn added(seq: u64, text: &str) -> InspectorEvent {
+    InspectorEvent::ConsoleMessageAdded(Box::new(message(seq, text)))
+}
+fn live_console_host() -> (HostSessions, InspectorSessionId) {
+    let mut host = HostSessions::new(target(1, 1));
+    let (session, _) = host.open(&SessionIssuer::new()).unwrap();
+    assert!(host.complete(
+        session,
+        InspectorCommand::EnableConsole,
+        Ok(InspectorResponse::ConsoleEnabled {
+            retained: 0,
+            first_seq: 1
+        })
+    ));
+    (host, session)
+}
+
+#[test]
+fn arguments_must_match_the_command_and_stay_within_limits() {
+    use InspectorCommand as C;
+    let ok = |c, a| with_args(c, a).validate().is_ok();
+    assert!(ok(C::EnableConsole, InspectorArgs::None));
+    assert!(ok(
+        C::GetConsoleHistory,
+        InspectorArgs::History {
+            after: 0,
+            limit: 100
+        }
+    ));
+    assert!(ok(
+        C::GrantEvaluation,
+        InspectorArgs::Grant {
+            token: token(1),
+            opaque_override: false
+        }
+    ));
+    assert!(ok(
+        C::Evaluate,
+        InspectorArgs::Evaluate {
+            expression: "1+1".into(),
+            grant: token(1)
+        }
+    ));
+    // Mismatches.
+    assert!(!ok(C::Evaluate, InspectorArgs::None));
+    assert!(!ok(
+        C::EnableConsole,
+        InspectorArgs::Evaluate {
+            expression: "x".into(),
+            grant: token(1)
+        }
+    ));
+    assert!(!ok(
+        C::Attach,
+        InspectorArgs::History { after: 0, limit: 1 }
+    ));
+    assert!(!ok(C::GetConsoleHistory, InspectorArgs::None));
+    // Limits.
+    assert!(!ok(
+        C::GetConsoleHistory,
+        InspectorArgs::History { after: 0, limit: 0 }
+    ));
+    assert!(!ok(
+        C::GetConsoleHistory,
+        InspectorArgs::History {
+            after: 0,
+            limit: MAX_HISTORY_PAGE + 1
+        }
+    ));
+    assert!(!ok(
+        C::GrantEvaluation,
+        InspectorArgs::Grant {
+            token: GrantToken([0; 16]),
+            opaque_override: false
+        }
+    ));
+    assert!(!ok(
+        C::Evaluate,
+        InspectorArgs::Evaluate {
+            expression: "x".repeat(MAX_EXPRESSION_BYTES + 1),
+            grant: token(1)
+        }
+    ));
+    assert!(!ok(
+        C::Evaluate,
+        InspectorArgs::Evaluate {
+            expression: "   ".into(),
+            grant: token(1)
+        }
+    ));
+}
+
+#[test]
+fn console_commands_need_inspector_version_two_and_v1_requests_still_decode() {
+    let mut old = with_args(InspectorCommand::EnableConsole, InspectorArgs::None);
+    old.version = 1;
+    assert_eq!(
+        old.validate().unwrap_err().code,
+        InspectorErrorCode::UnsupportedVersion
+    );
+    // A D1 payload without `args` (what a v22 browser would send) is still accepted.
+    let legacy = serde_json::json!({
+        "version": 1,
+        "session": 4,
+        "target": serde_json::to_value(target(1, 1)).unwrap(),
+        "command": "GetStatusSnapshot",
+    });
+    assert_eq!(
+        InspectorPayload(legacy).decode().unwrap().args,
+        InspectorArgs::None
+    );
+    for command in ALL {
+        let mut request = request(1, target(1, 1), command);
+        request.version = 1;
+        assert!(
+            request.validate().is_ok(),
+            "{command:?} must stay valid at version 1"
+        );
+    }
+}
+
+#[test]
+fn only_evaluate_gets_the_long_deadline_and_payloads_can_be_peeked_without_decoding() {
+    for command in [
+        InspectorCommand::Attach,
+        InspectorCommand::GetStatusSnapshot,
+        InspectorCommand::EnableConsole,
+        InspectorCommand::GrantEvaluation,
+    ] {
+        assert_eq!(command.timeout_ms(), INSPECTOR_TIMEOUT_MS);
+    }
+    assert_eq!(InspectorCommand::Evaluate.timeout_ms(), EVALUATE_TIMEOUT_MS);
+    const { assert!(EVALUATE_TIMEOUT_MS > crate::EVALUATION_TIMEOUT_MS) };
+    let payload = InspectorPayload::new(&with_args(
+        InspectorCommand::Evaluate,
+        InspectorArgs::Evaluate {
+            expression: "1".into(),
+            grant: token(2),
+        },
+    ));
+    assert_eq!(payload.command_hint(), Some(InspectorCommand::Evaluate));
+    assert_eq!(
+        InspectorPayload(serde_json::json!({"command": "Nope"})).command_hint(),
+        None
+    );
+    assert_eq!(InspectorPayload(serde_json::json!(5)).command_hint(), None);
+}
+
+#[test]
+fn the_grant_token_never_appears_in_debug_output_and_compares_fully() {
+    let secret = GrantToken([0xAB; 16]);
+    let rendered = format!(
+        "{secret:?} {:?}",
+        with_args(
+            InspectorCommand::GrantEvaluation,
+            InspectorArgs::Grant {
+                token: secret,
+                opaque_override: false
+            },
+        )
+    );
+    assert!(
+        !rendered.contains("171") && !rendered.to_lowercase().contains("ab, ab"),
+        "{rendered}"
+    );
+    assert_eq!(secret, GrantToken([0xAB; 16]));
+    let mut other = [0xAB; 16];
+    other[15] ^= 1;
+    assert_ne!(secret, GrantToken(other));
+    other = [0xAB; 16];
+    other[0] ^= 0x80;
+    assert_ne!(secret, GrantToken(other));
+}
+
+#[test]
+fn content_grant_checks_session_token_and_document_independently() {
+    let own = target(1, 1);
+    let mut content = ContentSessions::default();
+    content
+        .authorize(&request(5, own, InspectorCommand::Attach), own)
+        .unwrap();
+    let session = InspectorSessionId(5);
+    let doc = stamp(2, 3);
+    // Nothing granted.
+    assert_eq!(
+        content
+            .check_grant(session, doc, token(9))
+            .unwrap_err()
+            .code,
+        InspectorErrorCode::Unauthorized
+    );
+    content.store_grant(session, doc, token(9));
+    content.check_grant(session, doc, token(9)).unwrap();
+    // Forged token.
+    assert_eq!(
+        content
+            .check_grant(session, doc, token(8))
+            .unwrap_err()
+            .code,
+        InspectorErrorCode::Unauthorized
+    );
+    // Another document (navigation) or revision.
+    assert_eq!(
+        content
+            .check_grant(session, stamp(3, 3), token(9))
+            .unwrap_err()
+            .code,
+        InspectorErrorCode::StaleDocument
+    );
+    assert_eq!(
+        content
+            .check_grant(session, stamp(2, 4), token(9))
+            .unwrap_err()
+            .code,
+        InspectorErrorCode::StaleDocument
+    );
+    // Another session id.
+    assert_eq!(
+        content
+            .check_grant(InspectorSessionId(6), doc, token(9))
+            .unwrap_err()
+            .code,
+        InspectorErrorCode::StaleSession
+    );
+    // A grant cannot be stored for a session that is not live, or with an empty token.
+    let mut fresh = ContentSessions::default();
+    fresh.store_grant(session, doc, token(9));
+    assert!(!fresh.has_grant());
+    content.store_grant(session, doc, GrantToken([0; 16]));
+    content.check_grant(session, doc, token(9)).unwrap();
+}
+
+#[test]
+fn content_grant_dies_with_detach_and_with_a_superseding_attach() {
+    let own = target(1, 1);
+    let doc = stamp(0, 1);
+    let mut content = ContentSessions::default();
+    content
+        .authorize(&request(5, own, InspectorCommand::Attach), own)
+        .unwrap();
+    content.store_grant(InspectorSessionId(5), doc, token(1));
+    content
+        .authorize(&request(8, own, InspectorCommand::Attach), own)
+        .unwrap();
+    assert!(
+        !content.has_grant(),
+        "a newer session never inherits authority"
+    );
+    assert!(
+        content
+            .check_grant(InspectorSessionId(5), doc, token(1))
+            .is_err()
+    );
+    content.store_grant(InspectorSessionId(8), doc, token(2));
+    assert!(content.detach(InspectorSessionId(8)));
+    assert!(!content.has_grant());
+    content.clear_grant();
+}
+
+#[test]
+fn host_grant_is_bound_to_session_and_document_and_cleared_on_every_boundary() {
+    let issuer = SessionIssuer::new();
+    let mine = target(1, 1);
+    let mut host = HostSessions::new(mine);
+    let (a, _) = host.open(&issuer).unwrap();
+    let doc = stamp(1, 1);
+    assert!(
+        host.install_grant(InspectorSessionId(77), doc, token(3), false)
+            .is_err(),
+        "not live"
+    );
+    assert!(
+        host.install_grant(a, doc, GrantToken([0; 16]), false)
+            .is_err()
+    );
+    host.install_grant(a, doc, token(3), false).unwrap();
+    assert_eq!(host.grant_for(a, doc), Some(token(3)));
+    assert_eq!(host.grant_for(a, stamp(1, 2)), None, "another revision");
+    assert_eq!(host.grant_for(a, stamp(2, 1)), None, "another document");
+    assert_eq!(host.grant_for(InspectorSessionId(a.0 + 1), doc), None);
+    assert_eq!(host.grant_state(a), Some((doc, false)));
+    // Navigation.
+    host.document_changed();
+    assert_eq!(host.grant_for(a, doc), None);
+    // Supersede.
+    host.install_grant(a, doc, token(4), true).unwrap();
+    let (b, _) = host.open(&issuer).unwrap();
+    assert_eq!(host.grant_for(a, doc), None);
+    assert_eq!(host.grant_for(b, doc), None);
+    // Revoke.
+    host.install_grant(b, doc, token(5), false).unwrap();
+    assert!(host.revoke(b));
+    assert_eq!(host.grant_for(b, doc), None);
+    // Process death.
+    let (c, _) = host.open(&issuer).unwrap();
+    host.install_grant(c, doc, token(6), false).unwrap();
+    host.close();
+    assert_eq!(host.grant_for(c, doc), None);
+    // An explicit revoke response and a refused grant both clear it.
+    let mut host = HostSessions::new(mine);
+    let (s, _) = host.open(&issuer).unwrap();
+    host.install_grant(s, doc, token(7), false).unwrap();
+    host.complete(
+        s,
+        InspectorCommand::RevokeEvaluation,
+        Ok(InspectorResponse::EvaluationRevoked),
+    );
+    assert_eq!(host.grant_for(s, doc), None);
+    host.install_grant(s, doc, token(7), false).unwrap();
+    host.complete(
+        s,
+        InspectorCommand::GrantEvaluation,
+        Err(InspectorError::new(InspectorErrorCode::Unauthorized, "no")),
+    );
+    assert_eq!(host.grant_for(s, doc), None);
+}
+
+#[test]
+fn console_events_need_an_enabled_live_session_and_respect_the_sequence() {
+    let mut host = HostSessions::new(target(1, 1));
+    let (session, _) = host.open(&SessionIssuer::new()).unwrap();
+    assert!(
+        !host.event(session, 1, added(1, "a")),
+        "console not enabled"
+    );
+    host.complete(
+        session,
+        InspectorCommand::EnableConsole,
+        Ok(InspectorResponse::ConsoleEnabled {
+            retained: 0,
+            first_seq: 1,
+        }),
+    );
+    assert!(host.event(session, 1, added(1, "a")));
+    assert!(!host.event(session, 1, added(1, "replay")));
+    assert!(!host.event(InspectorSessionId(session.0 + 9), 2, added(2, "foreign")));
+    host.complete(
+        session,
+        InspectorCommand::DisableConsole,
+        Ok(InspectorResponse::ConsoleDisabled),
+    );
+    assert!(!host.event(session, 3, added(3, "after disable")));
+    assert_eq!(host.take_console(session).len(), 1);
+    host.revoke(session);
+    assert!(host.take_console(session).is_empty());
+}
+
+#[test]
+fn the_console_queue_is_bounded_by_entries_and_bytes_and_reports_loss_first() {
+    let (mut host, session) = live_console_host();
+    for seq in 1..=(CONSOLE_QUEUE_ENTRIES as u64 * 10) {
+        host.event(session, seq, added(seq, "x"));
+        let (entries, bytes) = host.console_queued();
+        assert!(entries <= CONSOLE_QUEUE_ENTRIES && bytes <= CONSOLE_QUEUE_BYTES);
+    }
+    let events = host.take_console(session);
+    let InspectorEvent::ConsoleMessagesDropped { count } = events[0] else {
+        panic!("{:?}", events[0])
+    };
+    assert_eq!(
+        count as usize + CONSOLE_QUEUE_ENTRIES,
+        CONSOLE_QUEUE_ENTRIES * 10
+    );
+    assert_eq!(events.len(), CONSOLE_QUEUE_ENTRIES + 1);
+    assert_eq!(host.console_queued(), (0, 0));
+    // Byte budget: large messages evict by size before the entry cap is reached.
+    let big = "y".repeat(3000);
+    for seq in 5000..5200u64 {
+        host.event(session, seq, added(seq, &big));
+        assert!(host.console_queued().1 <= CONSOLE_QUEUE_BYTES);
+    }
+    assert!(
+        host.console_queued().0 < 100,
+        "bytes must bound the queue before entries do"
+    );
+    assert!(matches!(
+        host.take_console(session)[0],
+        InspectorEvent::ConsoleMessagesDropped { .. }
+    ));
+}
+
+#[test]
+fn oversized_or_unbounded_console_events_are_dropped_not_stored() {
+    let (mut host, session) = live_console_host();
+    let mut huge = message(1, "x");
+    huge.args = (0..(MAX_ARGS + 1))
+        .map(|_| Preview::simple(PreviewKind::Null, "null"))
+        .collect();
+    assert!(!host.event(
+        session,
+        1,
+        InspectorEvent::ConsoleMessageAdded(Box::new(huge))
+    ));
+    let mut deep = Preview::simple(PreviewKind::Object, "{}");
+    for _ in 0..(MAX_PREVIEW_DEPTH + 2) {
+        deep = Preview {
+            props: vec![PreviewProp {
+                key: "k".into(),
+                value: deep,
+            }],
+            ..Preview::simple(PreviewKind::Object, "{}")
+        };
+    }
+    assert!(!deep.is_bounded());
+    let mut message = message(2, "x");
+    message.args = vec![deep];
+    assert!(!host.event(
+        session,
+        2,
+        InspectorEvent::ExceptionThrown(Box::new(message))
+    ));
+    assert_eq!(host.console_queued().0, 0);
+    // The loss is visible.
+    assert!(matches!(
+        host.take_console(session)[0],
+        InspectorEvent::ConsoleMessagesDropped { count: 2 }
+    ));
+}
+
+#[test]
+fn previews_enforce_depth_width_node_and_text_budgets() {
+    let leaf = |n: usize| Preview::simple(PreviewKind::String, "x".repeat(n));
+    assert!(leaf(MAX_PREVIEW_TEXT).is_bounded());
+    assert!(!leaf(MAX_PREVIEW_TEXT * 4 + 1).is_bounded());
+    let wide = |n: usize| Preview {
+        props: (0..n)
+            .map(|i| PreviewProp {
+                key: i.to_string(),
+                value: leaf(1),
+            })
+            .collect(),
+        ..Preview::simple(PreviewKind::Object, "{}")
+    };
+    assert!(wide(MAX_PREVIEW_PROPS).is_bounded());
+    assert!(!wide(MAX_PREVIEW_PROPS + 1).is_bounded());
+    // Node budget: 8 x 8 = 64 leaves + roots exceeds 64 nodes.
+    let many = Preview {
+        props: (0..8)
+            .map(|i| PreviewProp {
+                key: i.to_string(),
+                value: wide(8),
+            })
+            .collect(),
+        ..Preview::simple(PreviewKind::Object, "{}")
+    };
+    assert!(!many.is_bounded());
+}
+
+#[test]
+fn console_and_evaluation_messages_round_trip_through_the_wire() {
+    let mut bytes = Vec::new();
+    let outcome = EvalOutcome::Exception {
+        details: ExceptionDetails {
+            kind: ExceptionKind::Evaluation,
+            name: "TypeError".into(),
+            message: "x is not a function".into(),
+            stack: Some("TypeError: x\n    at <anonymous>:1:1".into()),
+            source: Some(SourceLocation {
+                url: "https://e.test/a.js".into(),
+                line: 3,
+                column: 9,
+            }),
+        },
+    };
+    crate::write(
+        &mut bytes,
+        &Event::InspectorResponse {
+            context: RequestContext {
+                document: DocumentId(1),
+                revision: DocumentRevision(1),
+                request: RequestId(2),
+            },
+            session: InspectorSessionId(1),
+            result: Ok(InspectorResponse::Evaluated(Box::new(outcome.clone()))),
+        },
+    )
+    .unwrap();
+    let Event::InspectorResponse {
+        result: Ok(InspectorResponse::Evaluated(back)),
+        ..
+    } = crate::read::<Event>(&mut bytes.as_slice())
+        .unwrap()
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(*back, outcome);
+    assert!(back.is_bounded());
+    let mut exception = message(4, "boom");
+    exception.exception = outcome_details(&outcome);
+    let event = InspectorEvent::ExceptionThrown(Box::new(exception));
+    let mut bytes = Vec::new();
+    crate::write(
+        &mut bytes,
+        &Event::InspectorEvent {
+            context: stamp(1, 1),
+            session: InspectorSessionId(1),
+            seq: 4,
+            event: event.clone(),
+        },
+    )
+    .unwrap();
+    let Event::InspectorEvent { event: back, .. } = crate::read::<Event>(&mut bytes.as_slice())
+        .unwrap()
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(back, event);
+}
+
+fn outcome_details(outcome: &EvalOutcome) -> Option<ExceptionDetails> {
+    match outcome {
+        EvalOutcome::Exception { details } => Some(details.clone()),
+        EvalOutcome::Value { .. } => None,
+    }
+}
+
+#[test]
+fn an_unbounded_evaluation_result_or_history_page_is_refused() {
+    let (mut host, session) = live_console_host();
+    let mut deep = Preview::simple(PreviewKind::Object, "{}");
+    for _ in 0..6 {
+        deep = Preview {
+            props: vec![PreviewProp {
+                key: "k".into(),
+                value: deep,
+            }],
+            ..Preview::simple(PreviewKind::Object, "{}")
+        };
+    }
+    assert!(!host.complete(
+        session,
+        InspectorCommand::Evaluate,
+        Ok(InspectorResponse::Evaluated(Box::new(EvalOutcome::Value {
+            preview: deep
+        })))
+    ));
+    let mut bad = message(1, "x");
+    bad.method = "m".repeat(100);
+    assert!(!host.complete(
+        session,
+        InspectorCommand::GetConsoleHistory,
+        Ok(InspectorResponse::ConsoleHistory {
+            messages: vec![bad],
+            next_seq: 2,
+            dropped: 0
+        })
+    ));
+    assert!(host.complete(
+        session,
+        InspectorCommand::GetConsoleHistory,
+        Ok(InspectorResponse::ConsoleHistory {
+            messages: vec![message(1, "ok")],
+            next_seq: 2,
+            dropped: 0
+        })
+    ));
+}
+
+#[test]
+fn context_and_drop_markers_are_console_stream_events() {
+    for event in [
+        InspectorEvent::ExecutionContextCreated {
+            document: stamp(1, 1),
+        },
+        InspectorEvent::ExecutionContextDestroyed {
+            document: stamp(1, 1),
+        },
+        InspectorEvent::ConsoleMessagesDropped { count: 3 },
+    ] {
+        assert!(event.is_console());
+    }
+    assert!(!InspectorEvent::LoadingChanged { loading: true }.is_console());
+    assert!(
+        !InspectorEvent::DocumentChanged {
+            document: stamp(1, 1)
+        }
+        .is_console()
+    );
 }

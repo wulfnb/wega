@@ -2,9 +2,11 @@
 //! ([`HostSessions`]); the content process keeps a mirror ([`ContentSessions`]) that it
 //! uses only to *refuse* requests, never to grant authority.
 use super::{
-    EVENT_RING, InspectorError, InspectorErrorCode, InspectorEvent, InspectorResponse,
-    InspectorSessionId, RESULT_RING, TargetId, supports_inspector_version,
+    CONSOLE_QUEUE_BYTES, CONSOLE_QUEUE_ENTRIES, EVENT_RING, GrantToken, InspectorCommand,
+    InspectorError, InspectorErrorCode, InspectorEvent, InspectorResponse, InspectorSessionId,
+    RESULT_RING, TargetId, supports_inspector_version,
 };
+use crate::DocumentContext;
 use std::{
     collections::VecDeque,
     sync::atomic::{AtomicU64, Ordering},
@@ -225,12 +227,56 @@ pub struct Completed {
 /// Everything the browser keeps per content process for the inspector: the authority, the
 /// bounded inbound queues, and the replay guard. Lives inside the page's shared state so it
 /// is destroyed with the process it protects.
+/// The browser's record of an evaluation grant. Never leaves the browser except as the
+/// token inside `GrantEvaluation` / `Evaluate` commands on the authenticated pipe.
+#[derive(Clone, Copy, Debug)]
+struct HostGrant {
+    session: InspectorSessionId,
+    document: DocumentContext,
+    token: GrantToken,
+    opaque_override: bool,
+}
+
+/// Console-stream queue bounded by entries and bytes; overflow drops the oldest and counts.
+#[derive(Debug, Default)]
+struct ConsoleQueue {
+    items: VecDeque<(InspectorEvent, usize)>,
+    bytes: usize,
+    dropped: u64,
+}
+
+impl ConsoleQueue {
+    fn push(&mut self, event: InspectorEvent, size: usize) {
+        if size > CONSOLE_QUEUE_BYTES {
+            self.dropped = self.dropped.saturating_add(1);
+            return;
+        }
+        while self.items.len() >= CONSOLE_QUEUE_ENTRIES || self.bytes + size > CONSOLE_QUEUE_BYTES {
+            let Some((_, old)) = self.items.pop_front() else {
+                break;
+            };
+            self.bytes -= old;
+            self.dropped = self.dropped.saturating_add(1);
+        }
+        self.bytes += size;
+        self.items.push_back((event, size));
+    }
+    fn clear(&mut self) {
+        self.items.clear();
+        self.bytes = 0;
+        self.dropped = 0;
+    }
+}
+
 #[derive(Debug)]
 pub struct HostSessions {
     registry: SessionRegistry,
     events: DropOldest<InspectorEvent>,
     results: DropOldest<Completed>,
     last_seq: u64,
+    console: ConsoleQueue,
+    console_enabled: bool,
+    grant: Option<HostGrant>,
 }
 
 impl HostSessions {
@@ -240,6 +286,9 @@ impl HostSessions {
             events: DropOldest::new(EVENT_RING),
             results: DropOldest::new(RESULT_RING),
             last_seq: 0,
+            console: ConsoleQueue::default(),
+            console_enabled: false,
+            grant: None,
         }
     }
     pub fn registry(&self) -> &SessionRegistry {
@@ -263,6 +312,64 @@ impl HostSessions {
         self.results.clear();
         let _ = self.results.drain();
         self.last_seq = 0;
+        self.console.clear();
+        self.console_enabled = false;
+        // A session change can never inherit evaluation authority.
+        self.grant = None;
+    }
+
+    /// Record a grant for the live session and document. The token comes from the caller's
+    /// CSPRNG; it is stored here and sent to the content process, nowhere else.
+    pub fn install_grant(
+        &mut self,
+        session: InspectorSessionId,
+        document: DocumentContext,
+        token: GrantToken,
+        opaque_override: bool,
+    ) -> Result<(), InspectorError> {
+        if !self.registry.is_live(session) {
+            return Err(err(InspectorErrorCode::StaleSession, "Session is not live"));
+        }
+        if token.is_zero() {
+            return Err(err(InspectorErrorCode::InvalidPayload, "Empty grant token"));
+        }
+        self.grant = Some(HostGrant {
+            session,
+            document,
+            token,
+            opaque_override,
+        });
+        Ok(())
+    }
+    /// The token to put in an `Evaluate`, only if `session` is live and holds a grant for
+    /// exactly this document.
+    pub fn grant_for(
+        &self,
+        session: InspectorSessionId,
+        document: DocumentContext,
+    ) -> Option<GrantToken> {
+        self.grant
+            .filter(|grant| {
+                self.registry.is_live(session)
+                    && grant.session == session
+                    && grant.document == document
+            })
+            .map(|grant| grant.token)
+    }
+    /// For the UI indicator: the document a live grant covers and whether it overrides
+    /// the opaque-origin policy.
+    pub fn grant_state(&self, session: InspectorSessionId) -> Option<(DocumentContext, bool)> {
+        self.grant
+            .filter(|grant| grant.session == session && self.registry.is_live(session))
+            .map(|grant| (grant.document, grant.opaque_override))
+    }
+    pub fn clear_grant(&mut self) {
+        self.grant = None;
+    }
+    /// The document was replaced: document-bound authority and history are gone.
+    pub fn document_changed(&mut self) {
+        self.grant = None;
+        self.console.clear();
     }
     pub fn revoke(&mut self, session: InspectorSessionId) -> bool {
         let revoked = self.registry.revoke(session);
@@ -290,6 +397,15 @@ impl HostSessions {
         {
             return false;
         }
+        match &result {
+            Ok(InspectorResponse::Evaluated(outcome)) if !outcome.is_bounded() => return false,
+            Ok(InspectorResponse::ConsoleHistory { messages, .. })
+                if messages.iter().any(|m| !m.is_bounded()) =>
+            {
+                return false;
+            }
+            _ => {}
+        }
         match (&result, command) {
             (Ok(InspectorResponse::Subscribed), _) => {
                 self.registry.set_subscribed(session, true);
@@ -297,6 +413,11 @@ impl HostSessions {
             (Ok(InspectorResponse::Unsubscribed), _) => {
                 self.registry.set_subscribed(session, false);
             }
+            (Ok(InspectorResponse::ConsoleEnabled { .. }), _) => self.console_enabled = true,
+            (Ok(InspectorResponse::ConsoleDisabled), _) => self.console_enabled = false,
+            (Ok(InspectorResponse::EvaluationRevoked), _) => self.grant = None,
+            // A refused grant must not leave a browser-side record behind.
+            (Err(_), InspectorCommand::GrantEvaluation) => self.grant = None,
             _ => {}
         }
         self.results.push(Completed {
@@ -308,12 +429,64 @@ impl HostSessions {
     }
     /// A pushed event. Dropped when the session is not live, not subscribed, or `seq` is a replay.
     pub fn event(&mut self, session: InspectorSessionId, seq: u64, event: InspectorEvent) -> bool {
+        if event.is_console() {
+            return self.console_event(session, seq, event);
+        }
         if !self.registry.subscribed(session) || seq <= self.last_seq {
             return false;
         }
         self.last_seq = seq;
         self.events.push(event);
         true
+    }
+    fn console_event(
+        &mut self,
+        session: InspectorSessionId,
+        seq: u64,
+        event: InspectorEvent,
+    ) -> bool {
+        if !self.registry.is_live(session) || !self.console_enabled || seq <= self.last_seq {
+            return false;
+        }
+        self.last_seq = seq;
+        let size = match &event {
+            InspectorEvent::ConsoleMessageAdded(message)
+            | InspectorEvent::ExceptionThrown(message) => {
+                if !message.is_bounded() {
+                    self.console.dropped = self.console.dropped.saturating_add(1);
+                    return false;
+                }
+                message.approx_bytes()
+            }
+            // Small fixed-size markers.
+            _ => 64,
+        };
+        self.console.push(event, size);
+        true
+    }
+    /// Console-stream events in order; a loss is reported in-band before the survivors.
+    pub fn take_console(&mut self, session: InspectorSessionId) -> Vec<InspectorEvent> {
+        if !self.registry.is_live(session) {
+            return Vec::new();
+        }
+        let dropped = std::mem::take(&mut self.console.dropped);
+        let mut events: Vec<InspectorEvent> = self
+            .console
+            .items
+            .drain(..)
+            .map(|(event, _)| event)
+            .collect();
+        self.console.bytes = 0;
+        if dropped > 0 {
+            events.insert(0, InspectorEvent::ConsoleMessagesDropped { count: dropped });
+        }
+        events
+    }
+    pub fn console_queued(&self) -> (usize, usize) {
+        (self.console.items.len(), self.console.bytes)
+    }
+    pub fn console_enabled(&self) -> bool {
+        self.console_enabled
     }
     /// Events in order. An overflow is reported in-band, before the surviving events.
     pub fn take_events(&mut self, session: InspectorSessionId) -> Vec<InspectorEvent> {
@@ -346,6 +519,7 @@ pub struct ContentSessions {
     subscribed: bool,
     highest: u64,
     seq: u64,
+    grant: Option<(InspectorSessionId, DocumentContext, GrantToken)>,
 }
 
 impl ContentSessions {
@@ -393,6 +567,7 @@ impl ContentSessions {
             self.subscribed = false;
             self.highest = id.0;
             self.seq = 0;
+            self.grant = None;
             return Ok(());
         }
         if self.live == Some(id) {
@@ -417,10 +592,62 @@ impl ContentSessions {
         if self.live == Some(session) {
             self.live = None;
             self.subscribed = false;
+            self.grant = None;
             true
         } else {
             false
         }
+    }
+    /// Remember the browser's grant for the live session and the current document.
+    pub fn store_grant(
+        &mut self,
+        session: InspectorSessionId,
+        document: DocumentContext,
+        token: GrantToken,
+    ) {
+        if self.live == Some(session) && !token.is_zero() {
+            self.grant = Some((session, document, token));
+        }
+    }
+    pub fn clear_grant(&mut self) {
+        self.grant = None;
+    }
+    pub fn has_grant(&self) -> bool {
+        self.grant.is_some()
+    }
+    /// Independent verification before any evaluation: the stored grant must exist, belong
+    /// to the live session, carry the same token and cover the *current* document.
+    pub fn check_grant(
+        &self,
+        session: InspectorSessionId,
+        current: DocumentContext,
+        token: GrantToken,
+    ) -> Result<(), InspectorError> {
+        let Some((owner, document, stored)) = self.grant else {
+            return Err(err(
+                InspectorErrorCode::Unauthorized,
+                "Evaluation has not been authorised",
+            ));
+        };
+        if self.live != Some(session) || owner != session {
+            return Err(err(
+                InspectorErrorCode::StaleSession,
+                "The grant belongs to another session",
+            ));
+        }
+        if stored != token {
+            return Err(err(
+                InspectorErrorCode::Unauthorized,
+                "Invalid evaluation grant",
+            ));
+        }
+        if document != current {
+            return Err(err(
+                InspectorErrorCode::StaleDocument,
+                "The grant covers a previous document",
+            ));
+        }
+        Ok(())
     }
     pub fn next_seq(&mut self) -> u64 {
         self.seq = self.seq.saturating_add(1);

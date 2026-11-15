@@ -12,7 +12,7 @@ pub mod permissions;
 pub mod queue;
 pub mod requests;
 pub mod storage;
-pub const VERSION: u32 = 22;
+pub const VERSION: u32 = 23;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -230,6 +230,7 @@ pub enum Capability {
     MediaPlayback,
     PermissionsRevocation,
     Inspector,
+    InspectorConsole,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -252,6 +253,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::MediaPlayback,
     Capability::PermissionsRevocation,
     Capability::Inspector,
+    Capability::InspectorConsole,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -329,6 +331,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::MediaPlayback => 20,
                     Capability::PermissionsRevocation => 21,
                     Capability::Inspector => 22,
+                    Capability::InspectorConsole => 23,
                 }
         })
         .collect()
@@ -1078,7 +1081,7 @@ mod tests {
     }
     #[test]
     fn authoritative_storage_capability_and_version() {
-        assert_eq!(VERSION, 22);
+        assert_eq!(VERSION, 23);
         assert!(capabilities(16).contains(&Capability::AuthoritativeStorage));
         assert!(!capabilities(15).contains(&Capability::AuthoritativeStorage));
         assert!(capabilities(20).contains(&Capability::MediaPlayback));
@@ -1087,6 +1090,8 @@ mod tests {
         assert!(!capabilities(20).contains(&Capability::PermissionsRevocation));
         assert!(capabilities(22).contains(&Capability::Inspector));
         assert!(!capabilities(21).contains(&Capability::Inspector));
+        assert!(capabilities(23).contains(&Capability::InspectorConsole));
+        assert!(!capabilities(22).contains(&Capability::InspectorConsole));
     }
     #[test]
     fn media_session_command_and_event_transport() {
