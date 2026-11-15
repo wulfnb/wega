@@ -161,6 +161,11 @@ pub fn inspect<D: StyleInspect>(
             })?
             .len()
             + 1;
+        page.truncated |= match &value {
+            StyleItem::Sheet { truncated, .. }
+            | StyleItem::Rule { truncated, .. }
+            | StyleItem::Declaration { truncated, .. } => *truncated,
+        };
         if bytes + size > STYLE_BYTES {
             page.next = Some(query.offset() + page.items.len() as u32);
             page.truncated = true;

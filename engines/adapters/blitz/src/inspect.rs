@@ -37,7 +37,10 @@ fn declarations(
             }
         }
         let mut value = BoundedCss::new(start);
-        let _ = decl.to_css_with_writer(&mut value);
+        if decl.to_css_with_writer(&mut value).is_err() && !value.truncated {
+            BoundedCss::check(start)?;
+            return Err(StyleReadError::Invalid);
+        }
         page.items.push(StyleItem::Declaration(Declaration {
             name: name.text,
             value: value.text,
@@ -195,6 +198,8 @@ impl StyleInspect for BlitzDocument {
                         {
                             let g = self.guard().read();
                             declarations(block.read_with(&g), offset, start, &mut page)?;
+                        } else if offset != 0 {
+                            return Err(StyleReadError::Invalid);
                         }
                     }
                     _ => page.availability = Availability::Unsupported,

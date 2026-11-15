@@ -284,3 +284,52 @@ fn real_pipe_refuses_foreign_targets_and_replacement_process_rule_replay() {
     );
     assert!(w.alive() && replacement.alive());
 }
+#[test]
+fn json_escaped_declaration_names_are_paged_by_response_bytes() {
+    let decls = (0..40)
+        .map(|i| format!("--n{i}{}:{};", "\\1 ".repeat(500), "v".repeat(512)))
+        .collect::<String>();
+    let d = BlitzDocument::from_html(
+        &format!("<!doctype html><style>p{{{decls}}}</style><p>x</p>"),
+        DocumentSetup::default(),
+    );
+    let p = wega_engine::inspector::styles::inspect(&d, scope(), &StyleQuery::Sheets { offset: 0 })
+        .unwrap();
+    let StyleItem::Sheet { reference, .. } = &p.items[0] else {
+        panic!()
+    };
+    let mut rule = reference.clone();
+    rule.path = vec![0];
+    let mut q = StyleQuery::Declarations { rule, offset: 0 };
+    let mut count = 0;
+    loop {
+        let mut response = None;
+        for _ in 0..5 {
+            match wega_engine::inspector::styles::inspect(&d, scope(), &q) {
+                Ok(p) => {
+                    response = Some(p);
+                    break;
+                }
+                Err(e) if e.code == InspectorErrorCode::Timeout => std::thread::yield_now(),
+                Err(e) => panic!("{e}"),
+            }
+        }
+        let p = response.expect("bounded retry");
+        assert!(p.is_bounded());
+        assert!(serde_json::to_vec(&p).unwrap().len() <= STYLE_BYTES);
+        assert!(
+            p.items.len() < 32,
+            "byte cap should shorten an escaped page"
+        );
+        if p.next.is_some() {
+            assert!(p.truncated, "byte-limited continuation must be labelled");
+        }
+        count += p.items.len();
+        if let Some(next) = p.next {
+            q = q.at(next);
+        } else {
+            break;
+        }
+    }
+    assert_eq!(count, 40);
+}

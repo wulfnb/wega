@@ -1,6 +1,6 @@
 use html5ever::{LocalName, QualName, ns};
 use wega_adapter_blitz::{BlitzDocument, DocumentSetup, ToNodeId};
-use wega_dom::{DocumentMutation, DocumentView, MutationClock, Mutator, inspect::*};
+use wega_dom::{DocumentMutation, DocumentView, MutationClock, Mutator, NodeView, inspect::*};
 fn doc(html: &str) -> BlitzDocument {
     BlitzDocument::from_html(html, DocumentSetup::default())
 }
@@ -215,6 +215,14 @@ fn deep_unrendered_and_detached_nodes_do_not_trigger_style_work() {
     assert_eq!(
         read(&d, StyleRead::Computed(key), 0).availability,
         Availability::NotComputed
+    );
+    let mut deep = key;
+    for _ in 0..140 {
+        deep = d.node(deep).unwrap().child_at(0).unwrap();
+    }
+    assert_eq!(
+        d.read_style(&StyleRead::Computed(deep), 0).unwrap_err(),
+        StyleReadError::Depth
     );
     d.mutate().remove(key).unwrap();
     assert_eq!(
