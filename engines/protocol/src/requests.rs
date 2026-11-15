@@ -14,6 +14,11 @@ pub enum RequestKind {
     PageState(u64),
     Capture,
     Navigate,
+    /// A trusted inspector request; replies must match both the context and the session.
+    Inspector {
+        session: crate::inspector::InspectorSessionId,
+        command: crate::inspector::InspectorCommand,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -73,6 +78,47 @@ impl DocumentRequests {
             },
         );
         Ok(context)
+    }
+
+    pub fn inspector_pending(&self) -> usize {
+        self.pending
+            .values()
+            .filter(|request| matches!(request.kind, RequestKind::Inspector { .. }))
+            .count()
+    }
+
+    /// Like `begin`, with a tighter cap so the inspector can never starve other requests.
+    pub fn begin_inspector(
+        &mut self,
+        session: crate::inspector::InspectorSessionId,
+        command: crate::inspector::InspectorCommand,
+        timeout: Duration,
+    ) -> Result<RequestContext, ProtocolError> {
+        if self.inspector_pending() >= crate::inspector::MAX_INSPECTOR_PENDING {
+            return Err(ProtocolError::new(
+                ErrorCode::ResourceLimit,
+                "Too many pending inspector requests",
+            ));
+        }
+        self.begin(RequestKind::Inspector { session, command }, timeout)
+    }
+
+    /// Remove (and return) every pending inspector request of `session`.
+    pub fn cancel_inspector(
+        &mut self,
+        session: crate::inspector::InspectorSessionId,
+    ) -> Vec<PendingRequest> {
+        let ids: Vec<_> = self
+            .pending
+            .iter()
+            .filter(|(_, request)| {
+                matches!(request.kind, RequestKind::Inspector { session: s, .. } if s == session)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        ids.into_iter()
+            .filter_map(|id| self.pending.remove(&id))
+            .collect()
     }
 
     /// Ignore late, duplicate and old-document replies without consuming another request.

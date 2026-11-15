@@ -146,6 +146,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             Command::CaptureDocument { .. } | Command::NavigateDocument { .. }
                         ) {
                             protocol::HARNESS_TIMEOUT_MS
+                        } else if matches!(&command, Command::Inspector { .. }) {
+                            protocol::inspector::INSPECTOR_TIMEOUT_MS
                         } else {
                             protocol::EVALUATION_TIMEOUT_MS
                         };
@@ -359,6 +361,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut sampled = std::time::Instant::now() - interval;
     let mut rss_bytes = wega_platform::resident_bytes();
     let mut metrics = (0, 0);
+    // Present only for session-protocol workers that can be addressed by a TargetId.
+    let mut inspector = identity.map(|identity| {
+        wega_engine::inspector::Backend::new(protocol::inspector::TargetId::of(&identity), version)
+    });
     let output = Rc::new(RefCell::new(std::io::stdout().lock()));
     let event_output = output.clone();
     let write = move |event: &Event| {
@@ -569,6 +575,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         view.poll();
         report_commit(&view, serial)?;
+        if version >= 22
+            && let Some(backend) = &mut inspector
+        {
+            // One branch when no session is subscribed; never queues anything.
+            let context = document_context(&view, serial, version);
+            for (session, seq, event) in backend.observe(context, view.loading) {
+                write(&Event::InspectorEvent {
+                    context,
+                    session,
+                    seq,
+                    event,
+                })?;
+            }
+        }
         if let Some(reason) = view.take_script_failure() {
             write(&protocol::content_event(
                 version,
@@ -918,6 +938,71 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         Err(error) => Err(ProtocolError::new(ErrorCode::ScriptException, error)),
                     };
                     write(&Event::DocumentEvaluated { context, result })?;
+                }
+                Command::Inspector { context, request } => {
+                    if context.document != DocumentId(serial)
+                        || context.revision.0 != view.document_revision()
+                    {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::StaleDocument,
+                                "Document navigated before the inspector request",
+                            ),
+                        })?;
+                        continue;
+                    }
+                    let Some(backend) = inspector.as_mut().filter(|_| version >= 22) else {
+                        write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(
+                                ErrorCode::Unsupported,
+                                "Inspector is not offered by this session",
+                            ),
+                        })?;
+                        continue;
+                    };
+                    match request.decode() {
+                        // The whole payload is unusable, so no session can be named.
+                        Err(error) => write(&Event::RequestFailed {
+                            context,
+                            error: ProtocolError::new(ErrorCode::InvalidRequest, error.message),
+                        })?,
+                        Ok(request) => {
+                            let session = request.session;
+                            let current = (document_context(&view, serial, version), view.loading);
+                            let result = backend.handle(&request, current, || {
+                                let history = view.document_history();
+                                wega_engine::inspector::StatusInput {
+                                    url: view.url.to_string(),
+                                    title: view.title(),
+                                    loading: view.loading,
+                                    // The viewport the browser last requested (applied at the
+                                    // next paint), in CSS pixels. No layout is consulted.
+                                    viewport: {
+                                        let (w, h, scale, zoom, _) = viewport;
+                                        let dpr = f64::from(scale) * f64::from(zoom);
+                                        (dpr.is_finite() && dpr > 0.0 && w > 0 && h > 0)
+                                            .then(|| (f64::from(w) / dpr, f64::from(h) / dpr, dpr))
+                                    },
+                                    nodes: metrics.0 as u64,
+                                    js_heap_bytes: metrics.1 as u64,
+                                    can_go_back: history.0,
+                                    can_go_forward: history.1,
+                                }
+                            });
+                            write(&Event::InspectorResponse {
+                                context,
+                                session,
+                                result,
+                            })?;
+                        }
+                    }
+                }
+                Command::InspectorDetach { session } => {
+                    if let Some(backend) = &mut inspector {
+                        backend.detach(session);
+                    }
                 }
                 Command::CheckDocumentState(context) => {
                     if context.document != DocumentId(serial)
