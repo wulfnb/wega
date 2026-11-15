@@ -1,6 +1,6 @@
 # Wega DevTools implementation roadmap (D1–D7)
 
-Plan only; nothing here is started. Design: [`devtools-design.md`](./devtools-design.md). Evidence: [`devtools-pr58-deletion-audit.md`](./devtools-pr58-deletion-audit.md), [`devtools-current-capabilities.md`](./devtools-current-capabilities.md).
+Plan; **D1 is implemented** (see [`devtools-d1-report.md`](./devtools-d1-report.md)); D2–D7 are not started. Design: [`devtools-design.md`](./devtools-design.md). Evidence: [`devtools-pr58-deletion-audit.md`](./devtools-pr58-deletion-audit.md), [`devtools-current-capabilities.md`](./devtools-current-capabilities.md).
 
 **Complexity scale** (one engineer, rough, includes tests and docs): S ≤ 1 week, M 1–3 weeks, L 3–6 weeks, XL > 6 weeks. These are estimates, not measurements.
 
@@ -39,6 +39,10 @@ Plan only; nothing here is started. Design: [`devtools-design.md`](./devtools-de
 **Complexity.** M–L.
 
 **Non-goals.** Any inspection domain beyond `Target` and page info; UI redesign; network, DOM, console; remote transport; WebDriver changes.
+
+### D1 actual progress and deviations (implemented)
+
+Done: protocol module, session authority, engine status backend, UI re-fed through the client, reliability/security tests, native end-to-end check, performance measurements. Commits `47dc779`, `584843e`, `8bcfe48`, `b0770d5` (+ the report commit). Deviations: typed enums instead of `Domain.method`; no `Target.list`; no credit-window flow control (bounded ring + change-driven events instead); no fuzz target or schema golden file; `RemoteObjectId`/`InspectorNodeId` not introduced (no consumer yet); the `set-cookie` header prerequisite moved to D4; `VERSION` is now 22 with no downgrade arm (inspector events exist only for v22 sessions). Open items carried forward: inspector under the sandboxed worker, Linux/Windows runs, re-measure `create_view+set_html` on a quiet machine, evaluation capability gate (D2).
 
 ## D2: Console events, runtime evaluation, exception reporting
 
