@@ -1,8 +1,6 @@
 //! The Console panel's model: a bounded per-document history, filters, command history and the
 //! state of the (explicitly authorised) evaluation. It holds only engine data that already
 //! passed the session's target and document checks, never an engine handle.
-// TEMPORARY: wired into the Console panel in the next commit.
-#![allow(dead_code)]
 use std::{collections::VecDeque, time::Instant};
 use wega::engine_protocol::{
     DocumentContext,
@@ -93,6 +91,7 @@ impl ConsoleView {
     pub fn len(&self) -> usize {
         self.lines.len()
     }
+    #[cfg(test)]
     pub fn bytes(&self) -> usize {
         self.bytes
     }
@@ -205,6 +204,7 @@ impl ConsoleView {
             }
         }
     }
+    #[cfg(test)]
     pub fn commands(&self) -> usize {
         self.commands.len()
     }

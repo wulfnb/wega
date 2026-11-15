@@ -63,7 +63,6 @@ impl Browser {
         self.tools.panel_rect = shown.response.rect.shrink(8.0);
     }
     pub fn devtools_contents(&mut self, ui: &mut Ui) {
-        use crate::devtools_session::ViewState;
         self.devtools_tick(ui.ctx());
         panel_style(ui);
         ui.horizontal(|ui| {
@@ -86,27 +85,14 @@ impl Browser {
                 if pinned { " · pinned" } else { "" }
             ));
         }
-        match &self.devtools.state {
-            ViewState::Idle => {}
-            ViewState::Connecting => {
-                ui.weak("Connecting to the page…");
-            }
-            ViewState::Updating => {
-                ui.weak("Updating…");
-            }
-            ViewState::NotResponding => {
-                ui.label("The page is not responding to the inspector. The browser is unaffected.");
-            }
-            ViewState::Unavailable(reason) => {
-                ui.label(format!("Disconnected: {reason}"));
-            }
-            ViewState::TargetClosed => {
-                ui.label("The inspected tab was closed.");
-            }
-            ViewState::NoPage => {
-                ui.label("Open a web page to inspect its worker.");
-            }
-            ViewState::Attached => {}
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.tools.console_tab, false, "Status");
+            ui.selectable_value(&mut self.tools.console_tab, true, "Console");
+        });
+        self.devtools_state_line(ui);
+        if self.tools.console_tab {
+            self.console_tab(ui);
+            return;
         }
         // Everything below the line is either engine data that passed the session's target
         // and document-stamp checks, or browser-side supervisor facts labelled as such.
@@ -161,6 +147,34 @@ impl Browser {
             if let Some(reason) = &state.compatibility {
                 ui.label(reason);
             }
+        }
+    }
+}
+
+impl Browser {
+    fn devtools_state_line(&self, ui: &mut Ui) {
+        use crate::devtools_session::ViewState;
+        match &self.devtools.state {
+            ViewState::Idle => {}
+            ViewState::Connecting => {
+                ui.weak("Connecting to the page…");
+            }
+            ViewState::Updating => {
+                ui.weak("Updating…");
+            }
+            ViewState::NotResponding => {
+                ui.label("The page is not responding to the inspector. The browser is unaffected.");
+            }
+            ViewState::Unavailable(reason) => {
+                ui.label(format!("Disconnected: {reason}"));
+            }
+            ViewState::TargetClosed => {
+                ui.label("The inspected tab was closed.");
+            }
+            ViewState::NoPage => {
+                ui.label("Open a web page to inspect its worker.");
+            }
+            ViewState::Attached => {}
         }
     }
 }

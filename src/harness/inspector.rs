@@ -1,5 +1,6 @@
 //! End-to-end native check of the inspector: the real window, a real `Page`, a real
 //! `wega-engine` process and the real status panel path. Includes a real stalled engine.
+use crate::devtools_console::ConsoleLine;
 use std::time::{Duration, Instant};
 use wega::engine_protocol::inspector::InspectorSessionId;
 
@@ -107,6 +108,10 @@ impl crate::browser::Browser {
             0 if !self.tab().loading() && page.texture.is_some() => {
                 assert!(self.inspector_live().is_none(), "session without DevTools");
                 assert!(!self.devtools.is_open());
+                // Output and an uncaught error produced while DevTools is closed.
+                page.evaluate(
+                    "console.log('before DevTools', {n: 1}); setTimeout(() => { throw new Error('before open') }, 0)",
+                );
                 self.chrome.show_console = true;
                 self.window.request_redraw();
                 next(self, 1);
@@ -125,6 +130,97 @@ impl crate::browser::Browser {
                 let test = self.harness.inspector_test.as_mut().unwrap();
                 test.first_document = snapshot.document.document.0;
                 test.first_session = Some(session);
+                next(self, 10);
+            }
+            10 => {
+                self.window.request_redraw();
+                let has = |browser: &Self, needle: &str| {
+                    browser.devtools.console.lines().any(|line| {
+                        matches!(line, ConsoleLine::Message(m) if m.text.contains(needle) || m.exception.as_ref().is_some_and(|e| e.message.contains(needle)))
+                    })
+                };
+                // Retained from before the panel opened, delivered by the engine on enable.
+                if !has(self, "before DevTools") || !has(self, "before open") {
+                    return;
+                }
+                let exception = self.devtools.console.lines().find_map(|line| match line {
+                    ConsoleLine::Message(m) => m.exception.clone(),
+                    _ => None,
+                });
+                let exception = exception.expect("uncaught error retained");
+                assert_eq!(exception.name, "Error");
+                assert!(
+                    exception.source.is_some(),
+                    "source location for the exception"
+                );
+                assert!(self.devtools.console.enabled);
+                page.evaluate(
+                    "console.log('live message', {a: [1, 2]}); console.warn('live warning')",
+                );
+                // Nothing may run yet: opening the tools granted nothing.
+                assert!(self.devtools.console.grant.is_none());
+                self.devtools_run_command("1+1");
+                assert!(
+                    matches!(self.devtools.console.lines().last(), Some(ConsoleLine::Notice(t)) if t.contains("not enabled")),
+                    "evaluation must be refused without a grant"
+                );
+                next(self, 11);
+            }
+            11 => {
+                self.window.request_redraw();
+                if !self.devtools.console.lines().any(|line| {
+                    matches!(line, ConsoleLine::Message(m) if m.text.contains("live warning"))
+                }) {
+                    return;
+                }
+                let live = self.devtools.console.lines().find_map(|line| match line {
+                    ConsoleLine::Message(m) if m.text.starts_with("live message") => {
+                        Some(m.clone())
+                    }
+                    _ => None,
+                });
+                let live = live.expect("live message");
+                assert_eq!(live.args.len(), 2);
+                assert_eq!(live.args[1].props[0].key, "a");
+                // The user's explicit action (the panel's button).
+                self.devtools_enable_evaluation(false);
+                next(self, 12);
+            }
+            12 => {
+                self.window.request_redraw();
+                let Some(document) = self.devtools_document() else {
+                    return;
+                };
+                if self.devtools.console.evaluation_enabled(document).is_none() {
+                    return;
+                }
+                self.devtools_run_command("6*7");
+                next(self, 13);
+            }
+            13 => {
+                self.window.request_redraw();
+                if !self
+                    .devtools
+                    .console
+                    .lines()
+                    .any(|line| matches!(line, ConsoleLine::Result(p) if p.text == "42"))
+                {
+                    return;
+                }
+                self.devtools_run_command("(function failing(){ null.x })()");
+                next(self, 14);
+            }
+            14 => {
+                self.window.request_redraw();
+                let failure = self.devtools.console.lines().find_map(|line| match line {
+                    ConsoleLine::Failure(details) => Some(details.clone()),
+                    _ => None,
+                });
+                let Some(failure) = failure else {
+                    return;
+                };
+                assert_eq!(failure.name, "TypeError");
+                assert!(failure.stack.as_deref().unwrap_or("").contains("failing"));
                 let mut url = self.tab().url().to_string();
                 url.push_str("?second");
                 if let Ok(url) = url::Url::parse(&url) {
@@ -142,6 +238,20 @@ impl crate::browser::Browser {
                 };
                 if snapshot.document.document.0 > first {
                     assert!(snapshot.url.ends_with("?second"), "{}", snapshot.url);
+                    // Navigation revoked evaluation authority and started a fresh history.
+                    let document = self.devtools_document().unwrap();
+                    assert!(
+                        self.devtools.console.evaluation_enabled(document).is_none(),
+                        "the grant survived navigation"
+                    );
+                    self.devtools_run_command("globalThis.afterNavigation = 1");
+                    assert!(
+                        matches!(self.devtools.console.lines().last(), Some(ConsoleLine::Notice(t)) if t.contains("not enabled")),
+                        "evaluation must be refused after navigation"
+                    );
+                    assert!(!self.devtools.console.lines().any(|line| {
+                        matches!(line, ConsoleLine::Message(m) if m.text.contains("before DevTools"))
+                    }), "old document output must be gone");
                     next(self, 3);
                 }
             }
@@ -216,7 +326,7 @@ impl crate::browser::Browser {
                 }
                 let test = self.harness.inspector_test.as_ref().unwrap();
                 println!(
-                    "INSPECTOR TEST PASSED: attach, real status snapshot, navigation without stale data, detach revokes, reattach with a new session, stalled engine reported without freezing the UI"
+                    "INSPECTOR TEST PASSED: attach, real status snapshot, console backfill and live capture, evaluation refused until explicitly enabled, evaluation result and exception, navigation revokes the grant and clears history, detach revokes, reattach with a new session, stalled engine reported without freezing the UI"
                 );
                 println!(
                     "inspector-test: stalled worker reported NotResponding after {} ms with {} UI polls; recovered {} ms after SIGCONT",

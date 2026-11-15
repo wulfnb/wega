@@ -430,6 +430,37 @@ impl Browser {
         // The only periodic work, and only while the tools are visible.
         ctx.request_repaint_after(crate::devtools_session::REFRESH);
     }
+    /// The user's explicit "Enable evaluation" action.
+    pub(crate) fn devtools_enable_evaluation(&mut self, opaque_override: bool) {
+        let session = &self.session;
+        self.devtools
+            .enable_evaluation(opaque_override, &|key| Self::resolve_tab(session, key));
+    }
+    pub(crate) fn devtools_revoke_evaluation(&mut self) {
+        let session = &self.session;
+        self.devtools
+            .revoke_evaluation(&|key| Self::resolve_tab(session, key));
+    }
+    pub(crate) fn devtools_run_command(&mut self, expression: &str) {
+        let session = &self.session;
+        self.devtools
+            .run_command(Instant::now(), expression, &|key| {
+                Self::resolve_tab(session, key)
+            });
+    }
+    /// The document stamp of the page the developer tools are bound to.
+    pub(crate) fn devtools_document(&self) -> Option<wega::engine_protocol::DocumentContext> {
+        let (_, page) = self.devtools_target()?;
+        let state = page
+            .as_ref()?
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Some(wega::engine_protocol::DocumentContext {
+            document: state.requests.document(),
+            revision: state.requests.revision(),
+        })
+    }
     /// The snapshot to display, re-validated against the page *now*: its target process and
     /// document stamp must equal the live page's. The view validates at each tick, but a
     /// navigation can land between a tick and a paint, so display never trusts the tick alone.

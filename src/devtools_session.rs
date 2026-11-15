@@ -236,7 +236,6 @@ impl DevtoolsView {
 
     /// The user's explicit action: authorise evaluation for the current document of the bound
     /// tab. `opaque_override` is the user's separate confirmation for an opaque or internal page.
-    #[allow(dead_code)] // TEMPORARY: used by the Console panel in the next commit
     pub(crate) fn enable_evaluation<'a>(
         &mut self,
         opaque_override: bool,
@@ -252,7 +251,6 @@ impl DevtoolsView {
         }
     }
 
-    #[allow(dead_code)] // TEMPORARY: used by the Console panel in the next commit
     pub(crate) fn revoke_evaluation<'a>(&mut self, resolve: &dyn Fn(u64) -> Resolved<'a>) {
         if let Some((page, session)) = self.live_page(resolve) {
             page.revoke_evaluation(session);
@@ -262,7 +260,6 @@ impl DevtoolsView {
 
     /// Run a command in the page. Refused here (and again by the page and the engine) unless a
     /// grant for this session and document is live.
-    #[allow(dead_code)] // TEMPORARY: used by the Console panel in the next commit
     pub(crate) fn run_command<'a>(
         &mut self,
         now: Instant,
