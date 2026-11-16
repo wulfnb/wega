@@ -36,6 +36,9 @@ mod script;
 mod view;
 pub mod webgl;
 pub mod workers;
+/// The native stack of the `wega-dom` thread that owns every `View`. `MAX_LAYOUT_DEPTH` is only
+/// valid for this size; tests spawn their engine threads with it.
+pub const ENGINE_THREAD_STACK: usize = 8 * 1024 * 1024;
 pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use inspector::PagePort;
 pub use network::NetworkPolicy;

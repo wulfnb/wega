@@ -45,6 +45,22 @@ impl ToNodeId for NodeKey {
     }
 }
 
+static LAYOUT_DEPTH_PROBE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// The effective depth limit: [`MAX_LAYOUT_DEPTH`] unless a probe lifted it.
+fn layout_depth_limit() -> usize {
+    match LAYOUT_DEPTH_PROBE.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => MAX_LAYOUT_DEPTH,
+        probe => probe,
+    }
+}
+/// **Measurement only.** Replaces the layout depth limit process-wide so a test can find the
+/// unguarded stack cliff of the real pipeline in a child process. Never called by the engine;
+/// `None` restores [`MAX_LAYOUT_DEPTH`].
+#[doc(hidden)]
+pub fn set_layout_depth_limit_for_probe(limit: Option<usize>) {
+    LAYOUT_DEPTH_PROBE.store(limit.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
+}
+
 /// The document the engine owns: Blitz's `BaseDocument`, held by value (no second tree, no
 /// extra allocation or indirection) in a local type so the Wega contract can be implemented
 /// for it. It dereferences to `BaseDocument`, so the layout, paint, style and form APIs that
@@ -418,7 +434,7 @@ impl GeometryAccess for BlitzDocument {
         })
     }
     fn layout_refused(&self) -> bool {
-        self.nests_deeper_than(MAX_LAYOUT_DEPTH)
+        self.nests_deeper_than(layout_depth_limit())
     }
     fn inspect_geometry(&self, key: NodeKey) -> Geometry {
         let Some(node) = self.0.get_node(key.node_id()) else {
@@ -528,7 +544,7 @@ impl LayoutControl for BlitzDocument {
         // Style and layout recurse per nesting level: past the limit they overflow the native
         // stack, and a stack overflow here does not abort but spins forever (the "depth-122
         // hang"). Refuse instead; the document keeps its previous (or no) layout.
-        if self.nests_deeper_than(MAX_LAYOUT_DEPTH) {
+        if self.nests_deeper_than(layout_depth_limit()) {
             return;
         }
         self.0.resolve(animation_time);

@@ -53,7 +53,7 @@ fn main() {
             eprintln!("Wega content startup: native entry policy verified");
             std::thread::Builder::new()
                 .name("wega-dom".into())
-                .stack_size(8 * 1024 * 1024)
+                .stack_size(wega_engine::ENGINE_THREAD_STACK)
                 .spawn(|| run().map_err(|error| error.to_string()))
                 .map_err(|error| error.to_string())
                 .and_then(|thread| {
