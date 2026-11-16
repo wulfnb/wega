@@ -1,0 +1,27 @@
+{
+  "milestone": "iframe",
+  "verdict": "PARTIAL / CONDITIONAL GO",
+  "platform": "macOS (Darwin 27.2, Apple silicon); no Linux/Windows/Docker host",
+  "base_commit": "68b5e40",
+  "commits": ["d1d6ada", "1dedad0", "75cdb5b", "ee9398a", "f9ba47f", "b322ad2", "34cd986", "9c4f72d"],
+  "engine_workspace": {"command": "cd engines && cargo test --workspace --locked --no-fail-fast", "passed": 744, "failed": 0, "ignored": 25, "suites": 107},
+  "iframe_tests": {"iframes.rs": 17, "iframe_inspector.rs": 1, "frames.rs": 6, "wega-security frame_policy": 3, "broker_mode_iframes": 17, "broker_mode_inspector": 1},
+  "root": {"lib_no_default_features_passed": 109, "clippy": "clean", "fmt": "clean"},
+  "engine_clippy": "clean (-D warnings, all targets)",
+  "architecture_check": {"violations": 0},
+  "vendor_integrity": "pass",
+  "native_suites_signed_worker": {"smoke": "PASS", "download": "PASS", "webdriver": "PASS", "capture": "PASS", "engine": "PASS", "note": "fresh ad-hoc signed bundled helper via WEGA_CONTENT_HELPER; D3 'New tab' WebDriver failure did not reproduce (configuration artefact)"},
+  "native_iframe_capture": {"image": "iframe-evidence/native-window-iframes.png", "same_origin_frame": "rendered", "nested_frames": "rendered", "sandboxed_srcdoc": "rendered", "cross_origin_frame": "FAILED in bound-broker configuration (error page)", "postMessage_echo": "delivered with host-computed origin", "cross_origin_document_access": "SecurityError"},
+  "wpt": {"iframe_upstream_files_run": 0, "reason": "no WPT checkout and runner lacks iframe/cross-window support", "existing_dom_subset": "35 files / 1685 cases part of workspace run, no failures"},
+  "limits": {"max_depth": 8, "max_live_frames": 32, "creations_per_turn": 2, "max_message_bytes": 1048576, "max_outbox": 256},
+  "benchmarks_release_ms": {
+    "load.none": 85.9, "load.one_frame": 175.2, "load.eight_siblings": 746.1, "load.nested_3_levels": 353.3,
+    "paint.none": 0.165, "paint.one_frame": 0.187, "paint.eight_siblings": 0.337, "paint.nested_3_levels": 0.212,
+    "create_16_srcdoc_frames": 1264.2, "destroy_16_frames": 7.5,
+    "postmessage_roundtrip": 3.53, "pointer_move_into_frame": 0.22, "frame_navigation": 58.2
+  },
+  "memory": {"rss_kb_per_frame": 1978, "rss_kb_baseline_view": 2544, "child_js_heap_bytes": 5631936},
+  "unsafe_inventory": "adapters/v8/src/host.rs: 2 -> 6 unsafe sites (isolate enter/exit/raw-pointer), all SAFETY-documented; no other crate changed",
+  "not_run": ["Linux", "Windows", "Docker suites", "coverage gates", "native App Sandbox containment probe", "native docked/detached DevTools tests", "native iframe input/scroll/DevTools items", "upstream iframe WPT"],
+  "known_failures": ["cross-origin frames do not load under a bound broker session (native)", "no host DevTools frame selector"]
+}

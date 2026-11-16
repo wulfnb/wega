@@ -12,6 +12,9 @@ use super::*;
 pub(crate) const MAX_DEPTH: usize = 8;
 /// Maximum live frames in one tab (all levels together).
 pub(crate) const MAX_FRAMES: usize = 32;
+/// Frames created per reconciliation: realm creation costs tens of milliseconds, so a page that
+/// adds many iframes at once spreads the work over several turns instead of stalling one.
+pub(crate) const MAX_CREATIONS_PER_TURN: usize = 2;
 /// Maximum size of one serialized cross-frame message.
 pub(crate) const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 /// Maximum messages one realm may have queued for routing.
@@ -183,6 +186,8 @@ impl Drop for ChildFrame {
 pub(crate) struct FrameHost {
     pub children: Vec<ChildFrame>,
     seen_epoch: Option<u64>,
+    /// Elements still waiting for their context (creation is rate limited).
+    creation_deferred: bool,
     /// Iframe elements that were refused (limits, policy); not retried until they change.
     refused: HashSet<(NodeId, Signature)>,
     /// The frame that has keyboard focus (never more than one).
@@ -276,10 +281,11 @@ impl View {
     }
     /// Every child has finished loading its current navigation.
     pub(crate) fn frames_loaded(&self) -> bool {
-        self.frames.children.iter().all(|child| {
-            child.loaded_epoch == child.epoch
-                || (child.view.host.load_event_sent && child.view.pending.is_none())
-        })
+        !self.frames.creation_deferred
+            && self.frames.children.iter().all(|child| {
+                child.loaded_epoch == child.epoch
+                    || (child.view.host.load_event_sent && child.view.pending.is_none())
+            })
     }
 
     fn reconcile_frames(&mut self) {
@@ -308,6 +314,8 @@ impl View {
             }
         }
         self.frames.refused.retain(|(node, _)| nodes.contains(node));
+        let mut created = 0;
+        self.frames.creation_deferred = false;
         for node in nodes {
             let signature = self.read_signature(node);
             if let Some(index) = self.frames.children.iter().position(|c| c.node == node) {
@@ -315,8 +323,17 @@ impl View {
                     self.navigate_frame(index, signature);
                 }
             } else if !self.frames.refused.contains(&(node, signature.clone())) {
+                if created >= MAX_CREATIONS_PER_TURN {
+                    self.frames.creation_deferred = true;
+                    continue;
+                }
+                created += 1;
                 self.create_frame(node, signature);
             }
+        }
+        if self.frames.creation_deferred {
+            // Come back next turn even if the document does not change again.
+            self.frames.seen_epoch = None;
         }
     }
 

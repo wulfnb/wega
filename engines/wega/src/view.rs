@@ -1045,6 +1045,14 @@ impl View {
         self.frame.invalidate();
     }
     fn load_error(&mut self, error: String) {
+        if self.role.is_some() {
+            crate::diagnostics::Diagnostic::error(
+                crate::diagnostics::Category::Network,
+                format!("frame load failed: {error}"),
+                Some(self.url.to_string()),
+            )
+            .emit();
+        }
         let escaped = escape(&error);
         self.showing_error = false;
         self.building_error = true;

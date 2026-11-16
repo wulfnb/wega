@@ -102,7 +102,7 @@ fn iframe_costs() {
         ("none", "/none", 0usize),
         ("one_frame", "/one", 1),
         ("eight_siblings", "/eight", 8),
-        ("nested_depth_4", "/nest", 4),
+        ("nested_3_levels", "/nest", 3),
     ] {
         let mut samples = Vec::new();
         for _ in 0..5 {
@@ -120,7 +120,7 @@ fn iframe_costs() {
         ("none", "/none", 0usize),
         ("one_frame", "/one", 1),
         ("eight_siblings", "/eight", 8),
-        ("nested_depth_4", "/nest", 4),
+        ("nested_3_levels", "/nest", 3),
     ] {
         let (mut view, _) = load(&engine, &server, path, frames);
         view.paint(1280, 800, 1.0, 1.0, false).unwrap();
