@@ -117,7 +117,9 @@ pub struct D3 {
 fn red_pixels(frame: &(u32, u32, std::sync::Arc<[u8]>)) -> usize {
     frame
         .2
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|p| p[0] == 255 && p[1] == 0 && p[2] == 0)
         .count()
 }
@@ -125,7 +127,9 @@ fn red_pixels(frame: &(u32, u32, std::sync::Arc<[u8]>)) -> usize {
 fn overlay_pixels(frame: &(u32, u32, std::sync::Arc<[u8]>)) -> usize {
     frame
         .2
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|p| {
             matches!(
                 (p[0], p[1], p[2]),
@@ -338,7 +342,7 @@ impl crate::browser::Browser {
                     !self.devtools.edit.submit(id, attr()),
                     "edit accepted while disabled"
                 );
-                assert!(self.devtools_picker_active() == false);
+                assert!(!self.devtools_picker_active());
                 self.devtools_enable_editing(false);
                 self.d3_advance(36);
             }

@@ -241,10 +241,7 @@ fn editing_needs_its_own_grant_an_evaluation_grant_does_not_authorise_it() {
         "Unauthorized"
     );
     // An evaluation grant is not a mutation grant.
-    assert!(matches!(
-        grant(&mut w, s, InspectorCommand::GrantEvaluation, EVAL),
-        Ok(_)
-    ));
+    assert!(grant(&mut w, s, InspectorCommand::GrantEvaluation, EVAL).is_ok());
     assert_eq!(
         code(&mutate(&mut w, s, EVAL, node.id, e, op())),
         "Unauthorized"
@@ -521,10 +518,7 @@ fn stale_epochs_protected_nodes_and_code_running_edits_are_refused_without_side_
             .unwrap(),
         "false"
     );
-    assert!(matches!(
-        grant(&mut w, s, InspectorCommand::GrantEvaluation, EVAL),
-        Ok(_)
-    ));
+    assert!(grant(&mut w, s, InspectorCommand::GrantEvaluation, EVAL).is_ok());
     let e = epoch(&mut w, s);
     assert!(
         mutate(
@@ -706,4 +700,45 @@ fn the_real_worker_refuses_a_deep_document_stays_responsive_and_renders_the_next
         "77"
     );
     assert!(w.alive());
+}
+
+#[test]
+fn native_edits_are_visible_to_page_script_but_do_not_produce_mutation_observer_records() {
+    // Pins the documented limitation: shared state, no script-side observer records.
+    let (mut w, s) = page(BOX);
+    enable_editing(&mut w, s);
+    let node = find(&mut w, s, "box");
+    w.evaluate("window.__records=0;new MutationObserver(r=>{window.__records+=r.length}).observe(document.getElementById('box'),{attributes:true});document.getElementById('box').setAttribute('data-s','1');true").unwrap();
+    w.evaluate("Promise.resolve().then(()=>0)").ok();
+    assert_eq!(
+        w.evaluate("window.__records").unwrap(),
+        "1",
+        "script edits are observed"
+    );
+    let e = epoch(&mut w, s);
+    assert!(
+        mutate(
+            &mut w,
+            s,
+            MUT,
+            node.id,
+            e,
+            MutationOp::SetAttribute {
+                name: "data-n".into(),
+                value: "1".into()
+            }
+        )
+        .is_ok()
+    );
+    w.evaluate("Promise.resolve().then(()=>0)").ok();
+    assert_eq!(
+        w.evaluate("document.getElementById('box').getAttribute('data-n')")
+            .unwrap(),
+        "\"1\""
+    );
+    assert_eq!(
+        w.evaluate("window.__records").unwrap(),
+        "1",
+        "no record for the native edit"
+    );
 }

@@ -123,7 +123,7 @@ fn probe(spec: &str) {
             stage("repaint-dark-hidpi");
             v.paint(200, 100, 1.0, 1.0, false).unwrap();
             stage("repaint-resized");
-            let hit = v.pointer(wega_engine::Pointer {
+            v.pointer(wega_engine::Pointer {
                 kind: wega_engine::PointerKind::Move,
                 x: 10.0,
                 y: 10.0,
@@ -133,7 +133,6 @@ fn probe(spec: &str) {
                 delta_x: 0.0,
                 delta_y: 0.0,
             });
-            let _ = hit;
             stage("pointer");
         }
         // After a refused layout the same view must show an ordinary page correctly.

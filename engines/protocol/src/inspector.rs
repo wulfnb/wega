@@ -296,7 +296,7 @@ impl InspectorRequest {
                 if grant.is_zero() {
                     return bad("Empty mutation grant");
                 }
-                op.validate().or_else(|message| bad(message))
+                op.validate().or_else(&bad)
             }
             (C::GetConsoleHistory, InspectorArgs::History { limit, .. }) => {
                 if *limit == 0 || *limit > MAX_HISTORY_PAGE {

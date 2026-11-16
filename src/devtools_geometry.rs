@@ -178,11 +178,14 @@ impl GeometryView {
 
     /// Whether this view issued a request of `command` and is waiting for it.
     pub fn awaiting(&self, command: InspectorCommand) -> bool {
-        match (self.pending, command) {
-            (Some(Pending::Geometry(_)), InspectorCommand::GetGeometry) => true,
-            (Some(Pending::Hover | Pending::Click), InspectorCommand::PickNode) => true,
-            _ => false,
-        }
+        matches!(
+            (self.pending, command),
+            (Some(Pending::Geometry(_)), InspectorCommand::GetGeometry)
+                | (
+                    Some(Pending::Hover | Pending::Click),
+                    InspectorCommand::PickNode
+                )
+        )
     }
 
     pub fn complete(
@@ -334,6 +337,7 @@ impl EditView {
     pub fn is_enabled(&self) -> bool {
         self.enabled.is_some()
     }
+    #[cfg_attr(not(feature = "test-harness"), allow(dead_code))]
     pub fn busy(&self) -> bool {
         self.pending.is_some() || !self.queue.is_empty()
     }

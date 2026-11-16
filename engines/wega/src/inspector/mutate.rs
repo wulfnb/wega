@@ -199,5 +199,5 @@ pub fn map_failure(message: &str) -> InspectorError {
     } else {
         InspectorErrorCode::InvalidPayload
     };
-    InspectorError::new(code, &message.chars().take(200).collect::<String>())
+    InspectorError::new(code, message.chars().take(200).collect::<String>())
 }
