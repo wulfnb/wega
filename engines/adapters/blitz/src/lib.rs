@@ -13,8 +13,8 @@ use html5ever::{LocalName, QualName, ns};
 use url::Url;
 use wega_dom::input::{FocusState, HoverChange, InputControl};
 use wega_dom::layout::{
-    ClientBox, ContentBox, GeometryAccess, HitTest, LayoutControl, LayoutError, OffsetBox, Point,
-    Rect, Size, ViewportConfig, ViewportGeometry,
+    ClientBox, ContentBox, GeometryAccess, HitTest, LayoutControl, LayoutError, MAX_LAYOUT_DEPTH,
+    OffsetBox, Point, Rect, Size, ViewportConfig, ViewportGeometry,
 };
 use wega_dom::render::PaintSource;
 use wega_dom::style::{StyleAccess, StyleControl, StyleError};
@@ -307,6 +307,24 @@ fn rect(r: blitz_dom::BoundingRect) -> Rect {
     }
 }
 impl BlitzDocument {
+    /// Whether any node is more than `limit` levels below the document root. Iterative (the whole
+    /// point is that it cannot overflow itself) and exits on the first violation; a tree with no
+    /// more than `limit` nodes cannot be that deep and is not walked.
+    fn nests_deeper_than(&self, limit: usize) -> bool {
+        if self.0.tree().len() <= limit {
+            return false;
+        }
+        let mut pending = vec![(self.0.root_node().id, 0usize)];
+        while let Some((id, depth)) = pending.pop() {
+            if depth > limit {
+                return true;
+            }
+            if let Some(node) = self.0.get_node(id) {
+                pending.extend(node.children.iter().map(|child| (*child, depth + 1)));
+            }
+        }
+        false
+    }
     fn laid_out(&self, key: NodeKey) -> Result<&Node, LayoutError> {
         self.0
             .get_node(key.node_id())
@@ -399,6 +417,9 @@ impl GeometryAccess for BlitzDocument {
             padding_top: layout.padding.top as f64,
         })
     }
+    fn layout_refused(&self) -> bool {
+        self.nests_deeper_than(MAX_LAYOUT_DEPTH)
+    }
     fn layout_pending(&self) -> bool {
         let root = self.0.root_node();
         // Before the first resolve no element has a style; afterwards pending work shows as
@@ -463,6 +484,12 @@ impl HitTest for BlitzDocument {
 }
 impl LayoutControl for BlitzDocument {
     fn flush_layout(&mut self, animation_time: f64) {
+        // Style and layout recurse per nesting level: past the limit they overflow the native
+        // stack, and a stack overflow here does not abort but spins forever (the "depth-122
+        // hang"). Refuse instead; the document keeps its previous (or no) layout.
+        if self.nests_deeper_than(MAX_LAYOUT_DEPTH) {
+            return;
+        }
         self.0.resolve(animation_time);
     }
     fn set_viewport(&mut self, viewport: ViewportConfig) {

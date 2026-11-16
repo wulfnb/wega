@@ -134,8 +134,22 @@ pub struct ContentBox {
     pub padding_top: f64,
 }
 
+/// The deepest element nesting the engine will lay out. Style and layout recurse once per nesting
+/// level, so unbounded depth is unbounded native stack: with the engine thread's 8 MiB stack
+/// the measured overflow cliff of a debug build is between 520 and 600 levels (a 2 MiB thread
+/// overflows at 122, which is the historical "depth-122 hang"). Past this limit
+/// [`LayoutControl::flush_layout`] does nothing and [`GeometryAccess::layout_refused`] is true.
+/// The limit leaves more than twice the measured headroom. See `devtools-d3-c-0-report.md`.
+pub const MAX_LAYOUT_DEPTH: usize = 256;
+
 /// Read access to layout results.
 pub trait GeometryAccess: DocumentView {
+    /// Whether the document nests deeper than [`MAX_LAYOUT_DEPTH`], so that it is never laid out
+    /// and every geometry reader keeps reporting "no boxes". Unlike `layout_pending` this does
+    /// not clear by waiting. Walks the tree: call it from diagnostics, not per frame.
+    fn layout_refused(&self) -> bool {
+        false
+    }
     /// Whether the element generates boxes: false for `display: none`, `display: contents` and
     /// nodes outside the document. Such nodes report empty geometry.
     fn has_boxes(&self, key: NodeKey) -> Result<bool, LayoutError>;

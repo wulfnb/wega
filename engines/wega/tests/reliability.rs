@@ -79,50 +79,7 @@ fn deep_nesting_within_the_supported_depth_lays_out_and_paints() {
     }
 }
 
-#[test]
-fn after_the_first_paint_122_nested_blocks_lay_out_so_the_hang_needs_a_flush_before_any_paint() {
-    // Bisected for the D3.0 audit (each step on its own thread with a timeout): set_html, poll and
-    // script that does not read layout all finish in ~0.3 s; 122 nested blocks with text in the
-    // innermost one lay out in ~0.3 s at every viewport from 100x100 to 1280x800 once a paint has
-    // configured the view; without the text, or with 121 levels, the first flush also finishes.
-    // Only a *first flush before any paint* (a script reading geometry while the page loads, the
-    // pinned known gap below) never finishes. Inspector readers cannot flush at all, so none of
-    // this is reachable from them; it is reachable from page script.
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut v = view();
-        v.set_html(&nested(122)).unwrap();
-        v.poll();
-        v.paint(400, 300, 1.0, 1.0, false).unwrap();
-        let height = v
-            .evaluate_json("document.body.getBoundingClientRect().height")
-            .unwrap();
-        let _ = tx.send(height);
-    });
-    let height = rx
-        .recv_timeout(std::time::Duration::from_secs(20))
-        .expect("122 nested blocks must lay out once the view has been painted");
-    assert!(height.parse::<f64>().is_ok(), "{height}");
-}
-
-#[test]
-fn known_gap_nesting_of_122_blocks_never_finishes_layout() {
-    // Pre-existing, found by the Round 12 review: 122 or more nested block elements keep the
-    // engine busy in Taffy block layout (vendored Blitz) for minutes (sampled: all time in
-    // taffy `compute_block_layout` recursion) where 121 take ~22 ms.
-    // The script watchdog does not cover layout, so a ~1 KB page can hang its tab's engine
-    // process. Pinned (the layout does NOT finish within the window; the spinning thread ends
-    // with the test process) so that a fix is noticed: the correct result is that it finishes.
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut v = view();
-        v.set_html(&nested(122)).unwrap();
-        v.poll();
-        let _ = v.evaluate_json("document.body.getBoundingClientRect().height");
-        let _ = tx.send(());
-    });
-    assert!(
-        rx.recv_timeout(std::time::Duration::from_secs(5)).is_err(),
-        "layout of 122 nested blocks finished: the hang is fixed, update this test and the audit"
-    );
-}
+// The two pins for the "depth-122 hang" (paint-first lays out, script-first never finishes) were
+// replaced in D3-C.0 by `layout_depth.rs`: the hang was a native stack overflow on a 2 MiB thread,
+// not a layout loop, and `MAX_LAYOUT_DEPTH` now refuses documents that would overflow the engine
+// thread. Those tests run each depth in a killable child process on the engine's stack size.

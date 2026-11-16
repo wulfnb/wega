@@ -1,7 +1,8 @@
 //! Can an inspector read geometry without ever risking the nested-block layout hang?
 //!
-//! The hang (roadmap B1) is in `flush_layout`: 122 or more nested blocks never finish laying
-//! out. The geometry readers of `wega_dom::layout` take `&self` and cannot flush. These tests
+//! The "hang" (roadmap B1) was a native stack overflow during `flush_layout` (see
+//! `engines/wega/tests/layout_depth.rs`); `flush_layout` now refuses documents nested past
+//! `MAX_LAYOUT_DEPTH`. The geometry readers of `wega_dom::layout` take `&self` and cannot flush. These tests
 //! establish, on the real adapter, that (1) readers on a never-laid-out pathological document
 //! return immediately with defined "no boxes" values, (2) readers after a mutation report the
 //! previous layout without recomputing, (3) `layout_pending` tells a caller which of those it is
@@ -179,10 +180,8 @@ fn unconfigured(html: &str) -> BlitzDocument {
 #[test]
 fn the_adapter_alone_does_not_reproduce_the_nested_block_hang() {
     // Observation, pinned: at the adapter (Blitz's own parser, default config, no broker fonts)
-    // 122 nested auto-height blocks with text lay out quickly, with and without a configured
-    // viewport. The hang of roadmap B1 therefore needs something in the engine's pipeline; the
-    // engine-level tests (`reliability.rs`) pin where: a *script-initiated first flush before any
-    // paint* hangs, while the same page lays out in ~0.3 s once a paint has configured the view.
+    // 122 nested auto-height blocks with text lay out quickly on a 2 MiB test thread, where the
+    // engine pipeline overflows the same stack (deeper script frames, a larger resolve path).
     // Either way the readers never flush, and `layout_pending` is the inspector's only question.
     for configured in [true, false] {
         let result = within(Duration::from_secs(10), move || {
@@ -196,4 +195,79 @@ fn the_adapter_alone_does_not_reproduce_the_nested_block_hang() {
         });
         assert_eq!(result, Some(true), "configured viewport: {configured}");
     }
+}
+
+/// Run `work` on a thread with the engine thread's 8 MiB stack (the limit is only valid there).
+fn on_engine_stack<T: Send + 'static>(
+    limit: Duration,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            let _ = tx.send(work());
+        })
+        .unwrap();
+    rx.recv_timeout(limit).ok()
+}
+
+#[test]
+fn flush_refuses_documents_nested_past_the_limit_and_lays_out_the_rest() {
+    use wega_dom::layout::MAX_LAYOUT_DEPTH;
+    // `html` and `body` take two levels below the document root, so this many divs reach exactly
+    // the limit.
+    let at_limit = MAX_LAYOUT_DEPTH - 3;
+    for (depth, refused) in [
+        (20, false),
+        (at_limit, false),
+        (at_limit + 1, true),
+        (1000, true),
+        (5000, true),
+    ] {
+        let result = on_engine_stack(Duration::from_secs(60), move || {
+            let mut doc = document(&nested(depth));
+            let before = doc.layout_refused();
+            doc.flush_layout(0.0);
+            let leaf = deepest(&doc);
+            (
+                before,
+                doc.layout_pending(),
+                doc.has_boxes(leaf).unwrap(),
+                doc.bounding_rect(doc.root()).unwrap(),
+            )
+        })
+        .unwrap_or_else(|| panic!("depth {depth}: flush did not return"));
+        let (flag, pending, has_boxes, _) = result;
+        assert_eq!(flag, refused, "depth {depth}: layout_refused");
+        assert_eq!(
+            pending, refused,
+            "depth {depth}: a refused flush stays pending"
+        );
+        assert_eq!(
+            has_boxes, !refused,
+            "depth {depth}: boxes exist iff laid out"
+        );
+    }
+}
+
+#[test]
+fn a_wide_document_is_not_mistaken_for_a_deep_one_and_the_check_is_cheap() {
+    use wega_dom::layout::MAX_LAYOUT_DEPTH;
+    // 20,000 siblings: many nodes, depth 3.
+    let html = format!("<!doctype html><body>{}", "<p>x</p>".repeat(20_000));
+    let (refused, micros) = on_engine_stack(Duration::from_secs(60), move || {
+        let doc = document(&html);
+        let started = Instant::now();
+        let refused = doc.layout_refused();
+        (refused, started.elapsed().as_micros())
+    })
+    .unwrap();
+    assert!(
+        !refused,
+        "depth is not node count (limit {MAX_LAYOUT_DEPTH})"
+    );
+    // Measured at roughly a millisecond in an unoptimised build; the bound only catches an
+    // accidental quadratic walk.
+    assert!(micros < 500_000, "{micros} µs");
 }
