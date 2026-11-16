@@ -83,12 +83,9 @@ impl Sandbox {
 
 /// What a child view knows about itself. Set once, before its first document exists.
 pub(crate) struct FrameRole {
-    pub key: u64,
     pub depth: usize,
     pub sandbox: Sandbox,
     pub opaque: bool,
-    /// The parent's document URL at creation (the base for `srcdoc`/`about:blank`).
-    pub parent_url: Url,
     /// The parent's CSP policies, inherited by `srcdoc` and `about:blank` documents.
     pub inherited_csp: Csp,
     /// The embedders' document URLs, nearest first, for `frame-ancestors`/`X-Frame-Options`.
@@ -217,12 +214,6 @@ impl View {
         }
         self.document.borrow().url().origin().ascii_serialization()
     }
-    pub(crate) fn is_frame(&self) -> bool {
-        self.role.is_some()
-    }
-    pub(crate) fn frame_key(&self) -> Option<u64> {
-        self.role.as_ref().map(|role| role.key)
-    }
     /// Child frames, for tests and tools: `(key, node)`.
     pub fn child_frames(&self) -> Vec<(u64, u64)> {
         self.frames
@@ -334,18 +325,16 @@ impl View {
         self.frames.refused.insert((node, signature));
     }
 
-    fn frame_role(&self, key: u64, sandbox: Sandbox, opaque: bool, inherits: bool) -> FrameRole {
+    fn frame_role(&self, sandbox: Sandbox, opaque: bool, inherits: bool) -> FrameRole {
         let own = self.role.as_ref();
         let mut ancestors = vec![self.document.borrow().url().clone()];
         if let Some(role) = own {
             ancestors.extend(role.ancestors.iter().cloned());
         }
         FrameRole {
-            key,
             depth: own.map_or(0, |role| role.depth) + 1,
             sandbox,
             opaque,
-            parent_url: self.document.borrow().url().clone(),
             inherited_csp: self.csp().clone(),
             ancestors,
             inherits_origin: inherits,
@@ -388,7 +377,7 @@ impl View {
             Err(reason) => return self.refuse(node, signature, &reason),
         };
         let opaque = sandbox.opaque() || self.role.as_ref().is_some_and(|r| r.opaque && inherits);
-        let role = self.frame_role(key, sandbox, opaque, inherits);
+        let role = self.frame_role(sandbox, opaque, inherits);
         let mut limits = self.limits.clone();
         limits.js_heap_bytes = limits.js_heap_bytes.min(64 * 1024 * 1024);
         let view = View::build(
@@ -469,7 +458,7 @@ impl View {
         // The sandbox and inherited-origin class can change with the attribute: rebuild the
         // role so a new document is judged against the *new* flags, never the old ones.
         let opaque = sandbox.opaque() || self.role.as_ref().is_some_and(|r| r.opaque && inherits);
-        let role = self.frame_role(child.key, sandbox, opaque, inherits);
+        let role = self.frame_role(sandbox, opaque, inherits);
         child.view.role = Some(role);
         self.start_frame_navigation(&mut child, signature, content);
         self.frames.children.insert(index, child);
@@ -982,32 +971,6 @@ pub(crate) enum FrameContent {
     Url(Url),
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn sandbox_flags_only_ever_accumulate_restrictions() {
-        let parent = Sandbox::parse(Some("allow-scripts"));
-        let child = Sandbox::parse(Some("allow-scripts allow-same-origin allow-forms"));
-        let effective = parent.inherit(child);
-        assert!(effective.scripts && !effective.same_origin && !effective.forms);
-        assert!(effective.opaque());
-        assert!(!Sandbox::NONE.opaque());
-        assert!(Sandbox::NONE.inherit(Sandbox::parse(Some(""))).active);
-        assert!(!Sandbox::parse(Some("allow-pointer-lock allow-top-navigation")).popups);
-    }
-    #[test]
-    fn target_origin_is_matched_against_the_receivers_principal() {
-        assert!(target_accepts("*", "https://a.test", "null"));
-        assert!(target_accepts("/", "https://a.test", "https://a.test"));
-        assert!(!target_accepts("/", "null", "null"));
-        assert!(!target_accepts("https://a.test", "https://b.test", "null"));
-        assert!(!target_accepts("null", "null", "null"));
-        assert!(target_accepts("https://a.test", "x", "https://a.test"));
-        assert!(!target_accepts("https://a.test", "x", "https://b.test"));
-    }
-}
-
 impl crate::dom::Dom {
     /// The document origin scripts and servers see: `null` for an opaque origin.
     pub(crate) fn origin(&self) -> String {
@@ -1094,5 +1057,31 @@ impl crate::dom::Dom {
             }
             other => return Err(format!("Unknown frame call {other}")),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn sandbox_flags_only_ever_accumulate_restrictions() {
+        let parent = Sandbox::parse(Some("allow-scripts"));
+        let child = Sandbox::parse(Some("allow-scripts allow-same-origin allow-forms"));
+        let effective = parent.inherit(child);
+        assert!(effective.scripts && !effective.same_origin && !effective.forms);
+        assert!(effective.opaque());
+        assert!(!Sandbox::NONE.opaque());
+        assert!(Sandbox::NONE.inherit(Sandbox::parse(Some(""))).active);
+        assert!(!Sandbox::parse(Some("allow-pointer-lock allow-top-navigation")).popups);
+    }
+    #[test]
+    fn target_origin_is_matched_against_the_receivers_principal() {
+        assert!(target_accepts("*", "https://a.test", "null"));
+        assert!(target_accepts("/", "https://a.test", "https://a.test"));
+        assert!(!target_accepts("/", "null", "null"));
+        assert!(!target_accepts("https://a.test", "https://b.test", "null"));
+        assert!(!target_accepts("null", "null", "null"));
+        assert!(target_accepts("https://a.test", "x", "https://a.test"));
+        assert!(!target_accepts("https://a.test", "x", "https://b.test"));
     }
 }

@@ -149,7 +149,7 @@ fn each_frame_is_an_independent_inspector_target_with_its_own_authority() {
     let mut b1 = Backend::new(target(100 + k1), 25);
     let mut b2 = Backend::new(target(100 + k2), 25);
     let (x1, ctx1) = {
-        let mut t = view.frame_target(k1).unwrap();
+        let t = view.frame_target(k1).unwrap();
         call(
             &mut b1,
             target(100 + k1),
@@ -165,7 +165,7 @@ fn each_frame_is_an_independent_inspector_target_with_its_own_authority() {
         )
     };
     let (x2, ctx2) = {
-        let mut t = view.frame_target(k2).unwrap();
+        let t = view.frame_target(k2).unwrap();
         call(
             &mut b2,
             target(100 + k2),
@@ -187,7 +187,7 @@ fn each_frame_is_an_independent_inspector_target_with_its_own_authority() {
     );
     {
         // A handle minted by frame one is refused by frame two.
-        let mut t = view.frame_target(k2).unwrap();
+        let t = view.frame_target(k2).unwrap();
         let refused = call(
             &mut b2,
             target(100 + k2),
@@ -200,7 +200,7 @@ fn each_frame_is_an_independent_inspector_target_with_its_own_authority() {
     }
     // A target resolved for one frame is not accepted by another frame's backend.
     {
-        let mut t = view.frame_target(k1).unwrap();
+        let t = view.frame_target(k1).unwrap();
         let wrong = call(
             &mut b2,
             target(100 + k1),
@@ -220,7 +220,7 @@ fn each_frame_is_an_independent_inspector_target_with_its_own_authority() {
         origin: origin.clone(),
     };
     {
-        let mut t = view.frame_target(k1).unwrap();
+        let t = view.frame_target(k1).unwrap();
         call(
             &mut b1,
             target(100 + k1),
@@ -250,7 +250,7 @@ fn each_frame_is_an_independent_inspector_target_with_its_own_authority() {
         assert!(ok.is_ok(), "{ok:?}");
     }
     {
-        let mut t = view.frame_target(k2).unwrap();
+        let t = view.frame_target(k2).unwrap();
         let denied = call(
             &mut b2,
             target(100 + k2),
@@ -301,7 +301,7 @@ fn each_frame_is_an_independent_inspector_target_with_its_own_authority() {
         v.frame_target(k1).is_some_and(|t| !t.loading)
     });
     {
-        let mut t = view.frame_target(k1).unwrap();
+        let t = view.frame_target(k1).unwrap();
         assert_ne!(t.context, ctx1);
         let old = call(
             &mut b1,

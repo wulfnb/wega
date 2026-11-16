@@ -83,7 +83,7 @@ fn eval(view: &mut View, script: &str) -> String {
 }
 fn wait_for(view: &mut View, script: &str, expected: &str) {
     let ok = pump(view, |v| {
-        v.evaluate_json(script).map_or(false, |r| r == expected)
+        v.evaluate_json(script).is_ok_and(|r| r == expected)
     });
     assert!(
         ok,
@@ -252,7 +252,7 @@ fn siblings_and_nested_frames_are_independent_contexts() {
 fn wait_for_child(view: &mut View, key: u64, script: &str, expected: &str) {
     let ok = pump(view, |v| {
         v.child_by_key(key)
-            .is_some_and(|c| c.evaluate_json(script).map_or(false, |r| r == expected))
+            .is_some_and(|c| c.evaluate_json(script).is_ok_and(|r| r == expected))
     });
     assert!(ok, "child `{script}` never became {expected}");
 }
@@ -625,7 +625,7 @@ fn window_relationships_names_and_nested_posting() {
         .evaluate_json("top.postMessage('again-top','*'); parent.postMessage('again-mid','*'); 0")
         .unwrap();
     pump(&mut view, |v| {
-        v.evaluate_json("tops.length").map_or(false, |r| r != "0")
+        v.evaluate_json("tops.length").is_ok_and(|r| r != "0")
     });
     assert_eq!(
         eval(
@@ -646,7 +646,7 @@ fn window_relationships_names_and_nested_posting() {
 }
 fn pump_child(view: &mut View, script: &str, expected: &str) -> bool {
     pump(view, |v| {
-        v.evaluate_json(script).map_or(false, |r| r == expected)
+        v.evaluate_json(script).is_ok_and(|r| r == expected)
     })
 }
 
@@ -668,7 +668,7 @@ fn child_navigation_reload_and_stale_references() {
     let key = view.child_frames()[0].0;
     assert!(pump(&mut view, |v| v.child_by_key(key).is_some_and(|c| c
         .evaluate_json("globalThis.page")
-        .map_or(false, |r| r == "\"two\""))));
+        .is_ok_and(|r| r == "\"two\""))));
     // The frame keeps its identity; the parent document is untouched.
     assert_eq!(view.child_frames()[0].0, key);
     assert_eq!(

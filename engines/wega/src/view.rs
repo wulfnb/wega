@@ -416,7 +416,7 @@ impl View {
             None
         };
         let csp = Arc::new(RwLock::new(Csp::default()));
-        let mut view = Self {
+        let view = Self {
             host: document_host::DocumentHost::default(),
             scheduler: crate::event_loop::Scheduler::default(),
             document: Rc::new(RefCell::new(document)),
