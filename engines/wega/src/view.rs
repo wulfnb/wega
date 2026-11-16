@@ -777,12 +777,14 @@ impl View {
         Ok(())
     }
     pub(crate) fn restrictions(&self) -> frames::Restrictions {
-        self.role.as_ref().map_or_else(Default::default, |role| frames::Restrictions {
-            opaque: role.opaque,
-            forms_blocked: !role.sandbox.forms,
-            popups_blocked: !role.sandbox.popups,
-            modals_blocked: !role.sandbox.modals,
-        })
+        self.role
+            .as_ref()
+            .map_or_else(Default::default, |role| frames::Restrictions {
+                opaque: role.opaque,
+                forms_blocked: !role.sandbox.forms,
+                popups_blocked: !role.sandbox.popups,
+                modals_blocked: !role.sandbox.modals,
+            })
     }
     fn csp(&self) -> std::sync::RwLockReadGuard<'_, Csp> {
         self.csp
@@ -2511,7 +2513,8 @@ impl View {
             .as_ref()
             .ok_or("Nested frames do not rasterise")?
             .set_store(
-                wega_platform::FrameStore::open(path, 4096 * 2160 * 4).map_err(|e| e.to_string())?,
+                wega_platform::FrameStore::open(path, 4096 * 2160 * 4)
+                    .map_err(|e| e.to_string())?,
             )
     }
     pub fn configure_shared_store(
@@ -2545,14 +2548,14 @@ impl View {
             .as_mut()
             .ok_or("Nested frames do not rasterise")?
             .start(
-            FrameRequest {
-                serial,
-                width: viewport.width_px,
-                height: viewport.height_px,
-                target,
-            },
-            scene,
-        )
+                FrameRequest {
+                    serial,
+                    width: viewport.width_px,
+                    height: viewport.height_px,
+                    target,
+                },
+                scene,
+            )
     }
     pub fn take_painted(&mut self) -> Option<Result<crate::Painted, String>> {
         self.raster.as_mut()?.take()

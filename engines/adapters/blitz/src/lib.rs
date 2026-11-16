@@ -707,7 +707,11 @@ impl PaintSource for BlitzDocument {
         );
         scene
     }
-    fn compose_child(scene: &mut Self::Scene, child: Self::Scene, rect: wega_dom::render::DeviceRect) {
+    fn compose_child(
+        scene: &mut Self::Scene,
+        child: Self::Scene,
+        rect: wega_dom::render::DeviceRect,
+    ) {
         use anyrender::PaintScene as _;
         let area = kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
         scene.push_clip_layer(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, &area);

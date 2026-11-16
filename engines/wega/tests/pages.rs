@@ -31,28 +31,20 @@ fn document_titles_collapse_html_whitespace_but_preserve_nonbreaking_spaces() {
     assert_eq!(view.title(), "Updated title");
 }
 #[test]
-fn visible_frames_report_compatibility_until_real_child_rendering_exists() {
+fn frames_are_real_contexts_and_no_longer_report_a_compatibility_gap() {
     let mut view = page(Limits::default());
     view.set_html("<iframe id=f style='display:none'></iframe><iframe width=1 height=1></iframe>")
         .unwrap();
+    view.poll();
     view.paint(300, 200, 1.0, 1.0, false).unwrap();
     assert!(view.compatibility.is_none());
+    // A display:none frame still owns a browsing context (it can run script and receive
+    // messages) but never paints; a visible frame composites its own document.
+    assert_eq!(view.child_frames().len(), 2);
     view.evaluate("document.getElementById('f').style.display='block'")
         .unwrap();
     view.paint(300, 200, 1.0, 1.0, false).unwrap();
-    assert!(
-        view.compatibility
-            .as_deref()
-            .is_some_and(|reason| reason.contains("iframe"))
-    );
-    view.set_html("<iframe></iframe>").unwrap();
-    view.paint(300, 200, 1.0, 1.0, false).unwrap();
-    assert!(
-        view.compatibility
-            .as_deref()
-            .is_some_and(|reason| reason.contains("iframe")),
-        "a blank iframe box must not count as native child rendering"
-    );
+    assert!(view.compatibility.is_none());
 }
 #[test]
 fn real_dom_javascript_and_cpu_pixels_share_one_document() {

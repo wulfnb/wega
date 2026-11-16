@@ -507,9 +507,21 @@ mod frame_policy_tests {
         assert!(x_frame_options_allows(&[], &[&other], &framed));
         assert!(!x_frame_options_allows(&["DENY"], &[&same], &framed));
         assert!(x_frame_options_allows(&["sameorigin"], &[&same], &framed));
-        assert!(!x_frame_options_allows(&["SAMEORIGIN"], &[&same, &other], &framed));
-        assert!(!x_frame_options_allows(&["ALLOW-FROM https://top.test"], &[&other], &framed));
-        assert!(!x_frame_options_allows(&["DENY, SAMEORIGIN"], &[&same], &framed));
+        assert!(!x_frame_options_allows(
+            &["SAMEORIGIN"],
+            &[&same, &other],
+            &framed
+        ));
+        assert!(!x_frame_options_allows(
+            &["ALLOW-FROM https://top.test"],
+            &[&other],
+            &framed
+        ));
+        assert!(!x_frame_options_allows(
+            &["DENY, SAMEORIGIN"],
+            &[&same],
+            &framed
+        ));
         assert!(!x_frame_options_allows(&["nonsense"], &[&same], &framed));
     }
 }

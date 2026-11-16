@@ -301,7 +301,9 @@ impl View {
         // Detach frames whose element left the document (removed, replaced, or its parent
         // re-created). Dropping the child tears down its realm, timers and requests.
         let before = self.frames.children.len();
-        self.frames.children.retain(|child| nodes.contains(&child.node));
+        self.frames
+            .children
+            .retain(|child| nodes.contains(&child.node));
         if self.frames.children.len() != before {
             if let Some(focused) = self.frames.focused
                 && !self.frames.children.iter().any(|c| c.key == focused)
@@ -363,14 +365,23 @@ impl View {
         if depth + 1 > MAX_DEPTH {
             return self.refuse(node, signature, "frame nesting limit reached");
         }
-        let live = self.role.as_ref().map_or_else(|| self.frames_live(), |r| r.live.clone());
+        let live = self
+            .role
+            .as_ref()
+            .map_or_else(|| self.frames_live(), |r| r.live.clone());
         if live.get() >= MAX_FRAMES {
             return self.refuse(node, signature, "too many frames");
         }
-        let next = self.role.as_ref().map_or_else(|| self.frames_next_key(), |r| r.next_key.clone());
+        let next = self
+            .role
+            .as_ref()
+            .map_or_else(|| self.frames_next_key(), |r| r.next_key.clone());
         let key = next.get() + 1;
         next.set(key);
-        let parent_sandbox = self.role.as_ref().map_or(Sandbox::NONE, |role| role.sandbox);
+        let parent_sandbox = self
+            .role
+            .as_ref()
+            .map_or(Sandbox::NONE, |role| role.sandbox);
         let sandbox = parent_sandbox.inherit(Sandbox::parse(signature.sandbox.as_deref()));
         let (content, inherits) = match self.frame_content(&signature) {
             Ok(content) => content,
@@ -418,7 +429,9 @@ impl View {
             return Ok((FrameContent::Html(BLANK.into()), true));
         }
         let base = self.document.borrow().url().clone();
-        let url = base.join(src).map_err(|_| "invalid frame URL".to_string())?;
+        let url = base
+            .join(src)
+            .map_err(|_| "invalid frame URL".to_string())?;
         let allowed = match url.scheme() {
             "http" | "https" => true,
             "file" => base.scheme() == "file",
@@ -447,7 +460,10 @@ impl View {
                 return;
             }
         };
-        let parent_sandbox = self.role.as_ref().map_or(Sandbox::NONE, |role| role.sandbox);
+        let parent_sandbox = self
+            .role
+            .as_ref()
+            .map_or(Sandbox::NONE, |role| role.sandbox);
         let sandbox = parent_sandbox.inherit(Sandbox::parse(signature.sandbox.as_deref()));
         let mut child = self.frames.children.remove(index);
         // The sandbox and inherited-origin class can change with the attribute: rebuild the
@@ -477,7 +493,10 @@ impl View {
                 }
             }
             FrameContent::Url(url) => {
-                if let Err(error) = child.view.load_frame(url, &parent_url, self.referrer_policy.clone())
+                if let Err(error) =
+                    child
+                        .view
+                        .load_frame(url, &parent_url, self.referrer_policy.clone())
                 {
                     self.notice(format!("iframe not loaded: {error}"));
                 }
@@ -581,10 +600,9 @@ impl View {
         let parent_url = base;
         child.epoch += 1;
         // The signature keeps the element's attributes: the next attribute change navigates.
-        if let Err(error) =
-            child
-                .view
-                .load_frame(url, &parent_url, self.referrer_policy.clone())
+        if let Err(error) = child
+            .view
+            .load_frame(url, &parent_url, self.referrer_policy.clone())
         {
             self.notice(format!("iframe not loaded: {error}"));
         }
@@ -726,9 +744,9 @@ impl View {
     fn frame_box(&self, node: NodeId) -> Option<wega_dom::layout::Rect> {
         let doc = self.document.borrow();
         let n = doc.get_node(node)?;
-        if n.primary_styles()
-            .is_none_or(|style| style.clone_visibility() != style::computed_values::visibility::T::Visible)
-        {
+        if n.primary_styles().is_none_or(|style| {
+            style.clone_visibility() != style::computed_values::visibility::T::Visible
+        }) {
             return None;
         }
         match doc.inspect_geometry(node.key()) {
@@ -824,11 +842,7 @@ impl View {
                 && px < content.x + content.width
                 && py < content.y + content.height
             {
-                return Some((
-                    index,
-                    (px - content.x) as f32,
-                    (py - content.y) as f32,
-                ));
+                return Some((index, (px - content.x) as f32, (py - content.y) as f32));
             }
         }
         None
@@ -1006,7 +1020,10 @@ impl crate::dom::Dom {
 
     /// Frame calls from the script host. They read the table the view publishes and append
     /// to the outbox; they never touch another document.
-    pub(crate) fn frame_call(&self, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
+    pub(crate) fn frame_call(
+        &self,
+        args: &[serde_json::Value],
+    ) -> Result<serde_json::Value, String> {
         use serde_json::{Value, json};
         let text = |index: usize| args.get(index).and_then(Value::as_str).unwrap_or_default();
         let row = |entry: &Entry| {

@@ -567,8 +567,8 @@ impl Network {
                 .unwrap_or_else(|| "null".into());
             request.destination = match context.destination {
                 Destination::Document | Destination::Frame => {
-                wega_network::ResourceDestination::Document
-            }
+                    wega_network::ResourceDestination::Document
+                }
                 Destination::Module => wega_network::ResourceDestination::Module,
                 Destination::Script => wega_network::ResourceDestination::Script,
                 Destination::Style => wega_network::ResourceDestination::Style,
@@ -579,7 +579,10 @@ impl Network {
             if matches!(context.destination, Destination::Module | Destination::Font) {
                 request.mode = "cors".into();
                 request.credentials = "same-origin".into();
-            } else if !matches!(context.destination, Destination::Document | Destination::Frame) {
+            } else if !matches!(
+                context.destination,
+                Destination::Document | Destination::Frame
+            ) {
                 request.mode = "no-cors".into();
             }
             if context.omit_credentials {

@@ -65,17 +65,18 @@ fn raw_exit(isolate: &mut deno_core::v8::Isolate) {
 }
 /// Re-enters an isolate so that its owner can dispose it (balances `raw_exit`).
 #[allow(unsafe_code)]
-fn raw_enter(isolate: &mut deno_core::v8::Isolate) {
+fn raw_enter_ptr(isolate: deno_core::v8::UnsafeRawIsolatePtr) {
     // SAFETY: the isolate is alive; the matching exit is the one inside `OwnedIsolate::drop`.
+    // `Isolate` is a non-owning wrapper over the V8-owned pointer, which does not move when
+    // the `JsRuntime` value does.
     unsafe {
-        isolate.enter();
+        deno_core::v8::Isolate::from_raw_isolate_ptr(isolate).enter();
     }
 }
 impl<E: ScriptEnvironment> Drop for V8Host<E> {
     fn drop(&mut self) {
-        if let Some(runtime) = self.runtime.as_mut() {
-            raw_enter(runtime.v8_isolate());
-        }
+        // SAFETY of the pointer: the isolate is still owned by `self` (field or pending future).
+        raw_enter_ptr(self.isolate);
     }
 }
 
@@ -105,16 +106,27 @@ impl<E: ScriptEnvironment> Drop for V8Host<E> {
 ///    the host is single-threaded and the watchdog uses a separate thread-safe
 ///    `IsolateHandle`).
 #[allow(unsafe_code)]
-struct RawIsolateGuard(*mut deno_core::v8::Isolate);
+struct RawIsolateGuard(deno_core::v8::UnsafeRawIsolatePtr);
 
 #[allow(unsafe_code)]
 impl RawIsolateGuard {
+    /// Enter the isolate behind `ptr`, which a `V8Host` keeps for its whole life. Needed when
+    /// the `JsRuntime` is temporarily owned by a module-loading future.
+    fn from_ptr(ptr: deno_core::v8::UnsafeRawIsolatePtr) -> Self {
+        // SAFETY: the host owns the isolate (in its field or inside its pending future) for as
+        // long as it exists, so the pointer is valid; invariants 1, 3 and 4 hold as for `new`.
+        // The V8-owned pointer is stable even when the `JsRuntime` value moves.
+        unsafe {
+            deno_core::v8::Isolate::from_raw_isolate_ptr(ptr).enter();
+        }
+        Self(ptr)
+    }
     fn new(isolate: &mut deno_core::v8::Isolate) -> Self {
         // SAFETY: invariants 1-4 above; the matching `exit` is in `Drop`.
         unsafe {
             isolate.enter();
+            Self(isolate.as_raw_isolate_ptr())
         }
-        Self(isolate as *mut _)
     }
 }
 
@@ -123,7 +135,7 @@ impl Drop for RawIsolateGuard {
     fn drop(&mut self) {
         // SAFETY: the isolate outlives the guard (invariant 2) and this thread entered it (invariant 1).
         unsafe {
-            (*self.0).exit();
+            deno_core::v8::Isolate::from_raw_isolate_ptr(self.0).exit();
         }
     }
 }
@@ -236,6 +248,9 @@ impl Drop for Watchdog {
 
 pub struct V8Host<E: ScriptEnvironment> {
     runtime: Option<JsRuntime>,
+    /// The runtime's isolate, valid while the host lives even when `runtime` is moved into the
+    /// module-loading future.
+    isolate: deno_core::v8::UnsafeRawIsolatePtr,
     loading_module: Option<ModuleLoad>,
     evaluating_modules: Vec<ModuleEvaluation>,
     queued: std::collections::VecDeque<(String, String, bool)>,
@@ -306,12 +321,18 @@ impl<E: ScriptEnvironment> V8Host<E> {
         // Several documents (a page and its frames) share this thread, so no host may stay
         // entered: every operation enters its own isolate through `RawIsolateGuard`, and
         // `Drop` re-enters it so disposal is balanced whatever order hosts die in.
-        {
-            let _ = &mut runtime;
-            raw_exit(runtime.v8_isolate());
-        }
+        let isolate = {
+            let isolate: &mut deno_core::v8::Isolate = runtime.v8_isolate();
+            raw_exit(isolate);
+            // SAFETY: the pointer is only used while this host (which owns the runtime) lives.
+            #[allow(unsafe_code)]
+            unsafe {
+                isolate.as_raw_isolate_ptr()
+            }
+        };
         Ok(Self {
             runtime: Some(runtime),
+            isolate,
             loading_module: None,
             evaluating_modules: vec![],
             queued: Default::default(),
@@ -336,10 +357,7 @@ impl<E: ScriptEnvironment> V8Host<E> {
         self.env.begin_task();
         let started = Instant::now();
         self.watchdog.arm(self.budget);
-        let _guard = self
-            .runtime
-            .as_mut()
-            .map(|rt| RawIsolateGuard::new(rt.v8_isolate()));
+        let _guard = RawIsolateGuard::from_ptr(self.isolate);
         let result = run(self);
         drop(_guard);
         let fired = self.watchdog.disarm();

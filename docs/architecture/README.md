@@ -19,6 +19,7 @@ Holds architecture documentation for the planned modular engine layout.
 - [`dom-round6-report.md`](./dom-round6-report.md): node-budget panic fix, mutation/fragment/read-path migration and crate-extraction readiness (Round 6).
 - [`dom-round7-report.md`](./dom-round7-report.md): `wega-dom`, `wega-html` and `wega-adapter-blitz` extraction and the Blitz adapter ownership decision (Round 7).
 - [`dom-round8-report.md`](./dom-round8-report.md): event routing, focus and input boundaries, document construction in the adapter and the lifecycle tests (Round 8); [`dom-round8-design.md`](./dom-round8-design.md) is the audit and design decision.
+- [`iframe-design.md`](./iframe-design.md), [`iframe-implementation-report.md`](./iframe-implementation-report.md), [`iframe-security-review.md`](./iframe-security-review.md), [`iframe-wpt-compatibility.md`](./iframe-wpt-compatibility.md): iframe browsing contexts (nested views, principals, sandbox, compositing, input, per-frame D3 targets); evidence in [`baseline/iframe-evidence.json`](./baseline/iframe-evidence.json).
 - [`baseline/`](./baseline/): baseline and post-wave dependency graphs and architecture reports.
 
 ## Expected dependencies

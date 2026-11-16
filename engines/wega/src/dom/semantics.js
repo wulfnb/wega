@@ -5175,7 +5175,6 @@ return {
     mode: node => shadowDescriptors.get(node)?.mode || null,
     slot: node => node?._id ? wrap(component("assignedSlotInternal", node._id)) : null,
   });
-  Object.defineProperty(globalThis, "length", { get: () => host("frameList").length, configurable: true });
   {
     const roleOf = () => host("frameRole");
     const framesView = new Proxy(Object.create(null), {
@@ -5193,10 +5192,14 @@ return {
         return undefined;
       },
     });
+    // `frames`, `parent` and `length` are [Replaceable]: assigning replaces the accessor.
+    const replaceable = (name, get) => ({ configurable: true, enumerable: true, get,
+      set(value) { Object.defineProperty(globalThis, name, { value, writable: true, configurable: true, enumerable: true }); } });
     Object.defineProperties(globalThis, {
-      parent: { configurable: true, enumerable: true, get: () => roleOf().hasParent ? windowProxy("parent", "0") : globalThis },
+      parent: replaceable("parent", () => roleOf().hasParent ? windowProxy("parent", "0") : globalThis),
       top: { configurable: true, enumerable: true, get: () => roleOf().hasParent ? windowProxy("top", "0") : globalThis },
-      frames: { configurable: true, enumerable: true, get: () => framesView },
+      frames: replaceable("frames", () => framesView),
+      length: replaceable("length", () => host("frameList").length),
     });
   }
   const classes = { Node, Element, Document, DocumentFragment, CharacterData, Text, Comment, CDATASection, ProcessingInstruction, DocumentType,

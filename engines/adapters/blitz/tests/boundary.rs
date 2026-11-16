@@ -10,6 +10,11 @@ const ALLOWED: &[&str] = &[
     // The painter and its display-list crate: recording a scene is the `PaintSource` contract.
     "blitz-paint",
     "anyrender",
+    // Geometry and fill types of the display list, needed to composite a nested frame's
+    // recording into its parent (`PaintSource::compose_child`). Already in the lockfile via
+    // anyrender; versions follow it.
+    "kurbo",
+    "peniko",
     "html5ever",
     "url",
     // Stylo is hosted by the Blitz document (stylist, lock and sheets are its fields), so the
