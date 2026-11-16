@@ -215,9 +215,10 @@ impl Dom {
         Ok(())
     }
     /// Reserve everything a native edit will add: `nodes` new nodes, `text_bytes` of new text, and
-    /// a resulting nesting `depth`. The engine has no nesting budget for script (a known gap, see
-    /// `reliability.rs`); native edits may not make it worse than the deepest nesting known to
-    /// lay out, so an inspector edit can never be the way into the layout hang.
+    /// a resulting nesting `depth`. The engine has no nesting budget for script: past
+    /// `wega_dom::layout::MAX_LAYOUT_DEPTH` layout is refused, not hung (see `layout_depth.rs`).
+    /// Native edits stay at the older, more conservative `MAX_EDIT_DEPTH` so an inspector edit
+    /// never makes a document lose its layout.
     pub(crate) fn reserve_edit(
         &self,
         nodes: usize,
