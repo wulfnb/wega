@@ -13,8 +13,8 @@ use html5ever::{LocalName, QualName, ns};
 use url::Url;
 use wega_dom::input::{FocusState, HoverChange, InputControl};
 use wega_dom::layout::{
-    ClientBox, ContentBox, GeometryAccess, HitTest, LayoutControl, LayoutError, MAX_LAYOUT_DEPTH,
-    OffsetBox, Point, Rect, Size, ViewportConfig, ViewportGeometry,
+    BoxModel, ClientBox, ContentBox, Geometry, GeometryAccess, HitTest, Insets, LayoutControl,
+    LayoutError, MAX_LAYOUT_DEPTH, OffsetBox, Point, Rect, Size, ViewportConfig, ViewportGeometry,
 };
 use wega_dom::render::PaintSource;
 use wega_dom::style::{StyleAccess, StyleControl, StyleError};
@@ -419,6 +419,47 @@ impl GeometryAccess for BlitzDocument {
     }
     fn layout_refused(&self) -> bool {
         self.nests_deeper_than(MAX_LAYOUT_DEPTH)
+    }
+    fn inspect_geometry(&self, key: NodeKey) -> Geometry {
+        let Some(node) = self.0.get_node(key.node_id()) else {
+            return Geometry::Invalid;
+        };
+        let pending = self.layout_pending();
+        if pending && self.layout_refused() {
+            return Geometry::Refused;
+        }
+        if !matches!(self.has_boxes(key), Ok(true)) || !node.is_element() {
+            return if pending && node.primary_styles().is_none() {
+                Geometry::Pending
+            } else {
+                Geometry::NoBoxes
+            };
+        }
+        let Ok(border_box) = self.bounding_rect(key) else {
+            return Geometry::Invalid;
+        };
+        let layout = node.final_layout();
+        macro_rules! insets {
+            ($r:expr) => {
+                Insets {
+                    top: $r.top as f64,
+                    right: $r.right as f64,
+                    bottom: $r.bottom as f64,
+                    left: $r.left as f64,
+                }
+            };
+        }
+        let boxes = BoxModel {
+            border_box,
+            border: insets!(layout.border),
+            padding: insets!(layout.padding),
+            margin: insets!(layout.margin),
+        };
+        if pending {
+            Geometry::Stale(boxes)
+        } else {
+            Geometry::Current(boxes)
+        }
     }
     fn layout_pending(&self) -> bool {
         let root = self.0.root_node();

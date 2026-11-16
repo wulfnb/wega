@@ -142,6 +142,65 @@ pub struct ContentBox {
 /// The limit leaves more than twice the measured headroom. See `devtools-d3-c-0-report.md`.
 pub const MAX_LAYOUT_DEPTH: usize = 256;
 
+/// Edge widths (top, right, bottom, left) in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Insets {
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub left: f64,
+}
+/// The four CSS boxes of an element as the *cached* layout has them, viewport-relative CSS pixels.
+/// Wega-owned: nothing here names a Blitz, Stylo, Taffy or Skia type.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct BoxModel {
+    /// The border box (what `getBoundingClientRect` returns), scrolled with the viewport.
+    pub border_box: Rect,
+    pub border: Insets,
+    pub padding: Insets,
+    pub margin: Insets,
+}
+impl BoxModel {
+    pub fn padding_box(&self) -> Rect {
+        inset(self.border_box, self.border)
+    }
+    pub fn content_box(&self) -> Rect {
+        inset(self.padding_box(), self.padding)
+    }
+    pub fn margin_box(&self) -> Rect {
+        Rect {
+            x: self.border_box.x - self.margin.left,
+            y: self.border_box.y - self.margin.top,
+            width: self.border_box.width + self.margin.left + self.margin.right,
+            height: self.border_box.height + self.margin.top + self.margin.bottom,
+        }
+    }
+}
+fn inset(r: Rect, i: Insets) -> Rect {
+    Rect {
+        x: r.x + i.left,
+        y: r.y + i.top,
+        width: (r.width - i.left - i.right).max(0.0),
+        height: (r.height - i.top - i.bottom).max(0.0),
+    }
+}
+/// Why an inspector read has no geometry, or how fresh it is. Never produced by flushing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Geometry {
+    /// Layout is current: the boxes describe the document as it is.
+    Current(BoxModel),
+    /// Layout exists but style or layout work is pending: the boxes describe an *older* document.
+    Stale(BoxModel),
+    /// No layout exists yet (before the first flush, or waiting on resources).
+    Pending,
+    /// The node generates no boxes (`display: none`/`contents`, detached, non-element).
+    NoBoxes,
+    /// The document is nested past `MAX_LAYOUT_DEPTH` and is never laid out.
+    Refused,
+    /// The key does not refer to a node of this document.
+    Invalid,
+}
+
 /// Read access to layout results.
 pub trait GeometryAccess: DocumentView {
     /// Whether the document nests deeper than [`MAX_LAYOUT_DEPTH`], so that it is never laid out
@@ -176,6 +235,10 @@ pub trait GeometryAccess: DocumentView {
     /// not trigger layout (an inspector) reads this instead and reports "layout pending" rather
     /// than asking for a flush, which on a pathological document may never finish.
     fn layout_pending(&self) -> bool;
+    /// Cached-only geometry for an inspector: never flushes, never blocks, and says how much to
+    /// trust the answer. Does not use `layout_refused` per call when `layout_pending` is false
+    /// (a laid-out document cannot be refused), so the common path is one cached read.
+    fn inspect_geometry(&self, key: NodeKey) -> Geometry;
 }
 
 /// Hit-testing against the current layout.
