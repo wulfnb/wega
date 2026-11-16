@@ -235,3 +235,8 @@ D3.0 prerequisites are complete locally; see `devtools-d3-0-report.md` for resul
 ## D3-C.0 status
 
 The depth-122 "hang" was a native stack overflow, fixed by `MAX_LAYOUT_DEPTH` (layout refused past 256 levels). Cached-only geometry is feasible; transforms and clips are not reflected by the engine. See `devtools-d3-c-0-report.md` for per-feature go/no-go. No D3-C feature is implemented.
+
+
+## D3 final status
+
+D3 is complete locally on macOS arm64: validated layout guard, cached geometry and Box Model, Inspect Element picker with browser-owned input interception, accurate-or-suppressed overlay, and a separate mutation grant with attribute, text, node-removal and inline-CSS editing. Matched rules and undo remain unsupported; the parser nesting cap, WebDriver smoke failure and Linux/Windows validation remain open. See `devtools-d3-final-report.md`, `devtools-d3-acceptance.md` and `baseline/devtools-d3-final-evidence.json`. D4 not started.

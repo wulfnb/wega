@@ -1,0 +1,1231 @@
+{
+ "baseline_commit": "589dc12",
+ "host": "macOS 27.2 arm64, optimized builds for A/B (load 3.4-5.2)",
+ "commits": [
+  "4abbb9b chore(devtools): satisfy strict clippy, pin MutationObserver limitation, add acceptance document",
+  "2f1aff0 test(devtools): sandbox coverage of D3 commands, load-tolerant console tests and signed-worker evidence",
+  "71144ae test(devtools): add D3 latency benchmarks, deep-document worker test and release-aware stack characterization",
+  "611f598 test(devtools): native acceptance of picker, overlay, editing and revocation with visual evidence",
+  "9617884 feat(devtools): add Inspect Element picker, highlight overlay, Box Model and authorized editing UI",
+  "2d2e03b feat(devtools): add inspector 5 geometry, picking and separately authorized edit commands",
+  "db1d9b7 test(layout): validate the depth guard on the engine stack with bypass-route and recovery probes",
+  "84351ae docs(devtools): design the final D3 geometry, picker, overlay and authorized editing"
+ ],
+ "layout_guard": {
+  "limit": 256,
+  "engine_stack_bytes": 8388608,
+  "unguarded_cliff_depth": {
+   "debug_8MiB": "520..600",
+   "release_8MiB": "3200..4800",
+   "debug_2MiB_script_flush": "121..122"
+  },
+  "depths_tested": [
+   120,
+   121,
+   122,
+   128,
+   200,
+   256,
+   257,
+   520,
+   600,
+   1000
+  ],
+  "modes": [
+   "script_flush",
+   "paint_then_flush",
+   "paint",
+   "misc",
+   "recover"
+  ]
+ },
+ "engine_workspace_matrix": {
+  "targets": 92,
+  "passed": 749,
+  "failed": 0,
+  "ignored": 23,
+  "broker_mode_targets": 5,
+  "broker_mode_passed": 29,
+  "per_target": [
+   {
+    "label": "wega-engine unit",
+    "passed": 68,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 18.7
+   },
+   {
+    "label": "wega-engine::broker_websocket",
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 14.0
+   },
+   {
+    "label": "wega-engine::cache_api",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 151.9
+   },
+   {
+    "label": "wega-engine::canvas2d",
+    "passed": 9,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 1436.1
+   },
+   {
+    "label": "wega-engine::compat",
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 994.5
+   },
+   {
+    "label": "wega-engine::console",
+    "passed": 14,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 71.9
+   },
+   {
+    "label": "wega-engine::console_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 826.0
+   },
+   {
+    "label": "wega-engine::css",
+    "passed": 21,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 25.7
+   },
+   {
+    "label": "wega-engine::css_wpt",
+    "passed": 2,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 17.5
+   },
+   {
+    "label": "wega-engine::custom_elements",
+    "passed": 12,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 15.6
+   },
+   {
+    "label": "wega-engine::document_host",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 15.0
+   },
+   {
+    "label": "wega-engine::documents",
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 16.0
+   },
+   {
+    "label": "wega-engine::dom",
+    "passed": 30,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 23.7
+   },
+   {
+    "label": "wega-engine::dom_budgets",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 21.7
+   },
+   {
+    "label": "wega-engine::dom_identity",
+    "passed": 4,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 14.4
+   },
+   {
+    "label": "wega-engine::epoch",
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 15.6
+   },
+   {
+    "label": "wega-engine::errors",
+    "passed": 10,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 27.1
+   },
+   {
+    "label": "wega-engine::events",
+    "passed": 20,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 22.9
+   },
+   {
+    "label": "wega-engine::forms",
+    "passed": 4,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 14.6
+   },
+   {
+    "label": "wega-engine::frames",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 13.6
+   },
+   {
+    "label": "wega-engine::harness_fixtures",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 17.4
+   },
+   {
+    "label": "wega-engine::history",
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 14.1
+   },
+   {
+    "label": "wega-engine::hot_path_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 5,
+    "secs": 12.6
+   },
+   {
+    "label": "wega-engine::image_limits",
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 9.5
+   },
+   {
+    "label": "wega-engine::inherited_broker",
+    "passed": 1,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 13.7
+   },
+   {
+    "label": "wega-engine::input",
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 15.1
+   },
+   {
+    "label": "wega-engine::inspector",
+    "passed": 15,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 24.3
+   },
+   {
+    "label": "wega-engine::inspector_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 3,
+    "secs": 11.2
+   },
+   {
+    "label": "wega-engine::inspector_console",
+    "passed": 21,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 34.2
+   },
+   {
+    "label": "wega-engine::inspector_dom",
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 16.1
+   },
+   {
+    "label": "wega-engine::inspector_dom_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 11.0
+   },
+   {
+    "label": "wega-engine::inspector_edit",
+    "passed": 10,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 16.9
+   },
+   {
+    "label": "wega-engine::inspector_edit_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 2,
+    "secs": 13.0
+   },
+   {
+    "label": "wega-engine::inspector_sandbox",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 9.9
+   },
+   {
+    "label": "wega-engine::inspector_styles",
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 16.2
+   },
+   {
+    "label": "wega-engine::inspector_styles_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 11.2
+   },
+   {
+    "label": "wega-engine::layout",
+    "passed": 15,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 17.4
+   },
+   {
+    "label": "wega-engine::layout_depth",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 2,
+    "secs": 40.9
+   },
+   {
+    "label": "wega-engine::media",
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 14.1
+   },
+   {
+    "label": "wega-engine::mutation_epoch_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 10.3
+   },
+   {
+    "label": "wega-engine::pages",
+    "passed": 16,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 35.3
+   },
+   {
+    "label": "wega-engine::permissions",
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 14.3
+   },
+   {
+    "label": "wega-engine::reliability",
+    "passed": 2,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 14.8
+   },
+   {
+    "label": "wega-engine::render",
+    "passed": 17,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 18.6
+   },
+   {
+    "label": "wega-engine::render_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 12.3
+   },
+   {
+    "label": "wega-engine::scripts",
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 15.7
+   },
+   {
+    "label": "wega-engine::security",
+    "passed": 9,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 15.2
+   },
+   {
+    "label": "wega-engine::storage",
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 13.7
+   },
+   {
+    "label": "wega-engine::style",
+    "passed": 16,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 17.2
+   },
+   {
+    "label": "wega-engine::web",
+    "passed": 10,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 16.8
+   },
+   {
+    "label": "wega-engine::web_workers",
+    "passed": 12,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 16.4
+   },
+   {
+    "label": "wega-engine::webgl",
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 13.9
+   },
+   {
+    "label": "wega-engine::worker",
+    "passed": 17,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 26.5
+   },
+   {
+    "label": "wega-engine::worker_bench",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 12.3
+   },
+   {
+    "label": "wega-engine::worker_runtime",
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 13.6
+   },
+   {
+    "label": "wega-engine::wpt",
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 22.2
+   },
+   {
+    "label": "wega-adapter-blitz unit",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.6
+   },
+   {
+    "label": "wega-adapter-blitz::boundary",
+    "passed": 2,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 0.8
+   },
+   {
+    "label": "wega-adapter-blitz::contract",
+    "passed": 11,
+    "failed": 0,
+    "ignored": 2,
+    "secs": 2.4
+   },
+   {
+    "label": "wega-adapter-blitz::css_inspection_spike",
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.6
+   },
+   {
+    "label": "wega-adapter-blitz::epoch",
+    "passed": 10,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.0
+   },
+   {
+    "label": "wega-adapter-blitz::geometry_feasibility",
+    "passed": 9,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.6
+   },
+   {
+    "label": "wega-adapter-blitz::html_parser",
+    "passed": 17,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.2
+   },
+   {
+    "label": "wega-adapter-blitz::input",
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.6
+   },
+   {
+    "label": "wega-adapter-blitz::layout",
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.3
+   },
+   {
+    "label": "wega-adapter-blitz::layout_safety",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 4.8
+   },
+   {
+    "label": "wega-adapter-blitz::style",
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.3
+   },
+   {
+    "label": "wega-adapter-blitz::style_inspect",
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.4
+   },
+   {
+    "label": "wega-dom unit",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 0.9
+   },
+   {
+    "label": "wega-dom::boundary",
+    "passed": 2,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 0.9
+   },
+   {
+    "label": "wega-html unit",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 0.6
+   },
+   {
+    "label": "wega-html::boundary",
+    "passed": 2,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 0.8
+   },
+   {
+    "label": "wega-adapter-skia unit",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 0.9
+   },
+   {
+    "label": "wega-platform unit",
+    "passed": 18,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.4
+   },
+   {
+    "label": "wega-platform::browser_resources",
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 0.8
+   },
+   {
+    "label": "wega-platform::inherited_channel",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 0.7
+   },
+   {
+    "label": "wega-platform::native_sandbox",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 1,
+    "secs": 0.2
+   },
+   {
+    "label": "wega-adapter-v8 unit",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 5.6
+   },
+   {
+    "label": "wega-network unit",
+    "passed": 15,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 6.9
+   },
+   {
+    "label": "wega-network::broker",
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 3.1
+   },
+   {
+    "label": "wega-network::inherited",
+    "passed": 2,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 1.4
+   },
+   {
+    "label": "wega-network::security",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 1.6
+   },
+   {
+    "label": "wega-cookies unit",
+    "passed": 4,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 1.4
+   },
+   {
+    "label": "wega-protocol unit",
+    "passed": 92,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 4.3
+   },
+   {
+    "label": "wega-storage unit",
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 2.3
+   },
+   {
+    "label": "wega-security unit",
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 1.3
+   },
+   {
+    "label": "wega-permissions unit",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 1.5
+   },
+   {
+    "label": "BROKER wega-engine::documents",
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 15.5
+   },
+   {
+    "label": "BROKER wega-engine::forms",
+    "passed": 4,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 14.0
+   },
+   {
+    "label": "BROKER wega-engine::history",
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 13.8
+   },
+   {
+    "label": "BROKER wega-engine::scripts",
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 16.6
+   },
+   {
+    "label": "BROKER wega-engine::security",
+    "passed": 9,
+    "failed": 0,
+    "ignored": 0,
+    "secs": 15.5
+   }
+  ]
+ },
+ "root": {
+  "lib_default_test_harness": 113,
+  "bin_test_harness": 119,
+  "bin_ignored": 1,
+  "no_default_lib": 109,
+  "webidl_tool_tests": 6,
+  "architecture_tool_tests": 8
+ },
+ "ab_console_render_mutation_589dc12_vs_final": {
+  "rows": [
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console log(string, number) (p95)",
+    "a_p50": 10.725000000000001,
+    "a_min": 10.53,
+    "a_max": 14.93,
+    "b_p50": 10.675,
+    "b_min": 10.49,
+    "b_max": 11.18,
+    "b_over_a": 0.9953379953379953
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console log(string, nested object) (median)",
+    "a_p50": 29.305,
+    "a_min": 28.68,
+    "a_max": 29.71,
+    "b_p50": 29.200000000000003,
+    "b_min": 28.52,
+    "b_max": 29.82,
+    "b_over_a": 0.9964169936870843
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console log(string, nested object) (p95)",
+    "a_p50": 30.13,
+    "a_min": 29.89,
+    "a_max": 30.67,
+    "b_p50": 30.495,
+    "b_min": 29.93,
+    "b_max": 31.85,
+    "b_over_a": 1.0121141719216729
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console warn(string, number) (median)",
+    "a_p50": 10.84,
+    "a_min": 10.65,
+    "a_max": 11.16,
+    "b_p50": 10.975,
+    "b_min": 10.8,
+    "b_max": 11.24,
+    "b_over_a": 1.0124538745387455
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console warn(string, number) (p95)",
+    "a_p50": 11.18,
+    "a_min": 11.11,
+    "a_max": 11.79,
+    "b_p50": 11.425,
+    "b_min": 10.97,
+    "b_max": 11.71,
+    "b_over_a": 1.0219141323792487
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console log(8 numbers) (median)",
+    "a_p50": 13.615,
+    "a_min": 13.49,
+    "a_max": 13.95,
+    "b_p50": 13.7,
+    "b_min": 13.53,
+    "b_max": 13.84,
+    "b_over_a": 1.0062431142122659
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console log(8 numbers) (p95)",
+    "a_p50": 13.915,
+    "a_min": 13.71,
+    "a_max": 14.43,
+    "b_p50": 13.955,
+    "b_min": 13.63,
+    "b_max": 14.15,
+    "b_over_a": 1.0028745957599714
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console log(100-property object) (median)",
+    "a_p50": 115.355,
+    "a_min": 114.91,
+    "a_max": 117.05,
+    "b_p50": 114.82,
+    "b_min": 113.66,
+    "b_max": 115.75,
+    "b_over_a": 0.9953621429500238
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console log(100-property object) (p95)",
+    "a_p50": 117.21000000000001,
+    "a_min": 115.87,
+    "a_max": 125.96,
+    "b_p50": 115.88,
+    "b_min": 114.96,
+    "b_max": 117.68,
+    "b_over_a": 0.988652845320365
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console flood resident start",
+    "a_p50": 73.9,
+    "a_min": 73.6,
+    "a_max": 74.1,
+    "b_p50": 73.95,
+    "b_min": 73.6,
+    "b_max": 74.2,
+    "b_over_a": 1.0006765899864682
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console flood resident peak after 100,000 calls",
+    "a_p50": 84.7,
+    "a_min": 84.2,
+    "a_max": 85.0,
+    "b_p50": 84.65,
+    "b_min": 84.3,
+    "b_max": 85.1,
+    "b_over_a": 0.9994096812278631
+   },
+   {
+    "bench": "console_bench",
+    "metric": "BENCH console flood resident growth",
+    "a_p50": 10.850000000000001,
+    "a_min": 10.5,
+    "a_max": 11.1,
+    "b_p50": 10.75,
+    "b_min": 10.6,
+    "b_max": 11.2,
+    "b_over_a": 0.9907834101382487
+   },
+   {
+    "bench": "render_bench",
+    "metric": "BENCH 800x600 @1x rasterise and return pixels",
+    "a_p50": 0.24,
+    "a_min": 0.24,
+    "a_max": 0.24,
+    "b_p50": 0.24,
+    "b_min": 0.24,
+    "b_max": 0.25,
+    "b_over_a": 1.0
+   },
+   {
+    "bench": "render_bench",
+    "metric": "BENCH 1600x1200 @2x record scene (flush+paint prep)",
+    "a_p50": 0.09,
+    "a_min": 0.09,
+    "a_max": 0.09,
+    "b_p50": 0.09,
+    "b_min": 0.09,
+    "b_max": 0.09,
+    "b_over_a": 1.0
+   },
+   {
+    "bench": "render_bench",
+    "metric": "BENCH 1600x1200 @2x rasterise and return pixels",
+    "a_p50": 0.6,
+    "a_min": 0.6,
+    "a_max": 0.61,
+    "b_p50": 0.6,
+    "b_min": 0.6,
+    "b_max": 0.62,
+    "b_over_a": 1.0
+   },
+   {
+    "bench": "mutation_epoch_bench",
+    "metric": "MUTATION_BENCH text:",
+    "a_p50": 0.0253,
+    "a_min": 0.025,
+    "a_max": 0.0261,
+    "b_p50": 0.0251,
+    "b_min": 0.025,
+    "b_max": 0.0256,
+    "b_over_a": 0.9920948616600791
+   }
+  ],
+  "process_cpu_seconds_median": {
+   "console_bench": {
+    "A": 4.917015499999998,
+    "B": 4.905311
+   },
+   "render_bench": {
+    "A": 0.3118540000000034,
+    "B": 0.31654999999999855
+   },
+   "mutation_epoch_bench": {
+    "A": 0.05631300000000605,
+    "B": 0.05727649999999462
+   }
+  },
+  "pairs": 8
+ },
+ "latency_optimized_in_process_us": {
+  "[small page] GetGeometry read": {
+   "runs": [
+    {
+     "p50_us": 0.167,
+     "p95_us": 0.208,
+     "max_us": 3.0
+    },
+    {
+     "p50_us": 0.167,
+     "p95_us": 0.208,
+     "max_us": 4.334
+    },
+    {
+     "p50_us": 0.167,
+     "p95_us": 0.208,
+     "max_us": 3.5
+    }
+   ]
+  },
+  "[small page] PickNode (hit test + report)": {
+   "runs": [
+    {
+     "p50_us": 0.375,
+     "p95_us": 0.417,
+     "max_us": 4.25
+    },
+    {
+     "p50_us": 0.375,
+     "p95_us": 0.417,
+     "max_us": 6.25
+    },
+    {
+     "p50_us": 0.375,
+     "p95_us": 0.417,
+     "max_us": 15.708
+    }
+   ]
+  },
+  "[small page] attribute edit (apply_edit)": {
+   "runs": [
+    {
+     "p50_us": 0.5,
+     "p95_us": 0.583,
+     "max_us": 34.5
+    },
+    {
+     "p50_us": 0.5,
+     "p95_us": 0.583,
+     "max_us": 34.208
+    },
+    {
+     "p50_us": 0.541,
+     "p95_us": 0.584,
+     "max_us": 17.209
+    }
+   ]
+  },
+  "[small page] inline CSS edit (apply_edit)": {
+   "runs": [
+    {
+     "p50_us": 5.5,
+     "p95_us": 5.667,
+     "max_us": 81.417
+    },
+    {
+     "p50_us": 5.417,
+     "p95_us": 5.584,
+     "max_us": 89.916
+    },
+    {
+     "p50_us": 5.459,
+     "p95_us": 5.625,
+     "max_us": 78.958
+    }
+   ]
+  },
+  "[small page] inline CSS edit + next layout flush": {
+   "runs": [
+    {
+     "p50_us": 36.208,
+     "p95_us": 47.709,
+     "max_us": 470.833
+    },
+    {
+     "p50_us": 36.542,
+     "p95_us": 45.333,
+     "max_us": 448.292
+    },
+    {
+     "p50_us": 35.75,
+     "p95_us": 46.042,
+     "max_us": 543.625
+    }
+   ]
+  },
+  "[5000 paragraphs] GetGeometry read": {
+   "runs": [
+    {
+     "p50_us": 0.125,
+     "p95_us": 0.167,
+     "max_us": 3.834
+    },
+    {
+     "p50_us": 0.125,
+     "p95_us": 0.167,
+     "max_us": 3.125
+    },
+    {
+     "p50_us": 0.125,
+     "p95_us": 0.167,
+     "max_us": 3.875
+    }
+   ]
+  },
+  "[5000 paragraphs] PickNode (hit test + report)": {
+   "runs": [
+    {
+     "p50_us": 74.542,
+     "p95_us": 76.667,
+     "max_us": 194.5
+    },
+    {
+     "p50_us": 74.709,
+     "p95_us": 75.959,
+     "max_us": 540.0
+    },
+    {
+     "p50_us": 76.833,
+     "p95_us": 78.084,
+     "max_us": 141.0
+    }
+   ]
+  },
+  "[5000 paragraphs] attribute edit (apply_edit)": {
+   "runs": [
+    {
+     "p50_us": 0.417,
+     "p95_us": 0.5,
+     "max_us": 14.917
+    },
+    {
+     "p50_us": 0.458,
+     "p95_us": 0.5,
+     "max_us": 13.166
+    },
+    {
+     "p50_us": 0.5,
+     "p95_us": 0.542,
+     "max_us": 14.916
+    }
+   ]
+  },
+  "[5000 paragraphs] inline CSS edit (apply_edit)": {
+   "runs": [
+    {
+     "p50_us": 5.417,
+     "p95_us": 5.583,
+     "max_us": 60.833
+    },
+    {
+     "p50_us": 5.416,
+     "p95_us": 5.542,
+     "max_us": 47.125
+    },
+    {
+     "p50_us": 5.625,
+     "p95_us": 5.792,
+     "max_us": 52.833
+    }
+   ]
+  },
+  "[5000 paragraphs] inline CSS edit + next layout flush": {
+   "runs": [
+    {
+     "p50_us": 3102.041,
+     "p95_us": 3242.083,
+     "max_us": 4663.875
+    },
+    {
+     "p50_us": 3096.792,
+     "p95_us": 3313.625,
+     "max_us": 4436.667
+    },
+    {
+     "p50_us": 3096.375,
+     "p95_us": 3245.417,
+     "max_us": 4518.292
+    }
+   ]
+  },
+  "[20000-rule stylesheet] GetGeometry read": {
+   "runs": [
+    {
+     "p50_us": 0.125,
+     "p95_us": 0.167,
+     "max_us": 7.25
+    },
+    {
+     "p50_us": 0.166,
+     "p95_us": 0.167,
+     "max_us": 4.041
+    },
+    {
+     "p50_us": 0.125,
+     "p95_us": 0.167,
+     "max_us": 14.709
+    }
+   ]
+  },
+  "[20000-rule stylesheet] PickNode (hit test + report)": {
+   "runs": [
+    {
+     "p50_us": 0.292,
+     "p95_us": 0.333,
+     "max_us": 2.625
+    },
+    {
+     "p50_us": 0.292,
+     "p95_us": 0.333,
+     "max_us": 3.792
+    },
+    {
+     "p50_us": 0.292,
+     "p95_us": 0.333,
+     "max_us": 3.875
+    }
+   ]
+  },
+  "[20000-rule stylesheet] attribute edit (apply_edit)": {
+   "runs": [
+    {
+     "p50_us": 0.458,
+     "p95_us": 0.5,
+     "max_us": 12.125
+    },
+    {
+     "p50_us": 0.458,
+     "p95_us": 0.5,
+     "max_us": 17.166
+    },
+    {
+     "p50_us": 0.458,
+     "p95_us": 0.5,
+     "max_us": 18.167
+    }
+   ]
+  },
+  "[20000-rule stylesheet] inline CSS edit (apply_edit)": {
+   "runs": [
+    {
+     "p50_us": 2.375,
+     "p95_us": 2.5,
+     "max_us": 25.75
+    },
+    {
+     "p50_us": 2.375,
+     "p95_us": 2.5,
+     "max_us": 30.25
+    },
+    {
+     "p50_us": 2.375,
+     "p95_us": 2.459,
+     "max_us": 37.167
+    }
+   ]
+  },
+  "[20000-rule stylesheet] inline CSS edit + next layout flush": {
+   "runs": [
+    {
+     "p50_us": 28.125,
+     "p95_us": 38.0,
+     "max_us": 392.625
+    },
+    {
+     "p50_us": 28.709,
+     "p95_us": 39.958,
+     "max_us": 546.458
+    },
+    {
+     "p50_us": 28.958,
+     "p95_us": 40.334,
+     "max_us": 422.958
+    }
+   ]
+  }
+ },
+ "latency_debug_real_worker_pipe_us": "see report (p50 GetGeometry 142, PickNode 182, status snapshot 132-135; debug engine, IPC included)",
+ "overlay_plan_and_map_per_element_ns": {
+  "p50": 583,
+  "p95": 792,
+  "build": "release"
+ },
+ "native_acceptance": {
+  "signed_app_sandboxed_worker": "docs/architecture/baseline/d3-native-run-sandboxed.log",
+  "development_worker": "docs/architecture/baseline/d3-native-run-development-worker.log",
+  "images": [
+   "docs/architecture/baseline/d3-evidence/d3-pass0-after-edits.png",
+   "docs/architecture/baseline/d3-evidence/d3-pass0-hover-highlight.png",
+   "docs/architecture/baseline/d3-evidence/d3-pass1-after-edits.png",
+   "docs/architecture/baseline/d3-evidence/d3-pass1-hover-highlight.png"
+  ],
+  "rendered_change_red_pixels": "0 -> 152598",
+  "overlay_pixels_in_page_frame": 0,
+  "stall_recovery": "NotResponding after 2500 ms; recovered 29 ms after SIGCONT"
+ },
+ "sandbox_tests": {
+  "inspector_sandbox": "1 passed (includes D3 commands)",
+  "inherited_broker": "1 passed",
+  "native_sandbox": "1 passed"
+ },
+ "static_gates": {
+  "fmt": "pass",
+  "clippy_strict": "engines workspace, root default/test-harness/no-default, engines/tools, webidl: clean",
+  "architecture": {
+   "members": 13,
+   "edges": 24,
+   "violations": 0,
+   "informational": 11
+  },
+  "boundary": "pass",
+  "vendor": "13 archives match; no vendor change",
+  "locked_metadata": "pass; no manifest or lockfile diff",
+  "unsafe_added": 0,
+  "webidl_check": "current"
+ },
+ "known_failures": {
+  "webdriver_smoke": "fails at tests/webdriver_smoke.py:76 'New tab' - identical to the D3-A pre-existing failure; not re-verified on the baseline commit"
+ },
+ "console_load_failures": {
+  "mechanism": "evaluate_json 'Script deadline exceeded' (5 s watchdog) in single huge JS runs, and a 10 s layout-settle wait, under CPU starvation (load ~21-29 during release builds); 0 failures idle (3/3)"
+ }
+}
