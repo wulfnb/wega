@@ -189,3 +189,29 @@ fn css_pixels_map_to_screen_points_with_browser_zoom_and_no_device_pixel_factor(
     });
     assert!(matches!(plan(&r, None), Plan::Suppressed(_)));
 }
+
+#[test]
+#[ignore = "BENCH: run optimized"]
+fn plan_and_mapping_cost_per_frame() {
+    let r = report();
+    let page = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(800.0, 600.0));
+    let mut samples = Vec::new();
+    for _ in 0..200_000 {
+        let t = std::time::Instant::now();
+        let p = plan(&r, Some(4));
+        if let Plan::Draw { bands, .. } = &p {
+            for (_, b) in bands {
+                std::hint::black_box(to_screen(page, 1.25, *b));
+            }
+        }
+        std::hint::black_box(&p);
+        samples.push(t.elapsed().as_secs_f64() * 1e9);
+    }
+    samples.sort_by(f64::total_cmp);
+    println!(
+        "BENCH overlay plan+map per element: p50={:.0} ns p95={:.0} ns max={:.0} ns",
+        samples[samples.len() / 2],
+        samples[(samples.len() as f64 * 0.95) as usize],
+        samples[samples.len() - 1]
+    );
+}

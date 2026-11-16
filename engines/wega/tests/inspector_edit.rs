@@ -668,3 +668,42 @@ fn a_page_script_cannot_reach_inspector_operations() {
         "{names}"
     );
 }
+
+#[test]
+fn the_real_worker_refuses_a_deep_document_stays_responsive_and_renders_the_next_page() {
+    let mut w = Worker::start();
+    let s = w.attach();
+    // 1,000 nested blocks through the page's own script, then a layout read from script.
+    w.evaluate("document.body.innerHTML='<div>'.repeat(1000)+'x'+'</div>'.repeat(1000);true")
+        .unwrap();
+    assert_eq!(
+        w.evaluate("document.body.getBoundingClientRect().height")
+            .unwrap(),
+        "0",
+        "the refused document has no layout"
+    );
+    // Its geometry is reported as refused (not hung, not invented), and inspection still works.
+    let root = match w.call(s, InspectorCommand::GetDomRoot) {
+        Ok(InspectorResponse::Dom(p)) => p.nodes[0].id,
+        other => panic!("{other:?}"),
+    };
+    let report = geometry(&mut w, s, root);
+    assert!(
+        matches!(
+            report.state,
+            GeometryState::Refused | GeometryState::Pending
+        ),
+        "{:?}",
+        report.state
+    );
+    assert!(w.alive());
+    // The same view recovers with an ordinary page.
+    w.evaluate("document.body.innerHTML='<div id=ok style=\"height:77px\">ok</div>';true")
+        .unwrap();
+    assert_eq!(
+        w.evaluate("document.getElementById('ok').getBoundingClientRect().height")
+            .unwrap(),
+        "77"
+    );
+    assert!(w.alive());
+}

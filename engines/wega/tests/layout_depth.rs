@@ -263,20 +263,31 @@ fn documents_within_the_limit_are_laid_out_and_deeper_ones_are_refused_not_hung(
 #[test]
 fn the_cliff_is_the_native_stack_not_the_depth_so_a_small_stack_is_unsupported() {
     // Characterisation of the root cause, kept so the contract stays honest: on a 2 MiB stack the
-    // supported depth is lower than `MAX_LAYOUT_DEPTH`, and the overflow is a spin (or an abort on
-    // other platforms), never a completed layout. `MAX_LAYOUT_DEPTH` is therefore only valid on
-    // the engine thread's 8 MiB stack. This scenario costs up to its 4 s deadline.
-    let o = run_child_on(
-        200,
-        "script_flush",
-        Duration::from_secs(4),
-        TEST_THREAD_STACK,
-    );
-    assert!(
-        !o.finished,
-        "depth 200 completed on a 2 MiB stack; the cliff moved, re-measure and update MAX_LAYOUT_DEPTH docs"
-    );
-    // The same page on the engine stack completes.
+    // supported depth is lower than `MAX_LAYOUT_DEPTH` (debug) or than what the guard would need
+    // to protect (release frames are smaller, so the unguarded 2 MiB cliff is around 800). The
+    // overflow is a spin (or an abort on other platforms), never a completed layout.
+    // `MAX_LAYOUT_DEPTH` is therefore only valid on the engine thread's 8 MiB stack.
+    let deadline = Duration::from_secs(4);
+    if cfg!(debug_assertions) {
+        let o = run_child_on(200, "script_flush", deadline, TEST_THREAD_STACK);
+        assert!(
+            !o.finished,
+            "depth 200 completed on a 2 MiB stack; the cliff moved, re-measure and update MAX_LAYOUT_DEPTH docs"
+        );
+    } else {
+        // Release: lift the guard in the child so the raw stack behaviour is visible.
+        let o = run_child_unguarded_on(2400, "script_flush", deadline, TEST_THREAD_STACK);
+        assert!(
+            !o.finished,
+            "depth 2400 completed unguarded on a 2 MiB release stack"
+        );
+        let ok = run_child_unguarded_on(2400, "script_flush", DEADLINE, ENGINE_STACK);
+        assert!(
+            ok.finished,
+            "the same page must complete on the engine stack"
+        );
+    }
+    // The guarded page on the engine stack completes in every build.
     assert!(run_child(200, "script_flush", DEADLINE).finished);
 }
 
@@ -320,12 +331,16 @@ fn print_unguarded_cliff() {
     }
 }
 fn run_child_unguarded(depth: usize, mode: &str, limit: Duration) -> Outcome {
+    run_child_unguarded_on(depth, mode, limit, ENGINE_STACK)
+}
+fn run_child_unguarded_on(depth: usize, mode: &str, limit: Duration, stack: usize) -> Outcome {
     // The child reads the variable; the parent only needs it set for the spawn.
     // (Environment mutation is process-wide but this test is ignored and single-purpose.)
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["child_probe", "--exact", "--nocapture", "--test-threads=1"])
         .env("WEGA_LAYOUT_PROBE", format!("{depth}:{mode}"))
         .env("WEGA_PROBE_UNGUARDED", "1")
+        .env("WEGA_PROBE_STACK", stack.to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
