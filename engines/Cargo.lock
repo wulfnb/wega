@@ -6820,6 +6820,8 @@ dependencies = [
  "blitz-traits",
  "cssparser 0.38.0",
  "html5ever",
+ "kurbo",
+ "peniko",
  "stylo",
  "stylo_traits",
  "url",

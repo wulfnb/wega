@@ -26,6 +26,15 @@
 //! the document afterwards.
 use crate::layout::{LayoutControl, ViewportConfig};
 
+/// A rectangle in device pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeviceRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 /// A document that can record its painting.
 pub trait PaintSource: LayoutControl {
     /// The owned recording handed to the rasteriser.
@@ -35,6 +44,11 @@ pub trait PaintSource: LayoutControl {
     fn prepare_frame(&mut self, viewport: &ViewportConfig, animation_time: f64);
     /// Records the current layout for `viewport`. Never flushes.
     fn record_scene(&mut self, viewport: &ViewportConfig) -> Self::Scene;
+    /// Composites a nested document's recording into `scene`: `child` was recorded at the
+    /// size of `rect` (device pixels, origin top-left) and is translated to `rect`'s origin and
+    /// clipped to `rect`. Nothing is flattened into the parent document; the child keeps its own
+    /// layout. Frames are painted after the parent's own content (see the iframe design, L-1).
+    fn compose_child(scene: &mut Self::Scene, child: Self::Scene, rect: DeviceRect);
     /// Whether the document needs another frame without any further input (running CSS
     /// animations or transitions, scroll animation, scrollbar fades, canvas content).
     fn is_animating(&self) -> bool;

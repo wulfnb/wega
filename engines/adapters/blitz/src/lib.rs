@@ -117,6 +117,9 @@ impl std::ops::DerefMut for BlitzDocument {
     }
 }
 
+/// Past Blitz's `MAX_SUBDOCUMENT_DEPTH` (10): its iframe loader refuses to run.
+const DISABLE_BLITZ_SUBDOCUMENTS: usize = 1 << 20;
+
 /// What the engine decides about a new document. The adapter turns it into Blitz's own
 /// configuration, so the engine neither builds a `DocumentConfig` nor chooses how a
 /// `BaseDocument` is constructed.
@@ -143,6 +146,11 @@ impl DocumentSetup {
             abort_signal: self.abort_signal,
             net_provider: self.net_provider,
             navigation_provider: self.navigation_provider,
+            // Blitz can load <iframe> content into static sub-documents through the same
+            // net provider. Wega owns browsing contexts (sandbox, principals, frame-src,
+            // X-Frame-Options, credentials), so Blitz's own loader is switched off by
+            // starting past its nesting limit. There must be exactly one iframe path.
+            subdocument_depth: DISABLE_BLITZ_SUBDOCUMENTS,
             ..Default::default()
         }
     }
@@ -698,6 +706,13 @@ impl PaintSource for BlitzDocument {
             0,
         );
         scene
+    }
+    fn compose_child(scene: &mut Self::Scene, child: Self::Scene, rect: wega_dom::render::DeviceRect) {
+        use anyrender::PaintScene as _;
+        let area = kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
+        scene.push_clip_layer(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, &area);
+        scene.append_scene(child, kurbo::Affine::translate((rect.x, rect.y)));
+        scene.pop_layer();
     }
     fn is_animating(&self) -> bool {
         self.0.is_animating()

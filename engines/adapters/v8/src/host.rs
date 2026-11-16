@@ -54,6 +54,31 @@ fn heap_bytes(runtime: &mut JsRuntime) -> usize {
         .used_heap_size()
         .saturating_add(stats.external_memory())
 }
+/// Leaves the entry rusty_v8 made at isolate creation (see `V8Host::new`).
+#[allow(unsafe_code)]
+fn raw_exit(isolate: &mut deno_core::v8::Isolate) {
+    // SAFETY: called once, on the creating thread, while this isolate is the current one
+    // (it was entered by its constructor and nothing else was entered since).
+    unsafe {
+        isolate.exit();
+    }
+}
+/// Re-enters an isolate so that its owner can dispose it (balances `raw_exit`).
+#[allow(unsafe_code)]
+fn raw_enter(isolate: &mut deno_core::v8::Isolate) {
+    // SAFETY: the isolate is alive; the matching exit is the one inside `OwnedIsolate::drop`.
+    unsafe {
+        isolate.enter();
+    }
+}
+impl<E: ScriptEnvironment> Drop for V8Host<E> {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.as_mut() {
+            raw_enter(runtime.v8_isolate());
+        }
+    }
+}
+
 /// Makes an isolate the thread's current isolate for the guard's lifetime.
 ///
 /// This is the adapter's only `unsafe` code (the engine itself has none). Entering is needed because garbage
@@ -277,6 +302,14 @@ impl<E: ScriptEnvironment> V8Host<E> {
         });
         let watchdog = Watchdog::new(runtime.v8_isolate().thread_safe_handle())?;
         drop(entered);
+        // rusty_v8 enters an isolate when it is created and requires reverse-order disposal.
+        // Several documents (a page and its frames) share this thread, so no host may stay
+        // entered: every operation enters its own isolate through `RawIsolateGuard`, and
+        // `Drop` re-enters it so disposal is balanced whatever order hosts die in.
+        {
+            let _ = &mut runtime;
+            raw_exit(runtime.v8_isolate());
+        }
         Ok(Self {
             runtime: Some(runtime),
             loading_module: None,
