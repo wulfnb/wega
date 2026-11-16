@@ -165,7 +165,7 @@ fn unsupported_inspector_versions_are_refused() {
 
 #[test]
 fn the_capability_and_version_are_negotiated() {
-    assert_eq!(crate::VERSION, 25);
+    assert_eq!(crate::VERSION, 26);
     assert!(!crate::capabilities(21).contains(&crate::Capability::Inspector));
     assert!(crate::capabilities(22).contains(&crate::Capability::Inspector));
     assert!(
@@ -173,11 +173,12 @@ fn the_capability_and_version_are_negotiated() {
     );
     assert!(crate::supports_version(24));
     assert!(crate::supports_version(25));
-    assert!(!crate::supports_version(26));
-    assert_eq!(INSPECTOR_VERSION, 4);
+    assert!(crate::supports_version(26));
+    assert!(!crate::supports_version(27));
+    assert_eq!(INSPECTOR_VERSION, 5);
     assert!(supports_inspector_version(1) && supports_inspector_version(2));
-    assert!(supports_inspector_version(3));
-    assert!(!supports_inspector_version(5) && !supports_inspector_version(0));
+    assert!(supports_inspector_version(3) && supports_inspector_version(5));
+    assert!(!supports_inspector_version(6) && !supports_inspector_version(0));
 }
 
 #[test]
@@ -1550,4 +1551,412 @@ fn policy_denied_survives_the_wire() {
         serde_json::from_str::<InspectorError>(&json).unwrap(),
         error
     );
+}
+
+// ---- D3 final: geometry, picking and the separate mutation capability ----
+
+fn node_of(doc: DocumentContext) -> dom::InspectorNodeId {
+    dom::InspectorNodeId {
+        document: doc,
+        key: 7,
+    }
+}
+fn mutate_request(
+    session: u64,
+    target: TargetId,
+    grant: GrantToken,
+    op: edit::MutationOp,
+) -> InspectorRequest {
+    InspectorRequest {
+        version: INSPECTOR_VERSION,
+        session: InspectorSessionId(session),
+        target,
+        command: InspectorCommand::Mutate,
+        args: InspectorArgs::Mutate {
+            grant,
+            node: node_of(stamp(1, 1)),
+            epoch: 3,
+            op,
+        },
+    }
+}
+
+#[test]
+fn geometry_pick_and_mutation_commands_need_version_five_and_exact_arguments() {
+    let t = target(1, 1);
+    let node = node_of(stamp(1, 1));
+    let mut get = request(1, t, InspectorCommand::GetGeometry);
+    get.args = InspectorArgs::DomNode { node };
+    assert!(get.validate().is_ok());
+    get.version = 4;
+    assert_eq!(
+        get.validate().unwrap_err().code,
+        InspectorErrorCode::UnsupportedVersion
+    );
+    // Wrong argument shapes are refused.
+    let mut wrong = request(1, t, InspectorCommand::GetGeometry);
+    wrong.args = InspectorArgs::None;
+    assert!(wrong.validate().is_err());
+    let mut pick = request(1, t, InspectorCommand::PickNode);
+    pick.args = InspectorArgs::Pick {
+        x_milli: geometry::to_milli(12.5),
+        y_milli: i32::MIN,
+    };
+    assert!(pick.validate().is_ok());
+    pick.args = InspectorArgs::None;
+    assert!(pick.validate().is_err());
+    assert_eq!(geometry::to_milli(f32::NAN), 0);
+    assert_eq!(geometry::to_milli(f32::INFINITY), 0);
+    assert_eq!(geometry::from_milli(geometry::to_milli(12.5)), 12.5);
+    // Mutation grant and revoke take the grant / no arguments.
+    let mut grant = request(1, t, InspectorCommand::GrantMutation);
+    grant.args = InspectorArgs::Grant {
+        token: token(1),
+        opaque_override: false,
+        origin: Some("https://a.test".into()),
+    };
+    assert!(grant.validate().is_ok());
+    grant.args = InspectorArgs::Grant {
+        token: GrantToken([0; 16]),
+        opaque_override: false,
+        origin: None,
+    };
+    assert!(grant.validate().is_err(), "empty token");
+    assert!(
+        request(1, t, InspectorCommand::RevokeMutation)
+            .validate()
+            .is_ok()
+    );
+}
+
+#[test]
+fn mutation_operations_are_bounded_and_validated_without_state() {
+    use edit::MutationOp as Op;
+    let t = target(1, 1);
+    let ok = |op| mutate_request(1, t, token(1), op).validate().is_ok();
+    assert!(ok(Op::SetAttribute {
+        name: "data-x".into(),
+        value: "v".into()
+    }));
+    assert!(ok(Op::RemoveNode));
+    assert!(ok(Op::SetText { text: "hi".into() }));
+    assert!(ok(Op::SetInlineProperty {
+        property: "background-color".into(),
+        value: "red".into(),
+        important: true
+    }));
+    for bad in [
+        Op::SetAttribute {
+            name: "".into(),
+            value: "".into(),
+        },
+        Op::SetAttribute {
+            name: "a b".into(),
+            value: "".into(),
+        },
+        Op::SetAttribute {
+            name: "a\"b".into(),
+            value: "".into(),
+        },
+        Op::SetAttribute {
+            name: "x".repeat(129),
+            value: "".into(),
+        },
+        Op::SetAttribute {
+            name: "a".into(),
+            value: "x".repeat(4097),
+        },
+        Op::SetAttribute {
+            name: "a".into(),
+            value: "x\0".into(),
+        },
+        Op::RemoveAttribute { name: "a>b".into() },
+        Op::SetText {
+            text: "x".repeat(4097),
+        },
+        Op::SetInlineProperty {
+            property: "a;b".into(),
+            value: "".into(),
+            important: false,
+        },
+        Op::SetInlineProperty {
+            property: "color".into(),
+            value: "x".repeat(2049),
+            important: false,
+        },
+    ] {
+        assert!(!ok(bad.clone()), "{bad:?}");
+    }
+    assert!(
+        !mutate_request(1, t, GrantToken([0; 16]), Op::RemoveNode)
+            .validate()
+            .is_ok(),
+        "an empty grant token"
+    );
+    assert!(edit::is_code_attribute("onclick"));
+    assert!(edit::is_code_attribute("OnLoad"));
+    assert!(edit::is_code_attribute("srcdoc"));
+    assert!(!edit::is_code_attribute("data-on"));
+    // Round trip through the wire payload.
+    let req = mutate_request(1, t, token(2), Op::RemoveNode);
+    assert_eq!(InspectorPayload::new(&req).decode(), Ok(req));
+}
+
+#[test]
+fn evaluation_and_mutation_grants_never_stand_in_for_each_other() {
+    let issuer = SessionIssuer::new();
+    let mine = target(1, 1);
+    let mut host = HostSessions::new(mine);
+    let (s, _) = host.open(&issuer).unwrap();
+    let doc = stamp(1, 1);
+    // An evaluation grant is not a mutation grant, and the other way round.
+    host.install_grant(s, doc, token(3), tuple(), scope())
+        .unwrap();
+    assert_eq!(host.mutation_grant_for(s, doc, &tuple()), None);
+    host.install_mutation_grant(s, doc, token(4), tuple(), scope())
+        .unwrap();
+    assert_eq!(host.mutation_grant_for(s, doc, &tuple()), Some(token(4)));
+    assert_eq!(host.grant_for(s, doc, &tuple()), Some(token(3)));
+    // Revoking one leaves the other.
+    host.complete(
+        s,
+        InspectorCommand::RevokeEvaluation,
+        Ok(InspectorResponse::EvaluationRevoked),
+    );
+    assert_eq!(host.grant_for(s, doc, &tuple()), None);
+    assert_eq!(host.mutation_grant_for(s, doc, &tuple()), Some(token(4)));
+    host.complete(
+        s,
+        InspectorCommand::RevokeMutation,
+        Ok(InspectorResponse::MutationRevoked),
+    );
+    assert_eq!(host.mutation_grant_for(s, doc, &tuple()), None);
+    // The content side holds two slots; each token only opens its own.
+    let mut content = ContentSessions::default();
+    content
+        .authorize(&request(s.0, mine, InspectorCommand::Attach), mine)
+        .unwrap();
+    content.store_grant(s, doc, token(3));
+    assert!(content.check_mutation_grant(s, doc, token(3)).is_err());
+    content.store_mutation_grant(s, doc, token(4));
+    assert!(content.check_mutation_grant(s, doc, token(4)).is_ok());
+    assert!(
+        content.check_mutation_grant(s, doc, token(3)).is_err(),
+        "the evaluation token does not open editing"
+    );
+    assert!(
+        content.check_grant(s, doc, token(4)).is_err(),
+        "the editing token does not open evaluation"
+    );
+    assert_eq!(
+        content
+            .check_mutation_grant(s, stamp(1, 2), token(4))
+            .unwrap_err()
+            .code,
+        InspectorErrorCode::StaleDocument
+    );
+    assert_eq!(
+        content
+            .check_mutation_grant(InspectorSessionId(s.0 + 1), doc, token(4))
+            .unwrap_err()
+            .code,
+        InspectorErrorCode::StaleSession
+    );
+}
+
+#[test]
+fn mutation_authority_is_cleared_on_every_boundary() {
+    let issuer = SessionIssuer::new();
+    let mine = target(1, 1);
+    let doc = stamp(1, 1);
+    let mut host = HostSessions::new(mine);
+    let (a, _) = host.open(&issuer).unwrap();
+    assert!(
+        host.install_mutation_grant(InspectorSessionId(99), doc, token(1), tuple(), scope())
+            .is_err(),
+        "not live"
+    );
+    assert!(
+        host.install_mutation_grant(a, doc, GrantToken([0; 16]), tuple(), scope())
+            .is_err()
+    );
+    // Document replacement.
+    host.install_mutation_grant(a, doc, token(1), tuple(), scope())
+        .unwrap();
+    assert_eq!(host.mutation_state(a), Some(doc));
+    assert_eq!(host.mutation_grant_for(a, stamp(1, 2), &tuple()), None);
+    host.document_changed();
+    assert_eq!(host.mutation_state(a), None);
+    // A new session never inherits it.
+    host.install_mutation_grant(a, doc, token(2), tuple(), scope())
+        .unwrap();
+    let (b, _) = host.open(&issuer).unwrap();
+    assert_eq!(host.mutation_grant_for(a, doc, &tuple()), None);
+    assert_eq!(host.mutation_grant_for(b, doc, &tuple()), None);
+    // Revoke the session; process death.
+    host.install_mutation_grant(b, doc, token(3), tuple(), scope())
+        .unwrap();
+    assert!(host.revoke(b));
+    assert_eq!(host.mutation_grant_for(b, doc, &tuple()), None);
+    let (c, _) = host.open(&issuer).unwrap();
+    host.install_mutation_grant(c, doc, token(4), tuple(), scope())
+        .unwrap();
+    host.close();
+    assert_eq!(host.mutation_grant_for(c, doc, &tuple()), None);
+    // A refused grant and a refused edit both drop the record.
+    let mut host = HostSessions::new(mine);
+    let (s, _) = host.open(&issuer).unwrap();
+    host.install_mutation_grant(s, doc, token(5), tuple(), scope())
+        .unwrap();
+    host.complete(
+        s,
+        InspectorCommand::GrantMutation,
+        Err(InspectorError::new(InspectorErrorCode::PolicyDenied, "no")),
+    );
+    assert_eq!(host.mutation_grant_for(s, doc, &tuple()), None);
+    host.install_mutation_grant(s, doc, token(5), tuple(), scope())
+        .unwrap();
+    host.complete(
+        s,
+        InspectorCommand::Mutate,
+        Err(InspectorError::new(
+            InspectorErrorCode::StaleDocument,
+            "old",
+        )),
+    );
+    assert_eq!(host.mutation_grant_for(s, doc, &tuple()), None);
+    // Content side: detach and re-attach clear it.
+    let mut content = ContentSessions::default();
+    content
+        .authorize(&request(s.0, mine, InspectorCommand::Attach), mine)
+        .unwrap();
+    content.store_mutation_grant(s, doc, token(6));
+    assert!(content.has_mutation_grant());
+    content.detach(s);
+    assert!(!content.has_mutation_grant());
+}
+
+#[test]
+fn geometry_reports_reject_non_finite_foreign_and_oversized_data() {
+    use geometry::*;
+    let doc = stamp(1, 1);
+    let rect = GeomRect {
+        x: 1.0,
+        y: 2.0,
+        width: 3.0,
+        height: 4.0,
+    };
+    let boxes = BoxSet {
+        border_box: rect,
+        border: Edges::default(),
+        padding: Edges::default(),
+        margin: Edges::default(),
+    };
+    let good = GeometryReport {
+        document: doc,
+        epoch: 1,
+        node: node_of(doc),
+        state: GeometryState::Current,
+        boxes: Some(boxes),
+        viewport: ViewportReport {
+            width: 800.0,
+            height: 600.0,
+            device_pixel_ratio: 2.0,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+        },
+        paint: PaintMapping::Exact { clip: None },
+        label: ElementLabel::default(),
+    };
+    assert!(good.is_bounded());
+    let mut bad = good.clone();
+    bad.boxes.as_mut().unwrap().border_box.width = f64::NAN;
+    assert!(!bad.is_bounded());
+    let mut bad = good.clone();
+    bad.boxes.as_mut().unwrap().margin.left = f64::INFINITY;
+    assert!(!bad.is_bounded());
+    let mut bad = good.clone();
+    bad.node.document = stamp(2, 1);
+    assert!(!bad.is_bounded(), "foreign document");
+    let mut bad = good.clone();
+    bad.state = GeometryState::Pending;
+    assert!(!bad.is_bounded(), "boxes without a usable state");
+    let mut bad = good.clone();
+    bad.state = GeometryState::Refused;
+    bad.boxes = None;
+    assert!(bad.is_bounded());
+    let mut bad = good.clone();
+    bad.label.classes = "c".repeat(257);
+    assert!(!bad.is_bounded());
+    let mut bad = good.clone();
+    bad.paint = PaintMapping::Exact {
+        clip: Some(GeomRect {
+            x: 0.0,
+            y: 0.0,
+            width: -1.0,
+            height: 1.0,
+        }),
+    };
+    assert!(!bad.is_bounded());
+    // The derived boxes.
+    let model = BoxSet {
+        border_box: GeomRect {
+            x: 40.0,
+            y: 10.0,
+            width: 118.0,
+            height: 66.0,
+        },
+        border: Edges {
+            top: 2.0,
+            right: 2.0,
+            bottom: 2.0,
+            left: 2.0,
+        },
+        padding: Edges {
+            top: 5.0,
+            right: 6.0,
+            bottom: 7.0,
+            left: 8.0,
+        },
+        margin: Edges {
+            top: 10.0,
+            right: 20.0,
+            bottom: 30.0,
+            left: 40.0,
+        },
+    };
+    assert_eq!(
+        model.content_box(),
+        GeomRect {
+            x: 50.0,
+            y: 17.0,
+            width: 100.0,
+            height: 50.0
+        }
+    );
+    assert_eq!(
+        model.margin_box(),
+        GeomRect {
+            x: 0.0,
+            y: 0.0,
+            width: 178.0,
+            height: 106.0
+        }
+    );
+    // A pick report cannot carry foreign ancestors or too many.
+    let pick = PickReport {
+        target: good.clone(),
+        ancestors: vec![node_of(doc); 128],
+    };
+    assert!(pick.is_bounded());
+    let pick = PickReport {
+        target: good.clone(),
+        ancestors: vec![node_of(doc); 129],
+    };
+    assert!(!pick.is_bounded());
+    let pick = PickReport {
+        target: good,
+        ancestors: vec![node_of(stamp(9, 9))],
+    };
+    assert!(!pick.is_bounded());
 }

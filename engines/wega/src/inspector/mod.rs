@@ -15,6 +15,8 @@ use wega_protocol::{
     },
 };
 pub mod dom;
+pub mod geometry;
+pub mod mutate;
 pub mod styles;
 
 /// Everything a snapshot needs, gathered by the port only when a snapshot was requested.
@@ -68,6 +70,48 @@ pub trait PagePort {
             "DOM inspection unavailable",
         ))
     }
+    /// Cached-only geometry of a node (never flushes layout).
+    fn inspect_geometry(
+        &self,
+        document: DocumentContext,
+        node: wega_protocol::inspector::dom::InspectorNodeId,
+    ) -> Result<wega_protocol::inspector::geometry::GeometryReport, InspectorError> {
+        let _ = (document, node);
+        Err(refuse(
+            InspectorErrorCode::Unavailable,
+            "Geometry inspection unavailable",
+        ))
+    }
+    /// Hit test at a viewport CSS point against cached layout.
+    fn pick_node(
+        &self,
+        document: DocumentContext,
+        x: f32,
+        y: f32,
+    ) -> Result<wega_protocol::inspector::geometry::PickReport, InspectorError> {
+        let _ = (document, x, y);
+        Err(refuse(
+            InspectorErrorCode::Unavailable,
+            "Picking unavailable",
+        ))
+    }
+    /// Apply one already authorized edit. The caller has checked the mutation grant, the scope
+    /// and the document stamp; the port checks the epoch, validates against the document and
+    /// applies through the page's own mutation path.
+    fn apply_edit(
+        &mut self,
+        document: DocumentContext,
+        node: wega_protocol::inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: &wega_protocol::inspector::edit::MutationOp,
+        allow_code: bool,
+    ) -> Result<wega_protocol::inspector::edit::MutationOutcome, InspectorError> {
+        let _ = (document, node, epoch, op, allow_code);
+        Err(refuse(
+            InspectorErrorCode::Unavailable,
+            "Editing unavailable",
+        ))
+    }
     fn status_input(&self, sampled: Sampled) -> StatusInput;
     fn console_first_seq(&self) -> u64;
     fn console_next_seq(&self) -> u64;
@@ -106,6 +150,8 @@ pub struct Backend {
     /// What the live grant covers. A scope without a matching grant is never used: the grant
     /// check fails first, and the next grant replaces it.
     scope: Option<GrantScope>,
+    /// What the live **mutation** grant covers (same rule as `scope`, separate authority).
+    mutation_scope: Option<GrantScope>,
 }
 
 fn engine_name() -> String {
@@ -126,6 +172,7 @@ impl Backend {
             last_document: None,
             console: None,
             scope: None,
+            mutation_scope: None,
         }
     }
 
@@ -138,6 +185,7 @@ impl Backend {
         self.console = None;
         self.last_document = None;
         self.scope = None;
+        self.mutation_scope = None;
     }
 
     /// Execute a decoded, shape-validated request. `current` is the document stamp and loading
@@ -181,6 +229,107 @@ impl Backend {
                 }
                 port.inspect_dom(current.0, request.command, &request.args)
                     .map(|page| InspectorResponse::Dom(Box::new(page)))
+            }
+            InspectorCommand::GetGeometry => {
+                let InspectorArgs::DomNode { node } = &request.args else {
+                    return Err(refuse(InspectorErrorCode::InvalidPayload, "Missing node"));
+                };
+                if current.1 {
+                    return Err(refuse(InspectorErrorCode::Busy, "Document is loading"));
+                }
+                port.inspect_geometry(current.0, *node)
+                    .map(|report| InspectorResponse::Geometry(Box::new(report)))
+            }
+            InspectorCommand::PickNode => {
+                let InspectorArgs::Pick { x_milli, y_milli } = &request.args else {
+                    return Err(refuse(
+                        InspectorErrorCode::InvalidPayload,
+                        "Missing position",
+                    ));
+                };
+                if current.1 {
+                    return Err(refuse(InspectorErrorCode::Busy, "Document is loading"));
+                }
+                port.pick_node(
+                    current.0,
+                    wega_protocol::inspector::geometry::from_milli(*x_milli),
+                    wega_protocol::inspector::geometry::from_milli(*y_milli),
+                )
+                .map(|report| InspectorResponse::Picked(Box::new(report)))
+            }
+            InspectorCommand::GrantMutation => {
+                let InspectorArgs::Grant {
+                    token,
+                    opaque_override,
+                    origin,
+                } = &request.args
+                else {
+                    return Err(refuse(
+                        InspectorErrorCode::InvalidPayload,
+                        "Missing grant arguments",
+                    ));
+                };
+                let scope = policy::verify_scope(
+                    origin.as_deref(),
+                    *opaque_override,
+                    port.document_origin().as_deref(),
+                )?;
+                self.sessions
+                    .store_mutation_grant(request.session, current.0, *token);
+                self.mutation_scope = Some(scope);
+                Ok(InspectorResponse::MutationGranted)
+            }
+            InspectorCommand::RevokeMutation => {
+                self.sessions.clear_mutation_grant();
+                self.mutation_scope = None;
+                Ok(InspectorResponse::MutationRevoked)
+            }
+            InspectorCommand::Mutate => {
+                let InspectorArgs::Mutate {
+                    grant,
+                    node,
+                    epoch,
+                    op,
+                } = &request.args
+                else {
+                    return Err(refuse(
+                        InspectorErrorCode::InvalidPayload,
+                        "Missing edit arguments",
+                    ));
+                };
+                // Revalidated immediately before applying, against the *current* document.
+                if let Err(error) =
+                    self.sessions
+                        .check_mutation_grant(request.session, current.0, *grant)
+                {
+                    if error.code == InspectorErrorCode::StaleDocument {
+                        self.sessions.clear_mutation_grant();
+                        self.mutation_scope = None;
+                    }
+                    return Err(error);
+                }
+                let Some(scope) = &self.mutation_scope else {
+                    return Err(refuse(
+                        InspectorErrorCode::Unauthorized,
+                        "Editing has no recorded scope",
+                    ));
+                };
+                policy::verify_scope(
+                    scope.origin.as_deref(),
+                    scope.opaque_override,
+                    port.document_origin().as_deref(),
+                )?;
+                if current.1 {
+                    return Err(refuse(InspectorErrorCode::Busy, "Document is loading"));
+                }
+                // Edits that run code need the evaluation grant for this same session and
+                // document as well: a mutation grant alone never executes anything.
+                let allow_code = self
+                    .sessions
+                    .evaluation_live_for(request.session, current.0)
+                    && self.scope.is_some();
+                port.apply_edit(current.0, *node, *epoch, op, allow_code)
+                    .map(|outcome| InspectorResponse::Mutated(Box::new(outcome)))
             }
             InspectorCommand::Attach => {
                 // A new (or re-attached) session starts from the current document.
@@ -380,6 +529,8 @@ impl Backend {
         {
             self.sessions.clear_grant();
             self.scope = None;
+            self.sessions.clear_mutation_grant();
+            self.mutation_scope = None;
             if let Some(cursor) = &mut self.console {
                 cursor.after = port.console_first_seq().saturating_sub(1);
                 events.push(InspectorEvent::ExecutionContextDestroyed { document: previous });

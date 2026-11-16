@@ -12,13 +12,17 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 pub mod dom;
+pub mod edit;
+pub mod geometry;
 pub mod policy;
 pub mod session;
 pub mod styles;
 
 /// Message-set version, negotiated inside `Capability::Inspector`, independent of the
 /// engine protocol `VERSION`.
-pub const INSPECTOR_VERSION: u32 = 4;
+pub const INSPECTOR_VERSION: u32 = 5;
+/// First message-set version with geometry, picking and authorized mutation.
+pub const GEOMETRY_VERSION: u32 = 5;
 pub const DOM_VERSION: u32 = 3;
 /// First inspector message-set version that carries console and evaluation commands.
 pub const CONSOLE_VERSION: u32 = 2;
@@ -104,11 +108,28 @@ pub enum InspectorCommand {
     GetDomRoot,
     GetDomChildren,
     DescribeDomNode,
+    // Inspector version 5.
+    GetGeometry,
+    PickNode,
+    GrantMutation,
+    RevokeMutation,
+    Mutate,
 }
 
 impl InspectorCommand {
     pub fn needs_style_version(self) -> bool {
         self == Self::InspectStyle
+    }
+
+    pub fn needs_geometry_version(self) -> bool {
+        matches!(
+            self,
+            Self::GetGeometry
+                | Self::PickNode
+                | Self::GrantMutation
+                | Self::RevokeMutation
+                | Self::Mutate
+        )
     }
 
     pub fn needs_dom_version(self) -> bool {
@@ -201,6 +222,19 @@ pub enum InspectorArgs {
         offset: u32,
         limit: u32,
     },
+    /// A position in viewport CSS pixels as thousandths of a pixel (see
+    /// [`geometry::to_milli`]); fixed point so the argument enum stays `Eq`.
+    Pick {
+        x_milli: i32,
+        y_milli: i32,
+    },
+    Mutate {
+        grant: GrantToken,
+        node: dom::InspectorNodeId,
+        /// The mutation epoch the user saw; an edit on a newer document state is refused.
+        epoch: u64,
+        op: edit::MutationOp,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -230,6 +264,12 @@ impl InspectorRequest {
                 "Styles require inspector 4",
             ));
         }
+        if self.command.needs_geometry_version() && self.version < GEOMETRY_VERSION {
+            return Err(InspectorError::new(
+                InspectorErrorCode::UnsupportedVersion,
+                "Command needs inspector version 5",
+            ));
+        }
         if self.command.needs_dom_version() && self.version < DOM_VERSION {
             return Err(InspectorError::new(
                 InspectorErrorCode::UnsupportedVersion,
@@ -250,14 +290,21 @@ impl InspectorRequest {
                 }
                 Ok(())
             }
-            (C::DescribeDomNode, InspectorArgs::DomNode { .. }) => Ok(()),
+            (C::DescribeDomNode | C::GetGeometry, InspectorArgs::DomNode { .. }) => Ok(()),
+            (C::PickNode, InspectorArgs::Pick { .. }) => Ok(()),
+            (C::Mutate, InspectorArgs::Mutate { grant, op, .. }) => {
+                if grant.is_zero() {
+                    return bad("Empty mutation grant");
+                }
+                op.validate().or_else(|message| bad(message))
+            }
             (C::GetConsoleHistory, InspectorArgs::History { limit, .. }) => {
                 if *limit == 0 || *limit > MAX_HISTORY_PAGE {
                     return bad("History page size out of range");
                 }
                 Ok(())
             }
-            (C::GrantEvaluation, InspectorArgs::Grant { token, origin, .. }) => {
+            (C::GrantEvaluation | C::GrantMutation, InspectorArgs::Grant { token, origin, .. }) => {
                 if token.is_zero() {
                     return bad("Empty grant token");
                 }
@@ -288,7 +335,8 @@ impl InspectorRequest {
                 | C::EnableConsole
                 | C::DisableConsole
                 | C::ClearConsole
-                | C::RevokeEvaluation,
+                | C::RevokeEvaluation
+                | C::RevokeMutation,
                 InspectorArgs::None,
             ) => Ok(()),
             (C::GetDomRoot, InspectorArgs::None) => Ok(()),
@@ -602,6 +650,11 @@ pub enum InspectorResponse {
     Evaluated(Box<EvalOutcome>),
     Dom(Box<dom::DomPage>),
     Style(Box<styles::StylePage>),
+    Geometry(Box<geometry::GeometryReport>),
+    Picked(Box<geometry::PickReport>),
+    MutationGranted,
+    MutationRevoked,
+    Mutated(Box<edit::MutationOutcome>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

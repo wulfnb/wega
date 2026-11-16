@@ -261,6 +261,11 @@ impl Worker {
         );
         session
     }
+    /// Attach a new session after the browser revoked `old` (the content mirror keeps one).
+    pub fn attach_replacing(&mut self, old: InspectorSessionId) -> InspectorSessionId {
+        let _ = self.call(old, InspectorCommand::Detach);
+        self.attach()
+    }
     pub fn snapshot(&mut self, session: InspectorSessionId) -> StatusSnapshot {
         match self.call(session, InspectorCommand::GetStatusSnapshot) {
             Ok(InspectorResponse::Status(snapshot)) => *snapshot,

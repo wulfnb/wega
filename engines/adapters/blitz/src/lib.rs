@@ -14,7 +14,8 @@ use url::Url;
 use wega_dom::input::{FocusState, HoverChange, InputControl};
 use wega_dom::layout::{
     BoxModel, ClientBox, ContentBox, Geometry, GeometryAccess, HitTest, Insets, LayoutControl,
-    LayoutError, MAX_LAYOUT_DEPTH, OffsetBox, Point, Rect, Size, ViewportConfig, ViewportGeometry,
+    LayoutError, MAX_LAYOUT_DEPTH, OffsetBox, PaintMapping, Point, Rect, Size, UnsupportedPaint,
+    ViewportConfig, ViewportGeometry,
 };
 use wega_dom::render::PaintSource;
 use wega_dom::style::{StyleAccess, StyleControl, StyleError};
@@ -322,7 +323,30 @@ fn rect(r: blitz_dom::BoundingRect) -> Rect {
         height: r.height,
     }
 }
+fn intersect(a: Rect, b: Rect) -> Rect {
+    let x = a.x.max(b.x);
+    let y = a.y.max(b.y);
+    let right = (a.x + a.width).min(b.x + b.width);
+    let bottom = (a.y + a.height).min(b.y + b.height);
+    Rect {
+        x,
+        y,
+        width: (right - x).max(0.0),
+        height: (bottom - y).max(0.0),
+    }
+}
 impl BlitzDocument {
+    /// The padding box of the element `id` in viewport coordinates, from cached layout.
+    fn padding_box_of(&self, id: NodeId) -> Result<Rect, ()> {
+        let outer = self.0.get_client_bounding_rect(id).map(rect).ok_or(())?;
+        let layout = self.0.get_node(id).ok_or(())?.final_layout();
+        Ok(Rect {
+            x: outer.x + layout.border.left as f64,
+            y: outer.y + layout.border.top as f64,
+            width: (outer.width - (layout.border.left + layout.border.right) as f64).max(0.0),
+            height: (outer.height - (layout.border.top + layout.border.bottom) as f64).max(0.0),
+        })
+    }
     /// Whether any node is more than `limit` levels below the document root. Iterative (the whole
     /// point is that it cannot overflow itself) and exits on the first violation; a tree with no
     /// more than `limit` nodes cannot be that deep and is not walked.
@@ -435,6 +459,63 @@ impl GeometryAccess for BlitzDocument {
     }
     fn layout_refused(&self) -> bool {
         self.nests_deeper_than(layout_depth_limit())
+    }
+    fn paint_mapping(&self, key: NodeKey) -> PaintMapping {
+        use style::values::generics::box_::Perspective;
+        let mut clip: Option<Rect> = None;
+        let mut positioned = false;
+        let mut current = Some(key.node_id());
+        let mut first = true;
+        // Walk to the root through *layout* parents (the DOM tree Blitz lays out).
+        for _ in 0..=MAX_LAYOUT_DEPTH + 2 {
+            let Some(id) = current else { break };
+            let Some(node) = self.0.get_node(id) else {
+                return PaintMapping::Unsupported(UnsupportedPaint::Unknown);
+            };
+            if node.is_element() {
+                let Some(style) = node.primary_styles() else {
+                    return PaintMapping::Unsupported(UnsupportedPaint::Unknown);
+                };
+                let b = style.get_box();
+                let transformed = !b.transform.0.is_empty()
+                    || !matches!(b.translate, style::values::computed::Translate::None)
+                    || !matches!(b.rotate, style::values::computed::Rotate::None)
+                    || !matches!(b.scale, style::values::computed::Scale::None)
+                    || !matches!(b.perspective, Perspective::None);
+                if transformed {
+                    return PaintMapping::Unsupported(UnsupportedPaint::Transform);
+                }
+                use style::computed_values::position::T as Position;
+                if matches!(b.position, Position::Absolute | Position::Fixed) {
+                    positioned = true;
+                }
+                // `html` and `body` propagate their overflow to the viewport.
+                let propagates = node
+                    .element_data()
+                    .is_some_and(|e| matches!(&*e.name.local, "html" | "body"));
+                let clips = {
+                    use style::values::specified::box_::Overflow;
+                    !matches!(b.overflow_x, Overflow::Visible)
+                        || !matches!(b.overflow_y, Overflow::Visible)
+                };
+                if !first && clips && !propagates {
+                    if let Ok(boxes) = self.padding_box_of(id) {
+                        clip = Some(match clip {
+                            None => boxes,
+                            Some(old) => intersect(old, boxes),
+                        });
+                    } else {
+                        return PaintMapping::Unsupported(UnsupportedPaint::Unknown);
+                    }
+                }
+                first = false;
+            }
+            current = node.parent;
+        }
+        if clip.is_some() && positioned {
+            return PaintMapping::Unsupported(UnsupportedPaint::ClipPositioned);
+        }
+        PaintMapping::Exact { clip }
     }
     fn inspect_geometry(&self, key: NodeKey) -> Geometry {
         let Some(node) = self.0.get_node(key.node_id()) else {

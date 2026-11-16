@@ -12,7 +12,7 @@ pub mod permissions;
 pub mod queue;
 pub mod requests;
 pub mod storage;
-pub const VERSION: u32 = 25;
+pub const VERSION: u32 = 26;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -233,6 +233,7 @@ pub enum Capability {
     InspectorConsole,
     InspectorDom,
     InspectorStyles,
+    InspectorGeometry,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -258,6 +259,7 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::InspectorConsole,
     Capability::InspectorDom,
     Capability::InspectorStyles,
+    Capability::InspectorGeometry,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -338,6 +340,7 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::InspectorConsole => 23,
                     Capability::InspectorDom => 24,
                     Capability::InspectorStyles => 25,
+                    Capability::InspectorGeometry => 26,
                 }
         })
         .collect()
@@ -1087,9 +1090,11 @@ mod tests {
     }
     #[test]
     fn authoritative_storage_capability_and_version() {
-        assert_eq!(VERSION, 25);
+        assert_eq!(VERSION, 26);
         assert!(capabilities(25).contains(&Capability::InspectorStyles));
         assert!(!capabilities(24).contains(&Capability::InspectorStyles));
+        assert!(capabilities(26).contains(&Capability::InspectorGeometry));
+        assert!(!capabilities(25).contains(&Capability::InspectorGeometry));
         assert!(capabilities(24).contains(&Capability::InspectorDom));
         assert!(!capabilities(23).contains(&Capability::InspectorDom));
         assert!(capabilities(16).contains(&Capability::AuthoritativeStorage));

@@ -2680,6 +2680,74 @@ impl crate::inspector::PagePort for View {
     {
         crate::inspector::dom::inspect(&*self.document.borrow(), document, command, args)
     }
+    fn inspect_geometry(
+        &self,
+        document: wega_protocol::DocumentContext,
+        node: wega_protocol::inspector::dom::InspectorNodeId,
+    ) -> Result<
+        wega_protocol::inspector::geometry::GeometryReport,
+        wega_protocol::inspector::InspectorError,
+    > {
+        crate::inspector::geometry::inspect(&*self.document.borrow(), document, node)
+    }
+    fn pick_node(
+        &self,
+        document: wega_protocol::DocumentContext,
+        x: f32,
+        y: f32,
+    ) -> Result<
+        wega_protocol::inspector::geometry::PickReport,
+        wega_protocol::inspector::InspectorError,
+    > {
+        crate::inspector::geometry::pick(&*self.document.borrow(), document, x, y)
+    }
+    fn apply_edit(
+        &mut self,
+        document: wega_protocol::DocumentContext,
+        node: wega_protocol::inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: &wega_protocol::inspector::edit::MutationOp,
+        allow_code: bool,
+    ) -> Result<
+        wega_protocol::inspector::edit::MutationOutcome,
+        wega_protocol::inspector::InspectorError,
+    > {
+        use wega_protocol::inspector::{InspectorError, InspectorErrorCode};
+        if self.mutation_epoch() != epoch {
+            return Err(InspectorError::new(
+                InspectorErrorCode::StaleMutation,
+                "The document changed since the edit was prepared",
+            ));
+        }
+        let plan = {
+            let doc = self
+                .document
+                .try_borrow()
+                .map_err(|_| InspectorError::new(InspectorErrorCode::Busy, "DOM is busy"))?;
+            crate::inspector::mutate::plan(&*doc, document, node, op, allow_code)?
+        };
+        let dom = self.dom.as_ref().ok_or_else(|| {
+            InspectorError::new(
+                InspectorErrorCode::Unavailable,
+                "The document has no script environment",
+            )
+        })?;
+        let result = dom
+            .call(&plan.args)
+            .map_err(|message| crate::inspector::mutate::map_failure(&message))?;
+        let changed = if plan.reports_change {
+            result.as_bool().unwrap_or(true)
+        } else {
+            true
+        };
+        self.frame.invalidate();
+        Ok(wega_protocol::inspector::edit::MutationOutcome {
+            document,
+            node,
+            epoch: self.mutation_epoch(),
+            changed,
+        })
+    }
     fn status_input(&self, sampled: crate::inspector::Sampled) -> crate::inspector::StatusInput {
         let history = self.document_history();
         crate::inspector::StatusInput {

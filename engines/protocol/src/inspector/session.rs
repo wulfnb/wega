@@ -280,6 +280,9 @@ pub struct HostSessions {
     console: ConsoleQueue,
     console_enabled: bool,
     grant: Option<HostGrant>,
+    /// Mutation authority: a separate record, token and lifecycle from `grant`. Neither one
+    /// ever stands in for the other.
+    mutation: Option<HostGrant>,
 }
 
 impl HostSessions {
@@ -292,6 +295,7 @@ impl HostSessions {
             console: ConsoleQueue::default(),
             console_enabled: false,
             grant: None,
+            mutation: None,
         }
     }
     pub fn registry(&self) -> &SessionRegistry {
@@ -317,8 +321,9 @@ impl HostSessions {
         self.last_seq = 0;
         self.console.clear();
         self.console_enabled = false;
-        // A session change can never inherit evaluation authority.
+        // A session change can never inherit evaluation or mutation authority.
         self.grant = None;
+        self.mutation = None;
     }
 
     /// Record a grant for the live session and document. The token comes from the caller's
@@ -375,9 +380,62 @@ impl HostSessions {
     pub fn clear_grant(&mut self) {
         self.grant = None;
     }
+    /// Record a **mutation** grant for the live session and document (same rules as
+    /// [`Self::install_grant`], separate slot).
+    pub fn install_mutation_grant(
+        &mut self,
+        session: InspectorSessionId,
+        document: DocumentContext,
+        token: GrantToken,
+        principal: Principal,
+        scope: super::policy::GrantScope,
+    ) -> Result<(), InspectorError> {
+        if !self.registry.is_live(session) {
+            return Err(err(InspectorErrorCode::StaleSession, "Session is not live"));
+        }
+        if token.is_zero() {
+            return Err(err(InspectorErrorCode::InvalidPayload, "Empty grant token"));
+        }
+        self.mutation = Some(HostGrant {
+            session,
+            document,
+            token,
+            principal,
+            scope,
+        });
+        Ok(())
+    }
+    /// The token to put in a `Mutate`, only for this live session, document and principal.
+    pub fn mutation_grant_for(
+        &self,
+        session: InspectorSessionId,
+        document: DocumentContext,
+        principal: &Principal,
+    ) -> Option<GrantToken> {
+        self.mutation
+            .as_ref()
+            .filter(|grant| {
+                self.registry.is_live(session)
+                    && grant.session == session
+                    && grant.document == document
+                    && grant.principal == *principal
+            })
+            .map(|grant| grant.token)
+    }
+    /// For the UI indicator: the document a live mutation grant covers.
+    pub fn mutation_state(&self, session: InspectorSessionId) -> Option<DocumentContext> {
+        self.mutation
+            .as_ref()
+            .filter(|grant| grant.session == session && self.registry.is_live(session))
+            .map(|grant| grant.document)
+    }
+    pub fn clear_mutation_grant(&mut self) {
+        self.mutation = None;
+    }
     /// The document was replaced: document-bound authority and history are gone.
     pub fn document_changed(&mut self) {
         self.grant = None;
+        self.mutation = None;
         self.console.clear();
     }
     pub fn revoke(&mut self, session: InspectorSessionId) -> bool {
@@ -415,6 +473,9 @@ impl HostSessions {
                 return false;
             }
             Ok(InspectorResponse::Dom(page)) if !page.is_bounded() => return false,
+            Ok(InspectorResponse::Geometry(report)) if !report.is_bounded() => return false,
+            Ok(InspectorResponse::Picked(report)) if !report.is_bounded() => return false,
+            Ok(InspectorResponse::Mutated(outcome)) if !outcome.is_bounded() => return false,
             Ok(InspectorResponse::Evaluated(outcome)) if !outcome.is_bounded() => return false,
             Ok(InspectorResponse::ConsoleHistory { messages, .. })
                 if messages.iter().any(|m| !m.is_bounded()) =>
@@ -435,6 +496,16 @@ impl HostSessions {
             (Ok(InspectorResponse::EvaluationRevoked), _) => self.grant = None,
             // A refused grant must not leave a browser-side record behind.
             (Err(_), InspectorCommand::GrantEvaluation) => self.grant = None,
+            (Ok(InspectorResponse::MutationRevoked), _) => self.mutation = None,
+            (Err(_), InspectorCommand::GrantMutation) => self.mutation = None,
+            // A stale or unauthorised edit means the content side no longer honours the grant.
+            (
+                Err(InspectorError {
+                    code: InspectorErrorCode::Unauthorized | InspectorErrorCode::StaleDocument,
+                    ..
+                }),
+                InspectorCommand::Mutate,
+            ) => self.mutation = None,
             _ => {}
         }
         self.results.push(Completed {
@@ -537,6 +608,7 @@ pub struct ContentSessions {
     highest: u64,
     seq: u64,
     grant: Option<(InspectorSessionId, DocumentContext, GrantToken)>,
+    mutation: Option<(InspectorSessionId, DocumentContext, GrantToken)>,
 }
 
 impl ContentSessions {
@@ -585,6 +657,7 @@ impl ContentSessions {
             self.highest = id.0;
             self.seq = 0;
             self.grant = None;
+            self.mutation = None;
             return Ok(());
         }
         if self.live == Some(id) {
@@ -610,6 +683,7 @@ impl ContentSessions {
             self.live = None;
             self.subscribed = false;
             self.grant = None;
+            self.mutation = None;
             true
         } else {
             false
@@ -631,6 +705,70 @@ impl ContentSessions {
     }
     pub fn has_grant(&self) -> bool {
         self.grant.is_some()
+    }
+    /// Remember the browser's **mutation** grant (separate from the evaluation grant).
+    pub fn store_mutation_grant(
+        &mut self,
+        session: InspectorSessionId,
+        document: DocumentContext,
+        token: GrantToken,
+    ) {
+        if self.live == Some(session) && !token.is_zero() {
+            self.mutation = Some((session, document, token));
+        }
+    }
+    pub fn clear_mutation_grant(&mut self) {
+        self.mutation = None;
+    }
+    /// Whether an evaluation grant is live for exactly this session and document (the token is
+    /// not needed: this only decides whether a code-running edit may proceed).
+    pub fn evaluation_live_for(
+        &self,
+        session: InspectorSessionId,
+        document: DocumentContext,
+    ) -> bool {
+        self.live == Some(session)
+            && self
+                .grant
+                .is_some_and(|(owner, doc, _)| owner == session && doc == document)
+    }
+    pub fn has_mutation_grant(&self) -> bool {
+        self.mutation.is_some()
+    }
+    /// Independent verification before any edit, like [`Self::check_grant`] for the mutation
+    /// slot: it must exist, belong to the live session, match the token and the *current*
+    /// document. An evaluation token never matches.
+    pub fn check_mutation_grant(
+        &self,
+        session: InspectorSessionId,
+        current: DocumentContext,
+        token: GrantToken,
+    ) -> Result<(), InspectorError> {
+        let Some((owner, document, stored)) = self.mutation else {
+            return Err(err(
+                InspectorErrorCode::Unauthorized,
+                "Editing has not been authorised",
+            ));
+        };
+        if self.live != Some(session) || owner != session {
+            return Err(err(
+                InspectorErrorCode::StaleSession,
+                "The editing grant belongs to another session",
+            ));
+        }
+        if stored != token {
+            return Err(err(
+                InspectorErrorCode::Unauthorized,
+                "Invalid editing grant",
+            ));
+        }
+        if document != current {
+            return Err(err(
+                InspectorErrorCode::StaleDocument,
+                "The editing grant covers a previous document",
+            ));
+        }
+        Ok(())
     }
     /// Independent verification before any evaluation: the stored grant must exist, belong
     /// to the live session, carry the same token and cover the *current* document.

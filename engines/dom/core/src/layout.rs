@@ -184,6 +184,26 @@ fn inset(r: Rect, i: Insets) -> Rect {
         height: (r.height - i.top - i.bottom).max(0.0),
     }
 }
+/// Why the layout boxes of a node are not its painted geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnsupportedPaint {
+    /// The node or an ancestor has a transform (or `translate`/`rotate`/`scale`/`perspective`).
+    Transform,
+    /// An absolutely or fixed positioned node sits under a clipping ancestor: which clips apply
+    /// depends on containing blocks and is not modelled.
+    ClipPositioned,
+    /// The style is not available (never resolved) or a paint-affecting property is present that
+    /// is not modelled (`clip-path`).
+    Unknown,
+}
+/// Whether layout boxes equal what is painted: `Exact` carries the intersection of every
+/// clipping ancestor's padding box (viewport CSS pixels), if there is any clipping ancestor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PaintMapping {
+    Exact { clip: Option<Rect> },
+    Unsupported(UnsupportedPaint),
+}
+
 /// Why an inspector read has no geometry, or how fresh it is. Never produced by flushing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Geometry {
@@ -239,6 +259,13 @@ pub trait GeometryAccess: DocumentView {
     /// trust the answer. Does not use `layout_refused` per call when `layout_pending` is false
     /// (a laid-out document cannot be refused), so the common path is one cached read.
     fn inspect_geometry(&self, key: NodeKey) -> Geometry;
+    /// Whether [`Self::inspect_geometry`] boxes are the painted geometry, from cached computed
+    /// styles only (never resolves style or layout). Anything not modelled is `Unsupported`:
+    /// an overlay must be suppressed rather than drawn in the wrong place.
+    fn paint_mapping(&self, key: NodeKey) -> PaintMapping {
+        let _ = key;
+        PaintMapping::Unsupported(UnsupportedPaint::Unknown)
+    }
 }
 
 /// Hit-testing against the current layout.

@@ -188,3 +188,81 @@ fn reads_are_cheap_and_do_not_depend_on_document_size() {
     );
     assert!(started.elapsed() < std::time::Duration::from_secs(2));
 }
+
+const PAINT: &str = "<!doctype html><style>body{margin:0}\
+#plain{width:10px;height:10px}\
+#tr{transform:translate(30px,40px);width:10px;height:10px}\
+#trchild{width:5px;height:5px}\
+#sc{transform:scale(2);width:10px;height:10px}\
+#rot{transform:rotate(10deg);width:10px;height:10px}\
+#tprop{translate:5px 5px;width:10px;height:10px}\
+#clip{width:50px;height:20px;overflow:hidden;border:3px solid;margin-left:7px}\
+#inner{width:200px;height:10px}\
+#abs{position:absolute;width:5px;height:5px}\
+#fix{position:fixed;width:5px;height:5px}\
+#scroller{width:100px;height:60px;overflow:scroll}#deep{height:300px}</style>\
+<div id=plain></div><div id=tr><div id=trchild></div></div><div id=sc></div><div id=rot></div>\
+<div id=tprop></div><div id=clip><div id=inner></div><div id=abs></div></div><div id=fix></div>\
+<div id=scroller><div id=deep></div></div>";
+
+#[test]
+fn paint_mapping_is_exact_or_explicitly_unsupported_never_misleading() {
+    use wega_dom::layout::{PaintMapping, UnsupportedPaint};
+    let doc = doc_with(PAINT, 1.0, 1.0);
+    let map = |id: &str| doc.paint_mapping(by_id(&doc, id));
+    assert_eq!(map("plain"), PaintMapping::Exact { clip: None });
+    for id in ["tr", "trchild", "sc", "rot", "tprop"] {
+        assert_eq!(
+            map(id),
+            PaintMapping::Unsupported(UnsupportedPaint::Transform),
+            "{id}"
+        );
+    }
+    // Clipped by an `overflow:hidden` ancestor: the clip is that ancestor's padding box.
+    let clip_box = current(&doc, "clip");
+    let PaintMapping::Exact { clip: Some(c) } = map("inner") else {
+        panic!("{:?}", map("inner"))
+    };
+    assert_eq!(
+        c,
+        wega_dom::layout::Rect {
+            x: clip_box.border_box.x + 3.0,
+            y: clip_box.border_box.y + 3.0,
+            width: 50.0,
+            height: 20.0
+        }
+    );
+    assert_eq!(c.x, 10.0, "margin 7 plus border 3");
+    // An absolutely positioned node under a clipping ancestor is not modelled.
+    assert_eq!(
+        map("abs"),
+        PaintMapping::Unsupported(UnsupportedPaint::ClipPositioned)
+    );
+    // A fixed node with no clipping ancestor is fine: boxes are viewport-relative already.
+    assert_eq!(map("fix"), PaintMapping::Exact { clip: None });
+    // The scroll container clips its scrolled content to its padding box.
+    let PaintMapping::Exact { clip: Some(sc) } = map("deep") else {
+        panic!()
+    };
+    assert_eq!((sc.width, sc.height), (100.0, 60.0));
+    // Unresolved style: unknown, never a guess.
+    let unresolved =
+        BlitzDocument::new(HtmlDocument::from_html(PAINT, DocumentConfig::default()).into_inner());
+    assert_eq!(
+        unresolved.paint_mapping(by_id(&unresolved, "plain")),
+        PaintMapping::Unsupported(UnsupportedPaint::Unknown)
+    );
+}
+
+#[test]
+fn a_clipped_child_is_reported_with_the_clip_that_hides_it() {
+    use wega_dom::layout::PaintMapping;
+    let doc = doc_with(PAINT, 1.0, 1.0);
+    let inner = current(&doc, "inner").border_box;
+    let PaintMapping::Exact { clip: Some(c) } = doc.paint_mapping(by_id(&doc, "inner")) else {
+        panic!()
+    };
+    // 200 px wide box, 50 px visible: an overlay must be cut to the clip.
+    assert!(inner.width > c.width);
+    println!("clip {c:?} child {inner:?}");
+}
