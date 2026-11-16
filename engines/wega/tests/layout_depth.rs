@@ -43,6 +43,23 @@ fn child_probe() {
     let Ok(spec) = std::env::var("WEGA_LAYOUT_PROBE") else {
         return;
     };
+    if std::env::var("WEGA_PROBE_UNGUARDED").is_ok() {
+        wega_adapter_blitz::set_layout_depth_limit_for_probe(Some(usize::MAX - 1));
+    }
+    let stack = std::env::var("WEGA_PROBE_STACK")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(wega_engine::ENGINE_THREAD_STACK);
+    // The engine's own thread configuration, not the test harness thread.
+    std::thread::Builder::new()
+        .name("wega-dom".into())
+        .stack_size(stack)
+        .spawn(move || probe(&spec))
+        .unwrap()
+        .join()
+        .unwrap();
+}
+fn probe(spec: &str) {
     let (depth, mode) = spec.split_once(':').unwrap();
     let depth: usize = depth.parse().unwrap();
     let t = Instant::now();
@@ -87,6 +104,53 @@ fn child_probe() {
         "paint" => {
             v.paint(400, 300, 1.0, 1.0, false).unwrap();
         }
+        // Every other way a page or the browser can reach layout, style or geometry.
+        "misc" => {
+            for js in [
+                "getComputedStyle(document.body).width.length",
+                "document.body.scrollIntoView();1",
+                "document.body.offsetWidth+document.body.scrollHeight+document.body.clientWidth",
+                "window.innerWidth+window.scrollY",
+                "document.body.focus();document.activeElement===document.body",
+                "document.body.getClientRects().length",
+                "(()=>{window.scrollTo(0,10);return window.scrollY})()",
+            ] {
+                // A missing API is a TypeError, not a layout problem; only hangs and crashes matter.
+                let _ = v.evaluate_json(js);
+                stage(js);
+            }
+            v.paint(800, 600, 2.0, 1.5, true).unwrap();
+            stage("repaint-dark-hidpi");
+            v.paint(200, 100, 1.0, 1.0, false).unwrap();
+            stage("repaint-resized");
+            let hit = v.pointer(wega_engine::Pointer {
+                kind: wega_engine::PointerKind::Move,
+                x: 10.0,
+                y: 10.0,
+                button: 0,
+                buttons: 0,
+                modifiers: 0,
+                delta_x: 0.0,
+                delta_y: 0.0,
+            });
+            let _ = hit;
+            stage("pointer");
+        }
+        // After a refused layout the same view must show an ordinary page correctly.
+        "recover" => {
+            v.paint(400, 300, 1.0, 1.0, false).unwrap();
+            stage("deep-painted");
+            v.set_html(
+                "<!doctype html><body style='margin:0'><div id=a style='height:77px'>ok</div>",
+            )
+            .unwrap();
+            v.poll();
+            v.paint(400, 300, 1.0, 1.0, false).unwrap();
+            let h = v
+                .evaluate_json("document.getElementById('a').getBoundingClientRect().height")
+                .unwrap();
+            println!("height {h}");
+        }
         _ => panic!("mode"),
     }
     stage("done");
@@ -109,7 +173,7 @@ fn run_child_on(depth: usize, mode: &str, limit: Duration, stack: usize) -> Outc
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["child_probe", "--exact", "--nocapture", "--test-threads=1"])
         .env("WEGA_LAYOUT_PROBE", format!("{depth}:{mode}"))
-        .env("RUST_MIN_STACK", stack.to_string())
+        .env("WEGA_PROBE_STACK", stack.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -214,6 +278,77 @@ fn the_cliff_is_the_native_stack_not_the_depth_so_a_small_stack_is_unsupported()
     );
     // The same page on the engine stack completes.
     assert!(run_child(200, "script_flush", DEADLINE).finished);
+}
+
+/// Extra scenarios on the engine stack: every other route into layout or geometry, and recovery.
+#[test]
+fn other_routes_into_layout_cannot_bypass_the_guard_and_the_view_recovers() {
+    for depth in [122, 257, 520, 600, 1000] {
+        let o = run_child(depth, "misc", DEADLINE);
+        assert!(o.finished, "misc at depth {depth}: {}", o.stages);
+        let o = run_child(depth, "recover", DEADLINE);
+        assert!(o.finished, "recover at depth {depth}: {}", o.stages);
+        assert_eq!(o.height, Some(77.0), "an ordinary page after depth {depth}");
+    }
+}
+
+#[test]
+fn the_remaining_depths_of_the_validation_list_complete() {
+    for depth in [200, 520, 600] {
+        for mode in ["script_flush", "paint"] {
+            let o = run_child(depth, mode, DEADLINE);
+            assert!(o.finished, "{mode} at depth {depth}: {}", o.stages);
+        }
+    }
+}
+
+#[test]
+#[ignore = "measurement: finds the UNGUARDED cliff of this build (set WEGA_PROBE_DEPTHS)"]
+fn print_unguarded_cliff() {
+    // SAFETY-free: the child lifts the limit through a doc(hidden) probe hook.
+    let depths: Vec<usize> = std::env::var("WEGA_PROBE_DEPTHS")
+        .map(|v| v.split(',').map(|d| d.parse().unwrap()).collect())
+        .unwrap_or_else(|_| vec![256, 400, 600, 800, 1200, 1600, 2400, 3200]);
+    for depth in depths {
+        for mode in ["script_flush", "paint"] {
+            let o = run_child_unguarded(depth, mode, Duration::from_secs(12));
+            println!(
+                "UNGUARDED {mode:13} depth {depth:5} finished={}",
+                o.finished
+            );
+        }
+    }
+}
+fn run_child_unguarded(depth: usize, mode: &str, limit: Duration) -> Outcome {
+    // The child reads the variable; the parent only needs it set for the spawn.
+    // (Environment mutation is process-wide but this test is ignored and single-purpose.)
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["child_probe", "--exact", "--nocapture", "--test-threads=1"])
+        .env("WEGA_LAYOUT_PROBE", format!("{depth}:{mode}"))
+        .env("WEGA_PROBE_UNGUARDED", "1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    let mut finished = false;
+    while started.elapsed() < limit {
+        if let Some(status) = child.try_wait().unwrap() {
+            finished = status.success();
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    if child.try_wait().unwrap().is_none() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    Outcome {
+        finished,
+        elapsed: started.elapsed(),
+        stages: String::new(),
+        height: None,
+    }
 }
 
 #[test]
