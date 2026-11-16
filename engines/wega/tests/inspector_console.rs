@@ -383,9 +383,17 @@ fn a_browser_side_queue_stays_bounded_through_a_real_flood() {
             )
             .is_ok()
     );
-    worker
-        .evaluate("for(let i=0;i<20000;i++)console.log('flood',i,{i});true")
-        .unwrap();
+    // Ten script runs of 2,000 calls: one 20,000-call run can exceed the script watchdog on a
+    // CPU-starved host ("Script deadline exceeded", reproduced under compiler load).
+    for batch in 0..10 {
+        worker
+            .evaluate(&format!(
+                "for(let i={};i<{};i++)console.log('flood',i,{{i}});true",
+                batch * 2000,
+                (batch + 1) * 2000
+            ))
+            .unwrap();
+    }
     let mut peak = (0, 0);
     let quiet = Duration::from_millis(400);
     while let Ok(event) = worker.events.recv_timeout(quiet) {
@@ -964,7 +972,9 @@ fn the_snapshot_reports_the_mutation_epoch_and_layout_state_of_the_current_docum
         "same document: only the epoch moved"
     );
     // Layout settles by itself (the worker paints); once it has, nothing is pending.
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // 10 s was not enough when the host was CPU-starved by compiler jobs (load ~20), where the
+    // worker's own paint was delayed past it; 45 s still catches a layout that never settles.
+    let deadline = Instant::now() + Duration::from_secs(45);
     while worker.snapshot(session).layout_pending {
         assert!(Instant::now() < deadline, "layout never settled");
         std::thread::sleep(Duration::from_millis(20));

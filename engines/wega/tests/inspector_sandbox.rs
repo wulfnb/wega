@@ -398,6 +398,162 @@ fn the_inspector_console_and_evaluation_work_inside_the_sandboxed_required_worke
         matches!(&escape, Ok(InspectorResponse::Evaluated(o)) if matches!(&**o, EvalOutcome::Value { preview } if preview.text == "no Deno")),
         "{escape:?}"
     );
+    // D3: geometry, picking and separately authorised editing inside the sandboxed worker.
+    {
+        use protocol::inspector::{dom::InspectorNodeId, edit::MutationOp};
+        let child_of = |call: &mut dyn FnMut(
+            InspectorCommand,
+            InspectorArgs,
+            InspectorSessionId,
+        ) -> Result<InspectorResponse, String>,
+                        parent: InspectorNodeId,
+                        epoch: u64,
+                        name: &str|
+         -> InspectorNodeId {
+            let InspectorResponse::Dom(page) = call(
+                InspectorCommand::GetDomChildren,
+                InspectorArgs::DomChildren {
+                    node: parent,
+                    epoch,
+                    offset: 0,
+                    limit: 64,
+                },
+                id,
+            )
+            .unwrap() else {
+                panic!()
+            };
+            page.nodes
+                .iter()
+                .find(|n| n.name == name)
+                .unwrap_or_else(|| panic!("no <{name}>"))
+                .id
+        };
+        let epoch_now = |call: &mut dyn FnMut(
+            InspectorCommand,
+            InspectorArgs,
+            InspectorSessionId,
+        ) -> Result<InspectorResponse, String>|
+         -> u64 {
+            match call(InspectorCommand::GetStatusSnapshot, InspectorArgs::None, id) {
+                Ok(InspectorResponse::Status(s)) => s.mutation_epoch,
+                other => panic!("{other:?}"),
+            }
+        };
+        let html = child_of(&mut call, root_id, root.epoch, "html");
+        let e0 = epoch_now(&mut call);
+        let body = child_of(&mut call, html, e0, "body");
+        // Geometry and picking need only the session; the reports are bounded and never forced.
+        let geometry = call(
+            InspectorCommand::GetGeometry,
+            InspectorArgs::DomNode { node: body },
+            id,
+        );
+        let Ok(InspectorResponse::Geometry(g)) = geometry else {
+            panic!("{geometry:?}")
+        };
+        assert!(g.is_bounded() && g.document == document);
+        let picked = call(
+            InspectorCommand::PickNode,
+            InspectorArgs::Pick {
+                x_milli: 10_000,
+                y_milli: 10_000,
+            },
+            id,
+        );
+        assert!(
+            matches!(&picked, Ok(InspectorResponse::Picked(p)) if p.is_bounded()),
+            "{picked:?}"
+        );
+        let edit = |grant: GrantToken, epoch: u64| InspectorArgs::Mutate {
+            grant,
+            node: body,
+            epoch,
+            op: MutationOp::SetAttribute {
+                name: "data-sandbox".into(),
+                value: "1".into(),
+            },
+        };
+        let editor = GrantToken([0x5A; 16]);
+        // No mutation grant yet; the live evaluation grant is not one.
+        let e = epoch_now(&mut call);
+        for token in [editor, secret] {
+            let r = call(InspectorCommand::Mutate, edit(token, e), id);
+            assert!(
+                r.as_ref().is_err_and(|m| m.starts_with("Unauthorized")),
+                "{r:?}"
+            );
+        }
+        // A claim contradicting the sandboxed engine's own document is refused and stores nothing.
+        let r = call(
+            InspectorCommand::GrantMutation,
+            InspectorArgs::Grant {
+                token: editor,
+                opaque_override: false,
+                origin: Some("https://example.test".into()),
+            },
+            id,
+        );
+        assert!(
+            r.as_ref().is_err_and(|m| m.starts_with("PolicyDenied")),
+            "{r:?}"
+        );
+        let r = call(InspectorCommand::Mutate, edit(editor, e), id);
+        assert!(
+            r.as_ref().is_err_and(|m| m.starts_with("Unauthorized")),
+            "{r:?}"
+        );
+        assert_eq!(
+            call(
+                InspectorCommand::GrantMutation,
+                InspectorArgs::Grant {
+                    token: editor,
+                    opaque_override: false,
+                    origin: Some(origin.clone())
+                },
+                id
+            ),
+            Ok(InspectorResponse::MutationGranted)
+        );
+        // A forged token and the evaluation token are still refused; the right one applies.
+        for token in [GrantToken([1; 16]), secret] {
+            let r = call(InspectorCommand::Mutate, edit(token, e), id);
+            assert!(
+                r.as_ref().is_err_and(|m| m.starts_with("Unauthorized")),
+                "{r:?}"
+            );
+        }
+        let applied = call(InspectorCommand::Mutate, edit(editor, e), id);
+        assert!(
+            matches!(&applied, Ok(InspectorResponse::Mutated(o)) if o.changed && o.epoch != e),
+            "{applied:?}"
+        );
+        let seen_value = call(
+            InspectorCommand::Evaluate,
+            eval("document.body.getAttribute('data-sandbox')", secret),
+            id,
+        );
+        assert!(
+            matches!(&seen_value, Ok(InspectorResponse::Evaluated(o)) if matches!(&**o, EvalOutcome::Value { preview } if preview.text.contains('1'))),
+            "{seen_value:?}"
+        );
+        // A stale epoch changes nothing; revocation is immediate.
+        let r = call(InspectorCommand::Mutate, edit(editor, e), id);
+        assert!(
+            r.as_ref().is_err_and(|m| m.starts_with("StaleMutation")),
+            "{r:?}"
+        );
+        assert_eq!(
+            call(InspectorCommand::RevokeMutation, InspectorArgs::None, id),
+            Ok(InspectorResponse::MutationRevoked)
+        );
+        let e = epoch_now(&mut call);
+        let r = call(InspectorCommand::Mutate, edit(editor, e), id);
+        assert!(
+            r.as_ref().is_err_and(|m| m.starts_with("Unauthorized")),
+            "{r:?}"
+        );
+    }
     // The log from the page load arrived, and so does output from an evaluation.
     call(
         InspectorCommand::Evaluate,

@@ -1,0 +1,49 @@
+inspector-test: stage 1 after 948 ms (view Idle)
+inspector-test: stage 10 after 1432 ms (view Attached)
+inspector-test: stage 11 after 1432 ms (view Attached)
+inspector-test: stage 12 after 1565 ms (view Attached)
+inspector-test: stage 13 after 1631 ms (view Attached)
+inspector-test: stage 14 after 1698 ms (view Attached)
+inspector-test: stage 15 after 1832 ms (view Attached)
+inspector-test: stage 16 after 2648 ms (view Attached)
+inspector-test: stage 18 after 4698 ms (view Attached)
+inspector-test: stage 19 after 4998 ms (view Attached)
+inspector-test: stage 20 after 5314 ms (view Attached)
+inspector-test: CSS cached computed, author sheets, rules and declarations passed in detached window
+inspector-test: stage 30 after 5615 ms (view Attached)
+inspector-test: D3 stage 31
+inspector-test: D3 stage 32
+inspector-test: D3 evidence written: /Users/noufalbabu/dev/personal/wega/docs/architecture/baseline/d3-evidence-sandboxed/d3-pass0-hover-highlight.png
+inspector-test: D3 stage 33
+inspector-test: D3 stage 34
+inspector-test: D3 stage 35
+inspector-test: D3 stage 36
+inspector-test: D3 stage 37
+inspector-test: D3 evidence written: /Users/noufalbabu/dev/personal/wega/docs/architecture/baseline/d3-evidence-sandboxed/d3-pass0-after-edits.png
+inspector-test: D3 rendered page changed: 0 -> 152598 red pixels; overlay pixels in page frame: 0
+inspector-test: D3 stage 38
+inspector-test: D3 pass 0 passed: pick, hover/selection highlight, tree sync, box model, styles, authorized attribute/text/inline-CSS edits, rendered change, revocation, forged-grant refusal
+inspector-test: D3 stage 21
+inspector-test: Elements expanded, selected, drawn in detached OS window and pinned across a real tab switch
+inspector-test: stage 17 after 9833 ms (view Attached)
+inspector-test: stage 2 after 9855 ms (view Attached)
+inspector-test: stage 30 after 10048 ms (view Attached)
+inspector-test: D3 stage 31
+inspector-test: D3 stage 32
+inspector-test: D3 evidence written: /Users/noufalbabu/dev/personal/wega/docs/architecture/baseline/d3-evidence-sandboxed/d3-pass1-hover-highlight.png
+inspector-test: D3 stage 33
+inspector-test: D3 stage 34
+inspector-test: D3 stage 35
+inspector-test: D3 stage 36
+inspector-test: D3 stage 37
+inspector-test: D3 evidence written: /Users/noufalbabu/dev/personal/wega/docs/architecture/baseline/d3-evidence-sandboxed/d3-pass1-after-edits.png
+inspector-test: D3 rendered page changed: 0 -> 152598 red pixels; overlay pixels in page frame: 0
+inspector-test: D3 stage 38
+inspector-test: D3 pass 1 passed: pick, hover/selection highlight, tree sync, box model, styles, authorized attribute/text/inline-CSS edits, rendered change, revocation, forged-grant refusal
+inspector-test: D3 stage 3
+inspector-test: stage 4 after 11787 ms (view Idle)
+inspector-test: stage 5 after 11919 ms (view Attached)
+inspector-test: stage 6 after 14419 ms (view NotResponding)
+INSPECTOR TEST PASSED: attach, status, console and evaluation; Elements tree expansion and selection, detached OS window and pinned real tab switch; navigation clears selection and authority; detach, reattach and stalled-worker recovery
+inspector-test: stalled worker reported NotResponding after 2500 ms with 424 UI polls; recovered 29 ms after SIGCONT
+exit=0

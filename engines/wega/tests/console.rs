@@ -445,10 +445,17 @@ fn uncaught_errors_and_rejections_before_devtools_opens_are_retained_with_detail
 fn a_ten_thousand_message_flood_stays_within_every_budget() {
     let mut view = page("<p>x</p>");
     let started = Instant::now();
-    view.evaluate_json(
-        "for(let i=0;i<10000;i++)console.log('flood',i,{i,s:'z'.repeat(i%500)},[i,i+1])",
-    )
-    .unwrap();
+    // Ten bounded script runs, not one: a single 10,000-call run can exceed the 5 s script
+    // watchdog when the host is CPU-starved (found by the D3 final investigation, where this test
+    // failed with "Script deadline exceeded" under compiler load). Totals and budgets are the same.
+    for batch in 0..10 {
+        view.evaluate_json(&format!(
+            "for(let i={};i<{};i++)console.log('flood',i,{{i,s:'z'.repeat(i%500)}},[i,i+1])",
+            batch * 1000,
+            (batch + 1) * 1000
+        ))
+        .unwrap();
+    }
     let elapsed = started.elapsed();
     assert!(view.console_len() <= CONSOLE_RING_ENTRIES);
     let all = messages(&view);
@@ -464,11 +471,18 @@ fn a_ten_thousand_message_flood_stays_within_every_budget() {
 fn oversized_hostile_values_cannot_make_a_message_exceed_its_budget() {
     let mut view = page("<p>x</p>");
     view.evaluate_json(
-        "const big='y'.repeat(2e6);const wide=Object.fromEntries(Array.from({length:300},(_, i)=>['k'+i,big.slice(0,1000)]));\
-         const cyc={};cyc.me=cyc;cyc.list=Array.from({length:1000},()=>cyc);\
-         for(let i=0;i<8;i++)console.log(big,wide,cyc,new Array(1e8),new Uint8Array(1e6),big,wide,cyc,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20)",
+        "globalThis.big='y'.repeat(2e6);globalThis.wide=Object.fromEntries(Array.from({length:300},(_, i)=>['k'+i,big.slice(0,1000)]));\
+         globalThis.cyc={};cyc.me=cyc;cyc.list=Array.from({length:1000},()=>cyc);true",
     )
     .unwrap();
+    // One logging call per script run (see the flood test: a single long run can hit the
+    // watchdog on a starved host).
+    for _ in 0..8 {
+        view.evaluate_json(
+            "console.log(big,wide,cyc,new Array(1e8),new Uint8Array(1e6),big,wide,cyc,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20)",
+        )
+        .unwrap();
+    }
     let all = messages(&view);
     assert_eq!(all.len(), 8);
     for m in &all {
