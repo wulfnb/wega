@@ -7,9 +7,7 @@ use blitz_html::HtmlDocument;
 use wega_adapter_blitz::{BlitzDocument, ToKey};
 use wega_dom::{
     DocumentView, Mutator, NodeKey,
-    layout::{
-        BoxModel, Geometry, GeometryAccess, HitTest, LayoutControl, Point, Rect, ViewportConfig,
-    },
+    layout::{BoxModel, Geometry, GeometryAccess, HitTest, LayoutControl, Point, ViewportConfig},
 };
 
 fn doc_with(html: &str, scale: f32, zoom: f32) -> BlitzDocument {
