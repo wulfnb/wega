@@ -227,9 +227,7 @@ fn panel_draws_expansion_selection_previews_and_limits_without_html_execution() 
         .collect::<Vec<_>>()
         .join(" ");
     assert!(
-        texts.contains("DOM")
-            && texts.contains("Selected:")
-            && texts.contains("Preview truncated")
+        texts.contains("DOM") && texts.contains("Selected:") && texts.contains("Preview truncated")
     );
     out.textures_delta.clear();
 }

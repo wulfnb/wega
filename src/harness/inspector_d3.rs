@@ -13,6 +13,91 @@ use winit::{
     keyboard::{Key, NamedKey},
 };
 
+/// Write the engine's page frame with the overlay plan composited on it, when
+/// `WEGA_D3_EVIDENCE_DIR` is set. This is the page pixels plus the exact rectangles the egui
+/// painter draws (no label text), not an OS screenshot, so nothing outside Wega is captured.
+fn evidence(
+    name: &str,
+    frame: &(u32, u32, std::sync::Arc<[u8]>),
+    viewport_css: (f64, f64),
+    plans: &[(Plan, bool)],
+) {
+    let Ok(dir) = std::env::var("WEGA_D3_EVIDENCE_DIR") else {
+        return;
+    };
+    let (w, h) = (frame.0 as usize, frame.1 as usize);
+    let mut rgba = frame.2.to_vec();
+    let (sx, sy) = (
+        w as f64 / viewport_css.0.max(1.0),
+        h as f64 / viewport_css.1.max(1.0),
+    );
+    let blend = |rgba: &mut Vec<u8>,
+                 r: &wega::engine_protocol::inspector::geometry::GeomRect,
+                 c: [u8; 3],
+                 a: u32| {
+        let (x0, y0) = ((r.x * sx).max(0.0) as usize, (r.y * sy).max(0.0) as usize);
+        let (x1, y1) = (
+            ((r.x + r.width) * sx).min(w as f64) as usize,
+            ((r.y + r.height) * sy).min(h as f64) as usize,
+        );
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let i = (y * w + x) * 4;
+                for k in 0..3 {
+                    rgba[i + k] = ((rgba[i + k] as u32 * (255 - a) + c[k] as u32 * a) / 255) as u8;
+                }
+            }
+        }
+    };
+    for (plan, strong) in plans {
+        let Plan::Draw { bands, outline, .. } = plan else {
+            continue;
+        };
+        let a = if *strong { 110 } else { 70 };
+        for (layer, rect) in bands {
+            let c = match layer {
+                crate::devtools_overlay::Layer::Margin => [246, 178, 107],
+                crate::devtools_overlay::Layer::Border => [255, 229, 153],
+                crate::devtools_overlay::Layer::Padding => [147, 196, 125],
+                crate::devtools_overlay::Layer::Content => [111, 168, 220],
+            };
+            blend(&mut rgba, rect, c, a);
+        }
+        for edge in [
+            (outline.x, outline.y, outline.width, 1.0),
+            (
+                outline.x,
+                outline.y + outline.height - 1.0,
+                outline.width,
+                1.0,
+            ),
+            (outline.x, outline.y, 1.0, outline.height),
+            (
+                outline.x + outline.width - 1.0,
+                outline.y,
+                1.0,
+                outline.height,
+            ),
+        ] {
+            let r = wega::engine_protocol::inspector::geometry::GeomRect {
+                x: edge.0,
+                y: edge.1,
+                width: edge.2,
+                height: edge.3,
+            };
+            blend(&mut rgba, &r, [60, 120, 216], 255);
+        }
+    }
+    let path = std::path::Path::new(&dir).join(name);
+    if let Err(error) =
+        image::save_buffer(&path, &rgba, w as u32, h as u32, image::ColorType::Rgba8)
+    {
+        println!("inspector-test: evidence not written: {error}");
+    } else {
+        println!("inspector-test: D3 evidence written: {}", path.display());
+    }
+}
+
 /// A point inside the fixture's `<h1>` (body margin 8 + padding 48 + the heading's margin).
 const POINT: (f32, f32) = (100.0, 95.0);
 
@@ -25,6 +110,8 @@ pub struct D3 {
     h1: Option<u64>,
     red_before: usize,
     queued: bool,
+    /// Evaluation was live when the code-running edit was submitted.
+    eval_live: bool,
 }
 
 fn red_pixels(frame: &(u32, u32, std::sync::Arc<[u8]>)) -> usize {
@@ -151,6 +238,22 @@ impl crate::browser::Browser {
                             && (POINT.1 as f64) >= outline.y && (POINT.1 as f64) <= outline.y + outline.height)),
                     "no hover highlight at the pointer: {plans:?}"
                 );
+                let pass = self.d3().pass;
+                if let Some(frame) = self
+                    .tab()
+                    .wega
+                    .as_ref()
+                    .and_then(|p| p.state.lock().ok()?.last_frame.clone())
+                    && let Some(snapshot) = self.devtools_snapshot()
+                    && let Some(v) = snapshot.viewport
+                {
+                    evidence(
+                        &format!("d3-pass{pass}-hover-highlight.png"),
+                        &frame,
+                        (v.width, v.height),
+                        &plans,
+                    );
+                }
                 // A real click selects it.
                 let pos = self.d3_screen(POINT);
                 self.d3_inject(vec![
@@ -266,6 +369,8 @@ impl crate::browser::Browser {
                 };
                 if !self.d3().queued {
                     self.d3().queued = true;
+                    let eval = self.devtools.console.evaluation_enabled(document).is_some();
+                    self.d3().eval_live = eval;
                     self.d3().red_before = self
                         .tab()
                         .wega
@@ -306,12 +411,22 @@ impl crate::browser::Browser {
                 if self.devtools.edit.busy() {
                     return self.d3_timeout("the edits to be applied");
                 }
-                // The last edit (onclick) is refused with a visible reason, the others applied.
-                assert!(
-                    self.devtools.edit.notice.contains("evaluation"),
-                    "{:?}",
-                    self.devtools.edit.notice
-                );
+                // The code-running edit (onclick) needs the evaluation grant too: applied while
+                // evaluation is live (first pass), refused with a visible reason otherwise.
+                let eval_live = self.d3().eval_live;
+                if eval_live {
+                    assert_eq!(
+                        self.devtools.edit.last.as_deref(),
+                        Some("Set attribute onclick")
+                    );
+                } else {
+                    assert!(
+                        self.devtools.edit.notice.contains("evaluation"),
+                        "notice {:?}, last {:?}",
+                        self.devtools.edit.notice,
+                        self.devtools.edit.last
+                    );
+                }
                 self.tab().wega.as_ref().unwrap().evaluate(
                     "{const h=document.querySelector('h1');console.log('V:'+h.getAttribute('data-d3')+'|'+h.textContent+'|'+h.style.backgroundColor+'|'+h.hasAttribute('onclick'))}",
                 );
@@ -328,7 +443,12 @@ impl crate::browser::Browser {
                     parts[2].contains("255, 0, 0") || parts[2].contains("#ff0000"),
                     "style edit: {text}"
                 );
-                assert_eq!(parts[3], "false", "the refused handler was applied: {text}");
+                let eval_live = self.d3().eval_live;
+                assert_eq!(
+                    parts[3],
+                    eval_live.to_string(),
+                    "the code-running edit must apply exactly when evaluation is live: {text}"
+                );
                 // The rendered page changed, measured on the engine's own pixels.
                 let frame = self
                     .tab()
@@ -349,6 +469,16 @@ impl crate::browser::Browser {
                     0,
                     "overlay leaked into the page frame"
                 );
+                let pass = self.d3().pass;
+                let plans = self.devtools_overlay_plans();
+                if let Some(v) = self.devtools_snapshot().and_then(|s| s.viewport) {
+                    evidence(
+                        &format!("d3-pass{pass}-after-edits.png"),
+                        &frame,
+                        (v.width, v.height),
+                        &plans,
+                    );
+                }
                 println!(
                     "inspector-test: D3 rendered page changed: {before} -> {red} red pixels; overlay pixels in page frame: 0"
                 );
