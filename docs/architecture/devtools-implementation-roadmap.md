@@ -230,3 +230,8 @@ D2, D3 and D4 are independent after D1 and can proceed in parallel. D5 carries t
 ## D3.0 status
 
 D3.0 prerequisites are complete locally; see `devtools-d3-0-report.md` for results, risks and the recommended D3-A/B/C boundaries.
+
+
+## D3-C.0 status
+
+The depth-122 "hang" was a native stack overflow, fixed by `MAX_LAYOUT_DEPTH` (layout refused past 256 levels). Cached-only geometry is feasible; transforms and clips are not reflected by the engine. See `devtools-d3-c-0-report.md` for per-feature go/no-go. No D3-C feature is implemented.
