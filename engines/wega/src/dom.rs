@@ -61,6 +61,8 @@ pub(crate) struct Dom {
     pub requests: RefCell<Requests>,
     pub csp: std::sync::Arc<std::sync::RwLock<crate::csp::Csp>>,
     pub dialog: Rc<RefCell<Option<DocumentDialogHandler>>>,
+    pub restrictions: crate::view::frames::Restrictions,
+    pub frames: Rc<RefCell<crate::view::frames::FrameShared>>,
     pub document_generation: Rc<Cell<u64>>,
     pub document_revision: u64,
     /// Transient user activation, for popups.
@@ -125,6 +127,8 @@ impl Dom {
             requests: Default::default(),
             csp: context.csp,
             dialog: context.dialog,
+            restrictions: context.restrictions,
+            frames: context.frames,
             document_generation: context.document_generation,
             document_revision: context.document_revision,
             activation: context.activation,
@@ -267,6 +271,12 @@ impl Dom {
                 }
             }
             return Ok(Value::Null);
+        }
+        if text(0).starts_with("frame") {
+            return self.frame_call(args);
+        }
+        if text(0) == "origin" {
+            return Ok(json!(self.origin()));
         }
         if text(0).starts_with("canvas") {
             self.apply_worker_frames();
@@ -1039,6 +1049,9 @@ impl Dom {
         }
         // Dialogs block this thread on the browser's answer; never hold the DOM.
         if text(0) == "dialog" {
+            if self.restrictions.modals_blocked {
+                return Ok(Value::Null);
+            }
             let document_url = self.document.borrow().url().to_string();
             let mut handler = self.dialog.borrow_mut();
             let answer = handler.as_mut().and_then(|handler| {
@@ -1229,8 +1242,8 @@ impl Dom {
                 let nodes = self.assigned_nodes(&doc, node_id()?, text(2) == "true", &mut HashSet::new());
                 json!(nodes.into_iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>())
             },
-            "cookie"=>json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite)),
-            "setCookie"=>{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);Value::Null},
+            "cookie"=>if self.restrictions.opaque{json!("")}else{json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite))},
+            "setCookie"=>{if !self.restrictions.opaque{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);}Value::Null},
             "templateContent"=>{let target=node_id()?;let content=wega_dom::mutate(&mut *doc).template_contents(target.key()).map_err(Self::mutation_error)?;json!(content.node_id().as_u64().to_string())},
             "viewport"=>{let viewport=doc.viewport();json!({"width":viewport.size.width,"height":viewport.size.height,"dpr":viewport.device_pixel_ratio,"scrollX":viewport.scroll.x,"scrollY":viewport.scroll.y})},
             "scroll"=>{let offset=doc.scroll_offset(node_id()?.key()).map_err(Self::layout_error)?;json!({"x":offset.x,"y":offset.y})},
@@ -1592,7 +1605,7 @@ impl Dom {
                 let url = doc.url().join(text(1)).map_err(|e| e.to_string())?;
                 let active = self.activation.get().is_some_and(|at| at.elapsed() < Duration::from_secs(5));
                 let mut requests = self.requests.borrow_mut();
-                if !active || !matches!(url.scheme(), "http" | "https") || requests.opened.len() >= 4 {
+                if self.restrictions.popups_blocked || !active || !matches!(url.scheme(), "http" | "https") || requests.opened.len() >= 4 {
                     return Ok(json!(false));
                 }
                 // One popup per user activation.
@@ -1630,7 +1643,9 @@ impl Dom {
                 if doc.node(submitter.key()).is_none() {
                     return Err("Node no longer exists".into());
                 }
-                doc.submit_form(form, submitter);
+                if !self.restrictions.forms_blocked {
+                    doc.submit_form(form, submitter);
+                }
                 Value::Null
             }
             "resetForm" => {

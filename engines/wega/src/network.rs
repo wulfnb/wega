@@ -35,6 +35,9 @@ impl Client {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Destination {
     Document,
+    /// A nested browsing context's document: a navigation, but never top-level (cookies use
+    /// the cross-site context and mixed content applies).
+    Frame,
     Module,
     Script,
     Style,
@@ -57,6 +60,8 @@ pub(crate) struct FetchContext {
     pub bypass_cache: bool,
     /// Service worker scripts are never served by a service worker.
     pub bypass_service_worker: bool,
+    /// Never send or store cookies and other ambient credentials (opaque-origin documents).
+    pub omit_credentials: bool,
 }
 impl Default for FetchContext {
     fn default() -> Self {
@@ -69,6 +74,7 @@ impl Default for FetchContext {
             destination: Destination::Other,
             bypass_cache: false,
             bypass_service_worker: false,
+            omit_credentials: false,
         }
     }
 }
@@ -412,7 +418,9 @@ impl Network {
         request.initiator = context.initiator.clone();
         request.top_level = context.destination == Destination::Document;
         request.destination = match context.destination {
-            Destination::Document => wega_network::ResourceDestination::Document,
+            Destination::Document | Destination::Frame => {
+                wega_network::ResourceDestination::Document
+            }
             Destination::Module => wega_network::ResourceDestination::Module,
             Destination::Script => wega_network::ResourceDestination::Script,
             Destination::Style => wega_network::ResourceDestination::Style,
@@ -558,7 +566,9 @@ impl Network {
                 .map(|url| url.origin().ascii_serialization())
                 .unwrap_or_else(|| "null".into());
             request.destination = match context.destination {
-                Destination::Document => wega_network::ResourceDestination::Document,
+                Destination::Document | Destination::Frame => {
+                wega_network::ResourceDestination::Document
+            }
                 Destination::Module => wega_network::ResourceDestination::Module,
                 Destination::Script => wega_network::ResourceDestination::Script,
                 Destination::Style => wega_network::ResourceDestination::Style,
@@ -569,8 +579,11 @@ impl Network {
             if matches!(context.destination, Destination::Module | Destination::Font) {
                 request.mode = "cors".into();
                 request.credentials = "same-origin".into();
-            } else if context.destination != Destination::Document {
+            } else if !matches!(context.destination, Destination::Document | Destination::Frame) {
                 request.mode = "no-cors".into();
+            }
+            if context.omit_credentials {
+                request.credentials = "omit".into();
             }
             request.redirect = "manual".into();
             if let Some(initiator) = &context.initiator

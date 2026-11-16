@@ -24,6 +24,10 @@ pub(crate) struct HostContext {
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
     /// This document's console history, owned by the view and dropped with the document.
     pub console: Rc<RefCell<crate::console::ConsoleLog>>,
+    /// Sandbox/origin-class limits of this document.
+    pub restrictions: crate::view::frames::Restrictions,
+    /// The browsing-context table this document's script reads and writes.
+    pub frames: Rc<RefCell<crate::view::frames::FrameShared>>,
 }
 
 /// Trusted bootstrap factories shared by document and worker realms, built by `build.rs`.

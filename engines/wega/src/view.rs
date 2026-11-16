@@ -192,6 +192,8 @@ struct Resources {
     revision: Arc<AtomicU64>,
     in_flight: Arc<AtomicUsize>,
     completed: Arc<Mutex<Vec<(String, bool)>>>,
+    /// Opaque-origin documents never send ambient credentials.
+    omit_credentials: bool,
 }
 fn destination(url: &Url) -> Destination {
     let path = url.path().to_ascii_lowercase();
@@ -232,6 +234,7 @@ impl NetProvider for Resources {
         let completed = self.completed.clone();
         let limit = self.limit;
         let mut context = FetchContext::subresource(&self.document, destination(&request.url));
+        context.omit_credentials = self.omit_credentials;
         context.referrer_policy = self.referrer_policy.clone();
         in_flight.fetch_add(1, Ordering::Relaxed);
         let handler = Arc::new(Mutex::new(Some(handler)));
@@ -308,6 +311,8 @@ impl NavigationProvider for Navigation {
 
 #[path = "document_host.rs"]
 mod document_host;
+#[path = "frames.rs"]
+pub(crate) mod frames;
 use crate::html_report::{HtmlReport, Parser};
 #[cfg(test)]
 use document_host::script_kind;
@@ -334,7 +339,8 @@ pub struct View {
     navigation_rx: mpsc::Receiver<NavigationOptions>,
     revision: Arc<AtomicU64>,
     last_revision: u64,
-    raster: wega_adapter_skia::Raster,
+    /// Top-level views rasterise; nested frames only record scenes for their parent.
+    raster: Option<wega_adapter_skia::Raster>,
     pub compatibility: Option<String>,
     script_failure: Option<String>,
     in_flight: Arc<AtomicUsize>,
@@ -367,6 +373,15 @@ pub struct View {
     /// The current document's host environment, kept so native edits charge the same node and
     /// text counters as script (see `reserve_dom_budget`).
     dom: Option<Rc<crate::dom::Dom>>,
+    /// `Some` for a nested browsing context: its identity, sandbox and origin policy.
+    pub(crate) role: Option<frames::FrameRole>,
+    /// This document's child browsing contexts. Replaced (and so torn down) with the document.
+    pub(crate) frames: frames::FrameHost,
+    /// The table the document's script host reads for `contentWindow`/`frames` and writes
+    /// outgoing frame messages to. A new document gets a new table.
+    pub(crate) frame_shared: Rc<RefCell<frames::FrameShared>>,
+    /// Live-frame count and the next frame key for the whole tab (children share these).
+    pub(crate) frame_counters: (Rc<Cell<usize>>, Rc<Cell<u64>>),
 }
 impl View {
     pub(crate) fn new(
@@ -374,6 +389,18 @@ impl View {
         network: Network,
         hubs: crate::workers::Hubs,
         limits: Limits,
+    ) -> Result<Self, String> {
+        let mut view = Self::build(url.clone(), network, hubs, limits, None)?;
+        view.load(url)?;
+        Ok(view)
+    }
+    /// A view with no document loaded yet. Nested frames pass their `role`.
+    pub(crate) fn build(
+        url: Url,
+        network: Network,
+        hubs: crate::workers::Hubs,
+        limits: Limits,
+        role: Option<frames::FrameRole>,
     ) -> Result<Self, String> {
         let document = BlitzDocument::from_html(
             "<!doctype html><title>Wega</title>",
@@ -383,7 +410,11 @@ impl View {
             },
         );
         let (_tx, navigation_rx) = mpsc::channel();
-        let raster = wega_adapter_skia::Raster::new(network.wake.clone())?;
+        let raster = if role.is_none() {
+            Some(wega_adapter_skia::Raster::new(network.wake.clone())?)
+        } else {
+            None
+        };
         let csp = Arc::new(RwLock::new(Csp::default()));
         let mut view = Self {
             host: document_host::DocumentHost::default(),
@@ -435,8 +466,11 @@ impl View {
             fullscreen: false,
             console: Rc::new(RefCell::new(crate::console::ConsoleLog::new())),
             dom: None,
+            role,
+            frames: Default::default(),
+            frame_shared: Default::default(),
+            frame_counters: Default::default(),
         };
-        view.load(url)?;
         Ok(view)
     }
     /// Answer `alert`, `confirm` and `prompt`; without a handler they return
@@ -598,7 +632,11 @@ impl View {
         self.navigation_rx = receiver;
         self.showing_error = false;
         self.reported_frames = false;
-        let mut csp = Csp::default();
+        // `srcdoc` and `about:blank` documents inherit their creator's policies.
+        let mut csp = match &self.role {
+            Some(role) if role.inherits_origin => role.inherited_csp.clone(),
+            _ => Csp::default(),
+        };
         if let Some(response) = response {
             for value in response.headers.get_all("content-security-policy") {
                 if let Ok(value) = value.to_str() {
@@ -626,9 +664,13 @@ impl View {
                 revision: self.revision.clone(),
                 in_flight: self.in_flight.clone(),
                 completed: self.completed.clone(),
+                omit_credentials: self.restrictions().opaque,
             })),
             navigation_provider: Some(Arc::new(Navigation(sender, self.network.wake.clone()))),
         };
+        // A new document tears down every child browsing context of the old one.
+        self.frames = Default::default();
+        self.frame_shared = Default::default();
         self.script = None;
         self.host.parser = None;
         self.host.blocking = None;
@@ -671,19 +713,29 @@ impl View {
                 started_scripts: self.host.started_scripts.clone(),
                 permissions: self.permissions.clone(),
                 console: self.console.clone(),
+                restrictions: self.restrictions(),
+                frames: self.frame_shared.clone(),
             },
             &self.limits,
             html.len(),
         ));
         self.dom = Some(dom.clone());
-        let mut host = crate::script::create(dom, &self.limits)?;
-        host.allow_eval(self.csp().allows_eval());
-        host.run(
-            include_str!("../../../src/page_state.js"),
-            "wega:page-state",
-        )
-        .map_err(|e| e.to_string())?;
-        self.script = Some(host);
+        // A sandbox without `allow-scripts` gets no realm at all: no script, no handlers.
+        if self.role.as_ref().is_none_or(|role| role.sandbox.scripts) {
+            let mut host = crate::script::create(dom, &self.limits)?;
+            host.allow_eval(self.csp().allows_eval());
+            host.run(
+                include_str!("../../../src/page_state.js"),
+                "wega:page-state",
+            )
+            .map_err(|e| e.to_string())?;
+            if self.restrictions().opaque {
+                // Fail closed: if the lockdown cannot be installed, there is no realm.
+                host.run(frames::OPAQUE_LOCKDOWN, "wega:opaque-origin")
+                    .map_err(|e| format!("Opaque-origin lockdown failed: {e}"))?;
+            }
+            self.script = Some(host);
+        }
         if !self.user_script.trim().is_empty() {
             let script = self.user_script.clone();
             let _ = self.run(&script, "wega:userscript");
@@ -717,6 +769,14 @@ impl View {
         self.advance();
         self.check_favicon();
         Ok(())
+    }
+    pub(crate) fn restrictions(&self) -> frames::Restrictions {
+        self.role.as_ref().map_or_else(Default::default, |role| frames::Restrictions {
+            opaque: role.opaque,
+            forms_blocked: !role.sandbox.forms,
+            popups_blocked: !role.sandbox.popups,
+            modals_blocked: !role.sandbox.modals,
+        })
     }
     fn csp(&self) -> std::sync::RwLockReadGuard<'_, Csp> {
         self.csp
@@ -801,6 +861,7 @@ impl View {
         while self.notices.len() > 16 {
             self.notices.pop_front();
         }
+        self.sync_frames();
         if self.pending.is_none() {
             self.url = self.document.borrow().url().clone();
         }
@@ -817,6 +878,13 @@ impl View {
     }
     /// Show a navigation response according to its type.
     fn commit(&mut self, response: Response) {
+        if let Err(reason) = self.frame_response_allowed(&response) {
+            // A document that forbids embedding is never shown (and never scriptable) here.
+            self.url = response.url.clone();
+            self.notice(format!("Frame blocked: {reason}"));
+            let _ = self.set_html(&frames::blocked_page(&reason));
+            return;
+        }
         self.url = response.url.clone();
         if response.status == 401 {
             let realm = response.header("www-authenticate").and_then(|h| {
@@ -930,6 +998,7 @@ impl View {
             destination: Destination::Document,
             bypass_cache: false,
             bypass_service_worker: false,
+            omit_credentials: false,
         };
         if let Err(error) = self.load_request(options.url, context) {
             self.notice(error);
@@ -1417,6 +1486,9 @@ impl View {
             return Some(Duration::ZERO);
         }
         let mut wake = self.script.as_ref().and_then(|script| script.next_timer());
+        if let Some(frames) = self.frames_next_wakeup() {
+            wake = Some(wake.map_or(frames, |w| w.min(frames)));
+        }
         let mut at = |instant: Instant| {
             let delay = instant.saturating_duration_since(Instant::now());
             wake = Some(wake.map_or(delay, |w| w.min(delay)));
@@ -1481,7 +1553,7 @@ impl View {
         self.script.as_ref().map(|script| script.budget())
     }
     pub fn needs_paint(&self) -> bool {
-        self.frame.needs_paint(self.frozen)
+        self.frame.needs_paint(self.frozen) || self.frames_need_paint()
     }
     pub fn request_redraw(&mut self) {
         self.frame.invalidate();
@@ -1506,7 +1578,9 @@ impl View {
         }
         if freeze {
             self.document.borrow_mut().release_image_cache();
-            self.raster.release();
+            if let Some(raster) = &self.raster {
+                raster.release();
+            }
         }
         if !freeze {
             self.frame.invalidate();
@@ -1596,6 +1670,9 @@ impl View {
     /// Pointer input: hover, mouse/pointer events, Blitz defaults (focus, text
     /// selection, clicks), wheel scrolling and the cursor.
     pub fn pointer(&mut self, pointer: Pointer) {
+        if self.route_pointer_to_frame(&pointer) {
+            return;
+        }
         let before = self.document.borrow().focused();
         self.pointer_input(pointer);
         self.focus_transition(before);
@@ -1924,13 +2001,13 @@ impl View {
                     ))
                     .as_deref()
                     == Ok("true");
-                if !cancelled {
+                if !cancelled && !self.restrictions().forms_blocked {
                     self.document.borrow().submit_form(form, submitter);
                 }
                 true
             }
             Some(Action::NewWindow(url)) => {
-                if matches!(url.scheme(), "http" | "https") {
+                if matches!(url.scheme(), "http" | "https") && !self.restrictions().popups_blocked {
                     self.events.push_back(PageEvent::OpenWindow(url));
                 }
                 true
@@ -2009,6 +2086,11 @@ impl View {
     }
     /// Native editing goes through Blitz/Parley after cancelable DOM events.
     pub fn key(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+        if let Some(child) = self.focused_child() {
+            child.key(event);
+            self.frame.invalidate();
+            return;
+        }
         let before = self.document.borrow().focused();
         self.key_input(event);
         self.focus_transition(before);
@@ -2273,12 +2355,17 @@ impl View {
             ))
             .as_deref()
             == Ok("true");
-        if !cancelled {
+        if !cancelled && !self.restrictions().forms_blocked {
             self.document.borrow().submit_form(form, form);
         }
         true
     }
     pub fn ime(&mut self, event: blitz_traits::events::BlitzImeEvent) {
+        if let Some(child) = self.focused_child() {
+            child.ime(event);
+            self.frame.invalidate();
+            return;
+        }
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
@@ -2320,6 +2407,9 @@ impl View {
     }
     pub fn scroll_at(&mut self, x: f64, y: f64, pointer_x: f32, pointer_y: f32) {
         if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
+        if self.route_scroll_to_frame(x, y, pointer_x, pointer_y) {
             return;
         }
         let mut doc = self.document.borrow_mut();
@@ -2392,31 +2482,14 @@ impl View {
         };
         let mut doc = self.document.borrow_mut();
         doc.flush_layout(self.started.elapsed().as_secs_f64());
-        if !self.reported_frames
-            && doc.query_selector_all("iframe").is_ok_and(|ids| {
-                ids.iter().any(|id| {
-                    doc.get_node(*id).is_some_and(|node| {
-                        let content = doc.content_box(id.key()).unwrap_or_default();
-                        content.size.width > 1.0
-                            && content.size.height > 1.0
-                            && doc.has_boxes(id.key()).unwrap_or(false)
-                            && node.primary_styles().is_some_and(|style| {
-                                style.clone_visibility()
-                                    == style::computed_values::visibility::T::Visible
-                            })
-                    })
-                })
-            })
-        {
-            self.reported_frames = true;
-            self.compatibility.get_or_insert_with(|| {
-                "Visible iframe rendering is not implemented by Wega".into()
-            });
-        }
-        let scene = doc.record_scene(&viewport);
-        self.frame.recorded(another_frame || doc.is_animating());
+        let mut scene = doc.record_scene(&viewport);
+        let animating = doc.is_animating();
+        drop(doc);
+        let frames_animating = self.compose_frames(&mut scene, &viewport);
+        self.frame
+            .recorded(another_frame || animating || frames_animating);
         if self.accessibility_enabled {
-            let update = doc.build_accessibility_tree();
+            let update = self.document.borrow_mut().build_accessibility_tree();
             if let Ok(json) = serde_json::to_string(&update) {
                 // Publish the newest complete tree; animations must not grow an
                 // unbounded queue of superseded accessibility snapshots.
@@ -2428,18 +2501,24 @@ impl View {
         Ok(scene)
     }
     pub fn configure_shared_frames(&mut self, path: &std::path::Path) -> Result<(), String> {
-        self.raster.set_store(
-            wega_platform::FrameStore::open(path, 4096 * 2160 * 4).map_err(|e| e.to_string())?,
-        )
+        self.raster
+            .as_ref()
+            .ok_or("Nested frames do not rasterise")?
+            .set_store(
+                wega_platform::FrameStore::open(path, 4096 * 2160 * 4).map_err(|e| e.to_string())?,
+            )
     }
     pub fn configure_shared_store(
         &mut self,
         store: wega_platform::FrameStore,
     ) -> Result<(), String> {
-        self.raster.set_store(store)
+        self.raster
+            .as_ref()
+            .ok_or("Nested frames do not rasterise")?
+            .set_store(store)
     }
     pub fn paint_pending(&self) -> bool {
-        self.raster.pending()
+        self.raster.as_ref().is_some_and(|raster| raster.pending())
     }
     /// Records a frame for `viewport` and hands it to the raster thread; the result arrives
     /// through [`Self::take_painted`] or [`Self::wait_painted`] carrying `serial`.
@@ -2456,7 +2535,10 @@ impl View {
             viewport.zoom,
             viewport.dark,
         )?;
-        self.raster.start(
+        self.raster
+            .as_mut()
+            .ok_or("Nested frames do not rasterise")?
+            .start(
             FrameRequest {
                 serial,
                 width: viewport.width_px,
@@ -2467,10 +2549,13 @@ impl View {
         )
     }
     pub fn take_painted(&mut self) -> Option<Result<crate::Painted, String>> {
-        self.raster.take()
+        self.raster.as_mut()?.take()
     }
     pub fn wait_painted(&mut self) -> Result<crate::Painted, String> {
-        self.raster.wait()
+        self.raster
+            .as_mut()
+            .ok_or("Nested frames do not rasterise")?
+            .wait()
     }
     pub fn paint(
         &mut self,
@@ -2480,8 +2565,8 @@ impl View {
         zoom: f32,
         dark: bool,
     ) -> Result<Frame, String> {
-        if self.raster.pending() {
-            let _ = self.raster.wait();
+        if self.paint_pending() {
+            let _ = self.wait_painted();
         }
         self.begin_paint(
             ViewportConfig {
@@ -2494,7 +2579,7 @@ impl View {
             0,
             FrameTarget::Owned,
         )?;
-        let result = self.raster.wait()?;
+        let result = self.wait_painted()?;
         if let crate::Pixels::Owned(rgba) = result.pixels {
             Ok(Frame {
                 width,

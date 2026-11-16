@@ -2026,11 +2026,97 @@
     tokenData.set(proxy, tokenData.get(target)); return proxy;
   }
 
-  // Nested documents are not exposed until a browser-issued frame context is
-  // bound to a real worker. A detached synthetic document is not an iframe.
+  // Cross-frame references are host-backed facades keyed by the browser-issued frame key, never
+  // the other realm's objects. The facade exposes only the cross-origin-safe Window surface;
+  // same-origin synchronous DOM access is not bridged (contentDocument is always null).
+  const frameProxies = new Map();
+  const SAFE_WINDOW_KEYS = new Set(["postMessage", "closed", "length", "frames", "parent", "top", "window", "self", "opener", "location", "focus", "blur"]);
+  const securityError = (what) => new DOMException(
+    `Blocked a frame from accessing a ${what}.`, "SecurityError");
+  function postToFrame(kind, key, message, targetOrigin, transfer) {
+    if (targetOrigin !== null && typeof targetOrigin === "object") {
+      transfer = targetOrigin.transfer || [];
+      targetOrigin = targetOrigin.targetOrigin === undefined ? "/" : targetOrigin.targetOrigin;
+    }
+    targetOrigin = String(targetOrigin);
+    if (targetOrigin !== "*" && targetOrigin !== "/") {
+      let parsed;
+      try { parsed = new URL(targetOrigin); } catch { throw new DOMException("Invalid target origin", "SyntaxError"); }
+      targetOrigin = parsed.origin;
+    }
+    if (transfer && transfer.length) throw new DOMException("Transfer lists are not supported across frames", "DataCloneError");
+    // Validate with the platform's structured clone, then carry the JSON-compatible form.
+    const cloned = web.structuredClone(message);
+    let json;
+    try { json = JSON.stringify(cloned); } catch { throw new DOMException("The message could not be cloned", "DataCloneError"); }
+    host("framePost", kind + ":" + key, targetOrigin, json === undefined ? "null" : json);
+  }
+  function windowProxy(kind, key) {
+    const id = kind + ":" + key;
+    const cached = frameProxies.get(id);
+    if (cached) return cached;
+    const info = () => kind === "child" ? host("frameInfo", String(key)) : null;
+    const location = {
+      set href(value) { if (kind === "child") host("frameNavigate", "child:" + key, String(value)); },
+      replace(value) { if (kind === "child") host("frameNavigate", "child:" + key, String(value)); },
+    };
+    const surface = {
+      postMessage(message, targetOrigin = "/", transfer = []) { postToFrame(kind, key, message, targetOrigin, transfer); },
+      get closed() { return kind === "child" ? info() === null : false; },
+      get length() { return kind === "child" ? (info()?.length ?? 0) : 0; },
+      get opener() { return null; },
+      get location() { return location; },
+      focus() {}, blur() {},
+    };
+    const proxy = new Proxy(Object.create(null), {
+      get(_, name, receiver) {
+        if (name === Symbol.toStringTag) return "Window";
+        if (name === "window" || name === "self" || name === "frames") return proxy;
+        if (name === "parent" || name === "top") return kind === "parent" || kind === "top" ? proxy : null;
+        if (typeof name === "string" && SAFE_WINDOW_KEYS.has(name)) return surface[name];
+        if (typeof name === "symbol") return undefined;
+        throw securityError(kind === "child" && info()?.sameOrigin
+          ? "same-origin frame property (cross-frame DOM access is not supported)"
+          : "cross-origin frame");
+      },
+      set(_, name, value) {
+        if (name === "location") { location.href = value; return true; }
+        throw securityError("cross-origin frame");
+      },
+      has: (_, name) => typeof name === "string" && SAFE_WINDOW_KEYS.has(name),
+      ownKeys: () => [],
+      getOwnPropertyDescriptor: () => undefined,
+      getPrototypeOf: () => null,
+      setPrototypeOf: () => false,
+      defineProperty() { throw securityError("cross-origin frame"); },
+      deleteProperty() { throw securityError("cross-origin frame"); },
+    });
+    frameProxies.set(id, proxy);
+    return proxy;
+  }
+  globalThis.__wega_frame_message = function(origin, source, data) {
+    let parsed;
+    try { parsed = JSON.parse(data); } catch { return; }
+    const src = source === null ? null : source.kind === "child" ? windowProxy("child", source.key) : windowProxy("parent", "0");
+    // Delivered as a task, like every other message.
+    setTimeout(() => {
+      globalThis.dispatchEvent(new web.MessageEvent("message", { data: parsed, origin, source: src }));
+    }, 0);
+  };
   class HTMLIFrameElement extends HTMLElement {
-    get contentWindow() { return null; }
+    get contentWindow() {
+      if (!this.isConnected) return null;
+      const info = host("frameWindow", this._id);
+      return info ? windowProxy("child", info.key) : null;
+    }
     get contentDocument() { return null; }
+    get loading() { return this.getAttribute("loading") === "lazy" ? "lazy" : "eager"; }
+    set loading(value) { this.setAttribute("loading", String(value)); }
+    get referrerPolicy() { return this.getAttribute("referrerpolicy") || ""; }
+    set referrerPolicy(value) { this.setAttribute("referrerpolicy", String(value)); }
+    get allow() { return this.getAttribute("allow") || ""; }
+    set allow(value) { this.setAttribute("allow", String(value)); }
+    getSVGDocument() { return null; }
     get src() { return this.getAttribute("src") || ""; }
     set src(value) { this.setAttribute("src", String(value)); }
     get srcdoc() { return this.getAttribute("srcdoc") || ""; }
@@ -4793,7 +4879,7 @@
       // V8/Deno owns serialization and transfer validation. Serialization errors
       // propagate synchronously; original objects are never delivered as fallback.
       const data = web.structuredClone(message, { transfer });
-      const origin = new URL(host("url")).origin;
+      const origin = host("origin");
       if (accepts) setTimeout(() => {
         const event = new web.MessageEvent("message", { data, origin, source: globalThis });
         globalThis.dispatchEvent(event);
@@ -5089,7 +5175,30 @@ return {
     mode: node => shadowDescriptors.get(node)?.mode || null,
     slot: node => node?._id ? wrap(component("assignedSlotInternal", node._id)) : null,
   });
-  Object.defineProperty(globalThis, "length", { get: () => 0, configurable: true });
+  Object.defineProperty(globalThis, "length", { get: () => host("frameList").length, configurable: true });
+  {
+    const roleOf = () => host("frameRole");
+    const framesView = new Proxy(Object.create(null), {
+      get(_, name) {
+        if (name === "length") return host("frameList").length;
+        if (name === "window" || name === "self" || name === "frames") return framesView;
+        if (typeof name === "string" && /^(0|[1-9]\d*)$/.test(name)) {
+          const row = host("frameList")[Number(name)];
+          return row ? windowProxy("child", row.key) : undefined;
+        }
+        if (typeof name === "string") {
+          const row = host("frameList").find(candidate => candidate.name === name);
+          return row ? windowProxy("child", row.key) : undefined;
+        }
+        return undefined;
+      },
+    });
+    Object.defineProperties(globalThis, {
+      parent: { configurable: true, enumerable: true, get: () => roleOf().hasParent ? windowProxy("parent", "0") : globalThis },
+      top: { configurable: true, enumerable: true, get: () => roleOf().hasParent ? windowProxy("top", "0") : globalThis },
+      frames: { configurable: true, enumerable: true, get: () => framesView },
+    });
+  }
   const classes = { Node, Element, Document, DocumentFragment, CharacterData, Text, Comment, CDATASection, ProcessingInstruction, DocumentType,
     Attr, NamedNodeMap, NodeList, HTMLCollection, DOMTokenList, MutationObserver, MutationRecord,
     Location, Event, EventTarget: BaseTarget, HTMLElement, ...plainHtmlInterfaces,

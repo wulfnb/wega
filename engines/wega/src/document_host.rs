@@ -463,10 +463,14 @@ impl View {
             self.host.ready_at = Some(Instant::now());
             self.run("document._readyState='interactive';document.dispatchEvent(new Event('readystatechange'));__wega_dispatch('DOMContentLoaded',document._id)", "wega:ready");
         }
+        // The parent's load event waits for its child frames, including iframes the parser
+        // has just inserted (discovered here rather than a poll later).
+        self.reconcile_frames_now();
         let settled = self.host.asynchronous.is_empty()
             && self.host.ordered.is_empty()
             && self.in_flight.load(Ordering::Relaxed) == 0
-            && !modules;
+            && !modules
+            && self.frames_loaded();
         let expired = self
             .host
             .ready_at
