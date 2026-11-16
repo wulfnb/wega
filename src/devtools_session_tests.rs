@@ -31,6 +31,10 @@ struct Inner {
     granted: Option<(DocumentContext, bool)>,
     evaluations: Vec<String>,
     eval_error: Option<InspectorErrorCode>,
+    mutation_granted: Option<DocumentContext>,
+    mutations: Vec<(u64, u64, wega::engine_protocol::inspector::edit::MutationOp)>,
+    mutate_error: Option<InspectorErrorCode>,
+    args: Vec<(InspectorCommand, InspectorArgs)>,
 }
 
 /// A scripted page: it enforces session liveness exactly like the real registry does.
@@ -68,8 +72,9 @@ impl Fake {
     fn navigate(&self) {
         let mut inner = self.inner.borrow_mut();
         inner.document += 1;
-        // The real page clears the grant at navigation commit.
+        // The real page clears both grants at navigation commit.
         inner.granted = None;
+        inner.mutation_granted = None;
     }
     fn restart(&self, process: u8) {
         let tab = self.target.borrow().tab.0;
@@ -80,6 +85,7 @@ impl Fake {
         inner.pending.clear();
         inner.results.clear();
         inner.granted = None;
+        inner.mutation_granted = None;
     }
     fn crash(&self) {
         let mut inner = self.inner.borrow_mut();
@@ -132,6 +138,73 @@ impl Fake {
 }
 
 impl InspectorPort for Fake {
+    fn request_args(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+    ) -> Result<(), InspectorError> {
+        let mut inner = self.inner.borrow_mut();
+        inner.calls += 1;
+        if inner.live != Some(session) {
+            return Err(InspectorError::new(
+                InspectorErrorCode::StaleSession,
+                "not live",
+            ));
+        }
+        inner.args.push((command, args));
+        inner.requests.push((session, command));
+        inner.pending.push(command);
+        Ok(())
+    }
+    fn grant_mutation(
+        &self,
+        session: InspectorSessionId,
+        _opaque_override: bool,
+    ) -> Result<(), InspectorError> {
+        let document = self.document();
+        let mut inner = self.inner.borrow_mut();
+        if inner.live != Some(session) {
+            return Err(InspectorError::new(
+                InspectorErrorCode::StaleSession,
+                "not live",
+            ));
+        }
+        inner.mutation_granted = Some(document);
+        inner
+            .requests
+            .push((session, InspectorCommand::GrantMutation));
+        inner.pending.push(InspectorCommand::GrantMutation);
+        Ok(())
+    }
+    fn revoke_mutation(&self, session: InspectorSessionId) {
+        let mut inner = self.inner.borrow_mut();
+        inner.mutation_granted = None;
+        inner
+            .requests
+            .push((session, InspectorCommand::RevokeMutation));
+    }
+    fn mutate(
+        &self,
+        session: InspectorSessionId,
+        node: wega::engine_protocol::inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: wega::engine_protocol::inspector::edit::MutationOp,
+    ) -> Result<(), InspectorError> {
+        let document = self.document();
+        let mut inner = self.inner.borrow_mut();
+        // The real page's rule: a mutation grant for this session's document, or nothing is sent.
+        if inner.live != Some(session) || inner.mutation_granted != Some(document) {
+            return Err(InspectorError::new(
+                InspectorErrorCode::Unauthorized,
+                "Editing is not enabled for this document",
+            ));
+        }
+        inner.mutations.push((node.key, epoch, op));
+        inner.requests.push((session, InspectorCommand::Mutate));
+        inner.pending.push(InspectorCommand::Mutate);
+        Ok(())
+    }
     fn target(&self) -> Option<TargetId> {
         Some(*self.target.borrow())
     }
@@ -254,6 +327,22 @@ impl InspectorPort for Fake {
                         first_seq: 1,
                     }),
                     InspectorCommand::GrantEvaluation => Ok(InspectorResponse::EvaluationGranted),
+                    InspectorCommand::GrantMutation => Ok(InspectorResponse::MutationGranted),
+                    InspectorCommand::PickNode | InspectorCommand::GetGeometry => continue,
+                    InspectorCommand::Mutate => match inner.mutate_error {
+                        Some(code) => Err(InspectorError::new(code, "scripted failure")),
+                        None => Ok(InspectorResponse::Mutated(Box::new(
+                            wega::engine_protocol::inspector::edit::MutationOutcome {
+                                document,
+                                node: wega::engine_protocol::inspector::dom::InspectorNodeId {
+                                    document,
+                                    key: inner.mutations.last().map_or(0, |m| m.0),
+                                },
+                                epoch: 100 + inner.mutations.len() as u64,
+                                changed: true,
+                            },
+                        ))),
+                    },
                     InspectorCommand::Evaluate => match inner.eval_error {
                         Some(code) => Err(InspectorError::new(code, "scripted failure")),
                         None => Ok(InspectorResponse::Evaluated(Box::new(EvalOutcome::Value {
@@ -288,6 +377,7 @@ impl InspectorPort for Fake {
                 Vec::new()
             },
             grant: if live { inner.granted } else { None },
+            mutation: if live { inner.mutation_granted } else { None },
         }
     }
 }
@@ -1089,4 +1179,242 @@ fn elements_selection_and_pending_reads_follow_navigation_process_and_pinned_win
     seed(&mut view, tabs.pages[&2].document());
     view.close(&|key| tabs.resolve(key));
     assert!(view.elements.selected.is_none() && view.elements.pending.is_none());
+}
+
+// ---- D3 final: picker and editing lifecycle against the scripted page ----
+
+fn attach(view: &mut DevtoolsView, tabs: &Tabs, clock: &Clock, tab: u64, pinned: bool) {
+    view.open(tab);
+    view.elements_active = true;
+    for step in 0..5 {
+        run(view, tabs, clock, step * 10, tab, pinned);
+    }
+    assert_eq!(view.state, ViewState::Attached);
+}
+fn picking(view: &mut DevtoolsView) {
+    view.geometry.set_picker(true);
+    view.geometry.hover_at(5.0, 6.0);
+}
+fn pick_requests(tabs: &Tabs, tab: u64) -> usize {
+    tabs.pages[&tab].count(InspectorCommand::PickNode)
+}
+fn node_key(view: &DevtoolsView) -> wega::engine_protocol::inspector::dom::InspectorNodeId {
+    wega::engine_protocol::inspector::dom::InspectorNodeId {
+        document: tabs_document(view),
+        key: 9,
+    }
+}
+fn tabs_document(view: &DevtoolsView) -> DocumentContext {
+    view.snapshot().unwrap().document
+}
+
+#[test]
+fn picking_sends_one_coalesced_pick_and_every_boundary_cancels_it() {
+    let tabs = Tabs::new(&[1, 2]);
+    let clock = Clock(Instant::now());
+    let mut view = DevtoolsView::default();
+    attach(&mut view, &tabs, &clock, 1, false);
+    picking(&mut view);
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    assert_eq!(pick_requests(&tabs, 1), 1);
+    // The fake never answers a pick; no more are sent while one is outstanding.
+    for n in 0..20 {
+        view.geometry.hover_at(n as f32, 1.0);
+        run(&mut view, &tabs, &clock, 110 + n, 1, false);
+    }
+    assert_eq!(
+        pick_requests(&tabs, 1),
+        1,
+        "one outstanding request at a time"
+    );
+    // Tab switch (docked): the tools detach from the old tab and the picker ends.
+    run(&mut view, &tabs, &clock, 300, 2, false);
+    assert!(!view.geometry.picker);
+    assert_eq!(
+        pick_requests(&tabs, 2),
+        0,
+        "nothing was asked of the new tab"
+    );
+
+    // Navigation.
+    let mut view = DevtoolsView::default();
+    let tabs = Tabs::new(&[1]);
+    attach(&mut view, &tabs, &clock, 1, false);
+    picking(&mut view);
+    tabs.pages[&1].navigate();
+    for step in 0..4 {
+        run(&mut view, &tabs, &clock, 200 + step * 10, 1, false);
+    }
+    assert!(!view.geometry.picker, "navigation ends picking");
+
+    // Process replacement.
+    let mut view = DevtoolsView::default();
+    let tabs = Tabs::new(&[1]);
+    attach(&mut view, &tabs, &clock, 1, false);
+    picking(&mut view);
+    tabs.pages[&1].restart(77);
+    for step in 0..4 {
+        run(&mut view, &tabs, &clock, 200 + step * 10, 1, false);
+    }
+    assert!(!view.geometry.picker, "a replacement process ends picking");
+
+    // Leaving the Elements panel, and closing the tools.
+    let mut view = DevtoolsView::default();
+    let tabs = Tabs::new(&[1]);
+    attach(&mut view, &tabs, &clock, 1, false);
+    picking(&mut view);
+    view.elements_active = false;
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    assert!(!view.geometry.picker);
+    view.elements_active = true;
+    picking(&mut view);
+    view.close(&|key| tabs.resolve(key));
+    assert!(!view.geometry.picker);
+
+    // A crash.
+    let mut view = DevtoolsView::default();
+    let tabs = Tabs::new(&[1]);
+    attach(&mut view, &tabs, &clock, 1, false);
+    picking(&mut view);
+    tabs.pages[&1].crash();
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    assert!(!view.geometry.picker);
+}
+
+#[test]
+fn a_detached_window_keeps_its_pinned_target_while_picking_and_the_selection_moves() {
+    let tabs = Tabs::new(&[1, 2]);
+    let clock = Clock(Instant::now());
+    let mut view = DevtoolsView::default();
+    attach(&mut view, &tabs, &clock, 1, true);
+    picking(&mut view);
+    // The browser selection moves to tab 2; the pinned window still inspects tab 1.
+    for step in 0..3 {
+        run(&mut view, &tabs, &clock, 100 + step * 10, 2, true);
+    }
+    assert!(view.geometry.picker, "pinned targets keep their picker");
+    assert_eq!(pick_requests(&tabs, 1), 1);
+    assert_eq!(pick_requests(&tabs, 2), 0);
+    assert_eq!(view.target_tab(), Some(1));
+}
+
+#[test]
+fn editing_needs_the_users_grant_is_bound_to_the_document_and_dies_at_every_boundary() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = DevtoolsView::default();
+    attach(&mut view, &tabs, &clock, 1, false);
+    let node = node_key(&view);
+    let op = || wega::engine_protocol::inspector::edit::MutationOp::SetAttribute {
+        name: "a".into(),
+        value: "1".into(),
+    };
+    // Not enabled: refused in the browser; nothing is sent.
+    assert!(!view.edit.submit(node, op()));
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    assert!(tabs.pages[&1].inner.borrow().mutations.is_empty());
+    // The user enables editing: a mutation grant, not an evaluation grant.
+    view.enable_editing(false, &|k| tabs.resolve(k));
+    assert_eq!(tabs.pages[&1].count(InspectorCommand::GrantMutation), 1);
+    assert_eq!(tabs.pages[&1].count(InspectorCommand::GrantEvaluation), 0);
+    run(&mut view, &tabs, &clock, 110, 1, false);
+    assert!(view.edit.is_enabled());
+    assert!(
+        view.console
+            .evaluation_enabled(tabs_document(&view))
+            .is_none(),
+        "evaluation stays off"
+    );
+    // The edit is sent against the epoch the user sees, and its reply is adopted.
+    assert!(view.edit.submit(node, op()));
+    run(&mut view, &tabs, &clock, 120, 1, false);
+    run(&mut view, &tabs, &clock, 130, 1, false);
+    let sent = tabs.pages[&1].inner.borrow().mutations.clone();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].1, 0, "the epoch of the status snapshot");
+    assert_eq!(view.edit.last.as_deref(), Some("Set attribute a"));
+    assert_eq!(
+        view.elements.epoch,
+        Some(101),
+        "the edit's epoch is adopted"
+    );
+
+    // Explicit revocation: nothing more can be sent.
+    view.revoke_editing(&|k| tabs.resolve(k));
+    run(&mut view, &tabs, &clock, 140, 1, false);
+    assert!(!view.edit.is_enabled());
+    assert!(!view.edit.submit(node, op()));
+    assert_eq!(tabs.pages[&1].count(InspectorCommand::RevokeMutation), 1);
+
+    // Navigation: the grant dies with the document, queued edits are dropped.
+    view.enable_editing(false, &|k| tabs.resolve(k));
+    run(&mut view, &tabs, &clock, 150, 1, false);
+    assert!(view.edit.is_enabled());
+    assert!(view.edit.submit(node, op()));
+    tabs.pages[&1].navigate();
+    for step in 0..4 {
+        run(&mut view, &tabs, &clock, 160 + step * 10, 1, false);
+    }
+    assert!(!view.edit.is_enabled());
+    assert_eq!(
+        tabs.pages[&1].inner.borrow().mutations.len(),
+        1,
+        "the queued edit never ran"
+    );
+
+    // A replacement process starts without authority.
+    view.enable_editing(false, &|k| tabs.resolve(k));
+    run(&mut view, &tabs, &clock, 300, 1, false);
+    tabs.pages[&1].restart(55);
+    for step in 0..4 {
+        run(&mut view, &tabs, &clock, 400 + step * 10, 1, false);
+    }
+    assert!(!view.edit.is_enabled());
+}
+
+#[test]
+fn an_edit_refused_as_unauthorised_or_stale_is_reported_and_never_retried_blindly() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = DevtoolsView::default();
+    attach(&mut view, &tabs, &clock, 1, false);
+    let node = node_key(&view);
+    view.enable_editing(false, &|k| tabs.resolve(k));
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    tabs.pages[&1].inner.borrow_mut().mutate_error = Some(InspectorErrorCode::Unauthorized);
+    view.edit.submit(
+        node,
+        wega::engine_protocol::inspector::edit::MutationOp::RemoveNode,
+    );
+    run(&mut view, &tabs, &clock, 110, 1, false);
+    run(&mut view, &tabs, &clock, 120, 1, false);
+    assert!(
+        view.edit.notice.contains("not authorised"),
+        "{}",
+        view.edit.notice
+    );
+    assert_eq!(
+        tabs.pages[&1].inner.borrow().mutations.len(),
+        1,
+        "not retried"
+    );
+    // A stale epoch is retried exactly once.
+    tabs.pages[&1].inner.borrow_mut().mutate_error = Some(InspectorErrorCode::StaleMutation);
+    view.edit.submit(
+        node,
+        wega::engine_protocol::inspector::edit::MutationOp::RemoveNode,
+    );
+    for step in 0..8 {
+        run(&mut view, &tabs, &clock, 200 + step * 10, 1, false);
+    }
+    assert_eq!(
+        tabs.pages[&1].inner.borrow().mutations.len(),
+        3,
+        "one original plus one retry"
+    );
+    assert!(
+        view.edit.notice.contains("keeps changing"),
+        "{}",
+        view.edit.notice
+    );
 }

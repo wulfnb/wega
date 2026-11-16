@@ -227,7 +227,7 @@ fn panel_draws_expansion_selection_previews_and_limits_without_html_execution() 
         .collect::<Vec<_>>()
         .join(" ");
     assert!(
-        texts.contains("Read-only DOM")
+        texts.contains("DOM")
             && texts.contains("Selected:")
             && texts.contains("Preview truncated")
     );

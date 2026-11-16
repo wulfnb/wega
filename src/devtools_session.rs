@@ -11,6 +11,7 @@
 //!   currently knows, otherwise nothing is shown.
 use crate::{
     devtools_console::{ConsoleLine, ConsoleView},
+    devtools_geometry::{EditView, GeometryView},
     wega_page::InspectorPoll,
 };
 use std::time::{Duration, Instant};
@@ -63,6 +64,34 @@ pub(crate) trait InspectorPort {
     fn revoke_evaluation(&self, session: InspectorSessionId);
     fn evaluate(&self, session: InspectorSessionId, expression: &str)
     -> Result<(), InspectorError>;
+    /// Mint and send a **mutation** grant (a trusted user action only).
+    fn grant_mutation(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+    ) -> Result<(), InspectorError> {
+        let _ = (session, opaque_override);
+        Err(InspectorError::new(
+            InspectorErrorCode::Unavailable,
+            "Editing unavailable",
+        ))
+    }
+    fn revoke_mutation(&self, session: InspectorSessionId) {
+        let _ = session;
+    }
+    fn mutate(
+        &self,
+        session: InspectorSessionId,
+        node: wega::engine_protocol::inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: wega::engine_protocol::inspector::edit::MutationOp,
+    ) -> Result<(), InspectorError> {
+        let _ = (session, node, epoch, op);
+        Err(InspectorError::new(
+            InspectorErrorCode::Unavailable,
+            "Editing unavailable",
+        ))
+    }
 }
 
 impl InspectorPort for crate::wega_page::Page {
@@ -109,6 +138,25 @@ impl InspectorPort for crate::wega_page::Page {
         expression: &str,
     ) -> Result<(), InspectorError> {
         self.inspector_evaluate(session, expression)
+    }
+    fn grant_mutation(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+    ) -> Result<(), InspectorError> {
+        self.inspector_grant_mutation(session, opaque_override)
+    }
+    fn revoke_mutation(&self, session: InspectorSessionId) {
+        self.inspector_revoke_mutation(session)
+    }
+    fn mutate(
+        &self,
+        session: InspectorSessionId,
+        node: wega::engine_protocol::inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: wega::engine_protocol::inspector::edit::MutationOp,
+    ) -> Result<(), InspectorError> {
+        self.inspector_mutate(session, node, epoch, op)
     }
 }
 
@@ -167,6 +215,8 @@ pub(crate) struct DevtoolsView {
     pub(crate) elements: crate::devtools_elements::ElementsView,
     pub(crate) elements_active: bool,
     pub(crate) styles: crate::devtools_styles::StyleView,
+    pub(crate) geometry: GeometryView,
+    pub(crate) edit: EditView,
 }
 
 impl Default for DevtoolsView {
@@ -183,6 +233,8 @@ impl Default for DevtoolsView {
             elements: Default::default(),
             elements_active: false,
             styles: Default::default(),
+            geometry: Default::default(),
+            edit: Default::default(),
         }
     }
 }
@@ -250,6 +302,8 @@ impl DevtoolsView {
             self.console.reset_session();
             self.elements.reset();
             self.styles.reset();
+            self.geometry.reset();
+            self.edit.reset();
             self.snapshot = None;
             self.state = ViewState::TargetClosed;
         }
@@ -283,6 +337,28 @@ impl DevtoolsView {
         }
     }
 
+    /// The user's explicit action: authorise **editing** for the current document of the bound
+    /// tab. Separate from evaluation; the opaque override is a separate confirmation too.
+    pub(crate) fn enable_editing<'a>(
+        &mut self,
+        opaque_override: bool,
+        resolve: &dyn Fn(u64) -> Resolved<'a>,
+    ) {
+        let Some((page, session)) = self.live_page(resolve) else {
+            self.edit.notice = "The page is not connected.".into();
+            return;
+        };
+        if let Err(error) = page.grant_mutation(session, opaque_override) {
+            self.edit.notice = format!("Editing was not enabled: {}", error.message);
+        }
+    }
+    pub(crate) fn revoke_editing<'a>(&mut self, resolve: &dyn Fn(u64) -> Resolved<'a>) {
+        if let Some((page, session)) = self.live_page(resolve) {
+            page.revoke_mutation(session);
+        }
+        self.edit.enabled = None;
+        self.edit.reset_queue();
+    }
     pub(crate) fn revoke_evaluation<'a>(&mut self, resolve: &dyn Fn(u64) -> Resolved<'a>) {
         if let Some((page, session)) = self.live_page(resolve) {
             page.revoke_evaluation(session);
@@ -335,6 +411,8 @@ impl DevtoolsView {
         self.console.reset_session();
         self.elements.reset();
         self.styles.reset();
+        self.geometry.reset();
+        self.edit.reset();
         self.snapshot = None;
     }
 
@@ -368,6 +446,8 @@ impl DevtoolsView {
                 self.console.reset_session();
                 self.elements.reset();
                 self.styles.reset();
+                self.geometry.reset();
+                self.edit.reset();
                 self.snapshot = None;
                 self.state = ViewState::TargetClosed;
                 return;
@@ -378,6 +458,8 @@ impl DevtoolsView {
                 self.console.reset_session();
                 self.elements.reset();
                 self.styles.reset();
+                self.geometry.reset();
+                self.edit.reset();
                 self.snapshot = None;
                 self.state = ViewState::NoPage;
                 return;
@@ -389,6 +471,8 @@ impl DevtoolsView {
             self.console.reset_session();
             self.elements.reset();
             self.styles.reset();
+            self.geometry.reset();
+            self.edit.reset();
             self.snapshot = None;
             self.state = ViewState::Unavailable("The page has no inspector".into());
             return;
@@ -403,6 +487,8 @@ impl DevtoolsView {
             self.console.reset_session();
             self.elements.reset();
             self.styles.reset();
+            self.geometry.reset();
+            self.edit.reset();
             self.snapshot = None;
             self.state = ViewState::Connecting;
         }
@@ -426,6 +512,8 @@ impl DevtoolsView {
                     self.console.reset_session();
                     self.elements.reset();
                     self.styles.reset();
+                    self.geometry.reset();
+                    self.edit.reset();
                     self.snapshot = None;
                     self.state = ViewState::Connecting;
                     self.next_open = None;
@@ -448,6 +536,8 @@ impl DevtoolsView {
             self.console.reset_session();
             self.elements.reset();
             self.styles.reset();
+            self.geometry.reset();
+            self.edit.reset();
             self.snapshot = None;
             self.state = ViewState::Unavailable("The content process stopped".into());
             self.next_open = Some(now + RETRY);
@@ -472,6 +562,16 @@ impl DevtoolsView {
         self.console.new_document(poll.document);
         self.elements.document(poll.document);
         self.elements.expire(now);
+        self.geometry.document(poll.document);
+        self.geometry.expire(now);
+        self.edit.document(poll.document);
+        // The browser's own record of the mutation grant, never the engine's word.
+        self.edit.observe_grant(poll.mutation, poll.document);
+        self.edit.expire(now);
+        if !self.elements_active {
+            // Picking is an Elements action: leaving the panel ends it.
+            self.geometry.set_picker(false);
+        }
         for event in poll.console {
             match event {
                 InspectorEvent::ConsoleMessageAdded(message)
@@ -495,9 +595,22 @@ impl DevtoolsView {
                 return;
             }
         }
+        if let Some(pick) = self.geometry.take_chosen() {
+            self.elements.reveal(&pick.ancestors, pick.target.node);
+        }
+        if let Some(removed) = self.edit.take_removed() {
+            self.elements.node_removed(removed);
+        }
         let Some(live) = self.live.as_mut() else {
             return;
         };
+        if let Some(epoch) = self.edit.take_adopted_epoch() {
+            // The edit's own epoch: pages and the selection refresh through the normal path,
+            // one page at a time; no cache is cleared.
+            self.elements.status_changed(poll.document, epoch);
+            live.last_snapshot = None;
+            refresh = true;
+        }
         // Never keep a snapshot of a document the browser has moved past.
         if self
             .snapshot
@@ -565,6 +678,26 @@ impl DevtoolsView {
             }
         }
         if self.elements_active && self.state == ViewState::Attached {
+            // Geometry and picking: one outstanding request, pointer movement coalesced.
+            if let Some((command, args)) =
+                self.geometry
+                    .next(now, self.elements.selected, self.elements.epoch)
+            {
+                match page.request_args(session, command, args) {
+                    Ok(()) => {}
+                    Err(error) => self.geometry.complete(command, Err(error)),
+                }
+            }
+            // Edits: serial, against the epoch the user is looking at.
+            if let Some(epoch) = self.elements.epoch
+                && let Some(queued) = self.edit.next(now)
+            {
+                if let Err(error) = page.mutate(session, queued.node, epoch, queued.op.clone()) {
+                    self.edit.unsent(error);
+                }
+            }
+        }
+        if self.elements_active && self.state == ViewState::Attached {
             if let Some(epoch) = self.elements.epoch {
                 if let Some(query) = self.styles.prepare(
                     now,
@@ -611,6 +744,28 @@ impl DevtoolsView {
         if completed.command.needs_style_version() {
             self.styles.complete(completed.result);
             return;
+        }
+        match completed.command {
+            InspectorCommand::GetGeometry | InspectorCommand::PickNode => {
+                self.geometry.complete(completed.command, completed.result);
+                return;
+            }
+            InspectorCommand::Mutate => {
+                if self.edit.complete(completed.result) {
+                    // A stale epoch was retried: ask for a fresh status first.
+                    live.last_snapshot = None;
+                    *refresh = true;
+                }
+                return;
+            }
+            InspectorCommand::GrantMutation => {
+                if let Err(error) = completed.result {
+                    self.edit.notice = format!("Editing was not enabled: {}", error.message);
+                }
+                return;
+            }
+            InspectorCommand::RevokeMutation => return,
+            _ => {}
         }
         if completed.command.needs_dom_version() {
             self.elements.complete(completed.command, completed.result);

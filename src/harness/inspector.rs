@@ -6,7 +6,7 @@ use wega::engine_protocol::inspector::InspectorSessionId;
 
 pub struct Test {
     started: Instant,
-    stage: u8,
+    pub(crate) stage: u8,
     first_document: u64,
     first_session: Option<InspectorSessionId>,
     stalled_at: Option<Instant>,
@@ -14,6 +14,7 @@ pub struct Test {
     resumed_at: Option<Instant>,
     frames_while_stalled: u64,
     worker: u32,
+    pub(crate) d3: crate::harness::inspector_d3::D3,
 }
 
 impl Test {
@@ -28,6 +29,7 @@ impl Test {
             resumed_at: None,
             frames_while_stalled: 0,
             worker: 0,
+            d3: Default::default(),
         }
     }
 }
@@ -333,6 +335,12 @@ impl crate::browser::Browser {
                 println!(
                     "inspector-test: CSS cached computed, author sheets, rules and declarations passed in detached window"
                 );
+                // The final D3 flow (picker, highlight, box model, authorized edits) runs here,
+                // in the detached OS window, before the tab-switch check below.
+                self.harness.inspector_test.as_mut().unwrap().d3.resume = 21;
+                next(self, 30);
+            }
+            21 => {
                 let target = self.devtools.target_tab();
                 // A detached window stays pinned while the browser selects another tab.
                 self.new_tab();
@@ -383,9 +391,20 @@ impl crate::browser::Browser {
                     assert!(!self.devtools.console.lines().any(|line| {
                         matches!(line, ConsoleLine::Message(m) if m.text.contains("before DevTools"))
                     }), "old document output must be gone");
-                    next(self, 3);
+                    assert!(
+                        !self.devtools.edit.is_enabled(),
+                        "editing survived navigation"
+                    );
+                    assert!(
+                        !self.devtools.geometry.picker && self.devtools.geometry.selected.is_none(),
+                        "geometry state survived navigation"
+                    );
+                    // The docked pass: the same flow on the new document.
+                    self.harness.inspector_test.as_mut().unwrap().d3.resume = 3;
+                    next(self, 30);
                 }
             }
+            30..=38 => self.d3_stage(stage),
             // Close: the session is revoked in the page's authority and the page keeps running.
             3 => {
                 let pid = page.pid();

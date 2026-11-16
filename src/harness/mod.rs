@@ -1,6 +1,7 @@
 pub mod coverage_ui;
 pub mod download;
 pub mod inspector;
+pub mod inspector_d3;
 // Standalone native integration harness.
 use std::time::{Duration, Instant};
 #[derive(Default)]

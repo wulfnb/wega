@@ -74,6 +74,9 @@ pub(crate) struct ElementsView {
     blocked: bool,
     retry_on_status: bool,
     more: Option<(u64, u32)>,
+    /// Keys from the root element down to a picked node that the tree must expand, loaded one
+    /// bounded page at a time.
+    reveal: Vec<u64>,
 }
 impl ElementsView {
     pub fn begin(&mut self, read: Read, now: Instant) {
@@ -128,6 +131,79 @@ impl ElementsView {
             self.selected_epoch = None;
         }
     }
+    /// Select a picked node and expand the tree down to it. `ancestors` is root first.
+    pub fn reveal(&mut self, ancestors: &[InspectorNodeId], target: InspectorNodeId) {
+        if self.document != Some(target.document) || ancestors.len() > MAX_DOM_DEPTH {
+            return;
+        }
+        self.selected = Some(target);
+        self.selected_epoch = None;
+        self.reveal = ancestors
+            .iter()
+            .map(|a| a.key)
+            .chain(std::iter::once(target.key))
+            .collect();
+    }
+    /// A removed node leaves the selection and the cached tree; its parent is refreshed by the
+    /// epoch change that the removal itself caused, so nothing is rebuilt here.
+    pub fn node_removed(&mut self, id: InspectorNodeId) {
+        if self.selected == Some(id) {
+            self.selected = None;
+            self.selected_epoch = None;
+        }
+        self.rows.remove(&id.key);
+        for row in self.rows.values_mut() {
+            row.children.retain(|k| *k != id.key);
+        }
+        self.reveal.clear();
+    }
+    /// The next read needed to bring the picked node into view, if any.
+    fn reveal_step(&mut self, epoch: u64) -> Option<Read> {
+        let path = std::mem::take(&mut self.reveal);
+        let mut result = None;
+        let mut keep = true;
+        for (index, key) in path.iter().enumerate() {
+            let Some(row) = self.rows.get_mut(key) else {
+                break;
+            };
+            if index + 1 == path.len() {
+                keep = false;
+                break;
+            }
+            row.expanded = true;
+            let node = row.node.id;
+            if row.epoch != Some(epoch) {
+                result = Some(Read::Children {
+                    node,
+                    epoch,
+                    offset: 0,
+                });
+                break;
+            }
+            if row.children.contains(&path[index + 1]) {
+                continue;
+            }
+            match row.next {
+                Some(offset) => {
+                    result = Some(Read::Children {
+                        node,
+                        epoch,
+                        offset,
+                    });
+                    break;
+                }
+                // The child is not under this parent any more (the page moved on).
+                None => {
+                    keep = false;
+                    break;
+                }
+            }
+        }
+        if keep {
+            self.reveal = path;
+        }
+        result
+    }
     pub fn more(&mut self, key: u64) {
         if let Some(offset) = self.rows.get(&key).and_then(|r| r.next) {
             self.more = Some((key, offset));
@@ -158,7 +234,7 @@ impl ElementsView {
         self.rows.retain(|key, _| keep.contains(key));
         self.bytes = self.rows.values().map(|r| r.bytes).sum();
     }
-    pub fn next(&self) -> Option<Read> {
+    pub fn next(&mut self) -> Option<Read> {
         if self.pending.is_some() || self.blocked {
             return None;
         }
@@ -170,6 +246,11 @@ impl ElementsView {
         }
         if self.root.is_none() || self.root_epoch != Some(epoch) {
             return Some(Read::Root);
+        }
+        if !self.reveal.is_empty()
+            && let Some(read) = self.reveal_step(epoch)
+        {
+            return Some(read);
         }
         for (key, depth) in self.visible() {
             let row = self.rows.get(&key)?;

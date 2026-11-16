@@ -123,6 +123,9 @@ pub(crate) struct InspectorPoll {
     /// The document a live evaluation grant covers, and whether it overrides the opaque-origin
     /// policy. Read from the browser's own registry, never from the engine.
     pub grant: Option<(DocumentContext, bool)>,
+    /// The document a live **mutation** grant covers (editing enabled), from the browser's own
+    /// registry. Independent of `grant`.
+    pub mutation: Option<DocumentContext>,
 }
 
 impl Snapshot {
@@ -489,6 +492,14 @@ impl Snapshot {
         self.inspector
             .as_ref()?
             .grant_for(session, context, &principal)
+    }
+
+    /// Like [`Self::evaluation_token`], for the separate mutation grant.
+    fn mutation_token(&self, session: InspectorSessionId) -> Option<GrantToken> {
+        let (context, principal) = self.current_principal()?;
+        self.inspector
+            .as_ref()?
+            .mutation_grant_for(session, context, &principal)
     }
 
     /// The process is gone: nothing may ever be authorised against it again.
@@ -1647,12 +1658,133 @@ impl Page {
         )
     }
 
+    /// Browser-UI only. Mint a **mutation** grant (editing) for `session` and the current
+    /// document: a separate token, record and lifecycle from the evaluation grant, decided from
+    /// the same committed principal. Only a trusted UI action may call this.
+    pub fn inspector_grant_mutation(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+    ) -> Result<(), InspectorError> {
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes).map_err(|_| {
+            Self::inspector_error(InspectorErrorCode::Unavailable, "No secure random source")
+        })?;
+        let token = GrantToken(bytes);
+        let scope = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let (document, principal, scope) = state.evaluation_scope(opaque_override)?;
+            state
+                .inspector
+                .as_mut()
+                .ok_or_else(|| {
+                    Self::inspector_error(InspectorErrorCode::Unavailable, "No inspector")
+                })?
+                .install_mutation_grant(session, document, token, principal, scope.clone())?;
+            scope
+        };
+        let sent = self.inspector_send(
+            session,
+            InspectorCommand::GrantMutation,
+            InspectorArgs::Grant {
+                token,
+                opaque_override: scope.opaque_override,
+                origin: scope.origin,
+            },
+            true,
+        );
+        if sent.is_err()
+            && let Some(sessions) = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .inspector
+                .as_mut()
+        {
+            sessions.clear_mutation_grant();
+        }
+        sent
+    }
+
+    /// Browser-UI only. Withdraw editing authority (browser record first, then the engine's).
+    pub fn inspector_revoke_mutation(&self, session: InspectorSessionId) {
+        if let Some(sessions) = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .inspector
+            .as_mut()
+        {
+            sessions.clear_mutation_grant();
+        }
+        let _ = self.inspector_request(session, InspectorCommand::RevokeMutation);
+    }
+
+    /// Browser-UI only. Apply one edit. The browser attaches the mutation grant it holds for
+    /// *this* session, document and principal; with none there is nothing to send.
+    pub fn inspector_mutate(
+        &self,
+        session: InspectorSessionId,
+        node: inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: inspector::edit::MutationOp,
+    ) -> Result<(), InspectorError> {
+        let token = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .mutation_token(session);
+        let Some(grant) = token else {
+            return Err(Self::inspector_error(
+                InspectorErrorCode::Unauthorized,
+                "Editing is not enabled for this document",
+            ));
+        };
+        self.inspector_send(
+            session,
+            InspectorCommand::Mutate,
+            InspectorArgs::Mutate {
+                grant,
+                node,
+                epoch,
+                op,
+            },
+            true,
+        )
+    }
+
+    /// The generic UI entry. Commands that mint or carry authority are refused here: they have
+    /// dedicated entry points that attach the browser's own record.
     pub(crate) fn inspector_request_args(
         &self,
         session: InspectorSessionId,
         command: InspectorCommand,
         args: InspectorArgs,
     ) -> Result<(), InspectorError> {
+        self.inspector_send(session, command, args, false)
+    }
+
+    fn inspector_send(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+        privileged: bool,
+    ) -> Result<(), InspectorError> {
+        if !privileged
+            && matches!(
+                command,
+                InspectorCommand::Mutate | InspectorCommand::GrantMutation
+            )
+        {
+            return Err(Self::inspector_error(
+                InspectorErrorCode::Unauthorized,
+                "This command needs its dedicated entry point",
+            ));
+        }
         let (packet, context, expired) = {
             let mut state = self
                 .state
@@ -1681,7 +1813,9 @@ impl Page {
                 args: args.clone(),
             }
             .validate()?;
-            if let InspectorArgs::DomNode { node } | InspectorArgs::DomChildren { node, .. } = &args
+            if let InspectorArgs::DomNode { node }
+            | InspectorArgs::DomChildren { node, .. }
+            | InspectorArgs::Mutate { node, .. } = &args
             {
                 if node.document
                     != (DocumentContext {
@@ -1816,14 +1950,15 @@ impl Page {
                     .inspector
                     .as_ref()
                     .is_none_or(|sessions| sessions.registry().is_closed());
-            let (results, events, console, grant) = state.inspector.as_mut().map_or_else(
-                || (Vec::new(), Vec::new(), Vec::new(), None),
+            let (results, events, console, grant, mutation) = state.inspector.as_mut().map_or_else(
+                || (Vec::new(), Vec::new(), Vec::new(), None, None),
                 |sessions| {
                     (
                         sessions.take_results(session),
                         sessions.take_events(session),
                         sessions.take_console(session),
                         sessions.grant_state(session),
+                        sessions.mutation_state(session),
                     )
                 },
             );
@@ -1835,6 +1970,7 @@ impl Page {
                     events,
                     console,
                     grant,
+                    mutation,
                 },
                 expired,
             )

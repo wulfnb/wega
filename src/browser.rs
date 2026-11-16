@@ -441,6 +441,50 @@ impl Browser {
         self.devtools
             .revoke_evaluation(&|key| Self::resolve_tab(session, key));
     }
+    /// Whether Inspect Element mode is consuming this tab's page pointer input right now: the
+    /// picker belongs to the tab the tools are bound to, and only while that tab is displayed.
+    pub(crate) fn devtools_picker_active(&self) -> bool {
+        self.devtools.geometry.picker
+            && self.devtools.is_open()
+            && self.devtools.elements_active
+            && self.devtools.target_tab() == Some(self.tab().key)
+    }
+    /// What the overlay should draw over the displayed page, as pure plans in viewport CSS px.
+    /// Empty unless the tools are bound to this tab and the reports belong to its document.
+    pub(crate) fn devtools_overlay_plans(&self) -> Vec<(crate::devtools_overlay::Plan, bool)> {
+        if !self.devtools.is_open()
+            || !self.devtools.elements_active
+            || self.devtools.target_tab() != Some(self.tab().key)
+        {
+            return Vec::new();
+        }
+        let Some(document) = self.devtools_document() else {
+            return Vec::new();
+        };
+        let epoch = self.devtools.elements.epoch;
+        let (selected, hover) = self.devtools.geometry.overlay(document);
+        let mut plans = Vec::new();
+        if let Some(report) = selected {
+            plans.push((crate::devtools_overlay::plan(report, epoch), true));
+        }
+        if self.devtools.geometry.picker
+            && let Some(report) = hover
+        {
+            plans.push((crate::devtools_overlay::plan(report, epoch), false));
+        }
+        plans
+    }
+    /// The user's explicit "Enable editing" action (a separate grant from evaluation).
+    pub(crate) fn devtools_enable_editing(&mut self, opaque_override: bool) {
+        let session = &self.session;
+        self.devtools
+            .enable_editing(opaque_override, &|key| Self::resolve_tab(session, key));
+    }
+    pub(crate) fn devtools_revoke_editing(&mut self) {
+        let session = &self.session;
+        self.devtools
+            .revoke_editing(&|key| Self::resolve_tab(session, key));
+    }
     pub(crate) fn devtools_run_command(&mut self, expression: &str) {
         let session = &self.session;
         self.devtools
@@ -1312,6 +1356,11 @@ impl Browser {
         }
         if pressed {
             match key {
+                // Cancels Inspect Element mode before anything else sees the key.
+                Key::Named(NamedKey::Escape) if self.devtools_picker_active() => {
+                    self.devtools.geometry.set_picker(false);
+                    self.devtools.geometry.swallow_escape_release = true;
+                }
                 Key::Named(NamedKey::F12) => self.toggle_developer_tools(),
                 Key::Named(NamedKey::F6) => {
                     if self.chrome.page_focused {
@@ -1380,6 +1429,18 @@ impl Browser {
             self.chrome.modifiers = *modifiers;
         }
         if let WindowEvent::KeyboardInput { event, .. } = &event {
+            if self.devtools.geometry.swallow_escape_release
+                && event.state == winit::event::ElementState::Released
+                && matches!(event.logical_key, Key::Named(NamedKey::Escape))
+            {
+                self.devtools.geometry.swallow_escape_release = false;
+                return;
+            }
+            if self.devtools_picker_active() {
+                // Picking owns the keyboard: no key reaches the page while it is active.
+                self.pump();
+                return;
+            }
             if !self.modal() && self.shortcut_key(&event.logical_key, event.state) {
                 self.pump();
                 return;

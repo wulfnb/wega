@@ -6,7 +6,7 @@ use wega::engine_protocol::inspector::dom::MAX_DOM_DEPTH;
 
 pub(crate) fn draw(ui: &mut Ui, model: &mut ElementsView) {
     ui.horizontal(|ui| {
-        ui.label("Read-only DOM");
+        ui.label("DOM");
         if ui.button("Reset tree").clicked() {
             model.clear_cache();
         }
@@ -147,11 +147,40 @@ impl Browser {
             if !valid_style {
                 self.devtools.styles.reset();
             }
+            self.elements_toolbar(ui);
+            if self.devtools.geometry.picker && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.devtools.geometry.set_picker(false);
+            }
+            let mut edits = Vec::new();
             ui.columns(2, |columns| {
                 draw(&mut columns[0], &mut self.devtools.elements);
+                // Edit forms for the selected node (only when editing is enabled).
+                if let Some(id) = self.devtools.elements.selected
+                    && let Some(node) = self
+                        .devtools
+                        .elements
+                        .rows
+                        .get(&id.key)
+                        .map(|row| row.node.clone())
+                {
+                    edits = crate::devtools_edit_ui::controls(
+                        &mut columns[0],
+                        &mut self.devtools.edit,
+                        id,
+                        &node,
+                    );
+                }
                 self.devtools.styles.select(self.devtools.elements.selected);
+                crate::devtools_boxmodel_ui::draw(
+                    &mut columns[1],
+                    self.devtools.geometry.selected.as_ref(),
+                    self.devtools.elements.epoch,
+                );
                 crate::devtools_styles_ui::draw(&mut columns[1], &mut self.devtools.styles);
             });
+            for (node, op) in edits {
+                self.devtools.edit.submit(node, op);
+            }
         } else {
             ui.label("Waiting for the current document…");
         }
