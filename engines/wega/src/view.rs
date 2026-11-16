@@ -2880,7 +2880,9 @@ impl crate::inspector::PagePort for View {
         self.console.borrow_mut().clear();
     }
     fn document_origin(&self) -> Option<String> {
-        matches!(self.url.scheme(), "http" | "https")
+        // An opaque-origin frame has no tuple origin whatever its URL looks like: it can only be
+        // authorised through the explicit opaque override.
+        (matches!(self.url.scheme(), "http" | "https") && !self.restrictions().opaque)
             .then(|| self.url.origin().ascii_serialization())
     }
     fn evaluate(

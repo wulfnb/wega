@@ -889,6 +889,80 @@ impl View {
     }
 }
 
+/// One row of the inspector's frame tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrameDescription {
+    /// Stable frame identity (never reused in this tab). The top-level document is not listed.
+    pub key: u64,
+    /// The embedding frame; `None` for children of the top-level document.
+    pub parent: Option<u64>,
+    pub url: String,
+    /// The committed principal: a tuple origin or `null`.
+    pub origin: String,
+    pub name: String,
+    pub sandboxed: bool,
+    /// The active document's revision (changes on every navigation of this frame).
+    pub revision: u64,
+}
+/// A frame as a D3 inspector target: its own document stamp and the page port to serve it.
+/// The stamp's document id is the frame key, so node handles minted for one frame can never be
+/// accepted by another, and the revision invalidates them when the frame navigates.
+pub struct InspectedFrame<'a> {
+    pub context: wega_protocol::DocumentContext,
+    pub loading: bool,
+    pub port: &'a mut View,
+}
+impl View {
+    /// Every live descendant frame, parents before children.
+    pub fn frame_tree(&self) -> Vec<FrameDescription> {
+        fn walk(view: &View, parent: Option<u64>, out: &mut Vec<FrameDescription>) {
+            for child in &view.frames.children {
+                let v = &child.view;
+                out.push(FrameDescription {
+                    key: child.key,
+                    parent,
+                    url: v.document.borrow().url().to_string(),
+                    origin: v.origin_string(),
+                    name: v.frame_name_hint(&view.document, child.node),
+                    sandboxed: v.role.as_ref().is_some_and(|r| r.sandbox.active),
+                    revision: v.document_revision(),
+                });
+                walk(v, Some(child.key), out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(self, None, &mut out);
+        out
+    }
+    /// The inspector target for frame `key`, or `None` once it is gone (a stale target never
+    /// resolves to a newer frame because keys are not reused).
+    pub fn frame_target(&mut self, key: u64) -> Option<InspectedFrame<'_>> {
+        if let Some(index) = self.frames.children.iter().position(|c| c.key == key) {
+            let view = &mut *self.frames.children[index].view;
+            return Some(InspectedFrame {
+                context: wega_protocol::DocumentContext {
+                    document: wega_protocol::DocumentId(key),
+                    revision: wega_protocol::DocumentRevision(view.document_revision()),
+                },
+                loading: view.loading,
+                port: view,
+            });
+        }
+        let index = self
+            .frames
+            .children
+            .iter()
+            .position(|c| c.view.contains_frame(key))?;
+        self.frames.children[index].view.frame_target(key)
+    }
+    fn contains_frame(&self, key: u64) -> bool {
+        self.frames
+            .children
+            .iter()
+            .any(|c| c.key == key || c.view.contains_frame(key))
+    }
+}
+
 pub(crate) enum FrameContent {
     Html(String),
     Url(Url),

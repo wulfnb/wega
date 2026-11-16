@@ -42,6 +42,7 @@ pub const ENGINE_THREAD_STACK: usize = 8 * 1024 * 1024;
 pub use dom::{DialogHandler, DocumentDialogHandler};
 pub use inspector::PagePort;
 pub use network::NetworkPolicy;
+pub use view::frames::{FrameDescription, InspectedFrame};
 pub use view::{Frame, View};
 pub use view::{PageEvent, Pointer, PointerKind};
 pub use wega_adapter_skia::{FrameRequest, FrameTarget, Painted, Pixels};
