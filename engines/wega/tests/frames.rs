@@ -14,7 +14,7 @@ fn page() -> wega_engine::View {
 }
 
 #[test]
-fn unbound_frames_never_expose_synthetic_documents_or_window_proxies() {
+fn frames_expose_only_host_backed_facades_never_documents_or_engine_internals() {
     let mut view = page();
     view.set_html(
         r#"<iframe src="about:blank"></iframe>
@@ -22,24 +22,24 @@ fn unbound_frames_never_expose_synthetic_documents_or_window_proxies() {
         <iframe sandbox="allow-scripts" srcdoc="<p>Private</p>"></iframe>"#,
     )
     .unwrap();
+    view.poll();
     assert_eq!(
         view.evaluate_json(
             r#"(() => {
         const frames = [...document.querySelectorAll('iframe')];
-        return frames.length === 3 && window.length === 0 && frames.every(frame =>
-            frame.contentWindow === null && frame.contentDocument === null &&
-            frame._frameContext === undefined);
+        const denied = frame => { try { frame.contentWindow.document; return false; }
+            catch (error) { return error.name === 'SecurityError'; } };
+        return frames.length === 3 && window.length === 3 && frames.every(frame =>
+            frame.contentDocument === null && frame._frameContext === undefined &&
+            frame.contentWindow !== null && typeof frame.contentWindow.postMessage === 'function' &&
+            denied(frame));
     })()"#
         )
         .unwrap(),
         "true"
     );
     view.paint(640, 480, 1.0, 1.0, false).unwrap();
-    assert!(
-        view.compatibility
-            .as_deref()
-            .is_some_and(|reason| reason.contains("iframe"))
-    );
+    assert!(view.compatibility.is_none());
 }
 
 #[test]
