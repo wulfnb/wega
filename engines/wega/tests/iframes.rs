@@ -288,3 +288,137 @@ fn frames_composite_into_the_parent_and_receive_input_instead_of_what_is_behind(
     assert_eq!(eval(&mut view, "globalThis.behindClicks"), "1");
     assert_eq!(child_eval(&mut view, 0, "globalThis.clicks"), "1");
 }
+
+#[test]
+fn keyboard_input_goes_only_to_the_focused_frame() {
+    use wega_engine::events::{BlitzKeyEvent, KeyState};
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/p" => Reply::html("<body style='margin:0'><input id=top style='position:absolute;left:0;top:150px;width:100px'><iframe src=/c style='position:absolute;left:0;top:0;width:200px;height:100px;border:0'></iframe></body>"),
+        "/c" => Reply::html("<body style='margin:0'><input id=i style='width:150px'><script>globalThis.keys=[];addEventListener('keydown',e=>keys.push(e.key))</script></body>"),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let (mut view, _e) = open(&server, "localhost", "/p");
+    loaded(&mut view, 1);
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    eval(&mut view, "globalThis.pk=[];addEventListener('keydown',e=>pk.push(e.key)); 0");
+    let key = |c: &str| BlitzKeyEvent {
+        key: keyboard_types::Key::Character(c.into()),
+        code: keyboard_types::Code::KeyA,
+        modifiers: keyboard_types::Modifiers::empty(),
+        location: keyboard_types::Location::Standard,
+        is_auto_repeating: false,
+        is_composing: false,
+        state: KeyState::Pressed,
+        text: Some(c.into()),
+    };
+    view.click(10.0, 10.0);
+    view.key(key("a"));
+    assert_eq!(child_eval(&mut view, 0, "keys.length"), "1");
+    assert_eq!(eval(&mut view, "pk.length"), "0", "the parent never sees keys typed into a frame");
+    // Activating the parent returns focus to it.
+    view.click(10.0, 160.0);
+    view.key(key("b"));
+    assert_eq!(child_eval(&mut view, 0, "keys.length"), "1");
+}
+
+#[test]
+fn wheel_scrolls_the_frame_under_the_pointer_and_not_the_parent() {
+    use wega_engine::{Pointer, PointerKind};
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/p" => Reply::html("<body style='margin:0;height:2000px'><iframe src=/c style='position:absolute;left:0;top:0;width:200px;height:100px;border:0'></iframe></body>"),
+        "/c" => Reply::html("<body style='margin:0;height:3000px'><script>globalThis.sy=()=>scrollY</script></body>"),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let (mut view, _e) = open(&server, "localhost", "/p");
+    loaded(&mut view, 1);
+    view.paint(300, 200, 1.0, 1.0, false).unwrap();
+    let mut wheel = Pointer::new(PointerKind::Wheel, 50.0, 50.0);
+    wheel.delta_y = 120.0;
+    view.pointer(wheel);
+    view.poll();
+    assert_ne!(child_eval(&mut view, 0, "sy()"), "0", "the frame scrolled");
+    assert_eq!(eval(&mut view, "scrollY"), "0", "the parent did not");
+}
+
+#[test]
+fn sandbox_denies_forms_popups_modals_and_top_navigation() {
+    let server = server();
+    let (mut view, _e) = open(&server, "localhost", "/blank");
+    eval(&mut view, "document.body.innerHTML = `<iframe sandbox=allow-scripts srcdoc=\"<form id=f method=get action=/echo><button id=b>go</button></form>\"></iframe>`; 0");
+    loaded(&mut view, 1);
+    let probe = |view: &mut View, code: &str| child_eval(view, 0, &format!("(() => {{ try {{ return String({code}); }} catch (e) {{ return e.name; }} }})()"));
+    assert_eq!(probe(&mut view, "typeof __wega_call"), "\"undefined\"");
+    assert_eq!(probe(&mut view, "typeof Deno"), "\"undefined\"");
+    assert_eq!(probe(&mut view, "window.open('/x')"), "\"null\"", "no popup without allow-popups");
+    assert_eq!(probe(&mut view, "confirm('?')"), "\"false\"", "no modal without allow-modals");
+    assert_eq!(probe(&mut view, "parent.document"), "\"SecurityError\"");
+    child_eval(&mut view, 0, "parent.location.href = '/hijack'; 0");
+    // Submitting the form from a sandbox without allow-forms never navigates.
+    let before = server.requests("/echo").len();
+    child_eval(&mut view, 0, "document.getElementById('f').submit(); 0");
+    pump(&mut view, |_| false);
+    assert_eq!(server.requests("/echo").len(), before);
+    assert!(server.requests("/hijack").is_empty());
+}
+
+#[test]
+fn window_relationships_names_and_nested_posting() {
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/top" => Reply::html("<iframe name=mid src=/mid></iframe>"),
+        "/mid" => Reply::html("<iframe src=/leaf></iframe><script>addEventListener('message',e=>{globalThis.fromLeaf=e.data})</script>"),
+        "/leaf" => Reply::html("<script>globalThis.facts=[parent!==window, top!==window, window.frameElement===null].join();top.postMessage('hello-top','*');parent.postMessage('hello-mid','*')</script>"),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let (mut view, _e) = open(&server, "localhost", "/top");
+    loaded(&mut view, 1);
+    eval(&mut view, "globalThis.tops=[];addEventListener('message',e=>tops.push([e.data,e.source])); 0");
+    assert_eq!(eval(&mut view, "frames.mid === document.querySelector('iframe').contentWindow && frames[0] === frames.mid && window.length === 1"), "true");
+    let mid = view.child_frames()[0].0;
+    let ok = pump(&mut view, |v| v.child_by_key(mid).is_some_and(|m| m.child_frames().len() == 1));
+    assert!(ok);
+    let leaf = view.child_by_key(mid).unwrap().child_frames()[0].0;
+    // Re-post after the leaf exists and loaded, from inside the leaf.
+    pump(&mut view, |_| false);
+    let m = view.child_by_key(mid).unwrap();
+    m.child_by_key(leaf).unwrap().evaluate_json("top.postMessage('again-top','*'); parent.postMessage('again-mid','*'); 0").unwrap();
+    pump(&mut view, |v| v.evaluate_json("tops.length").map_or(false, |r| r != "0"));
+    assert_eq!(eval(&mut view, "tops.some(t => t[0] === 'again-top') && tops.every(t => t[1] === null)"), "true");
+    let m = view.child_by_key(mid).unwrap();
+    let ok = pump_child(m, "fromLeaf", "\"again-mid\"");
+    assert!(ok);
+    let facts = m.child_by_key(leaf).unwrap().evaluate_json("facts").unwrap();
+    assert_eq!(facts, "\"true,true,true\"");
+}
+fn pump_child(view: &mut View, script: &str, expected: &str) -> bool {
+    pump(view, |v| v.evaluate_json(script).map_or(false, |r| r == expected))
+}
+
+#[test]
+fn child_navigation_reload_and_stale_references() {
+    let server = Server::new(|seen| match seen.path.as_str() {
+        "/p" => Reply::html("<iframe id=f src=/one></iframe>"),
+        "/one" => Reply::html("<script>globalThis.page='one'; setTimeout(()=>{location.href='/two'},10)</script>"),
+        "/two" => Reply::html("<script>globalThis.page='two'</script>"),
+        "/slow" => Reply::html("<script>globalThis.page='slow'</script>").delay(Duration::from_millis(400)),
+        _ => Reply::html("").status("404 Not Found"),
+    });
+    let (mut view, _e) = open(&server, "localhost", "/p");
+    loaded(&mut view, 1);
+    let key = view.child_frames()[0].0;
+    assert!(pump(&mut view, |v| v.child_by_key(key).is_some_and(|c| c.evaluate_json("globalThis.page").map_or(false, |r| r == "\"two\""))));
+    // The frame keeps its identity; the parent document is untouched.
+    assert_eq!(view.child_frames()[0].0, key);
+    assert_eq!(eval(&mut view, "document.getElementById('f') !== null"), "true");
+    // A held facade becomes "closed" after removal, and messages to it vanish.
+    eval(&mut view, "globalThis.w = document.getElementById('f').contentWindow; 0");
+    assert_eq!(eval(&mut view, "w.closed"), "false");
+    // Removal during a pending navigation: the response is dropped, nothing panics.
+    eval(&mut view, &format!("document.getElementById('f').src = '{}'", server.url("localhost", "/slow")));
+    pump(&mut view, |v| v.evaluate_json("0").is_ok());
+    eval(&mut view, "document.getElementById('f').remove(); 0");
+    assert!(pump(&mut view, |v| v.child_frames().is_empty()));
+    assert_eq!(eval(&mut view, "w.closed"), "true");
+    assert_eq!(eval(&mut view, "w.postMessage('x', '*'); 'ok'"), "\"ok\"");
+    pump(&mut view, |_| false);
+    assert!(view.child_frames().is_empty());
+}

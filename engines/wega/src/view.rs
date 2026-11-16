@@ -671,6 +671,12 @@ impl View {
         // A new document tears down every child browsing context of the old one.
         self.frames = Default::default();
         self.frame_shared = Default::default();
+        {
+            // Known before the first script runs: `window.parent` must be right immediately.
+            let mut shared = self.frame_shared.borrow_mut();
+            shared.has_parent = self.role.is_some();
+            shared.depth = self.role.as_ref().map_or(0, |role| role.depth);
+        }
         self.script = None;
         self.host.parser = None;
         self.host.blocking = None;
