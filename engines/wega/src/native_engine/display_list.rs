@@ -1,15 +1,10 @@
-//! Wega-owned Display List and Painting Adapter.
-//!
-//! Transforms computed `LayoutBox` trees into deterministic 2D drawing
-//! commands (`DisplayItem`) and converts them into Skia / `anyrender::Scene` primitives.
-//! Supports stacking contexts, z-index ordering, transforms, box-shadows,
-//! rounded borders, and iframe scene composition.
-
-use crate::native_engine::css::Color;
-use crate::native_engine::layout::LayoutBox;
+//! Wega display commands carry the geometry used by both rasterization and
+//! picking. Stacking contexts are collected across non-context ancestors.
+use super::css::{Color, Overflow, Position};
+use super::layout::{BoxType, LayoutBox, Point};
 use anyrender::PaintScene;
-use wega_dom::NodeKey;
-use wega_dom::layout::Rect;
+use kurbo::{Affine, Shape};
+use wega_dom::{NodeKey, layout::Rect};
 
 #[derive(Debug, Clone)]
 pub enum DisplayItem {
@@ -24,6 +19,10 @@ pub enum DisplayItem {
         width: f64,
         border_radius: f64,
     },
+    FillPath {
+        path: kurbo::BezPath,
+        color: Color,
+    },
     BoxShadow {
         rect: Rect,
         offset_x: f64,
@@ -34,10 +33,16 @@ pub enum DisplayItem {
     },
     Text {
         run: super::text::GlyphRun,
-        transform: kurbo::Affine,
+        transform: Affine,
+    },
+    HitRegion {
+        node: NodeKey,
+        rect: Rect,
+        border_radius: f64,
     },
     PushClip {
         rect: Rect,
+        border_radius: f64,
     },
     PopClip,
     PushOpacity {
@@ -45,7 +50,7 @@ pub enum DisplayItem {
     },
     PopOpacity,
     PushTransform {
-        transform: kurbo::Affine,
+        transform: Affine,
     },
     PopTransform,
     EmbeddedScene {
@@ -53,338 +58,544 @@ pub enum DisplayItem {
         scene: anyrender::Scene,
     },
 }
-
 #[derive(Debug, Clone, Default)]
 pub struct DisplayList {
     pub items: Vec<DisplayItem>,
 }
-
+fn kr(r: Rect) -> kurbo::Rect {
+    kurbo::Rect::new(r.x, r.y, r.right(), r.bottom())
+}
+fn color(c: Color) -> peniko::Color {
+    peniko::Color::from_rgba8(c.r, c.g, c.b, c.a)
+}
+fn scaled(r: Rect, s: f64) -> Rect {
+    Rect {
+        x: r.x * s,
+        y: r.y * s,
+        width: r.width * s,
+        height: r.height * s,
+    }
+}
 impl DisplayList {
-    pub fn build(
+    pub fn build(root: &LayoutBox, embedded: &[(NodeKey, anyrender::Scene)], scale: f64) -> Self {
+        Self::build_scrolled(root, embedded, scale, Point::default())
+    }
+    pub fn build_scrolled(
         root: &LayoutBox,
-        embedded_children: &[(NodeKey, anyrender::Scene)],
+        embedded: &[(NodeKey, anyrender::Scene)],
         scale: f64,
+        scroll: Point,
     ) -> Self {
         let mut list = Self::default();
-        paint_box(root, &mut list, embedded_children, scale);
+        list.items.push(DisplayItem::PushTransform {
+            transform: Affine::translate((-scroll.x * scale, -scroll.y * scale)),
+        });
+        paint_context(root, &mut list, embedded, scale, scroll);
+        list.items.push(DisplayItem::PopTransform);
         list
     }
-
     pub fn to_anyrender_scene(&self) -> anyrender::Scene {
         let mut scene = anyrender::Scene::new();
         self.render_into(&mut scene);
         scene
     }
-
     pub fn render_into(&self, scene: &mut anyrender::Scene) {
+        let mut current = Affine::IDENTITY;
+        let mut transforms = Vec::new();
         for item in &self.items {
             match item {
+                DisplayItem::FillRect {
+                    rect,
+                    color: c,
+                    border_radius,
+                } => scene.fill(
+                    peniko::Fill::NonZero,
+                    current,
+                    color(*c),
+                    None,
+                    &kurbo::RoundedRect::from_rect(kr(*rect), *border_radius),
+                ),
+                DisplayItem::StrokeRect {
+                    rect,
+                    color: c,
+                    width,
+                    border_radius,
+                } => {
+                    if *width <= 0.0 {
+                        continue;
+                    }
+                    let inset = kr(*rect).inset(-width / 2.0);
+                    scene.stroke(
+                        &kurbo::Stroke::new(*width),
+                        current,
+                        color(*c),
+                        None,
+                        &kurbo::RoundedRect::from_rect(
+                            inset,
+                            (*border_radius - width / 2.0).max(0.0),
+                        ),
+                    );
+                }
+                DisplayItem::FillPath { path, color: c } => {
+                    scene.fill(peniko::Fill::NonZero, current, color(*c), None, path)
+                }
                 DisplayItem::BoxShadow {
                     rect,
                     offset_x,
                     offset_y,
-                    blur_radius: _,
-                    color,
+                    blur_radius,
+                    color: c,
                     border_radius,
                 } => {
-                    if color.a == 0 {
-                        continue;
-                    }
-                    let p_color = peniko::Color::from_rgba8(color.r, color.g, color.b, color.a);
-                    let shadow_rect = kurbo::Rect::new(
-                        rect.x + offset_x,
-                        rect.y + offset_y,
-                        rect.x + rect.width + offset_x,
-                        rect.y + rect.height + offset_y,
+                    // CSS blur radius is twice the Gaussian standard deviation.
+                    scene.draw_box_shadow(
+                        current * Affine::translate((*offset_x, *offset_y)),
+                        kr(*rect),
+                        color(*c),
+                        *border_radius,
+                        blur_radius.max(0.0) / 2.0,
                     );
-                    if *border_radius > 0.0 {
-                        let rounded = kurbo::RoundedRect::from_rect(shadow_rect, *border_radius);
-                        scene.fill(
-                            peniko::Fill::NonZero,
-                            kurbo::Affine::IDENTITY,
-                            p_color,
-                            None,
-                            &rounded,
-                        );
-                    } else {
-                        scene.fill(
-                            peniko::Fill::NonZero,
-                            kurbo::Affine::IDENTITY,
-                            p_color,
-                            None,
-                            &shadow_rect,
-                        );
-                    }
                 }
-                DisplayItem::FillRect {
+                DisplayItem::Text { run, transform } => scene.draw_glyphs(
+                    &run.font,
+                    run.font_size,
+                    true,
+                    &run.coords,
+                    run.embolden,
+                    peniko::Fill::NonZero,
+                    &anyrender::Paint::from(color(run.color)),
+                    1.0,
+                    current * *transform,
+                    run.skew,
+                    run.glyphs.iter().copied(),
+                ),
+                DisplayItem::PushClip {
                     rect,
-                    color,
                     border_radius,
-                } => {
-                    if color.a == 0 {
-                        continue;
-                    }
-                    let p_color = peniko::Color::from_rgba8(color.r, color.g, color.b, color.a);
-                    let kurbo_rect =
-                        kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
-                    if *border_radius > 0.0 {
-                        let rounded = kurbo::RoundedRect::from_rect(kurbo_rect, *border_radius);
-                        scene.fill(
-                            peniko::Fill::NonZero,
-                            kurbo::Affine::IDENTITY,
-                            p_color,
-                            None,
-                            &rounded,
-                        );
-                    } else {
-                        scene.fill(
-                            peniko::Fill::NonZero,
-                            kurbo::Affine::IDENTITY,
-                            p_color,
-                            None,
-                            &kurbo_rect,
-                        );
-                    }
-                }
-                DisplayItem::StrokeRect {
-                    rect,
-                    color,
-                    width,
-                    border_radius,
-                } => {
-                    if color.a == 0 || *width <= 0.0 {
-                        continue;
-                    }
-                    let p_color = peniko::Color::from_rgba8(color.r, color.g, color.b, color.a);
-                    let kurbo_rect =
-                        kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
-                    let stroke = kurbo::Stroke::new(*width);
-                    if *border_radius > 0.0 {
-                        let rounded = kurbo::RoundedRect::from_rect(kurbo_rect, *border_radius);
-                        scene.stroke(&stroke, kurbo::Affine::IDENTITY, p_color, None, &rounded);
-                    } else {
-                        scene.stroke(&stroke, kurbo::Affine::IDENTITY, p_color, None, &kurbo_rect);
-                    }
-                }
-                DisplayItem::Text { run, transform } => {
-                    let color = run.color;
-                    scene.draw_glyphs(
-                        &run.font,
-                        run.font_size,
-                        true,
-                        &run.coords,
-                        run.embolden,
-                        peniko::Fill::NonZero,
-                        &anyrender::Paint::from(peniko::Color::from_rgba8(
-                            color.r, color.g, color.b, color.a,
-                        )),
-                        1.0,
-                        *transform,
-                        run.skew,
-                        run.glyphs.iter().copied(),
-                    );
-                }
-                DisplayItem::PushClip { rect } => {
-                    let kurbo_rect =
-                        kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
-                    scene.push_clip_layer(
-                        peniko::Fill::NonZero,
-                        kurbo::Affine::IDENTITY,
-                        &kurbo_rect,
-                    );
-                }
-                DisplayItem::PopClip => {
-                    scene.pop_layer();
-                }
-                DisplayItem::PushOpacity { opacity } => {
-                    scene.push_layer(
-                        peniko::Fill::NonZero,
-                        peniko::Mix::Normal,
-                        *opacity,
-                        kurbo::Affine::IDENTITY,
-                        &kurbo::Rect::new(-1e9, -1e9, 1e9, 1e9),
-                        None,
-                        None,
-                    );
-                }
-                DisplayItem::PopOpacity => {
-                    scene.pop_layer();
-                }
+                } => scene.push_clip_layer(
+                    peniko::Fill::NonZero,
+                    current,
+                    &kurbo::RoundedRect::from_rect(kr(*rect), *border_radius),
+                ),
+                DisplayItem::PopClip | DisplayItem::PopOpacity => scene.pop_layer(),
+                DisplayItem::PushOpacity { opacity } => scene.push_layer(
+                    peniko::Fill::NonZero,
+                    peniko::Mix::Normal,
+                    *opacity,
+                    Affine::IDENTITY,
+                    &kurbo::Rect::new(-1e9, -1e9, 1e9, 1e9),
+                    None,
+                    None,
+                ),
                 DisplayItem::PushTransform { transform } => {
-                    scene.push_layer(
-                        peniko::Fill::NonZero,
-                        peniko::Mix::Normal,
-                        1.0,
-                        *transform,
-                        &kurbo::Rect::new(-1e9, -1e9, 1e9, 1e9),
-                        None,
-                        None,
-                    );
+                    transforms.push(current);
+                    current *= *transform;
                 }
-                DisplayItem::PopTransform => {
+                DisplayItem::PopTransform => current = transforms.pop().unwrap_or(Affine::IDENTITY),
+                DisplayItem::EmbeddedScene { rect, scene: child } => {
+                    scene.push_clip_layer(peniko::Fill::NonZero, current, &kr(*rect));
+                    scene
+                        .append_scene(child.clone(), current * Affine::translate((rect.x, rect.y)));
                     scene.pop_layer();
                 }
-                DisplayItem::EmbeddedScene {
-                    rect,
-                    scene: child_scene,
-                } => {
-                    let kurbo_rect =
-                        kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
-                    scene.push_clip_layer(
-                        peniko::Fill::NonZero,
-                        kurbo::Affine::IDENTITY,
-                        &kurbo_rect,
-                    );
-                    scene.append_scene(
-                        child_scene.clone(),
-                        kurbo::Affine::translate((rect.x, rect.y)),
-                    );
-                    scene.pop_layer();
-                }
+                DisplayItem::HitRegion { .. } => {}
             }
         }
     }
+    pub fn node_transform(&self, key: NodeKey) -> Option<Affine> {
+        let mut current = Affine::IDENTITY;
+        let mut stack = Vec::new();
+        for item in &self.items {
+            match item {
+                DisplayItem::PushTransform { transform } => {
+                    stack.push(current);
+                    current *= *transform;
+                }
+                DisplayItem::PopTransform => current = stack.pop().unwrap_or(Affine::IDENTITY),
+                DisplayItem::HitRegion { node, .. } if *node == key => return Some(current),
+                _ => {}
+            }
+        }
+        None
+    }
+    pub fn node_rects(&self, key: NodeKey) -> Vec<Rect> {
+        let mut current = Affine::IDENTITY;
+        let mut stack = Vec::new();
+        let mut rects = Vec::new();
+        for item in &self.items {
+            match item {
+                DisplayItem::PushTransform { transform } => {
+                    stack.push(current);
+                    current *= *transform;
+                }
+                DisplayItem::PopTransform => current = stack.pop().unwrap_or(Affine::IDENTITY),
+                DisplayItem::HitRegion { node, rect, .. } if *node == key => {
+                    let r = current.transform_rect_bbox(kr(*rect));
+                    rects.push(Rect {
+                        x: r.x0,
+                        y: r.y0,
+                        width: r.width(),
+                        height: r.height(),
+                    });
+                }
+                _ => {}
+            }
+        }
+        rects
+    }
+    /// Resolve in the exact command order, applying the same clip and affine
+    /// stacks as painting. Later visible regions replace earlier regions.
+    pub fn hit_test(&self, p: Point) -> Option<NodeKey> {
+        let mut current = Affine::IDENTITY;
+        let mut transforms = Vec::new();
+        let mut clips = Vec::new();
+        let mut hit = None;
+        let point = kurbo::Point::new(p.x, p.y);
+        for item in &self.items {
+            match item {
+                DisplayItem::PushTransform { transform } => {
+                    transforms.push(current);
+                    current *= *transform;
+                }
+                DisplayItem::PopTransform => current = transforms.pop().unwrap_or(Affine::IDENTITY),
+                DisplayItem::PushClip {
+                    rect,
+                    border_radius,
+                } => clips.push((
+                    kurbo::RoundedRect::from_rect(kr(*rect), *border_radius),
+                    current,
+                )),
+                DisplayItem::PopClip => {
+                    clips.pop();
+                }
+                DisplayItem::HitRegion {
+                    node,
+                    rect,
+                    border_radius,
+                } => {
+                    if current.determinant().abs() < 1e-12 {
+                        continue;
+                    }
+                    if clips.iter().all(|(clip, t)| {
+                        t.determinant().abs() > 1e-12 && clip.contains(t.inverse() * point)
+                    }) && kurbo::RoundedRect::from_rect(kr(*rect), *border_radius)
+                        .contains(current.inverse() * point)
+                    {
+                        hit = Some(*node);
+                    }
+                }
+                _ => {}
+            }
+        }
+        hit
+    }
 }
-
-fn paint_box(
-    layout_box: &LayoutBox,
-    list: &mut DisplayList,
-    embedded: &[(NodeKey, anyrender::Scene)],
-    scale: f64,
-) {
-    let mut rect = layout_box.border_box;
-    rect.x *= scale;
-    rect.y *= scale;
-    rect.width *= scale;
-    rect.height *= scale;
-
-    let has_transform = layout_box.style.transform.is_some();
-    if let Some(t) = layout_box.style.transform {
-        list.items.push(DisplayItem::PushTransform {
-            transform: t.to_kurbo(),
+fn context(b: &LayoutBox, parent_flex: bool) -> bool {
+    b.style.transform.is_some()
+        || b.style.opacity < 1.0
+        || (b.style.z_index.is_some() && (b.style.position != Position::Static || parent_flex))
+        || b.style.position == Position::Fixed
+}
+fn clipped(b: &LayoutBox) -> bool {
+    b.style.overflow_x != Overflow::Visible || b.style.overflow_y != Overflow::Visible
+}
+fn push_contents(b: &LayoutBox, list: &mut DisplayList, s: f64) {
+    if clipped(b) {
+        list.items.push(DisplayItem::PushClip {
+            rect: scaled(b.padding_box(), s),
+            border_radius: (b.style.border_radius - b.border.left.max(b.border.top)).max(0.0) * s,
         });
     }
-
-    let has_opacity = layout_box.style.opacity < 1.0;
-    if has_opacity {
-        list.items.push(DisplayItem::PushOpacity {
-            opacity: layout_box.style.opacity,
-        });
-    }
-
-    // 1. Paint box shadow if configured
-    if let Some(shadow) = layout_box.style.box_shadow {
-        list.items.push(DisplayItem::BoxShadow {
-            rect,
-            offset_x: shadow.offset_x * scale,
-            offset_y: shadow.offset_y * scale,
-            blur_radius: shadow.blur_radius * scale,
-            color: shadow.color,
-            border_radius: layout_box.style.border_radius * scale,
-        });
-    }
-
-    // 2. Paint background
-    if layout_box.style.background_color != Color::TRANSPARENT {
-        list.items.push(DisplayItem::FillRect {
-            rect,
-            color: layout_box.style.background_color,
-            border_radius: layout_box.style.border_radius * scale,
-        });
-    }
-
-    // 3. Paint borders
-    if layout_box.style.borders.top.width > 0.0 && layout_box.style.borders.top.color.a > 0 {
-        list.items.push(DisplayItem::StrokeRect {
-            rect,
-            color: layout_box.style.borders.top.color,
-            width: layout_box.style.borders.top.width * scale,
-            border_radius: layout_box.style.border_radius * scale,
-        });
-    }
-
-    // Classify children into Stacking Context groups
-    let mut neg_z = Vec::new();
-    let mut normal_flow = Vec::new();
-    let mut pos_z = Vec::new();
-
-    for child in &layout_box.children {
-        match child.style.z_index {
-            Some(z) if z < 0 => neg_z.push((z, child)),
-            Some(z) if z > 0 => pos_z.push((z, child)),
-            _ => normal_flow.push(child),
-        }
-    }
-
-    neg_z.sort_by_key(|(z, _)| *z);
-    pos_z.sort_by_key(|(z, _)| *z);
-
-    // 4. Paint negative z-index children
-    for (_, child) in neg_z {
-        paint_box(child, list, embedded, scale);
-    }
-
-    // 5. Paint embedded iframe if matched
-    if let Some(key) = layout_box.node {
-        if let Some((_, child_scene)) = embedded.iter().find(|(k, _)| *k == key) {
-            let mut content = layout_box.content_box();
-            content.x *= scale;
-            content.y *= scale;
-            content.width *= scale;
-            content.height *= scale;
-            list.items.push(DisplayItem::EmbeddedScene {
-                rect: content,
-                scene: child_scene.clone(),
-            });
-        }
-    }
-
-    // 6. Paint lines for inline formatting context
-    let pad_border_x = (layout_box.border.left + layout_box.padding.left) * scale;
-    let pad_border_y = (layout_box.border.top + layout_box.padding.top) * scale;
-
-    for line in &layout_box.lines {
-        for run in &line.text_runs {
-            list.items.push(DisplayItem::Text {
-                run: run.clone(),
-                transform: kurbo::Affine::translate((rect.x + pad_border_x, rect.y + pad_border_y))
-                    * kurbo::Affine::scale(scale),
-            });
-        }
-    }
-
-    // 7. Overflow clipping if overflow != visible
-    let has_clip = layout_box.style.overflow_x != crate::native_engine::css::Overflow::Visible
-        || layout_box.style.overflow_y != crate::native_engine::css::Overflow::Visible;
-
-    if has_clip {
-        let mut pbox = layout_box.padding_box();
-        pbox.x *= scale;
-        pbox.y *= scale;
-        pbox.width *= scale;
-        pbox.height *= scale;
-        list.items.push(DisplayItem::PushClip { rect: pbox });
-    }
-
-    // 8. Paint normal in-flow child boxes
-    for child in normal_flow {
-        paint_box(child, list, embedded, scale);
-    }
-
-    if has_clip {
+    list.items.push(DisplayItem::PushTransform {
+        transform: Affine::translate((-b.scroll_offset.x * s, -b.scroll_offset.y * s)),
+    });
+}
+fn pop_contents(b: &LayoutBox, list: &mut DisplayList) {
+    list.items.push(DisplayItem::PopTransform);
+    if clipped(b) {
         list.items.push(DisplayItem::PopClip);
     }
-
-    // 9. Paint positive z-index children
-    for (_, child) in pos_z {
-        paint_box(child, list, embedded, scale);
+}
+fn decorations(b: &LayoutBox, list: &mut DisplayList, s: f64) {
+    if b.box_type == BoxType::Text {
+        return;
     }
-
-    if has_opacity {
+    let rects = if b.fragments.is_empty() {
+        std::slice::from_ref(&b.border_box)
+    } else {
+        &b.fragments
+    };
+    for rect in rects {
+        let rect = scaled(*rect, s);
+        let radius = b.style.border_radius * s;
+        if let Some(k) = b.node {
+            list.items.push(DisplayItem::HitRegion {
+                node: k,
+                rect,
+                border_radius: radius,
+            });
+        }
+        if let Some(shadow) = b.style.box_shadow {
+            list.items.push(DisplayItem::BoxShadow {
+                rect,
+                offset_x: shadow.offset_x * s,
+                offset_y: shadow.offset_y * s,
+                blur_radius: shadow.blur_radius * s,
+                color: shadow.color,
+                border_radius: radius,
+            });
+        }
+        if b.style.background_color.a > 0 {
+            list.items.push(DisplayItem::FillRect {
+                rect,
+                color: b.style.background_color,
+                border_radius: radius,
+            });
+        }
+        let border = b.style.borders;
+        if border.top == border.right && border.top == border.bottom && border.top == border.left {
+            if border.top.width > 0.0 {
+                list.items.push(DisplayItem::StrokeRect {
+                    rect,
+                    color: border.top.color,
+                    width: border.top.width * s,
+                    border_radius: radius,
+                });
+            }
+        } else {
+            list.items.push(DisplayItem::PushClip {
+                rect,
+                border_radius: radius,
+            });
+            let (x, y, r, bot) = (rect.x, rect.y, rect.right(), rect.bottom());
+            let (l, t, rr, bb) = (
+                border.left.width * s,
+                border.top.width * s,
+                border.right.width * s,
+                border.bottom.width * s,
+            );
+            for (side, points) in [
+                (
+                    border.top,
+                    [(x, y), (r, y), (r - rr, y + t), (x + l, y + t)],
+                ),
+                (
+                    border.right,
+                    [(r, y), (r, bot), (r - rr, bot - bb), (r - rr, y + t)],
+                ),
+                (
+                    border.bottom,
+                    [(r, bot), (x, bot), (x + l, bot - bb), (r - rr, bot - bb)],
+                ),
+                (
+                    border.left,
+                    [(x, bot), (x, y), (x + l, y + t), (x + l, bot - bb)],
+                ),
+            ] {
+                if side.width == 0.0 {
+                    continue;
+                }
+                let mut path = kurbo::BezPath::new();
+                path.move_to(points[0]);
+                for p in &points[1..] {
+                    path.line_to(*p);
+                }
+                path.close_path();
+                list.items.push(DisplayItem::FillPath {
+                    path,
+                    color: side.color,
+                });
+            }
+            list.items.push(DisplayItem::PopClip);
+        }
+    }
+}
+fn content(
+    b: &LayoutBox,
+    list: &mut DisplayList,
+    embedded: &[(NodeKey, anyrender::Scene)],
+    s: f64,
+) {
+    if let Some((_, scene)) = embedded.iter().find(|(k, _)| Some(*k) == b.node) {
+        list.items.push(DisplayItem::EmbeddedScene {
+            rect: scaled(b.content_box(), s),
+            scene: scene.clone(),
+        });
+    }
+    let c = b.content_box();
+    for line in &b.lines {
+        for run in &line.text_runs {
+            if let Some(node) = run.node {
+                list.items.push(DisplayItem::HitRegion {
+                    node,
+                    rect: scaled(
+                        Rect {
+                            x: c.x + run.rect.x,
+                            y: c.y + run.rect.y,
+                            ..run.rect
+                        },
+                        s,
+                    ),
+                    border_radius: 0.0,
+                });
+            }
+            list.items.push(DisplayItem::Text {
+                run: run.clone(),
+                transform: Affine::translate((c.x * s, c.y * s)) * Affine::scale(s),
+            });
+        }
+    }
+}
+struct Entry<'a> {
+    b: &'a LayoutBox,
+    path: Vec<&'a LayoutBox>,
+    z: i32,
+    is_context: bool,
+}
+fn collect<'a>(b: &'a LayoutBox, path: &mut Vec<&'a LayoutBox>, entries: &mut Vec<Entry<'a>>) {
+    for child in &b.children {
+        let is_context = context(child, matches!(b.box_type, BoxType::Flex | BoxType::Grid));
+        if is_context || child.style.position != Position::Static {
+            entries.push(Entry {
+                b: child,
+                path: path.clone(),
+                z: if is_context {
+                    child.style.z_index.unwrap_or(0)
+                } else {
+                    0
+                },
+                is_context,
+            });
+        }
+        if !is_context {
+            path.push(child);
+            collect(child, path, entries);
+            path.pop();
+        }
+    }
+}
+fn flow(
+    b: &LayoutBox,
+    list: &mut DisplayList,
+    embedded: &[(NodeKey, anyrender::Scene)],
+    s: f64,
+    scroll: Point,
+) {
+    decorations(b, list, s);
+    push_contents(b, list, s);
+    let scroll = Point {
+        x: scroll.x + b.scroll_offset.x,
+        y: scroll.y + b.scroll_offset.y,
+    };
+    for c in &b.children {
+        if !context(c, matches!(b.box_type, BoxType::Flex | BoxType::Grid))
+            && c.style.position == Position::Static
+        {
+            flow(c, list, embedded, s, scroll);
+        }
+    }
+    content(b, list, embedded, s);
+    pop_contents(b, list);
+}
+fn paint_entry(
+    entry: &Entry<'_>,
+    list: &mut DisplayList,
+    embedded: &[(NodeKey, anyrender::Scene)],
+    s: f64,
+    mut scroll: Point,
+) {
+    for ancestor in &entry.path {
+        push_contents(ancestor, list, s);
+        scroll.x += ancestor.scroll_offset.x;
+        scroll.y += ancestor.scroll_offset.y;
+    }
+    if entry.is_context {
+        paint_context(entry.b, list, embedded, s, scroll);
+    } else {
+        flow(entry.b, list, embedded, s, scroll);
+    }
+    for ancestor in entry.path.iter().rev() {
+        pop_contents(ancestor, list);
+    }
+}
+fn paint_context(
+    b: &LayoutBox,
+    list: &mut DisplayList,
+    embedded: &[(NodeKey, anyrender::Scene)],
+    s: f64,
+    scroll: Point,
+) {
+    let fixed = b.style.position == Position::Fixed;
+    if fixed {
+        list.items.push(DisplayItem::PushTransform {
+            transform: Affine::translate((scroll.x * s, scroll.y * s)),
+        });
+    }
+    let transform = b.style.transform.map(|t| {
+        let r = b.border_box;
+        let ox = r.x
+            + b.style
+                .transform_origin
+                .0
+                .resolve(r.width, b.style.font_size, 16.0);
+        let oy = r.y
+            + b.style
+                .transform_origin
+                .1
+                .resolve(r.height, b.style.font_size, 16.0);
+        Affine::translate((ox * s, oy * s))
+            * Affine::scale(s)
+            * t.to_kurbo()
+            * Affine::scale(1.0 / s)
+            * Affine::translate((-ox * s, -oy * s))
+    });
+    if let Some(transform) = transform {
+        list.items.push(DisplayItem::PushTransform { transform });
+    }
+    if b.style.opacity < 1.0 {
+        list.items.push(DisplayItem::PushOpacity {
+            opacity: b.style.opacity,
+        });
+    }
+    decorations(b, list, s);
+    push_contents(b, list, s);
+    let scroll = Point {
+        x: if fixed {
+            b.scroll_offset.x
+        } else {
+            scroll.x + b.scroll_offset.x
+        },
+        y: if fixed {
+            b.scroll_offset.y
+        } else {
+            scroll.y + b.scroll_offset.y
+        },
+    };
+    let mut entries = Vec::new();
+    collect(b, &mut Vec::new(), &mut entries);
+    entries.sort_by_key(|e| e.z); // stable source order for equal levels
+    for e in entries.iter().filter(|e| e.z < 0) {
+        paint_entry(e, list, embedded, s, scroll);
+    }
+    for child in &b.children {
+        if !context(child, matches!(b.box_type, BoxType::Flex | BoxType::Grid))
+            && child.style.position == Position::Static
+        {
+            flow(child, list, embedded, s, scroll);
+        }
+    }
+    content(b, list, embedded, s);
+    for e in entries.iter().filter(|e| e.z >= 0) {
+        paint_entry(e, list, embedded, s, scroll);
+    }
+    pop_contents(b, list);
+    if b.style.opacity < 1.0 {
         list.items.push(DisplayItem::PopOpacity);
     }
-
-    if has_transform {
+    if transform.is_some() {
+        list.items.push(DisplayItem::PopTransform);
+    }
+    if fixed {
         list.items.push(DisplayItem::PopTransform);
     }
 }

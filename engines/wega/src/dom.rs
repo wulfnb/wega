@@ -55,6 +55,7 @@ pub(crate) struct Dom {
     pub network: crate::network::Network,
     pub hubs: crate::workers::Hubs,
     pub document: Rc<RefCell<BlitzDocument>>,
+    pub native_document: RefCell<Option<Rc<RefCell<crate::native_engine::NativeDocument>>>>,
     pub limits: Limits,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
     pub errors: Rc<RefCell<Vec<String>>>,
@@ -122,6 +123,7 @@ impl Dom {
             network: context.network,
             hubs: context.hubs,
             document,
+            native_document: Default::default(),
             limits: limits.clone(),
             navigate: context.navigate,
             errors: Default::default(),
@@ -244,7 +246,7 @@ impl Dom {
         self.layout_dirty.set(true);
     }
     fn resolve(&self, doc: &mut BlitzDocument) {
-        if self.layout_dirty.replace(false) {
+        if self.layout_dirty.replace(false) && self.native_document.borrow().is_none() {
             doc.flush_layout(self.start.elapsed().as_secs_f64());
         }
     }
@@ -1226,6 +1228,9 @@ impl Dom {
                 .map(NodeId::from_u64)
                 .map_err(|_| "Invalid node identity".to_string())
         };
+        if let Some(result) = self.native_geometry_call(args) {
+            return result;
+        }
         let mut doc = self
             .document
             .try_borrow_mut()
@@ -2403,4 +2408,130 @@ impl Dom {
 enum CrossFrameTarget {
     Child { key: u64, generation: u64 },
     Parent { generation: u64 },
+}
+
+impl Dom {
+    /// Native geometry is queried before taking the authoritative DOM borrow;
+    /// layout may need to read that DOM after any JavaScript mutation.
+    fn native_geometry_call(&self, args: &[Value]) -> Option<Result<Value, String>> {
+        let text = |i| args.get(i).and_then(Value::as_str).unwrap_or_default();
+        let command = text(0);
+        if !matches!(
+            command,
+            "computed"
+                | "box"
+                | "clientBox"
+                | "offsetBox"
+                | "scrollSize"
+                | "clientRects"
+                | "rect"
+                | "viewport"
+                | "scroll"
+                | "scrollViewport"
+                | "scrollNode"
+                | "scrollIntoView"
+        ) {
+            return None;
+        }
+        let shared = self.native_document.borrow().clone()?;
+        Some((|| {
+            let mut native = shared.borrow_mut();
+            native.ensure_layout();
+            if command == "viewport" {
+                let v = native.viewport;
+                let scale = (v.scale * v.zoom) as f64;
+                return Ok(
+                    json!({"width":v.width_px as f64/scale,"height":v.height_px as f64/scale,"dpr":scale,"scrollX":native.scroll.x,"scrollY":native.scroll.y}),
+                );
+            }
+            let number = |i| {
+                text(i)
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|n| n.is_finite())
+                    .ok_or_else(|| "Invalid scroll offset".to_owned())
+            };
+            if command == "scrollViewport" {
+                native.scroll_viewport_to(Point {
+                    x: number(1)?,
+                    y: number(2)?,
+                });
+                return Ok(Value::Null);
+            }
+            let key = wega_dom::NodeKey::from_u64(
+                text(1)
+                    .parse::<u64>()
+                    .map_err(|_| "Invalid node identity")?,
+            );
+            if native.doc.borrow().node(key).is_none() {
+                return Err("Node no longer exists".into());
+            }
+            let rjson = |r: Rect| json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height,"left":r.x,"top":r.y,"right":r.right(),"bottom":r.bottom()});
+            match command {
+                "computed" => {
+                    let mut css = String::new();
+                    native
+                        .resolved_value(key, text(2), &mut css)
+                        .map_err(|e| format!("{e:?}"))?;
+                    Ok(json!(css))
+                }
+                "rect" => Ok(rjson(native.bounding_rect(key).unwrap_or(Rect::ZERO))),
+                "box" => {
+                    let offset = native.offset_box(key).map_err(Self::layout_error)?.rect;
+                    let content = native.content_box(key).map_err(Self::layout_error)?;
+                    Ok(
+                        json!({"offsetWidth":offset.width,"offsetHeight":offset.height,"contentWidth":content.size.width,"contentHeight":content.size.height,"paddingLeft":content.padding_left,"paddingTop":content.padding_top}),
+                    )
+                }
+                "clientBox" => {
+                    let b = native.client_box(key).map_err(Self::layout_error)?;
+                    Ok(json!({"left":b.left,"top":b.top,"width":b.width,"height":b.height}))
+                }
+                "offsetBox" => {
+                    let b = native.offset_box(key).map_err(Self::layout_error)?;
+                    Ok(
+                        json!({"x":b.rect.x,"y":b.rect.y,"width":b.rect.width,"height":b.rect.height,"parent":b.parent.map(|p|p.to_string())}),
+                    )
+                }
+                "scrollSize" => {
+                    let size = native.scroll_size(key).map_err(Self::layout_error)?;
+                    Ok(json!({"width":size.width,"height":size.height}))
+                }
+                "scroll" => {
+                    let p = native.scroll_offset(key).map_err(Self::layout_error)?;
+                    Ok(json!({"x":p.x,"y":p.y}))
+                }
+                "clientRects" => Ok(json!(
+                    native
+                        .client_rects(key)
+                        .map_err(Self::layout_error)?
+                        .into_iter()
+                        .map(rjson)
+                        .collect::<Vec<_>>()
+                )),
+                "scrollNode" => {
+                    native
+                        .scroll_node_to(
+                            key,
+                            Point {
+                                x: number(2)?,
+                                y: number(3)?,
+                            },
+                        )
+                        .map_err(Self::layout_error)?;
+                    Ok(Value::Null)
+                }
+                "scrollIntoView" => {
+                    let r = native.bounding_rect(key).map_err(Self::layout_error)?;
+                    let current = native.scroll;
+                    native.scroll_viewport_to(Point {
+                        x: current.x + r.x,
+                        y: current.y + r.y,
+                    });
+                    Ok(Value::Null)
+                }
+                _ => unreachable!(),
+            }
+        })())
+    }
 }

@@ -666,6 +666,7 @@ pub struct ComputedStyle {
     pub border_spacing: f64,
     pub border_radius: f64,
     pub transform: Option<Transform>,
+    pub transform_origin: (Length, Length),
     pub box_shadow: Option<BoxShadow>,
 }
 
@@ -721,6 +722,7 @@ impl Default for ComputedStyle {
             border_spacing: 2.0,
             border_radius: 0.0,
             transform: None,
+            transform_origin: (Length::Percent(50.0), Length::Percent(50.0)),
             box_shadow: None,
         }
     }
@@ -1047,6 +1049,7 @@ pub fn parse_compound_selector(s: &str) -> Option<CompoundSelector> {
 pub fn default_user_agent_stylesheet() -> StyleSheet {
     StyleSheet::parse(
         r#"
+head, style, script, meta, link, title, template, base { display: none; }
 html { display: block; }
 body { display: block; margin: 8px; font-size: 16px; line-height: 20px; color: black; background-color: white; }
 div, p, h1, h2, h3, h4, h5, h6, ul, ol, li, header, footer, nav, section, article, main { display: block; }
@@ -1363,6 +1366,27 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 left: side,
             };
         }
+        "border-top" | "border-right" | "border-bottom" | "border-left" => {
+            let mut side = BorderSide {
+                width: 3.0,
+                color: style.color,
+            };
+            for token in val.split_ascii_whitespace() {
+                if let Some(Length::Px(w)) = Length::parse(token) {
+                    side.width = w.max(0.0);
+                } else if let Some(c) = Color::parse(token) {
+                    side.color = c;
+                } else if matches!(token, "none" | "hidden") {
+                    side.width = 0.0;
+                }
+            }
+            match prop {
+                "border-top" => style.borders.top = side,
+                "border-right" => style.borders.right = side,
+                "border-bottom" => style.borders.bottom = side,
+                _ => style.borders.left = side,
+            }
+        }
         "border-width" => {
             if let Some(Length::Px(w)) = Length::parse(val) {
                 style.borders.top.width = w;
@@ -1576,6 +1600,23 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
         "grid-column-start" => style.grid_column_start = val.trim().parse::<i32>().ok(),
         "grid-row-start" => style.grid_row_start = val.trim().parse::<i32>().ok(),
         "transform" => style.transform = Transform::parse(val),
+        "transform-origin" => {
+            let p: Vec<_> = val.split_ascii_whitespace().collect();
+            let axis = |v: &str| match v {
+                "center" => Some(Length::Percent(50.0)),
+                "left" | "top" => Some(Length::Percent(0.0)),
+                "right" | "bottom" => Some(Length::Percent(100.0)),
+                _ => Length::parse(v),
+            };
+            if let Some(x) = p.first().and_then(|v| axis(v)) {
+                style.transform_origin = (
+                    x,
+                    p.get(1)
+                        .and_then(|v| axis(v))
+                        .unwrap_or(Length::Percent(50.0)),
+                );
+            }
+        }
         "box-shadow" => style.box_shadow = BoxShadow::parse(val),
         _ => {}
     }

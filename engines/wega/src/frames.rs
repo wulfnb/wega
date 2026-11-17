@@ -452,6 +452,7 @@ impl View {
         let Ok(mut view) = view else {
             return self.refuse(node, signature, "could not create the frame");
         };
+        view.set_rendering_backend(self.rendering_backend);
         live.set(live.get() + 1);
         view.permissions = self.permissions.clone();
         let mut child = ChildFrame {
@@ -834,11 +835,14 @@ impl View {
     pub(crate) fn frame_box(&self, node: NodeId) -> Option<wega_dom::layout::Rect> {
         if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
             if let Some(native_doc) = &self.native_document {
+                let mut native_doc = native_doc.borrow_mut();
+                native_doc.ensure_layout();
                 if let Some(b) = native_doc.find_box(node.key()) {
                     let content = b.content_box();
                     return (content.width >= 1.0 && content.height >= 1.0).then_some(content);
                 }
             }
+            return None;
         }
         let doc = self.document.borrow();
         let n = doc.get_node(node)?;
@@ -934,6 +938,8 @@ impl View {
         let hit_key =
             if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
                 self.native_document.as_ref().and_then(|d| {
+                    let mut d = d.borrow_mut();
+                    d.ensure_layout();
                     d.element_at(wega_dom::layout::Point {
                         x: x as f64,
                         y: y as f64,
@@ -954,9 +960,21 @@ impl View {
             let Some(content) = self.frame_box(child.node) else {
                 continue;
             };
-            let (px, py) = (x as f64, y as f64);
-            let local_x = px - content.x;
-            let local_y = py - content.y;
+            let local = if let Some(native) = &self.native_document {
+                native.borrow().point_in_content(
+                    child.node.key(),
+                    wega_dom::layout::Point {
+                        x: x as f64,
+                        y: y as f64,
+                    },
+                )?
+            } else {
+                wega_dom::layout::Point {
+                    x: x as f64 - content.x,
+                    y: y as f64 - content.y,
+                }
+            };
+            let (local_x, local_y) = (local.x, local.y);
             if local_x >= 0.0
                 && local_y >= 0.0
                 && local_x < content.width

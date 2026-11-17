@@ -3,8 +3,7 @@ use wega_dom::DocumentView;
 use wega_engine::RenderingBackend;
 fn width(view: &mut wega_engine::View) -> f64 {
     view.paint(400, 300, 1.0, 1.0, false).unwrap();
-    let native = view.native_document.as_mut().unwrap();
-    native.flush_layout();
+    let native = view.native_document.as_ref().unwrap().borrow();
     let key = native.doc.borrow().element_by_id("target").unwrap();
     native.bounding_rect(key).unwrap().width
 }
@@ -79,6 +78,7 @@ fn csp_denies_link_stylesheet() {
         view.native_document
             .as_ref()
             .unwrap()
+            .borrow()
             .author_sheets
             .iter()
             .all(|s| s.rules.is_empty())

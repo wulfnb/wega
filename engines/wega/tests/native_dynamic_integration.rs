@@ -32,7 +32,7 @@ fn test_view_dynamic_dom_mutation_and_invalidation() {
 
     // Get key of #target
     let target_key = {
-        let native_doc = view.native_document.as_ref().unwrap();
+        let native_doc = view.native_document.as_ref().unwrap().borrow();
         let d = native_doc.doc.borrow();
         d.element_by_id("target").unwrap()
     };
@@ -48,10 +48,10 @@ fn test_view_dynamic_dom_mutation_and_invalidation() {
     assert_eq!(boxes.border_box.height, 80.0);
 
     // 2. Perform dynamic DOM mutation via script
-    let _ = view.evaluate("document.getElementById('target').style.width = '420px';");
+    view.evaluate("document.getElementById('target').style.width = '420px';")
+        .unwrap();
 
     // Invalidate and repaint
-    view.native_document.as_mut().unwrap().invalidate();
     view.paint(800, 600, 1.0, 1.0, false).unwrap();
 
     // 3. Inspect geometry after mutation: width must be 420.0

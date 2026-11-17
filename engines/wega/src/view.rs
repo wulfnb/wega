@@ -41,6 +41,7 @@ use wega_dom::layout::{
     GeometryAccess as _, HitTest as _, LayoutControl as _, Point, ViewportConfig,
 };
 use wega_dom::render::PaintSource;
+use wega_dom::{DocumentView, NodeView};
 use wega_protocol::identity::FrameId;
 
 pub struct Frame {
@@ -379,7 +380,9 @@ pub struct View {
     cursor: String,
     pub status: Option<String>,
     pub rendering_backend: crate::native_engine::RenderingBackend,
-    pub native_document: Option<crate::native_engine::NativeDocument>,
+    pub native_document: Option<Rc<RefCell<crate::native_engine::NativeDocument>>>,
+    native_hover: Option<NodeKey>,
+    native_down: Option<NodeKey>,
     pub last_favicon: Option<Url>,
     pub user_script: String,
     pub url: Url,
@@ -477,6 +480,8 @@ impl View {
             status: None,
             rendering_backend: crate::native_engine::RenderingBackend::from_env(),
             native_document: None,
+            native_hover: None,
+            native_down: None,
             last_favicon: None,
             user_script: String::new(),
             url: url.clone(),
@@ -502,12 +507,23 @@ impl View {
     /// their default (no) answer immediately.
     pub fn set_rendering_backend(&mut self, backend: crate::native_engine::RenderingBackend) {
         self.rendering_backend = backend;
-        if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative
+        if backend == crate::native_engine::RenderingBackend::WegaNative
             && self.native_document.is_none()
         {
-            self.native_document = Some(crate::native_engine::NativeDocument::new(
-                self.document.clone(),
-            ));
+            self.native_document = Some(Rc::new(RefCell::new(
+                crate::native_engine::NativeDocument::new(self.document.clone()),
+            )));
+        }
+        if let Some(dom) = &self.dom {
+            *dom.native_document.borrow_mut() =
+                if backend == crate::native_engine::RenderingBackend::WegaNative {
+                    self.native_document.clone()
+                } else {
+                    None
+                };
+        }
+        for child in &mut self.frames.children {
+            child.view.set_rendering_backend(backend);
         }
         self.frame.invalidate();
     }
@@ -731,7 +747,17 @@ impl View {
         } else {
             BlitzDocument::empty(setup)
         };
+        self.native_hover = None;
+        self.native_down = None;
         self.document = Rc::new(RefCell::new(document));
+        self.native_document =
+            if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
+                Some(Rc::new(RefCell::new(
+                    crate::native_engine::NativeDocument::new(self.document.clone()),
+                )))
+            } else {
+                None
+            };
         self.script_failure = None;
         self.document_revision = document_revision;
         self.scheduler.replace(document_revision);
@@ -766,6 +792,7 @@ impl View {
             &self.limits,
             html.len(),
         ));
+        *dom.native_document.borrow_mut() = self.native_document.clone();
         self.dom = Some(dom.clone());
         // A sandbox without `allow-scripts` gets no realm at all: no script, no handlers.
         if self.role.as_ref().is_none_or(|role| role.sandbox.scripts) {
@@ -1254,6 +1281,9 @@ impl View {
         }
     }
     pub fn accessibility_tree(&self) -> Option<String> {
+        if self.native_document.is_some() {
+            return None;
+        }
         self.document
             .borrow_mut()
             .flush_layout(self.started.elapsed().as_secs_f64());
@@ -1673,14 +1703,39 @@ impl View {
             .map_or(doc.root_node().id, ToNodeId::node_id)
     }
     fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
-        let scroll = self.document.borrow().viewport().scroll;
+        let scroll = self
+            .native_document
+            .as_ref()
+            .map(|n| n.borrow().scroll)
+            .unwrap_or_else(|| self.document.borrow().viewport().scroll);
         (x + scroll.x as f32, y + scroll.y as f32)
     }
     fn pointer_event(&self, target: NodeId, pointer: &Pointer) -> Option<BlitzPointerEvent> {
         let doc = self.document.borrow();
-        let mut event = doc
-            .get_node(target)?
-            .synthetic_click_event_data(pointer.modifiers());
+        let mut event = if self.native_document.is_some() {
+            doc.get_node(target)?;
+            BlitzPointerEvent {
+                id: blitz_traits::events::BlitzPointerId::Mouse,
+                is_primary: true,
+                coords: PointerCoords {
+                    page_x: 0.0,
+                    page_y: 0.0,
+                    screen_x: 0.0,
+                    screen_y: 0.0,
+                    client_x: 0.0,
+                    client_y: 0.0,
+                },
+                button: Default::default(),
+                buttons: Default::default(),
+                mods: pointer.modifiers(),
+                details: Default::default(),
+                element: Default::default(),
+                active_pointers: Default::default(),
+            }
+        } else {
+            doc.get_node(target)?
+                .synthetic_click_event_data(pointer.modifiers())
+        };
         let (page_x, page_y) = self.page_point(pointer.x, pointer.y);
         event.coords = PointerCoords {
             page_x,
@@ -1729,6 +1784,9 @@ impl View {
     /// Pointer input: hover, mouse/pointer events, Blitz defaults (focus, text
     /// selection, clicks), wheel scrolling and the cursor.
     pub fn pointer(&mut self, pointer: Pointer) {
+        if let Some(native) = &self.native_document {
+            native.borrow_mut().ensure_layout();
+        }
         if self.route_pointer_to_frame(&pointer) {
             return;
         }
@@ -1737,6 +1795,10 @@ impl View {
         self.focus_transition(before);
     }
     fn pointer_input(&mut self, pointer: Pointer) {
+        if self.native_document.is_some() {
+            self.native_pointer_input(pointer);
+            return;
+        }
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
@@ -1901,9 +1963,13 @@ impl View {
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
-        self.document
-            .borrow_mut()
-            .flush_layout(self.started.elapsed().as_secs_f64());
+        if let Some(native) = &self.native_document {
+            native.borrow_mut().ensure_layout();
+        } else {
+            self.document
+                .borrow_mut()
+                .flush_layout(self.started.elapsed().as_secs_f64());
+        }
         for kind in [PointerKind::Move, PointerKind::Down, PointerKind::Up] {
             let mut pointer = Pointer::new(kind, x, y);
             if kind == PointerKind::Down {
@@ -2471,6 +2537,18 @@ impl View {
         if self.route_scroll_to_frame(x, y, pointer_x, pointer_y) {
             return;
         }
+        if let Some(native) = &self.native_document {
+            let mut native = native.borrow_mut();
+            native.ensure_layout();
+            if let Some(k) = native.element_at(Point {
+                x: pointer_x as f64,
+                y: pointer_y as f64,
+            }) {
+                native.scroll_by_at(k, -x, -y);
+            }
+            self.frame.invalidate();
+            return;
+        }
         let mut doc = self.document.borrow_mut();
         // Viewport coordinates, like the pointer; the contract resolves the scroll offset.
         let target = doc
@@ -2488,6 +2566,16 @@ impl View {
     /// Scroll the viewport (or the scroll container under the pointer, via `wheel`).
     pub fn scroll(&mut self, x: f64, y: f64) {
         if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
+        if let Some(native) = &self.native_document {
+            let mut native = native.borrow_mut();
+            let p = native.scroll;
+            native.scroll_viewport_to(Point {
+                x: p.x + x,
+                y: p.y + y,
+            });
+            self.frame.invalidate();
             return;
         }
         let mut doc = self.document.borrow_mut();
@@ -2523,9 +2611,14 @@ impl View {
             zoom,
             dark,
         };
-        let mut doc = self.document.borrow_mut();
-        doc.prepare_frame(&viewport, self.started.elapsed().as_secs_f64());
-        drop(doc);
+        if let Some(native) = &self.native_document {
+            native.borrow_mut().viewport = viewport;
+            self.document.borrow_mut().set_viewport(viewport);
+        } else {
+            self.document
+                .borrow_mut()
+                .prepare_frame(&viewport, self.started.elapsed().as_secs_f64());
+        }
         let another_frame = if let Some(script) = &mut self.script
             && self.scheduler.script_allowed()
         {
@@ -2539,9 +2632,13 @@ impl View {
         } else {
             false
         };
-        let mut doc = self.document.borrow_mut();
-        doc.flush_layout(self.started.elapsed().as_secs_f64());
-        drop(doc);
+        if let Some(native) = &self.native_document {
+            native.borrow_mut().ensure_layout();
+        } else {
+            self.document
+                .borrow_mut()
+                .flush_layout(self.started.elapsed().as_secs_f64());
+        }
 
         let device = (viewport.scale * viewport.zoom) as f64;
         let mut child_scenes = Vec::new();
@@ -2558,10 +2655,11 @@ impl View {
             let y = content.y * device;
             let w = (content.width * device).round().max(1.0);
             let h = (content.height * device).round().max(1.0);
-            if x >= viewport.width_px as f64
-                || y >= viewport.height_px as f64
-                || x + w <= 0.0
-                || y + h <= 0.0
+            if self.native_document.is_none()
+                && (x >= viewport.width_px as f64
+                    || y >= viewport.height_px as f64
+                    || x + w <= 0.0
+                    || y + h <= 0.0)
             {
                 continue;
             }
@@ -2583,8 +2681,11 @@ impl View {
         let (scene, animating) =
             if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
                 let native_doc = self.native_document.get_or_insert_with(|| {
-                    crate::native_engine::NativeDocument::new(self.document.clone())
+                    Rc::new(RefCell::new(crate::native_engine::NativeDocument::new(
+                        self.document.clone(),
+                    )))
                 });
+                let mut native_doc = native_doc.borrow_mut();
                 native_doc.viewport = viewport;
                 let scene = native_doc.record_scene_with_children(&viewport, child_scenes);
                 (scene, false)
@@ -2597,7 +2698,7 @@ impl View {
 
         self.frame
             .recorded(another_frame || animating || frames_animating);
-        if self.accessibility_enabled {
+        if self.accessibility_enabled && self.native_document.is_none() {
             let update = self.document.borrow_mut().build_accessibility_tree();
             if let Ok(json) = serde_json::to_string(&update) {
                 // Publish the newest complete tree; animations must not grow an
@@ -2886,6 +2987,7 @@ impl crate::inspector::PagePort for View {
         if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
             if let Some(native_doc) = &self.native_document {
                 let key = NodeKey::from_u64(node.key);
+                let native_doc = native_doc.borrow();
                 return Ok(native_doc.inspect_geometry_report(document, key));
             }
         }
@@ -2906,6 +3008,7 @@ impl crate::inspector::PagePort for View {
                     x: x as f64,
                     y: y as f64,
                 };
+                let native_doc = native_doc.borrow();
                 return native_doc.pick_node_report(document, pt);
             }
         }
@@ -3398,5 +3501,86 @@ mod tests {
             assert_eq!(val[kind]["loaded"], false, "{kind}");
             assert_eq!(val[kind]["code"], 4, "{kind}");
         }
+    }
+}
+
+impl View {
+    fn native_pointer_input(&mut self, pointer: Pointer) {
+        if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
+        let Some(native) = self.native_document.clone() else {
+            return;
+        };
+        let hovered = if pointer.kind == PointerKind::Leave {
+            None
+        } else {
+            let mut native = native.borrow_mut();
+            native.ensure_layout();
+            native.element_at(Point {
+                x: pointer.x as f64,
+                y: pointer.y as f64,
+            })
+        };
+        let previous = self.native_hover;
+        self.native_hover = hovered;
+        if previous != hovered {
+            self.hover_changed(
+                previous.map(ToNodeId::node_id),
+                hovered.map(ToNodeId::node_id),
+                &pointer,
+            );
+        }
+        let target = hovered
+            .map(ToNodeId::node_id)
+            .or_else(|| self.document.borrow().try_root_element().map(|n| n.id));
+        let Some(target) = target else {
+            return;
+        };
+        match pointer.kind {
+            PointerKind::Leave => {}
+            PointerKind::Move => {
+                if !self.dispatch_pointer("pointermove", target, &pointer, None) {
+                    self.dispatch_pointer("mousemove", target, &pointer, None);
+                }
+            }
+            PointerKind::Down => {
+                self.activate();
+                self.native_down = hovered;
+                let cancelled = self.dispatch_pointer("pointerdown", target, &pointer, None)
+                    || self.dispatch_pointer("mousedown", target, &pointer, None);
+                if !cancelled {
+                    let focusable = self.document.borrow().node(target.key()).is_some_and(|n| {
+                        n.element_name().is_some_and(|e| {
+                            matches!(e.local, "input" | "button" | "select" | "textarea" | "a")
+                        }) || n.attr("tabindex").is_some()
+                    });
+                    if focusable {
+                        let _ = self.document.borrow_mut().set_focus(target.key());
+                    }
+                }
+            }
+            PointerKind::Up => {
+                self.activate();
+                self.dispatch_pointer("pointerup", target, &pointer, None);
+                self.dispatch_pointer("mouseup", target, &pointer, None);
+                if self.native_down.take() == hovered && hovered.is_some() && pointer.button == 0 {
+                    if let Some(event) = self.pointer_event(target, &pointer) {
+                        self.click_event(target, event, Some(&pointer));
+                    }
+                }
+            }
+            PointerKind::Wheel => {
+                if !self.dispatch_pointer("wheel", target, &pointer, None) {
+                    native.borrow_mut().scroll_by_at(
+                        target.key(),
+                        pointer.delta_x,
+                        pointer.delta_y,
+                    );
+                    self.run("window.dispatchEvent(new Event('scroll'))", "wega:scroll");
+                }
+            }
+        }
+        self.frame.invalidate();
     }
 }
