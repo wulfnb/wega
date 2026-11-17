@@ -696,6 +696,7 @@ impl View {
         self.script_failure = None;
         self.document_revision = document_revision;
         self.scheduler.replace(document_revision);
+        self.document_generation.set(u64::MAX);
         self.document_generation = Rc::new(Cell::new(self.navigation_generation));
         // A new document starts a new console history; the old one is dropped with its realm.
         self.console = Rc::new(RefCell::new(crate::console::ConsoleLog::new()));

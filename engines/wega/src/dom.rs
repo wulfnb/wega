@@ -261,15 +261,54 @@ impl Dom {
                 .document
                 .try_borrow()
                 .map_err(|_| "InvalidStateError: reentrant native DOM borrow")?;
+            let caller_origin = self.origin();
             for identity in identities {
-                let key = wega_dom::NodeKey::from_u64(
-                    identity
-                        .as_str()
-                        .and_then(|id| id.parse::<u64>().ok())
-                        .ok_or("TypeError: invalid binding node identity")?,
-                );
-                if wega_dom::DocumentView::node(&*document, key).is_none() {
-                    return Err("InvalidStateError: binding node no longer exists".into());
+                let id_str = identity.as_str().ok_or("TypeError: invalid binding node identity")?;
+                if let Some((target, node_id)) = self.parse_cross_frame_id(id_str) {
+                    if caller_origin == "null" {
+                        return Err("SecurityError: Opaque documents cannot access other browsing contexts".into());
+                    }
+                    match target {
+                        CrossFrameTarget::Child { key, generation } => {
+                            let shared = self.frames.borrow();
+                            let child = shared.children.iter().find(|c| c.key == key).cloned().ok_or("InvalidStateError: frame no longer exists")?;
+                            if child.opaque || child.origin == "null" || child.origin != caller_origin {
+                                return Err("SecurityError: Blocked a frame from accessing a cross-origin frame.".into());
+                            }
+                            if child.document_generation.get() != generation {
+                                return Err("InvalidStateError: The frame document has navigated.".into());
+                            }
+                            let child_doc = child.document.try_borrow().map_err(|_| "InvalidStateError: reentrant DOM borrow")?;
+                            if wega_dom::DocumentView::node(&*child_doc, wega_dom::NodeKey::from_u64(node_id)).is_none() {
+                                return Err("InvalidStateError: binding node no longer exists".into());
+                            }
+                        }
+                        CrossFrameTarget::Parent { generation } => {
+                            let shared = self.frames.borrow();
+                            let parent = shared.parent.clone().ok_or("InvalidStateError: no parent browsing context")?;
+                            if parent.opaque || parent.origin == "null" || parent.origin != caller_origin {
+                                return Err("SecurityError: Blocked a frame from accessing a cross-origin frame.".into());
+                            }
+                            let gen_rc = parent.document_generation.upgrade().ok_or("Parent document detached")?;
+                            let doc_rc = parent.document.upgrade().ok_or("Parent document detached")?;
+                            if gen_rc.get() != generation {
+                                return Err("InvalidStateError: The parent document has navigated.".into());
+                            }
+                            let parent_doc = doc_rc.try_borrow().map_err(|_| "InvalidStateError: reentrant DOM borrow")?;
+                            if wega_dom::DocumentView::node(&*parent_doc, wega_dom::NodeKey::from_u64(node_id)).is_none() {
+                                return Err("InvalidStateError: binding node no longer exists".into());
+                            }
+                        }
+                    }
+                } else {
+                    let key = wega_dom::NodeKey::from_u64(
+                        id_str
+                            .parse::<u64>()
+                            .map_err(|_| "TypeError: invalid binding node identity")?,
+                    );
+                    if wega_dom::DocumentView::node(&*document, key).is_none() {
+                        return Err("InvalidStateError: binding node no longer exists".into());
+                    }
                 }
             }
             return Ok(Value::Null);
@@ -1118,6 +1157,9 @@ impl Dom {
                 requests.traverse.push(delta);
             }
             return Ok(Value::Null);
+        }
+        if let Some((target, prefix)) = self.detect_cross_frame_target(args) {
+            return self.dispatch_cross_frame(args, target, &prefix);
         }
         let charge = match text(0) {
             "setText" => text(2).len() + 32,
@@ -2128,4 +2170,153 @@ impl Dom {
             }
         }
     }
+
+    fn parse_cross_frame_id(&self, candidate: &str) -> Option<(CrossFrameTarget, u64)> {
+        if let Some(rest) = candidate.strip_prefix("f:") {
+            let mut parts = rest.splitn(3, ':');
+            let key: u64 = parts.next()?.parse().ok()?;
+            let generation: u64 = parts.next()?.parse().ok()?;
+            let node_id: u64 = parts.next()?.parse().ok()?;
+            Some((CrossFrameTarget::Child { key, generation }, node_id))
+        } else if let Some(rest) = candidate.strip_prefix("p:") {
+            let mut parts = rest.splitn(2, ':');
+            let generation: u64 = parts.next()?.parse().ok()?;
+            let node_id: u64 = parts.next()?.parse().ok()?;
+            Some((CrossFrameTarget::Parent { generation }, node_id))
+        } else {
+            None
+        }
+    }
+
+    fn detect_cross_frame_target(&self, args: &[serde_json::Value]) -> Option<(CrossFrameTarget, String)> {
+        use serde_json::Value;
+        let op = args.get(0).and_then(Value::as_str).unwrap_or_default();
+        let candidate = match op {
+            "create" | "createText" | "createComment" | "getById" => args.get(2).and_then(Value::as_str),
+            "createNS" => args.get(3).and_then(Value::as_str),
+            "createFragment" => args.get(1).and_then(Value::as_str),
+            _ => args.get(1).and_then(Value::as_str),
+        }?;
+        let (target, _) = self.parse_cross_frame_id(candidate)?;
+        let prefix = match target {
+            CrossFrameTarget::Child { key, generation } => format!("f:{key}:{generation}:"),
+            CrossFrameTarget::Parent { generation } => format!("p:{generation}:"),
+        };
+        Some((target, prefix))
+    }
+
+    fn dispatch_cross_frame(
+        &self,
+        args: &[serde_json::Value],
+        target: CrossFrameTarget,
+        prefix: &str,
+    ) -> Result<serde_json::Value, String> {
+        use serde_json::{json, Value};
+        let caller_origin = self.origin();
+        if caller_origin == "null" {
+            return Err("SecurityError: Opaque documents cannot access other browsing contexts".into());
+        }
+        let dom = match target {
+            CrossFrameTarget::Child { key, generation } => {
+                let shared = self.frames.borrow();
+                let child = shared.children.iter().find(|c| c.key == key).cloned();
+                let Some(child) = child else {
+                    return Err("NotFoundError: Frame no longer exists".into());
+                };
+                if child.opaque || child.origin == "null" || child.origin != caller_origin {
+                    return Err("SecurityError: Blocked a frame from accessing a cross-origin frame.".into());
+                }
+                if child.document_generation.get() != generation {
+                    return Err("InvalidStateError: The frame document has navigated.".into());
+                }
+                child.dom.clone().ok_or("Frame has no DOM")?
+            }
+            CrossFrameTarget::Parent { generation } => {
+                let shared = self.frames.borrow();
+                let parent = shared.parent.clone().ok_or("No parent browsing context")?;
+                if parent.opaque || parent.origin == "null" || parent.origin != caller_origin {
+                    return Err("SecurityError: Blocked a frame from accessing a cross-origin frame.".into());
+                }
+                let gen_rc = parent.document_generation.upgrade().ok_or("Parent document detached")?;
+                let dom_rc = parent.dom.upgrade().ok_or("Parent document detached")?;
+                if gen_rc.get() != generation {
+                    return Err("InvalidStateError: The parent document has navigated.".into());
+                }
+                dom_rc
+            }
+        };
+
+        let mut forwarded = Vec::with_capacity(args.len());
+        for arg in args {
+            if let Some(s) = arg.as_str() {
+                if let Some(rest) = s.strip_prefix(prefix) {
+                    forwarded.push(json!(rest));
+                } else {
+                    forwarded.push(arg.clone());
+                }
+            } else {
+                forwarded.push(arg.clone());
+            }
+        }
+
+        let res = dom.call(&forwarded)?;
+
+        let op = args.get(0).and_then(Value::as_str).unwrap_or_default();
+        let is_node_result = matches!(
+            op,
+            "parent"
+                | "firstChild"
+                | "lastChild"
+                | "nextSibling"
+                | "previousSibling"
+                | "childAt"
+                | "children"
+                | "root"
+                | "query"
+                | "queryAll"
+                | "queryIn"
+                | "queryAllIn"
+                | "closest"
+                | "insert"
+                | "append"
+                | "create"
+                | "createText"
+                | "createComment"
+                | "createFragment"
+                | "createNS"
+                | "clone"
+                | "subtree"
+                | "getById"
+                | "windowNamed"
+                | "componentRoot"
+                | "assignedSlot"
+                | "assignedSlotInternal"
+                | "assignedNodes"
+                | "templateContent"
+                | "eventParent"
+                | "shadowHost"
+        );
+        if is_node_result {
+            match res {
+                Value::String(s) if !s.is_empty() => Ok(json!(format!("{prefix}{s}"))),
+                Value::Array(arr) => Ok(Value::Array(
+                    arr.into_iter()
+                        .map(|item| match item {
+                            Value::String(s) if !s.is_empty() => json!(format!("{prefix}{s}")),
+                            other => other,
+                        })
+                        .collect(),
+                )),
+                other => Ok(other),
+            }
+        } else {
+            Ok(res)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CrossFrameTarget {
+    Child { key: u64, generation: u64 },
+    Parent { generation: u64 },
 }

@@ -29,10 +29,13 @@ fn frames_expose_only_host_backed_facades_never_documents_or_engine_internals() 
         const frames = [...document.querySelectorAll('iframe')];
         const denied = frame => { try { frame.contentWindow.document; return false; }
             catch (error) { return error.name === 'SecurityError'; } };
-        return frames.length === 3 && window.length === 3 && frames.every(frame =>
-            frame.contentDocument === null && frame._frameContext === undefined &&
-            frame.contentWindow !== null && typeof frame.contentWindow.postMessage === 'function' &&
-            denied(frame));
+        const f0_same = frames[0].contentDocument !== null &&
+            frames[0].contentWindow.document === frames[0].contentDocument;
+        const f1_denied = frames[1].contentDocument === null && denied(frames[1]);
+        const f2_denied = frames[2].contentDocument === null && denied(frames[2]);
+        return frames.length === 3 && window.length === 3 &&
+            f0_same && f1_denied && f2_denied &&
+            frames.every(f => f._frameContext === undefined && typeof f.contentWindow.postMessage === 'function');
     })()"#
         )
         .unwrap(),

@@ -289,7 +289,10 @@
   function wrap(id, owner) {
     if (id === null || id === undefined) return null;
     let result = weak ? cache.get(id)?.deref() : cache.get(id);
-    if (result) return result;
+    if (result) {
+      if (owner && !result._owner) result._owner = owner;
+      return result;
+    }
     const info = host("info", id);
     if (info.nodeType === 11) {
       const owner = component("shadowHost", id);
@@ -593,7 +596,7 @@
       return this.nodeType === 9 ? null : this._owner || document;
     }
     get parentNode() {
-      return wrap(host("parent", this._id));
+      return wrap(host("parent", this._id), this.ownerDocument || this);
     }
     get parentElement() {
       const parent = this.parentNode;
@@ -702,7 +705,7 @@
       return this.childNodes.length > 0;
     }
     getRootNode(options) {
-      return wrap(component("componentRoot", this._id, !!options?.composed));
+      return wrap(component("componentRoot", this._id, !!options?.composed), this.ownerDocument || this);
     }
     get baseURI() { return (this.ownerDocument || this).URL; }
     lookupNamespaceURI(prefix) {
@@ -2074,9 +2077,18 @@
         if (name === "window" || name === "self" || name === "frames") return proxy;
         if (name === "parent" || name === "top") return kind === "parent" || kind === "top" ? proxy : null;
         if (typeof name === "string" && SAFE_WINDOW_KEYS.has(name)) return surface[name];
+        if (name === "document") {
+          const docId = kind === "child"
+            ? host("frameWindowDocument", String(key))
+            : (kind === "parent" || kind === "top" ? host("frameParentDocument") : null);
+          if (!docId) throw securityError("cross-origin frame");
+          const d = wrap(docId);
+          if (d) d._defaultView = proxy;
+          return d;
+        }
         if (typeof name === "symbol") return undefined;
         throw securityError(kind === "child" && info()?.sameOrigin
-          ? "same-origin frame property (cross-frame DOM access is not supported)"
+          ? "same-origin frame property"
           : "cross-origin frame");
       },
       set(_, name, value) {
@@ -2109,7 +2121,14 @@
       const info = host("frameWindow", this._id);
       return info ? windowProxy("child", info.key) : null;
     }
-    get contentDocument() { return null; }
+    get contentDocument() {
+      if (!this.isConnected) return null;
+      const docId = host("frameDocument", this._id);
+      if (!docId) return null;
+      const d = wrap(docId);
+      if (d) d._defaultView = this.contentWindow;
+      return d;
+    }
     get loading() { return this.getAttribute("loading") === "lazy" ? "lazy" : "eager"; }
     set loading(value) { this.setAttribute("loading", String(value)); }
     get referrerPolicy() { return this.getAttribute("referrerpolicy") || ""; }
@@ -4405,10 +4424,7 @@
       return nodeList(() => nodes);
     }
     getElementById(id) {
-      return this === document
-        ? wrap(host("getById", String(id)), this)
-        : [...this.querySelectorAll("[id]")].find((n) => n.id === String(id)) ||
-            null;
+      return wrap(host("getById", String(id), this._id), this);
     }
     getElementsByTagName(name) {
       return nodeList(() => [...this.querySelectorAll(String(name))], true);
@@ -4446,25 +4462,25 @@
       name = String(name).toLowerCase();
       if (!/^[a-z_][\w.:-]*$/i.test(name))
         fail("InvalidCharacterError", "Invalid element name");
-      const element = wrap(host("create", name), this);
+      const element = wrap(host("create", name, this._id), this);
       if (name === "script") element._forceAsync = true;
       return element;
     }
     createElementNS(namespace, name, options) {
       if ((typeof options === "string" && options) || options?.is) fail("NotSupportedError", "Customized built-in elements are not implemented");
       return wrap(
-        host("createNS", String(namespace || ""), String(name)),
+        host("createNS", String(namespace || ""), String(name), this._id),
         this,
       );
     }
     createTextNode(text) {
-      return wrap(host("createText", String(text)), this);
+      return wrap(host("createText", String(text), this._id), this);
     }
     createComment(text) {
-      return wrap(host("createComment", String(text)), this);
+      return wrap(host("createComment", String(text), this._id), this);
     }
     createDocumentFragment() {
-      return wrap(host("createFragment"), this);
+      return wrap(host("createFragment", this._id), this);
     }
     createEvent(name) {
       const event = new Event("uninitialized");
@@ -4869,7 +4885,6 @@
     top: globalThis,
     parent: globalThis,
     frames: globalThis,
-    frameElement: null,
     postMessage(message, targetOrigin = "/", transfer = []) {
       if (targetOrigin !== null && typeof targetOrigin === "object") {
         transfer = targetOrigin.transfer || [];
@@ -5037,6 +5052,14 @@ return {
     setInterval: (fn, delay, ...args) => schedule(fn, delay, true, args),
     clearTimeout: (id) => timers.delete(id),
     clearInterval: (id) => timers.delete(id),
+  });
+  Object.defineProperty(globalThis, "frameElement", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      const id = host("frameElement");
+      return id ? wrap(id) : null;
+    },
   });
   if (!globalThis.URL) {
     class URLFallback {

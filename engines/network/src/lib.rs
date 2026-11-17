@@ -1814,8 +1814,9 @@ impl Broker {
                                         receipt.committed = Url::parse(&response.url).ok();
                                     }
                                 }
-                            } else if request.destination == ResourceDestination::Iframe {
-                                if let Some(frame_id) = request.frame {
+                            } else if request.destination == ResourceDestination::Iframe
+                                && let Some(frame_id) = request.frame
+                            {
                                     let mut frames = session
                                         .frames
                                         .lock()
@@ -1881,7 +1882,6 @@ impl Broker {
                                             f.committed = response_url;
                                         }
                                     }
-                                }
                             }
                             broker.cors_after(&request, &session, &mut response)?;
                             if session.revoked.load(Ordering::Acquire) {

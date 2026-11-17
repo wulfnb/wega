@@ -152,6 +152,27 @@ pub(crate) struct Outgoing {
     /// The sender's origin, filled in by the first view that routes the message.
     pub sender: Option<String>,
 }
+#[derive(Clone)]
+pub(crate) struct ChildRef {
+    pub key: u64,
+    pub node: NodeId,
+    pub origin: String,
+    pub opaque: bool,
+    pub document: Rc<RefCell<BlitzDocument>>,
+    pub dom: Option<Rc<crate::dom::Dom>>,
+    pub document_generation: Rc<Cell<u64>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ParentRef {
+    pub origin: String,
+    pub opaque: bool,
+    pub frame_node: NodeId,
+    pub document: std::rc::Weak<RefCell<BlitzDocument>>,
+    pub dom: std::rc::Weak<crate::dom::Dom>,
+    pub document_generation: std::rc::Weak<Cell<u64>>,
+}
+
 /// Shared between a view (writer, per document) and its script host (`Dom::call`).
 #[derive(Default)]
 pub(crate) struct FrameShared {
@@ -159,6 +180,8 @@ pub(crate) struct FrameShared {
     pub outbox: Vec<Outgoing>,
     pub has_parent: bool,
     pub depth: usize,
+    pub children: Vec<ChildRef>,
+    pub parent: Option<ParentRef>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
@@ -485,6 +508,7 @@ impl View {
                 let child = &mut self.frames.children[index];
                 child.signature = signature;
                 child.epoch += 1;
+                child.view.navigation_generation = child.epoch;
                 child.view.stop_pending();
                 let _ = child.view.set_html(&blocked_page(&reason));
                 self.notice(format!("iframe not loaded: {reason}"));
@@ -514,6 +538,7 @@ impl View {
     ) {
         child.signature = signature;
         child.epoch += 1;
+        child.view.navigation_generation = child.epoch;
         let parent_url = self.document.borrow().url().clone();
         match content {
             FrameContent::Html(html) => {
@@ -634,6 +659,7 @@ impl View {
         let mut child = self.frames.children.remove(index);
         let parent_url = base;
         child.epoch += 1;
+        child.view.navigation_generation = child.epoch;
         // The signature keeps the element's attributes: the next attribute change navigates.
         if let Err(error) = child
             .view
@@ -647,19 +673,42 @@ impl View {
     /// Refresh the table the document's script host reads.
     fn publish_frames(&mut self) {
         let mut entries = Vec::with_capacity(self.frames.children.len());
+        let mut children = Vec::with_capacity(self.frames.children.len());
         let own_origin = self.origin_string();
+        let own_opaque = self.restrictions().opaque;
         for child in &self.frames.children {
             let origin = child.view.origin_string();
+            let opaque = child.view.restrictions().opaque;
+            let same_origin = !own_opaque && !opaque && origin != "null" && origin == own_origin;
             entries.push(Entry {
                 node: child.node,
                 key: child.key,
-                same_origin: origin != "null" && origin == own_origin,
+                same_origin,
                 name: child.view.frame_name_hint(&self.document, child.node),
                 length: child.view.frames.children.len(),
             });
+            children.push(ChildRef {
+                key: child.key,
+                node: child.node,
+                origin: origin.clone(),
+                opaque,
+                document: child.view.document.clone(),
+                dom: child.view.dom.clone(),
+                document_generation: child.view.document_generation.clone(),
+            });
+            let parent_ref = ParentRef {
+                origin: own_origin.clone(),
+                opaque: own_opaque,
+                frame_node: child.node,
+                document: Rc::downgrade(&self.document),
+                dom: self.dom.as_ref().map(Rc::downgrade).unwrap_or_default(),
+                document_generation: Rc::downgrade(&self.document_generation),
+            };
+            child.view.frame_shared.borrow_mut().parent = Some(parent_ref);
         }
         let mut shared = self.frame_shared.borrow_mut();
         shared.entries = entries;
+        shared.children = children;
         shared.depth = self.role.as_ref().map_or(0, |role| role.depth);
         shared.has_parent = self.role.is_some();
     }
@@ -1048,6 +1097,82 @@ impl crate::dom::Dom {
                     .iter()
                     .find(|entry| entry.node.as_u64() == node)
                     .map_or(Value::Null, row)
+            }
+            "frameDocument" => {
+                let caller_origin = self.origin();
+                if caller_origin == "null" {
+                    return Ok(Value::Null);
+                }
+                if text(1).starts_with("p:") {
+                    // Frame element in child referencing its own document
+                    let root_id = self.document.borrow().root_node().id.as_u64();
+                    json!(root_id.to_string())
+                } else {
+                    let node: u64 = text(1).parse().map_err(|_| "Invalid node identity")?;
+                    if let Some(child) = shared.children.iter().find(|c| c.node.as_u64() == node) {
+                        if !child.opaque && child.origin != "null" && child.origin == caller_origin {
+                            let root_id = child.document.borrow().root_node().id.as_u64();
+                            let generation = child.document_generation.get();
+                            json!(format!("f:{}:{}:{}", child.key, generation, root_id))
+                        } else {
+                            Value::Null
+                        }
+                    } else {
+                        Value::Null
+                    }
+                }
+            }
+            "frameWindowDocument" => {
+                let key: u64 = text(1).parse().map_err(|_| "Invalid frame identity")?;
+                let caller_origin = self.origin();
+                if caller_origin == "null" {
+                    return Ok(Value::Null);
+                }
+                if let Some(child) = shared.children.iter().find(|c| c.key == key) {
+                    if !child.opaque && child.origin != "null" && child.origin == caller_origin {
+                        let root_id = child.document.borrow().root_node().id.as_u64();
+                        let generation = child.document_generation.get();
+                        json!(format!("f:{}:{}:{}", child.key, generation, root_id))
+                    } else {
+                        Value::Null
+                    }
+                } else {
+                    Value::Null
+                }
+            }
+            "frameParentDocument" => {
+                let caller_origin = self.origin();
+                if caller_origin == "null" {
+                    return Ok(Value::Null);
+                }
+                if let Some(parent) = &shared.parent {
+                    if !parent.opaque && parent.origin != "null" && parent.origin == caller_origin {
+                        let doc = parent.document.upgrade().ok_or("Parent document detached")?;
+                        let gen_rc = parent.document_generation.upgrade().ok_or("Parent document detached")?;
+                        let root_id = doc.borrow().root_node().id.as_u64();
+                        json!(format!("p:{}:{}", gen_rc.get(), root_id))
+                    } else {
+                        Value::Null
+                    }
+                } else {
+                    Value::Null
+                }
+            }
+            "frameElement" => {
+                let caller_origin = self.origin();
+                if caller_origin == "null" {
+                    return Ok(Value::Null);
+                }
+                if let Some(parent) = &shared.parent {
+                    if !parent.opaque && parent.origin != "null" && parent.origin == caller_origin {
+                        let gen_rc = parent.document_generation.upgrade().ok_or("Parent document detached")?;
+                        json!(format!("p:{}:{}", gen_rc.get(), parent.frame_node.as_u64()))
+                    } else {
+                        Value::Null
+                    }
+                } else {
+                    Value::Null
+                }
             }
             "frameList" => Value::Array(shared.entries.iter().map(row).collect()),
             "frameInfo" => {
