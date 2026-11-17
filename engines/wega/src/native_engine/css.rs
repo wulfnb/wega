@@ -380,6 +380,90 @@ pub struct BorderSide {
     pub color: Color,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Transform {
+    pub matrix: [f64; 6],
+}
+
+impl Transform {
+    pub fn identity() -> Self {
+        Self { matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] }
+    }
+
+    pub fn to_kurbo(&self) -> kurbo::Affine {
+        kurbo::Affine::new(self.matrix)
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if s.starts_with("translate(") && s.ends_with(")") {
+            let inner = &s[10..s.len() - 1];
+            let parts: Vec<&str> = inner.split(",").map(str::trim).collect();
+            let tx = parts.get(0)?.trim_end_matches("px").parse::<f64>().ok()?;
+            let ty = if let Some(p1) = parts.get(1) {
+                p1.trim_end_matches("px").parse::<f64>().ok()?
+            } else {
+                0.0
+            };
+            return Some(Self { matrix: [1.0, 0.0, 0.0, 1.0, tx, ty] });
+        }
+        if s.starts_with("scale(") && s.ends_with(")") {
+            let inner = &s[6..s.len() - 1];
+            let parts: Vec<&str> = inner.split(",").map(str::trim).collect();
+            let sx = parts.get(0)?.parse::<f64>().ok()?;
+            let sy = if let Some(p1) = parts.get(1) {
+                p1.parse::<f64>().ok()?
+            } else {
+                sx
+            };
+            return Some(Self { matrix: [sx, 0.0, 0.0, sy, 0.0, 0.0] });
+        }
+        if s.starts_with("rotate(") && s.ends_with(")") {
+            let inner = s[7..s.len() - 1].trim();
+            let deg = inner.trim_end_matches("deg").parse::<f64>().ok()?;
+            let rad = deg.to_radians();
+            let cos = rad.cos();
+            let sin = rad.sin();
+            return Some(Self { matrix: [cos, sin, -sin, cos, 0.0, 0.0] });
+        }
+        None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoxShadow {
+    pub offset_x: f64,
+    pub offset_y: f64,
+    pub blur_radius: f64,
+    pub color: Color,
+}
+
+impl BoxShadow {
+    pub fn parse(s: &str) -> Option<Self> {
+        let parts: Vec<&str> = s.split_whitespace().collect();
+        if parts.len() >= 3 {
+            let ox = parts[0].trim_end_matches("px").parse::<f64>().ok()?;
+            let oy = parts[1].trim_end_matches("px").parse::<f64>().ok()?;
+            let mut blur = 0.0;
+            let color_str = if parts.len() >= 4 {
+                blur = parts[2].trim_end_matches("px").parse::<f64>().unwrap_or(0.0);
+                parts[3..].join(" ")
+            } else {
+                parts[2..].join(" ")
+            };
+            let color = Color::parse(&color_str).unwrap_or(Color::BLACK);
+            Some(Self {
+                offset_x: ox,
+                offset_y: oy,
+                blur_radius: blur,
+                color,
+            })
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Borders {
     pub top: BorderSide,
@@ -427,6 +511,8 @@ pub struct ComputedStyle {
     pub grid_column_start: Option<i32>,
     pub grid_row_start: Option<i32>,
     pub border_radius: f64,
+    pub transform: Option<Transform>,
+    pub box_shadow: Option<BoxShadow>,
 }
 
 impl Default for ComputedStyle {
@@ -469,6 +555,8 @@ impl Default for ComputedStyle {
             grid_column_start: None,
             grid_row_start: None,
             border_radius: 0.0,
+            transform: None,
+            box_shadow: None,
         }
     }
 }
@@ -1034,6 +1122,16 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
         "flex-grow" => if let Ok(g) = val.trim().parse::<f64>() { style.flex_grow = g; },
         "flex-shrink" => if let Ok(s) = val.trim().parse::<f64>() { style.flex_shrink = s; },
         "flex-basis" => if let Some(l) = Length::parse(val) { style.flex_basis = l; },
+        "grid-template-columns" => {
+            style.grid_template_columns = val.split_whitespace().filter_map(Length::parse).collect();
+        },
+        "grid-template-rows" => {
+            style.grid_template_rows = val.split_whitespace().filter_map(Length::parse).collect();
+        },
+        "grid-column-start" => style.grid_column_start = val.trim().parse::<i32>().ok(),
+        "grid-row-start" => style.grid_row_start = val.trim().parse::<i32>().ok(),
+        "transform" => style.transform = Transform::parse(val),
+        "box-shadow" => style.box_shadow = BoxShadow::parse(val),
         _ => {}
     }
 }

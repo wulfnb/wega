@@ -1043,7 +1043,151 @@ fn layout_grid(
     positioned_cb: Rect,
     ctx: &LayoutContext,
 ) {
-    layout_block_or_flow(box_node, containing_block, positioned_cb, ctx);
+    let fs = box_node.style.font_size;
+    let rfs = ctx.font_size_root;
+    let cb_w = containing_block.width;
+    let cb_h = containing_block.height;
+
+    box_node.padding = resolve_insets(&box_node.style.padding, cb_w, fs, rfs);
+    box_node.border = Insets {
+        top: box_node.style.borders.top.width,
+        right: box_node.style.borders.right.width,
+        bottom: box_node.style.borders.bottom.width,
+        left: box_node.style.borders.left.width,
+    };
+    box_node.margin = resolve_insets(&box_node.style.margin, cb_w, fs, rfs);
+
+    let total_border_w = box_node.border.left + box_node.border.right;
+    let total_padding_w = box_node.padding.left + box_node.padding.right;
+    let total_border_h = box_node.border.top + box_node.border.bottom;
+    let total_padding_h = box_node.padding.top + box_node.padding.bottom;
+
+    let container_w = match box_node.style.width {
+        Length::Px(px) => {
+            if box_node.style.box_sizing == BoxSizing::BorderBox {
+                (px - total_border_w - total_padding_w).max(0.0)
+            } else {
+                px
+            }
+        }
+        Length::Percent(pct) => {
+            let total = cb_w * (pct / 100.0);
+            if box_node.style.box_sizing == BoxSizing::BorderBox {
+                (total - total_border_w - total_padding_w).max(0.0)
+            } else {
+                total
+            }
+        }
+        _ => (cb_w - box_node.margin.left - box_node.margin.right - total_border_w - total_padding_w).max(0.0),
+    };
+
+    box_node.border_box.x = containing_block.x + box_node.margin.left;
+    box_node.border_box.y = containing_block.y + box_node.margin.top;
+    box_node.border_box.width = container_w + total_border_w + total_padding_w;
+
+    let inner_origin_x = box_node.border_box.x + box_node.border.left + box_node.padding.left;
+    let inner_origin_y = box_node.border_box.y + box_node.border.top + box_node.padding.top;
+    let inner_w = container_w;
+
+    // Resolve column track widths
+    let num_cols = if !box_node.style.grid_template_columns.is_empty() {
+        box_node.style.grid_template_columns.len()
+    } else {
+        1
+    };
+
+    let mut col_widths = vec![0.0; num_cols];
+    let mut fixed_sum = 0.0;
+    let mut auto_count = 0;
+
+    for (c, len) in box_node.style.grid_template_columns.iter().enumerate() {
+        match len {
+            Length::Px(px) => {
+                col_widths[c] = *px;
+                fixed_sum += px;
+            }
+            Length::Percent(pct) => {
+                let w = inner_w * (pct / 100.0);
+                col_widths[c] = w;
+                fixed_sum += w;
+            }
+            _ => auto_count += 1,
+        }
+    }
+
+    let remaining_w = (inner_w - fixed_sum).max(0.0);
+    let auto_w = if auto_count > 0 { remaining_w / auto_count as f64 } else { 0.0 };
+
+    for (c, len) in box_node.style.grid_template_columns.iter().enumerate() {
+        if matches!(len, Length::Auto | Length::Em(_) | Length::Rem(_)) {
+            col_widths[c] = auto_w;
+        }
+    }
+    if box_node.style.grid_template_columns.is_empty() && num_cols == 1 {
+        col_widths[0] = inner_w;
+    }
+
+    // Row tracks
+    let default_row_h = 40.0;
+
+    let next_positioned_cb = if box_node.style.position != Position::Static {
+        box_node.padding_box()
+    } else {
+        positioned_cb
+    };
+
+    let mut auto_col = 0;
+    let mut auto_row = 0;
+    let mut max_row_seen = 0;
+
+    for child in &mut box_node.children {
+        if child.style.position == Position::Absolute || child.style.position == Position::Fixed {
+            layout_box(child, Rect { x: 0.0, y: 0.0, width: inner_w, height: 0.0 }, next_positioned_cb, ctx);
+            continue;
+        }
+
+        let (col_idx, row_idx) = match (child.style.grid_column_start, child.style.grid_row_start) {
+            (Some(c), Some(r)) => (((c - 1).max(0) as usize).min(num_cols.saturating_sub(1)), (r - 1).max(0) as usize),
+            (Some(c), None) => (((c - 1).max(0) as usize).min(num_cols.saturating_sub(1)), auto_row),
+            (None, Some(r)) => (auto_col, (r - 1).max(0) as usize),
+            (None, None) => {
+                let c = auto_col;
+                let r = auto_row;
+                auto_col += 1;
+                if auto_col >= num_cols {
+                    auto_col = 0;
+                    auto_row += 1;
+                }
+                (c, r)
+            }
+        };
+
+        max_row_seen = max_row_seen.max(row_idx);
+
+        let cell_x = inner_origin_x + col_widths[..col_idx].iter().sum::<f64>();
+        let cell_y = inner_origin_y + (row_idx as f64 * default_row_h);
+        let cell_w = col_widths.get(col_idx).copied().unwrap_or(inner_w);
+        let cell_h = default_row_h;
+
+        let cell_cb = Rect { x: cell_x, y: cell_y, width: cell_w, height: cell_h };
+        layout_box(child, cell_cb, next_positioned_cb, ctx);
+
+        child.border_box.x = cell_x;
+        child.border_box.y = cell_y;
+        child.border_box.width = cell_w;
+        if child.border_box.height == 0.0 {
+            child.border_box.height = cell_h;
+        }
+    }
+
+    let total_rows_h = (max_row_seen + 1) as f64 * default_row_h;
+    let final_content_h = match box_node.style.height {
+        Length::Px(px) => px,
+        Length::Percent(pct) => cb_h * (pct / 100.0),
+        _ => total_rows_h,
+    };
+
+    box_node.border_box.height = final_content_h + total_border_h + total_padding_h;
 }
 
 fn layout_table(
@@ -1052,7 +1196,117 @@ fn layout_table(
     positioned_cb: Rect,
     ctx: &LayoutContext,
 ) {
-    layout_block_or_flow(box_node, containing_block, positioned_cb, ctx);
+    let fs = box_node.style.font_size;
+    let rfs = ctx.font_size_root;
+    let cb_w = containing_block.width;
+
+    box_node.padding = resolve_insets(&box_node.style.padding, cb_w, fs, rfs);
+    box_node.border = Insets {
+        top: box_node.style.borders.top.width,
+        right: box_node.style.borders.right.width,
+        bottom: box_node.style.borders.bottom.width,
+        left: box_node.style.borders.left.width,
+    };
+    box_node.margin = resolve_insets(&box_node.style.margin, cb_w, fs, rfs);
+
+    let total_border_w = box_node.border.left + box_node.border.right;
+    let total_padding_w = box_node.padding.left + box_node.padding.right;
+    let total_border_h = box_node.border.top + box_node.border.bottom;
+    let total_padding_h = box_node.padding.top + box_node.padding.bottom;
+
+    let container_w = match box_node.style.width {
+        Length::Px(px) => px,
+        Length::Percent(pct) => cb_w * (pct / 100.0),
+        _ => (cb_w - box_node.margin.left - box_node.margin.right).max(100.0),
+    };
+
+    box_node.border_box.x = containing_block.x + box_node.margin.left;
+    box_node.border_box.y = containing_block.y + box_node.margin.top;
+    box_node.border_box.width = container_w;
+
+    let inner_origin_x = box_node.border_box.x + box_node.border.left + box_node.padding.left;
+    let inner_origin_y = box_node.border_box.y + box_node.border.top + box_node.padding.top;
+    let inner_w = (container_w - total_border_w - total_padding_w).max(0.0);
+
+    // Collect all table rows whether directly under <table> or inside <tbody>/<thead>/<tfoot>
+    let has_direct_rows = box_node.children.iter().any(|c| c.box_type == BoxType::TableRow);
+    let mut num_cols = 1;
+
+    if has_direct_rows {
+        for child in &box_node.children {
+            if child.box_type == BoxType::TableRow {
+                num_cols = num_cols.max(child.children.len());
+            }
+        }
+    } else {
+        for section in &box_node.children {
+            for row in &section.children {
+                if row.box_type == BoxType::TableRow {
+                    num_cols = num_cols.max(row.children.len());
+                }
+            }
+        }
+    }
+
+    let col_w = if num_cols > 0 { inner_w / num_cols as f64 } else { inner_w };
+    let mut cursor_y = inner_origin_y;
+
+    if has_direct_rows {
+        for row in &mut box_node.children {
+            if row.box_type != BoxType::TableRow { continue; }
+            layout_single_table_row(row, inner_origin_x, &mut cursor_y, inner_w, col_w, positioned_cb, ctx);
+        }
+    } else {
+        for section in &mut box_node.children {
+            section.border_box.x = inner_origin_x;
+            section.border_box.y = cursor_y;
+            section.border_box.width = inner_w;
+            let section_start_y = cursor_y;
+
+            for row in &mut section.children {
+                if row.box_type != BoxType::TableRow { continue; }
+                layout_single_table_row(row, inner_origin_x, &mut cursor_y, inner_w, col_w, positioned_cb, ctx);
+            }
+            section.border_box.height = cursor_y - section_start_y;
+        }
+    }
+
+    let final_table_h = cursor_y - inner_origin_y;
+    box_node.border_box.height = final_table_h + total_border_h + total_padding_h;
+}
+
+fn layout_single_table_row(
+    row: &mut LayoutBox,
+    inner_origin_x: f64,
+    cursor_y: &mut f64,
+    inner_w: f64,
+    col_w: f64,
+    positioned_cb: Rect,
+    ctx: &LayoutContext,
+) {
+    row.border_box.x = inner_origin_x;
+    row.border_box.y = *cursor_y;
+    row.border_box.width = inner_w;
+
+    let mut row_h = 30.0_f64;
+    let mut cursor_x = inner_origin_x;
+
+    for cell in &mut row.children {
+        let cell_cb = Rect { x: cursor_x, y: *cursor_y, width: col_w, height: 0.0 };
+        layout_box(cell, cell_cb, positioned_cb, ctx);
+        cell.border_box.x = cursor_x;
+        cell.border_box.y = *cursor_y;
+        cell.border_box.width = col_w;
+        row_h = row_h.max(cell.border_box.height);
+        cursor_x += col_w;
+    }
+
+    for cell in &mut row.children {
+        cell.border_box.height = row_h;
+    }
+
+    row.border_box.height = row_h;
+    *cursor_y += row_h;
 }
 
 // ---------------------------------------------------------------------------
