@@ -309,19 +309,25 @@ impl NativeDocument {
 
     pub fn bounding_rect(&self, key: NodeKey) -> Result<Rect, LayoutError> {
         let rects = self.client_rects(key)?;
-        Ok(rects
-            .into_iter()
-            .reduce(|a, b| {
-                let x = a.x.min(b.x);
-                let y = a.y.min(b.y);
-                Rect {
-                    x,
-                    y,
-                    width: a.right().max(b.right()) - x,
-                    height: a.bottom().max(b.bottom()) - y,
-                }
-            })
-            .unwrap_or(Rect::ZERO))
+        if !rects.is_empty() {
+            return Ok(rects
+                .into_iter()
+                .reduce(|a, b| {
+                    let x = a.x.min(b.x);
+                    let y = a.y.min(b.y);
+                    Rect {
+                        x,
+                        y,
+                        width: a.right().max(b.right()) - x,
+                        height: a.bottom().max(b.bottom()) - y,
+                    }
+                })
+                .unwrap_or(Rect::ZERO));
+        }
+        if let Some(b) = self.find_box(key) {
+            return Ok(b.border_box);
+        }
+        Ok(Rect::ZERO)
     }
 
     pub fn point_in_content(&self, key: NodeKey, p: Point) -> Option<Point> {

@@ -77,10 +77,17 @@ pub struct LayoutBox {
     pub form_state: Option<FormState>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PositionedInlineBox {
+    pub id: u64,
+    pub rect: Rect,
+}
+
 #[derive(Debug, Clone)]
 pub struct LineBox {
     pub rect: Rect,
     pub text_runs: Vec<super::text::GlyphRun>,
+    pub inline_boxes: Vec<PositionedInlineBox>,
 }
 
 impl LayoutBox {
@@ -404,18 +411,24 @@ fn build_box_tree_inner<D: DocumentView>(
                 || box_type == BoxType::TableCell
                 || box_type == BoxType::InlineBlock
             {
-                let has_block_child = raw_children
-                    .iter()
-                    .any(|c| c.box_type != BoxType::Inline && c.box_type != BoxType::Text);
-                let has_inline_child = raw_children
-                    .iter()
-                    .any(|c| c.box_type == BoxType::Inline || c.box_type == BoxType::Text);
-
+                let is_block_level = |c: &LayoutBox| {
+                    matches!(
+                        c.box_type,
+                        BoxType::Block
+                            | BoxType::Flex
+                            | BoxType::Grid
+                            | BoxType::Table
+                            | BoxType::TableRow
+                            | BoxType::AnonymousBlock
+                    )
+                };
+                let has_block_child = raw_children.iter().any(is_block_level);
+                let has_inline_child = raw_children.iter().any(|c| !is_block_level(c));
                 if has_block_child && has_inline_child {
                     let mut clustered = Vec::new();
                     let mut current_inlines = Vec::new();
                     for child in raw_children {
-                        if child.box_type == BoxType::Inline || child.box_type == BoxType::Text {
+                        if !is_block_level(&child) {
                             current_inlines.push(child);
                         } else {
                             if !current_inlines.is_empty() {
@@ -694,6 +707,9 @@ fn layout_block_or_flow(
             } else if box_node.box_type == BoxType::Block
                 || box_node.box_type == BoxType::AnonymousBlock
                 || box_node.box_type == BoxType::TableCell
+                || box_node.box_type == BoxType::Flex
+                || box_node.box_type == BoxType::Grid
+                || box_node.box_type == BoxType::Table
             {
                 (cb_w
                     - box_node.margin.left
@@ -714,11 +730,15 @@ fn layout_block_or_flow(
         }
     };
 
-    if box_node.style.width == Length::Auto && box_node.style.height != Length::Auto {
+    if box_node.style.width == Length::Auto {
         if let Some(image) = &box_node.image {
-            content_w = box_node.style.height.resolve(effective_cb.height, fs, rfs)
-                * image.width as f64
-                / image.height.max(1) as f64;
+            if box_node.style.height != Length::Auto {
+                content_w = box_node.style.height.resolve(effective_cb.height, fs, rfs)
+                    * image.width as f64
+                    / image.height.max(1) as f64;
+            } else {
+                content_w = image.width as f64;
+            }
         }
     }
     if let Some(ref form) = box_node.form_state {
@@ -827,20 +847,42 @@ fn layout_block_or_flow(
         positioned_cb
     };
 
-    // Check if children are inline/text or block
-    let is_ifc = !box_node.children.is_empty()
-        && box_node
-            .children
-            .iter()
-            .all(|c| c.box_type == BoxType::Inline || c.box_type == BoxType::Text);
+    let is_inline_level = |c: &LayoutBox| {
+        c.box_type == BoxType::Inline
+            || c.box_type == BoxType::Text
+            || c.box_type == BoxType::InlineBlock
+            || c.form_state.is_some()
+            || c.image.is_some()
+    };
+    let is_ifc = !box_node.children.is_empty() && box_node.children.iter().all(is_inline_level);
 
-    let mut content_h = box_node
-        .image
-        .as_ref()
-        .map(|image| content_w * image.height as f64 / image.width.max(1) as f64)
-        .unwrap_or(0.0);
+    let mut content_h = if let Some(image) = &box_node.image {
+        if box_node.style.height != Length::Auto {
+            box_node.style.height.resolve(effective_cb.height, fs, rfs)
+        } else {
+            content_w * image.height as f64 / image.width.max(1) as f64
+        }
+    } else {
+        0.0
+    };
 
     if is_ifc {
+        let inner_x = x + box_node.border.left + box_node.padding.left;
+        let inner_y = y + box_node.border.top + box_node.padding.top;
+        let inner_cb = Rect {
+            x: inner_x,
+            y: inner_y,
+            width: content_w,
+            height: 0.0,
+        };
+        for child in &mut box_node.children {
+            if child.box_type == BoxType::InlineBlock
+                || child.form_state.is_some()
+                || child.image.is_some()
+            {
+                layout_box(child, inner_cb, next_positioned_cb, ctx);
+            }
+        }
         let lines = layout_inline_formatting_context(
             &mut box_node.children,
             content_w,
@@ -853,8 +895,8 @@ fn layout_block_or_flow(
         assign_inline_geometry(
             &mut box_node.children,
             &box_node.lines,
-            x + box_node.border.left + box_node.padding.left,
-            y + box_node.border.top + box_node.padding.top,
+            inner_x,
+            inner_y,
         );
     } else {
         let mut cursor_y = y + box_node.border.top + box_node.padding.top;
@@ -1093,6 +1135,16 @@ fn translate_tree(b: &mut LayoutBox, dx: f64, dy: f64) {
     for r in &mut b.fragments {
         r.x += dx;
         r.y += dy;
+    }
+    if let Some(ref mut form) = b.form_state {
+        if let Some(ref mut caret) = form.caret_rect {
+            caret.x += dx;
+            caret.y += dy;
+        }
+        for sel in &mut form.selection_rects {
+            sel.x += dx;
+            sel.y += dy;
+        }
     }
     for c in &mut b.children {
         if c.style.position != Position::Fixed {
@@ -1935,31 +1987,68 @@ fn assign_inline_geometry(children: &mut [LayoutBox], lines: &[LineBox], x: f64,
         }
     }
     for child in children {
-        let mut descendants = std::collections::HashSet::new();
-        keys(child, &mut descendants);
-        child.fragments = lines
-            .iter()
-            .flat_map(|l| &l.text_runs)
-            .filter(|r| r.node.is_some_and(|k| descendants.contains(&k)))
-            .map(|r| Rect {
-                x: x + r.rect.x,
-                y: y + r.rect.y,
-                ..r.rect
-            })
-            .collect();
-        if let Some(first) = child.fragments.first().copied() {
-            child.border_box = child.fragments.iter().fold(first, |a, b| {
-                let left = a.x.min(b.x);
-                let top = a.y.min(b.y);
-                Rect {
-                    x: left,
-                    y: top,
-                    width: a.right().max(b.right()) - left,
-                    height: a.bottom().max(b.bottom()) - top,
+        if child.box_type == BoxType::InlineBlock
+            || child.form_state.is_some()
+            || child.image.is_some()
+        {
+            if let Some(ibox) = lines
+                .iter()
+                .flat_map(|l| &l.inline_boxes)
+                .find(|ib| child.node.is_some_and(|k| k.as_u64() == ib.id))
+            {
+                let target_x = x + ibox.rect.x + child.margin.left;
+                let target_y = y + ibox.rect.y + child.margin.top;
+                let dx = target_x - child.border_box.x;
+                let dy = target_y - child.border_box.y;
+                translate_tree(child, dx, dy);
+                child.fragments = vec![child.border_box];
+            }
+        } else {
+            let mut descendants = std::collections::HashSet::new();
+            keys(child, &mut descendants);
+            let mut frags: Vec<Rect> = lines
+                .iter()
+                .flat_map(|l| &l.text_runs)
+                .filter(|r| r.node.is_some_and(|k| descendants.contains(&k)))
+                .map(|r| Rect {
+                    x: x + r.rect.x,
+                    y: y + r.rect.y,
+                    ..r.rect
+                })
+                .collect();
+            if child.box_type == BoxType::Inline && !frags.is_empty() {
+                let pad_l = child.padding.left + child.border.left;
+                let pad_r = child.padding.right + child.border.right;
+                let pad_t = child.padding.top + child.border.top;
+                let pad_b = child.padding.bottom + child.border.bottom;
+                let len = frags.len();
+                for (idx, f) in frags.iter_mut().enumerate() {
+                    f.y -= pad_t;
+                    f.height += pad_t + pad_b;
+                    if idx == 0 {
+                        f.x -= pad_l;
+                        f.width += pad_l;
+                    }
+                    if idx == len - 1 {
+                        f.width += pad_r;
+                    }
                 }
-            });
+            }
+            child.fragments = frags;
+            if let Some(first) = child.fragments.first().copied() {
+                child.border_box = child.fragments.iter().fold(first, |a, b| {
+                    let left = a.x.min(b.x);
+                    let top = a.y.min(b.y);
+                    Rect {
+                        x: left,
+                        y: top,
+                        width: a.right().max(b.right()) - left,
+                        height: a.bottom().max(b.bottom()) - top,
+                    }
+                });
+            }
+            assign_inline_geometry(&mut child.children, lines, x, y);
         }
-        assign_inline_geometry(&mut child.children, lines, x, y);
     }
 }
 

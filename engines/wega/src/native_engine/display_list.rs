@@ -1,6 +1,6 @@
 //! Wega display commands carry the geometry used by both rasterization and
 //! picking. Stacking contexts are collected across non-context ancestors.
-use super::css::{Color, Overflow, Position};
+use super::css::{Color, Length, ObjectFit, Overflow, Position};
 use super::layout::{BoxType, LayoutBox, Point};
 use anyrender::PaintScene;
 use kurbo::{Affine, Shape};
@@ -461,10 +461,83 @@ fn content(
     }
     let c = b.content_box();
     if let Some(image) = b.image.as_ref().filter(|_| b.style.visible) {
+        let iw = image.width as f64;
+        let ih = image.height as f64;
+        let (dest_w, dest_h) = if iw > 0.0 && ih > 0.0 {
+            let ar = iw / ih;
+            match b.style.object_fit {
+                ObjectFit::Fill => (c.width, c.height),
+                ObjectFit::Contain => {
+                    if c.height <= 0.0 || (c.width / c.height) > ar {
+                        (c.height * ar, c.height)
+                    } else {
+                        (c.width, c.width / ar)
+                    }
+                }
+                ObjectFit::Cover => {
+                    if c.height <= 0.0 || (c.width / c.height) > ar {
+                        (c.width, c.width / ar)
+                    } else {
+                        (c.height * ar, c.height)
+                    }
+                }
+                ObjectFit::None => (iw, ih),
+                ObjectFit::ScaleDown => {
+                    let contain_w = if c.height <= 0.0 || (c.width / c.height) > ar {
+                        c.height * ar
+                    } else {
+                        c.width
+                    };
+                    let contain_h = if c.height <= 0.0 || (c.width / c.height) > ar {
+                        c.height
+                    } else {
+                        c.width / ar
+                    };
+                    if iw <= contain_w && ih <= contain_h {
+                        (iw, ih)
+                    } else {
+                        (contain_w, contain_h)
+                    }
+                }
+            }
+        } else {
+            (c.width, c.height)
+        };
+
+        let resolve_pos = |len: &Length, total: f64| match len {
+            Length::Percent(p) => total * (p / 100.0),
+            Length::Px(px) => *px,
+            Length::Em(em) => em * b.style.font_size,
+            Length::Rem(rem) => rem * 16.0,
+            _ => total * 0.5,
+        };
+        let off_x = resolve_pos(&b.style.object_position.0, c.width - dest_w);
+        let off_y = resolve_pos(&b.style.object_position.1, c.height - dest_h);
+
+        let dest_rect = Rect {
+            x: c.x + off_x,
+            y: c.y + off_y,
+            width: dest_w,
+            height: dest_h,
+        };
+
+        let needs_clip = b.style.object_fit == ObjectFit::Cover
+            || b.style.overflow_x != Overflow::Visible
+            || b.style.overflow_y != Overflow::Visible;
+
+        if needs_clip {
+            list.items.push(DisplayItem::PushClip {
+                rect: scaled(c, s),
+                border_radius: b.style.border_radius * s,
+            });
+        }
         list.items.push(DisplayItem::Image {
-            rect: scaled(c, s),
+            rect: scaled(dest_rect, s),
             image: image.clone(),
         });
+        if needs_clip {
+            list.items.push(DisplayItem::PopClip);
+        }
     }
     if let Some(ref form) = b.form_state {
         for sel in &form.selection_rects {

@@ -336,6 +336,7 @@ pub enum Position {
     Relative,
     Absolute,
     Fixed,
+    Sticky,
 }
 
 impl Position {
@@ -345,6 +346,7 @@ impl Position {
             "relative" => Some(Self::Relative),
             "absolute" => Some(Self::Absolute),
             "fixed" => Some(Self::Fixed),
+            "sticky" => Some(Self::Sticky),
             _ => None,
         }
     }
@@ -404,6 +406,58 @@ impl TextAlign {
             "right" | "end" => Some(Self::Right),
             "center" => Some(Self::Center),
             "justify" => Some(Self::Justify),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ObjectFit {
+    #[default]
+    Fill,
+    Contain,
+    Cover,
+    None,
+    ScaleDown,
+}
+
+impl ObjectFit {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "fill" => Some(Self::Fill),
+            "contain" => Some(Self::Contain),
+            "cover" => Some(Self::Cover),
+            "none" => Some(Self::None),
+            "scale-down" => Some(Self::ScaleDown),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VerticalAlign {
+    #[default]
+    Baseline,
+    Top,
+    Middle,
+    Bottom,
+    TextTop,
+    TextBottom,
+    Sub,
+    Super,
+}
+
+impl VerticalAlign {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "baseline" => Some(Self::Baseline),
+            "top" => Some(Self::Top),
+            "middle" => Some(Self::Middle),
+            "bottom" => Some(Self::Bottom),
+            "text-top" => Some(Self::TextTop),
+            "text-bottom" => Some(Self::TextBottom),
+            "sub" => Some(Self::Sub),
+            "super" => Some(Self::Super),
             _ => None,
         }
     }
@@ -719,6 +773,9 @@ pub struct ComputedStyle {
     pub transform: Option<Transform>,
     pub transform_origin: (Length, Length),
     pub box_shadow: Option<BoxShadow>,
+    pub object_fit: ObjectFit,
+    pub object_position: (Length, Length),
+    pub vertical_align: VerticalAlign,
 }
 
 impl Default for ComputedStyle {
@@ -777,6 +834,9 @@ impl Default for ComputedStyle {
             transform: None,
             transform_origin: (Length::Percent(50.0), Length::Percent(50.0)),
             box_shadow: None,
+            object_fit: ObjectFit::Fill,
+            object_position: (Length::Percent(50.0), Length::Percent(50.0)),
+            vertical_align: VerticalAlign::Baseline,
         }
     }
 }
@@ -1381,6 +1441,25 @@ pub fn resolve_computed_style<D: DocumentView>(
     if let Some(factor) = style.line_height_factor {
         style.line_height = style.font_size * factor;
     }
+    if let Some(el_name) = node.element_name() {
+        let tag = el_name.local.as_ref();
+        if matches!(tag, "img" | "iframe" | "canvas" | "video" | "embed") {
+            if style.width == Length::Auto {
+                if let Some(w_attr) = node.attr("width") {
+                    if let Some(l) = Length::parse(w_attr).or_else(|| w_attr.parse::<f64>().ok().map(Length::Px)) {
+                        style.width = l;
+                    }
+                }
+            }
+            if style.height == Length::Auto {
+                if let Some(h_attr) = node.attr("height") {
+                    if let Some(l) = Length::parse(h_attr).or_else(|| h_attr.parse::<f64>().ok().map(Length::Px)) {
+                        style.height = l;
+                    }
+                }
+            }
+        }
+    }
     style
 }
 
@@ -1484,14 +1563,22 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
             }
         }
         "border" => {
-            let mut width = 1.0;
+            let mut width = 0.0;
             let mut color = Color::BLACK;
+            let mut has_width = false;
             for part in val.split_whitespace() {
                 if let Some(Length::Px(w)) = Length::parse(part) {
                     width = w;
+                    has_width = true;
                 } else if let Some(c) = Color::parse(part) {
                     color = c;
+                } else if matches!(part, "none" | "hidden" | "0") {
+                    width = 0.0;
+                    has_width = true;
                 }
+            }
+            if !has_width && !matches!(val.trim(), "none" | "hidden" | "0") {
+                width = 1.0;
             }
             let side = BorderSide { width, color };
             style.borders = Borders {
@@ -1718,18 +1805,26 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
         }
         "grid-column" | "grid-row" => {
             let mut parts = val.split('/');
-            let start = parts.next().and_then(|s| s.trim().parse::<i32>().ok());
-            let end = parts.next().map(str::trim).unwrap_or("");
-            let span = end
-                .strip_prefix("span ")
-                .and_then(|s| s.trim().parse::<usize>().ok())
-                .or_else(|| {
-                    end.parse::<i32>()
-                        .ok()
-                        .and_then(|e| start.map(|s| (e - s).max(1) as usize))
-                })
-                .unwrap_or(1)
-                .clamp(1, 256);
+            let first = parts.next().map(str::trim).unwrap_or("");
+            let second = parts.next().map(str::trim);
+            let (start, span) = if let Some(sp) = first.strip_prefix("span ") {
+                (None, sp.trim().parse::<usize>().unwrap_or(1))
+            } else {
+                let s = first.parse::<i32>().ok();
+                let sp = if let Some(sec) = second {
+                    if let Some(sp_str) = sec.strip_prefix("span ") {
+                        sp_str.trim().parse::<usize>().unwrap_or(1)
+                    } else if let Ok(e) = sec.parse::<i32>() {
+                        s.map(|start_val| (e - start_val).max(1) as usize).unwrap_or(1)
+                    } else {
+                        1
+                    }
+                } else {
+                    1
+                };
+                (s, sp)
+            };
+            let span = span.clamp(1, 256);
             if prop == "grid-column" {
                 style.grid_column_start = start;
                 style.grid_column_span = span;
@@ -1756,6 +1851,33 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                         .and_then(|v| axis(v))
                         .unwrap_or(Length::Percent(50.0)),
                 );
+            }
+        }
+        "object-fit" => {
+            if let Some(of) = ObjectFit::parse(val) {
+                style.object_fit = of;
+            }
+        }
+        "object-position" => {
+            let p: Vec<_> = val.split_ascii_whitespace().collect();
+            let axis = |v: &str| match v {
+                "center" => Some(Length::Percent(50.0)),
+                "left" | "top" => Some(Length::Percent(0.0)),
+                "right" | "bottom" => Some(Length::Percent(100.0)),
+                _ => Length::parse(v),
+            };
+            if let Some(x) = p.first().and_then(|v| axis(v)) {
+                style.object_position = (
+                    x,
+                    p.get(1)
+                        .and_then(|v| axis(v))
+                        .unwrap_or(Length::Percent(50.0)),
+                );
+            }
+        }
+        "vertical-align" => {
+            if let Some(va) = VerticalAlign::parse(val) {
+                style.vertical_align = va;
             }
         }
         "box-shadow" => style.box_shadow = BoxShadow::parse(val),
@@ -1797,7 +1919,7 @@ fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, prop: &str)
     "opacity"=>opacity,"visibility"=>visible,"pointer-events"=>pointer_events,"top"=>top,"right"=>right,"bottom"=>bottom,"left"=>left,"z-index"=>z_index,
     "transform"=>transform,"box-shadow"=>box_shadow,"border-radius"=>border_radius,
     "overflow-x"=>overflow_x,"overflow-y"=>overflow_y,"flex-direction"=>flex_direction,
-    "flex-grow"=>flex_grow,"flex-shrink"=>flex_shrink,"flex-basis"=>flex_basis,"align-items"=>align_items,"justify-content"=>justify_content }
+    "flex-grow"=>flex_grow,"flex-shrink"=>flex_shrink,"flex-basis"=>flex_basis,"align-items"=>align_items,"justify-content"=>justify_content,"object-fit"=>object_fit,"object-position"=>object_position,"vertical-align"=>vertical_align }
     if prop == "line-height" {
         target.line_height = source.line_height;
         target.line_height_factor = source.line_height_factor;
@@ -1812,7 +1934,7 @@ pub enum GridTrack {
 }
 
 pub(super) fn supported_property(property: &str) -> bool {
-    matches!(property, "visibility" | "pointer-events")
+    matches!(property, "visibility" | "pointer-events" | "vertical-align")
         || property.starts_with("--")
         || matches!(
             property,
@@ -1866,6 +1988,8 @@ pub(super) fn supported_property(property: &str) -> bool {
                 | "min-height"
                 | "min-width"
                 | "normal"
+                | "object-fit"
+                | "object-position"
                 | "opacity"
                 | "overflow"
                 | "overflow-x"

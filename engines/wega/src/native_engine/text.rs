@@ -152,6 +152,50 @@ fn append_inline(
     owner: Option<NodeKey>,
     alpha: f32,
 ) {
+    if b.box_type == super::layout::BoxType::InlineBlock
+        || b.form_state.is_some()
+        || b.image.is_some()
+    {
+        let id = b.node.map(|k| k.as_u64()).unwrap_or(0);
+        let vertical_align = match b.style.vertical_align {
+            super::css::VerticalAlign::Baseline => parley::VerticalAlign::default(),
+            super::css::VerticalAlign::Middle => parley::VerticalAlign::MIDDLE,
+            super::css::VerticalAlign::Top => parley::VerticalAlign::new(
+                parley::AlignmentBaseline::Baseline,
+                parley::BaselineShift::Top,
+            ),
+            super::css::VerticalAlign::Bottom => parley::VerticalAlign::new(
+                parley::AlignmentBaseline::Baseline,
+                parley::BaselineShift::Bottom,
+            ),
+            super::css::VerticalAlign::TextTop => parley::VerticalAlign::new(
+                parley::AlignmentBaseline::TextTop,
+                parley::BaselineShift::Length(0.0),
+            ),
+            super::css::VerticalAlign::TextBottom => parley::VerticalAlign::new(
+                parley::AlignmentBaseline::TextBottom,
+                parley::BaselineShift::Length(0.0),
+            ),
+            super::css::VerticalAlign::Sub => parley::VerticalAlign::new(
+                parley::AlignmentBaseline::Baseline,
+                parley::BaselineShift::Sub,
+            ),
+            super::css::VerticalAlign::Super => parley::VerticalAlign::new(
+                parley::AlignmentBaseline::Baseline,
+                parley::BaselineShift::Super,
+            ),
+        };
+        builder.push_inline_box(parley::InlineBox {
+            id,
+            index: 0,
+            width: (b.border_box.width + b.margin.left + b.margin.right) as f32,
+            height: (b.border_box.height + b.margin.top + b.margin.bottom) as f32,
+            kind: parley::InlineBoxKind::InFlow,
+            baseline: None,
+            vertical_align,
+        });
+        return;
+    }
     let owner = if b.box_type == super::layout::BoxType::Text {
         owner.or(b.node)
     } else {
@@ -194,7 +238,7 @@ pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec
             append_inline(&mut builder, child, None, 1.0);
         }
         let (mut shaped, text) = builder.build();
-        if text.is_empty() {
+        if text.is_empty() && !children.iter().any(|c| c.box_type == super::layout::BoxType::InlineBlock || c.form_state.is_some() || c.image.is_some()) {
             return Vec::new();
         }
         shaped.break_all_lines(Some(width.max(0.0) as f32));
@@ -212,47 +256,60 @@ pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec
             .map(|line| {
                 let m = line.metrics();
                 let mut runs = Vec::new();
+                let mut inline_boxes = Vec::new();
                 for item in line.items() {
-                    let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                        continue;
-                    };
-                    let run = glyph_run.run();
-                    let brush = &glyph_run.style().brush;
-                    let synthesis = run.synthesis();
-                    runs.push(GlyphRun {
-                        node: brush.node,
-                        rect: Rect {
-                            x: glyph_run.offset() as f64,
-                            y: m.block_min_coord as f64,
-                            width: glyph_run.advance() as f64,
-                            height: m.line_height as f64,
-                        },
-                        font: run.font().clone(),
-                        font_size: run.font_size(),
-                        coords: run
-                            .normalized_coords()
-                            .iter()
-                            .map(|c| c.to_bits())
-                            .collect(),
-                        glyphs: glyph_run
-                            .positioned_glyphs()
-                            .map(|g| anyrender::Glyph {
-                                id: g.id,
-                                x: g.x,
-                                y: g.y,
-                            })
-                            .collect(),
-                        color: brush.color,
-                        hit: brush.hit,
-                        skew: synthesis
-                            .skew()
-                            .map(|a| kurbo::Affine::skew(a.to_radians().tan() as f64, 0.0)),
-                        embolden: if synthesis.embolden() {
-                            kurbo::Vec2::new(0.02 * run.font_size() as f64, 0.0)
-                        } else {
-                            kurbo::Vec2::ZERO
-                        },
-                    });
+                    match item {
+                        PositionedLayoutItem::GlyphRun(glyph_run) => {
+                            let run = glyph_run.run();
+                            let brush = &glyph_run.style().brush;
+                            let synthesis = run.synthesis();
+                            runs.push(GlyphRun {
+                                node: brush.node,
+                                rect: Rect {
+                                    x: glyph_run.offset() as f64,
+                                    y: m.block_min_coord as f64,
+                                    width: glyph_run.advance() as f64,
+                                    height: m.line_height as f64,
+                                },
+                                font: run.font().clone(),
+                                font_size: run.font_size(),
+                                coords: run
+                                    .normalized_coords()
+                                    .iter()
+                                    .map(|c| c.to_bits())
+                                    .collect(),
+                                glyphs: glyph_run
+                                    .positioned_glyphs()
+                                    .map(|g| anyrender::Glyph {
+                                        id: g.id,
+                                        x: g.x,
+                                        y: g.y,
+                                    })
+                                    .collect(),
+                                color: brush.color,
+                                hit: brush.hit,
+                                skew: synthesis
+                                    .skew()
+                                    .map(|a| kurbo::Affine::skew(a.to_radians().tan() as f64, 0.0)),
+                                embolden: if synthesis.embolden() {
+                                    kurbo::Vec2::new(0.02 * run.font_size() as f64, 0.0)
+                                } else {
+                                    kurbo::Vec2::ZERO
+                                },
+                            });
+                        }
+                        PositionedLayoutItem::InlineBox(ibox) => {
+                            inline_boxes.push(super::layout::PositionedInlineBox {
+                                id: ibox.id,
+                                rect: Rect {
+                                    x: ibox.x as f64,
+                                    y: ibox.y as f64,
+                                    width: ibox.width as f64,
+                                    height: ibox.height as f64,
+                                },
+                            });
+                        }
+                    }
                 }
                 LineBox {
                     rect: Rect {
@@ -262,6 +319,7 @@ pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec
                         height: m.line_height as f64,
                     },
                     text_runs: runs,
+                    inline_boxes,
                 }
             })
             .collect()
