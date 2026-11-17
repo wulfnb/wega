@@ -84,3 +84,19 @@ fn csp_denies_link_stylesheet() {
             .all(|s| s.rules.is_empty())
     );
 }
+
+#[test]
+fn native_style_element_csp_nonce_and_media_are_enforced() {
+    let server = support::Server::new(|_| {
+        support::Reply::html("<style>#target{height:999px}</style><style nonce=allowed>#target{height:30px}</style><style nonce=allowed media=print>#target{height:666px}</style><div id=target></div>").header("Content-Security-Policy","style-src 'nonce-allowed'")
+    });
+    let engine = support::engine();
+    let mut view = support::open(&engine, &server.url("localhost", "/page"));
+    view.set_rendering_backend(RenderingBackend::WegaNative);
+    view.paint(400, 300, 1.0, 1.0, false).unwrap();
+    assert_eq!(
+        view.evaluate_json("document.getElementById('target').getBoundingClientRect().height")
+            .unwrap(),
+        "30"
+    );
+}

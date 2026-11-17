@@ -139,6 +139,9 @@ impl Color {
         }
 
         if let Some(hex) = s.strip_prefix('#') {
+            if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return None;
+            }
             match hex.len() {
                 3 => {
                     let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
@@ -203,27 +206,59 @@ pub enum Length {
     Em(f64),
     Rem(f64),
     Calc([f64; 4]),
+    Vw(f64),
+    Vh(f64),
     #[default]
     Auto,
 }
 
 impl Length {
     pub fn parse(s: &str) -> Option<Self> {
-        let s = s.trim();
+        let lower = s.trim().to_ascii_lowercase();
+        let s = lower.as_str();
         if s.eq_ignore_ascii_case("auto") {
             return Some(Self::Auto);
         }
         if s == "0" || s == "0px" {
             return Some(Self::Px(0.0));
         }
+        if let Some(v) = s.strip_suffix("vw") {
+            return v
+                .parse::<f64>()
+                .ok()
+                .filter(|n| n.is_finite())
+                .map(Self::Vw);
+        }
+        if let Some(v) = s.strip_suffix("vh") {
+            return v
+                .parse::<f64>()
+                .ok()
+                .filter(|n| n.is_finite())
+                .map(Self::Vh);
+        }
         if let Some(px) = s.strip_suffix("px") {
-            return px.trim().parse::<f64>().ok().map(Self::Px);
+            return px
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|n| n.is_finite())
+                .map(Self::Px);
         }
         if let Some(pct) = s.strip_suffix('%') {
-            return pct.trim().parse::<f64>().ok().map(Self::Percent);
+            return pct
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|n| n.is_finite())
+                .map(Self::Percent);
         }
         if let Some(rem) = s.strip_suffix("rem") {
-            return rem.trim().parse::<f64>().ok().map(Self::Rem);
+            return rem
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|n| n.is_finite())
+                .map(Self::Rem);
         }
         if let Some(em) = s.strip_suffix("em") {
             return em
@@ -248,6 +283,7 @@ impl Length {
             Self::Calc(v) => {
                 v[0] + v[1] * parent_len / 100.0 + v[2] * font_size + v[3] * root_font_size
             }
+            Self::Vw(_) | Self::Vh(_) => 0.0, // converted to px before layout
             Self::Auto => 0.0,
         }
     }
@@ -637,6 +673,8 @@ pub struct ComputedStyle {
     pub left: Length,
     pub z_index: Option<i32>,
     pub opacity: f32,
+    pub visible: bool,
+    pub pointer_events: bool,
     pub color: Color,
     pub background_color: Color,
     pub custom_properties: std::collections::BTreeMap<String, String>,
@@ -693,6 +731,8 @@ impl Default for ComputedStyle {
             left: Length::Auto,
             z_index: None,
             opacity: 1.0,
+            visible: true,
+            pointer_events: true,
             color: Color::BLACK,
             background_color: Color::TRANSPARENT,
             custom_properties: Default::default(),
@@ -1050,13 +1090,16 @@ pub fn default_user_agent_stylesheet() -> StyleSheet {
     StyleSheet::parse(
         r#"
 head, style, script, meta, link, title, template, base { display: none; }
+[hidden] {display:none;}
 html { display: block; }
 body { display: block; margin: 8px; font-size: 16px; line-height: 20px; color: black; background-color: white; }
-div, p, h1, h2, h3, h4, h5, h6, ul, ol, li, header, footer, nav, section, article, main { display: block; }
+div, p, h1, h2, h3, h4, h5, h6, ul, ol, li, header, footer, nav, section, article, main, form, fieldset, figure, figcaption, blockquote, dl, dt, dd, details, summary { display: block; }
 span, a, b, strong, i, em, u { display: inline; }
+a[href] { color: blue; }
 table { display: table; border-collapse: separate; }
 tr { display: table-row; }
 td, th { display: table-cell; }
+img { display: inline-block; }
 iframe { display: inline-block; border: 1px solid black; width: 300px; height: 150px; }
 h1 { margin: 16px 0; font-size: 32px; font-weight: bold; }
 h2 { margin: 14px 0; font-size: 24px; font-weight: bold; }
@@ -1086,6 +1129,9 @@ struct MatchedDecl {
     source_order: usize,
 }
 
+thread_local! {
+    static USER_AGENT: StyleSheet = default_user_agent_stylesheet();
+}
 pub fn resolve_computed_style<D: DocumentView>(
     doc: &D,
     node_key: NodeKey,
@@ -1097,6 +1143,8 @@ pub fn resolve_computed_style<D: DocumentView>(
         custom_properties: p.custom_properties.clone(),
         line_height_factor: p.line_height_factor,
         color: p.color,
+        visible: p.visible,
+        pointer_events: p.pointer_events,
         font_size: p.font_size,
         line_height: p.line_height,
         text_align: p.text_align,
@@ -1115,29 +1163,52 @@ pub fn resolve_computed_style<D: DocumentView>(
     };
 
     let mut matched: Vec<MatchedDecl> = Vec::new();
-    let ua = default_user_agent_stylesheet();
 
     // 1. UA Stylesheet
     let mut order = 0;
-    for rule in &ua.rules {
-        for sel in &rule.selectors {
-            if sel.matches(doc, node_key) {
-                let spec = sel.specificity();
-                for d in &rule.declarations {
-                    matched.push(MatchedDecl {
-                        property: d.property.clone(),
-                        value: d.value.clone(),
-                        origin: 0,
-                        important: d.important,
-                        specificity: spec,
-                        source_order: order,
-                    });
-                    order += 1;
+    USER_AGENT.with(|ua| {
+        for rule in &ua.rules {
+            for sel in &rule.selectors {
+                if sel.matches(doc, node_key) {
+                    let spec = sel.specificity();
+                    for d in &rule.declarations {
+                        matched.push(MatchedDecl {
+                            property: d.property.clone(),
+                            value: d.value.clone(),
+                            origin: 0,
+                            important: d.important,
+                            specificity: spec,
+                            source_order: order,
+                        });
+                        order += 1;
+                    }
                 }
             }
         }
-    }
+    });
 
+    // HTML dimensions are author presentational hints, below authored rules.
+    if node
+        .element_name()
+        .is_some_and(|n| matches!(n.local, "img" | "iframe" | "video" | "canvas"))
+    {
+        for property in ["width", "height"] {
+            if let Some(value) = node
+                .attr(property)
+                .and_then(|s| s.parse::<f64>().ok())
+                .filter(|n| n.is_finite() && *n >= 0.0)
+            {
+                matched.push(MatchedDecl {
+                    property: property.into(),
+                    value: format!("{value}px"),
+                    origin: 1,
+                    important: false,
+                    specificity: (0, 0, 0),
+                    source_order: 0,
+                });
+            }
+        }
+    }
     // 2. Author Stylesheets
     for sheet in author_sheets {
         for rule in &sheet.rules {
@@ -1208,7 +1279,17 @@ pub fn resolve_computed_style<D: DocumentView>(
                 "initial" => {
                     style.custom_properties.remove(&decl.property);
                 }
-                "inherit" | "unset" => {}
+                "inherit" | "unset" => {
+                    if let Some(value) =
+                        parent_style.and_then(|p| p.custom_properties.get(&decl.property))
+                    {
+                        style
+                            .custom_properties
+                            .insert(decl.property.clone(), value.clone());
+                    } else {
+                        style.custom_properties.remove(&decl.property);
+                    }
+                }
                 _ => {
                     style
                         .custom_properties
@@ -1217,11 +1298,14 @@ pub fn resolve_computed_style<D: DocumentView>(
             }
         }
     }
-    let raw = style.custom_properties.clone();
-    style.custom_properties = raw
-        .iter()
-        .filter_map(|(k, v)| super::syntax::substitute(v, &raw).map(|v| (k.clone(), v)))
-        .collect();
+    style.custom_properties = super::syntax::resolve_variables(&style.custom_properties);
+    // Font-relative computed values and currentColor use the winning font and
+    // color, regardless of declaration order or selector specificity.
+    matched.sort_by_key(|d| match d.property.as_str() {
+        "font-size" => 0,
+        "color" => 1,
+        _ => 2,
+    });
     for decl in matched {
         if decl.property.starts_with("--") {
             continue;
@@ -1230,6 +1314,8 @@ pub fn resolve_computed_style<D: DocumentView>(
         let inherited = matches!(
             decl.property.as_str(),
             "color"
+                | "visibility"
+                | "pointer-events"
                 | "font-size"
                 | "font-family"
                 | "font-weight"
@@ -1249,8 +1335,29 @@ pub fn resolve_computed_style<D: DocumentView>(
             );
         } else if value == "initial" || value == "unset" {
             copy_property(&mut style, &ComputedStyle::default(), &decl.property);
+        } else if decl.property == "font-size" {
+            if let Some(l) = Length::parse(value) {
+                let parent_size = parent_style.map(|p| p.font_size).unwrap_or(16.0);
+                let size = l.resolve(parent_size, parent_size, 16.0);
+                if size >= 0.0 && size.is_finite() {
+                    style.font_size = size;
+                }
+            }
+        } else if decl.property == "color" && value.eq_ignore_ascii_case("currentcolor") {
+            style.color = parent_style.map(|p| p.color).unwrap_or(Color::BLACK);
         } else {
-            apply_declaration(&mut style, &decl.property, value);
+            let resolved = if value.eq_ignore_ascii_case("currentcolor") {
+                format!(
+                    "rgba({},{},{},{})",
+                    style.color.r,
+                    style.color.g,
+                    style.color.b,
+                    style.color.a as f32 / 255.0
+                )
+            } else {
+                value.to_owned()
+            };
+            apply_declaration(&mut style, &decl.property, &resolved);
         }
     }
     if let Some(factor) = style.line_height_factor {
@@ -1261,6 +1368,16 @@ pub fn resolve_computed_style<D: DocumentView>(
 
 fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
     match prop {
+        "visibility" => {
+            if matches!(val, "visible" | "hidden" | "collapse") {
+                style.visible = val == "visible";
+            }
+        }
+        "pointer-events" => {
+            if matches!(val, "auto" | "none") {
+                style.pointer_events = val == "auto";
+            }
+        }
         "display" => {
             if let Some(d) = Display::parse(val) {
                 style.display = d;
@@ -1444,7 +1561,7 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
             if let Some(l) = Length::parse(val) {
                 let size = l.resolve(style.font_size, style.font_size, 16.0);
                 if size >= 0.0 && size.is_finite() {
-                    style.font_size = size;
+                    style.font_size = size.min(4096.0);
                 }
             }
         }
@@ -1653,7 +1770,7 @@ fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, prop: &str)
     "width"=>width,"height"=>height,"min-width"=>min_width,"max-width"=>max_width,"min-height"=>min_height,"max-height"=>max_height,
     "margin"=>margin,"padding"=>padding,"border"=>borders,"font-size"=>font_size,"font-family"=>font_family,
     "font-weight"=>font_weight,"font-style"=>font_italic,"white-space"=>white_space,"text-align"=>text_align,
-    "opacity"=>opacity,"top"=>top,"right"=>right,"bottom"=>bottom,"left"=>left,"z-index"=>z_index,
+    "opacity"=>opacity,"visibility"=>visible,"pointer-events"=>pointer_events,"top"=>top,"right"=>right,"bottom"=>bottom,"left"=>left,"z-index"=>z_index,
     "transform"=>transform,"box-shadow"=>box_shadow,"border-radius"=>border_radius,
     "overflow-x"=>overflow_x,"overflow-y"=>overflow_y,"flex-direction"=>flex_direction,
     "flex-grow"=>flex_grow,"flex-shrink"=>flex_shrink,"flex-basis"=>flex_basis,"align-items"=>align_items,"justify-content"=>justify_content }
@@ -1668,4 +1785,81 @@ pub enum GridTrack {
     Length(Length),
     Fraction(f64),
     MinMax(Length, Box<GridTrack>),
+}
+
+pub(super) fn supported_property(property: &str) -> bool {
+    matches!(property, "visibility" | "pointer-events")
+        || property.starts_with("--")
+        || matches!(
+            property,
+            "align-items"
+                | "background"
+                | "background-color"
+                | "bold"
+                | "border"
+                | "border-bottom"
+                | "border-color"
+                | "border-left"
+                | "border-radius"
+                | "border-right"
+                | "border-spacing"
+                | "border-top"
+                | "border-width"
+                | "bottom"
+                | "box-shadow"
+                | "box-sizing"
+                | "center"
+                | "color"
+                | "column-gap"
+                | "display"
+                | "flex-basis"
+                | "flex-direction"
+                | "flex-grow"
+                | "flex-shrink"
+                | "flex-wrap"
+                | "font-family"
+                | "font-size"
+                | "font-style"
+                | "font-weight"
+                | "gap"
+                | "grid-column"
+                | "grid-column-start"
+                | "grid-row"
+                | "grid-row-start"
+                | "grid-template-columns"
+                | "grid-template-rows"
+                | "height"
+                | "justify-content"
+                | "left"
+                | "line-height"
+                | "margin"
+                | "margin-bottom"
+                | "margin-left"
+                | "margin-right"
+                | "margin-top"
+                | "max-height"
+                | "max-width"
+                | "min-height"
+                | "min-width"
+                | "normal"
+                | "opacity"
+                | "overflow"
+                | "overflow-x"
+                | "overflow-y"
+                | "padding"
+                | "padding-bottom"
+                | "padding-left"
+                | "padding-right"
+                | "padding-top"
+                | "position"
+                | "right"
+                | "row-gap"
+                | "text-align"
+                | "top"
+                | "transform"
+                | "transform-origin"
+                | "white-space"
+                | "width"
+                | "z-index"
+        )
 }

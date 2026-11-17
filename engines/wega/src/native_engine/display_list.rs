@@ -31,11 +31,16 @@ pub enum DisplayItem {
         color: Color,
         border_radius: f64,
     },
+    Image {
+        rect: Rect,
+        image: peniko::ImageData,
+    },
     Text {
         run: super::text::GlyphRun,
         transform: Affine,
     },
     HitRegion {
+        enabled: bool,
         node: NodeKey,
         rect: Rect,
         border_radius: f64,
@@ -156,6 +161,18 @@ impl DisplayList {
                         blur_radius.max(0.0) / 2.0,
                     );
                 }
+                DisplayItem::Image { rect, image } => {
+                    let brush = peniko::ImageBrush::new(image.clone());
+                    scene.draw_image(
+                        (&brush).into(),
+                        current
+                            * Affine::translate((rect.x, rect.y))
+                            * Affine::scale_non_uniform(
+                                rect.width / image.width.max(1) as f64,
+                                rect.height / image.height.max(1) as f64,
+                            ),
+                    );
+                }
                 DisplayItem::Text { run, transform } => scene.draw_glyphs(
                     &run.font,
                     run.font_size,
@@ -269,10 +286,14 @@ impl DisplayList {
                     clips.pop();
                 }
                 DisplayItem::HitRegion {
+                    enabled,
                     node,
                     rect,
                     border_radius,
                 } => {
+                    if !enabled {
+                        continue;
+                    }
                     if current.determinant().abs() < 1e-12 {
                         continue;
                     }
@@ -331,9 +352,13 @@ fn decorations(b: &LayoutBox, list: &mut DisplayList, s: f64) {
         if let Some(k) = b.node {
             list.items.push(DisplayItem::HitRegion {
                 node: k,
+                enabled: b.style.visible && b.style.pointer_events,
                 rect,
                 border_radius: radius,
             });
+        }
+        if !b.style.visible {
+            continue;
         }
         if let Some(shadow) = b.style.box_shadow {
             list.items.push(DisplayItem::BoxShadow {
@@ -416,18 +441,29 @@ fn content(
     embedded: &[(NodeKey, anyrender::Scene)],
     s: f64,
 ) {
-    if let Some((_, scene)) = embedded.iter().find(|(k, _)| Some(*k) == b.node) {
+    if let Some((_, scene)) = embedded
+        .iter()
+        .find(|(k, _)| Some(*k) == b.node)
+        .filter(|_| b.style.visible)
+    {
         list.items.push(DisplayItem::EmbeddedScene {
             rect: scaled(b.content_box(), s),
             scene: scene.clone(),
         });
     }
     let c = b.content_box();
+    if let Some(image) = b.image.as_ref().filter(|_| b.style.visible) {
+        list.items.push(DisplayItem::Image {
+            rect: scaled(c, s),
+            image: image.clone(),
+        });
+    }
     for line in &b.lines {
         for run in &line.text_runs {
             if let Some(node) = run.node {
                 list.items.push(DisplayItem::HitRegion {
                     node,
+                    enabled: run.hit,
                     rect: scaled(
                         Rect {
                             x: c.x + run.rect.x,

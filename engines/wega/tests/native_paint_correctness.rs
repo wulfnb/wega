@@ -90,3 +90,19 @@ fn independent_border_colors_and_shadow_blur() {
         "blur must have a gradient outside the box: {near}/{far}"
     );
 }
+
+#[test]
+fn hidden_boxes_keep_geometry_and_pointer_events_none_passes_through() {
+    let mut d = document(
+        "<body style='margin:0'><div id=under style='position:absolute;left:0;top:0;width:80px;height:80px;background:blue'></div><div id=pass style='position:absolute;left:0;top:0;width:80px;height:80px;background:red;pointer-events:none;z-index:2'></div><div id=hidden style='position:absolute;left:100px;top:0;width:80px;height:80px;background:green;visibility:hidden'><div id=visible style='height:20px;background:blue;visibility:visible'></div></div><div id=attribute hidden style='width:100px;height:100px;background:red'></div></body>",
+    );
+    let p = render(&mut d);
+    assert_eq!(pixel(&p, 20, 20), [255, 0, 0, 255]);
+    assert_eq!(hit(&d, 20.0, 20.0), "under");
+    assert_eq!(pixel(&p, 110, 10), [0, 0, 255, 255]);
+    assert_eq!(pixel(&p, 110, 40), [255, 255, 255, 255]);
+    let hidden = d.doc.borrow().element_by_id("hidden").unwrap();
+    assert_eq!(d.bounding_rect(hidden).unwrap().width, 80.0);
+    let attribute = d.doc.borrow().element_by_id("attribute").unwrap();
+    assert_eq!(d.bounding_rect(attribute).unwrap().width, 0.0);
+}

@@ -54,6 +54,15 @@ impl RenderingBackend {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NativeTimings {
+    pub stylesheet_parse_ms: f64,
+    pub style_and_box_tree_ms: f64,
+    pub layout_ms: f64,
+    pub shaping_ms: f64,
+    pub display_list_ms: f64,
+    pub scene_ms: f64,
+}
 pub struct NativeDocument {
     pub doc: Rc<RefCell<BlitzDocument>>,
     pub layout_tree: Option<LayoutBox>,
@@ -61,13 +70,25 @@ pub struct NativeDocument {
     pub viewport: ViewportConfig,
     pub scroll: Point,
     pub layout_dirty: bool,
+    pub layout_refused: bool,
     seen_epoch: Option<u64>,
+    seen_resources: u64,
     seen_viewport: Option<(u32, u32, u32, u32, bool)>,
     pub layout_generation: u64,
+    pub timings: NativeTimings,
+    pub font_source: Option<std::sync::Arc<Vec<Vec<u8>>>>,
+    pub csp: Option<std::sync::Arc<std::sync::RwLock<wega_security::csp::Csp>>>,
+    seen_policy_generation: usize,
 }
 
 impl NativeDocument {
     pub fn new(doc: Rc<RefCell<BlitzDocument>>) -> Self {
+        Self::with_font_source(doc, None)
+    }
+    pub fn with_font_source(
+        doc: Rc<RefCell<BlitzDocument>>,
+        font_source: Option<std::sync::Arc<Vec<Vec<u8>>>>,
+    ) -> Self {
         let initial_viewport = ViewportConfig {
             width_px: 1280,
             height_px: 800,
@@ -82,9 +103,15 @@ impl NativeDocument {
             viewport: initial_viewport,
             scroll: Point::default(),
             layout_dirty: true,
+            layout_refused: false,
             seen_epoch: None,
+            seen_resources: 0,
             seen_viewport: None,
             layout_generation: 0,
+            timings: NativeTimings::default(),
+            font_source,
+            csp: None,
+            seen_policy_generation: 0,
         }
     }
 
@@ -102,14 +129,33 @@ impl NativeDocument {
             if let Some(node) = d.node(k) {
                 if node.kind() == NodeKind::Element && !d.stylesheet_disabled(k.node_id()) {
                     if let Some(elem) = node.element_name() {
-                        if elem.local.eq_ignore_ascii_case("style") {
+                        if matches!(elem.local, "style" | "link")
+                            && node.attr("media").is_some_and(|m| {
+                                !m.trim().is_empty() && !matches!(m.trim(), "all" | "screen")
+                            })
+                        {
+                            sheets.push(StyleSheet {
+                                rules: Vec::new(),
+                                unsupported: vec![format!(
+                                    "media attribute:{}",
+                                    node.attr("media").unwrap_or("")
+                                )],
+                            });
+                        } else if elem.local.eq_ignore_ascii_case("style") {
                             let mut css_text = String::new();
                             for child_k in node.children() {
                                 if let Some(text) = d.node(child_k).and_then(NodeView::text) {
                                     css_text.push_str(text);
                                 }
                             }
-                            sheets.push(StyleSheet::parse(&css_text));
+                            let allowed = self.csp.as_ref().is_none_or(|c| {
+                                c.read()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .allows_inline("style-src-elem", node.attr("nonce"), &css_text)
+                            });
+                            if allowed {
+                                sheets.push(StyleSheet::parse(&css_text));
+                            }
                         } else if elem.local.eq_ignore_ascii_case("link")
                             && node.attr("rel").is_some_and(|r| {
                                 r.split_ascii_whitespace()
@@ -146,8 +192,20 @@ impl NativeDocument {
             self.viewport.dark,
         )
     }
+    fn policy_generation(&self) -> usize {
+        self.csp
+            .as_ref()
+            .map(|c| {
+                c.read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .generation()
+            })
+            .unwrap_or(0)
+    }
     pub fn is_dirty(&self) -> bool {
         self.layout_dirty
+            || self.seen_resources != self.doc.borrow().resource_generation()
+            || self.seen_policy_generation != self.policy_generation()
             || self.seen_epoch
                 != Some(wega_dom::MutationClock::mutation_epoch(&*self.doc.borrow()).as_u64())
             || self.seen_viewport != Some(self.viewport_key())
@@ -158,6 +216,7 @@ impl NativeDocument {
         }
     }
     pub fn flush_layout(&mut self) {
+        super::text::configure_fonts(self.font_source.clone());
         let mut offsets = std::collections::HashMap::new();
         fn save(b: &LayoutBox, out: &mut std::collections::HashMap<NodeKey, Point>) {
             if let Some(k) = b.node {
@@ -170,12 +229,38 @@ impl NativeDocument {
         if let Some(tree) = &self.layout_tree {
             save(tree, &mut offsets);
         }
+        let start = std::time::Instant::now();
         self.sync_author_stylesheets();
+        self.timings.stylesheet_parse_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let style_start = std::time::Instant::now();
         let d = self.doc.borrow();
         let root_key = d.root();
         let sheets_ref: Vec<&StyleSheet> = self.author_sheets.iter().collect();
 
         if let Some(mut box_tree) = build_box_tree(&*d, root_key, None, &sheets_ref) {
+            fn images(b: &mut LayoutBox, doc: &BlitzDocument) {
+                if let Some(image) = b
+                    .node
+                    .and_then(|k| doc.get_node(k.node_id()))
+                    .and_then(|n| n.element_data())
+                    .and_then(|e| e.raster_image_data())
+                {
+                    b.image = Some(peniko::ImageData {
+                        data: image.data.clone(),
+                        format: peniko::ImageFormat::Rgba8,
+                        width: image.width,
+                        height: image.height,
+                        alpha_type: peniko::ImageAlphaType::Alpha,
+                    });
+                }
+                for c in &mut b.children {
+                    images(c, doc);
+                }
+            }
+            images(&mut box_tree, &d);
+            self.timings.style_and_box_tree_ms = style_start.elapsed().as_secs_f64() * 1000.0;
+            let layout_start = std::time::Instant::now();
+            let shaping_start = super::text::shaping_nanos();
             let ctx = LayoutContext {
                 viewport_width: self.viewport.width_px as f64
                     / (self.viewport.scale * self.viewport.zoom) as f64,
@@ -184,6 +269,8 @@ impl NativeDocument {
                 font_size_root: 16.0,
             };
             perform_layout(&mut box_tree, &ctx);
+            self.timings.layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
+            self.timings.shaping_ms = (super::text::shaping_nanos() - shaping_start) as f64 / 1e6;
             fn restore(b: &mut LayoutBox, offsets: &std::collections::HashMap<NodeKey, Point>) {
                 if let Some(p) = b.node.and_then(|k| offsets.get(&k)) {
                     let client = b.padding_box();
@@ -198,12 +285,16 @@ impl NativeDocument {
             }
             restore(&mut box_tree, &offsets);
             self.layout_tree = Some(box_tree);
+            self.layout_refused = false;
         } else {
             self.layout_tree = None;
+            self.layout_refused = true;
         }
+        self.seen_resources = d.resource_generation();
         self.seen_epoch = Some(wega_dom::MutationClock::mutation_epoch(&*d).as_u64());
         self.seen_viewport = Some(self.viewport_key());
         self.layout_generation = self.layout_generation.wrapping_add(1);
+        self.seen_policy_generation = self.policy_generation();
         self.layout_dirty = false;
     }
 
@@ -322,6 +413,8 @@ impl NativeDocument {
             } else {
                 Geometry::Current(bm)
             }
+        } else if self.layout_refused {
+            Geometry::Refused
         } else {
             Geometry::NoBoxes
         }
@@ -357,7 +450,10 @@ impl NativeDocument {
         let Some(tree) = &self.layout_tree else {
             return anyrender::Scene::new();
         };
+        let start = std::time::Instant::now();
         let dl = DisplayList::build_scrolled(tree, &children, scale, self.scroll);
+        self.timings.display_list_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let start = std::time::Instant::now();
         let mut scene = anyrender::Scene::new();
         use anyrender::PaintScene;
         scene.fill(
@@ -373,6 +469,7 @@ impl NativeDocument {
             ),
         );
         dl.render_into(&mut scene);
+        self.timings.scene_ms = start.elapsed().as_secs_f64() * 1000.0;
         scene
     }
 
@@ -455,13 +552,20 @@ impl NativeDocument {
             scroll_x: self.scroll.x,
             scroll_y: self.scroll.y,
         };
+        fn bounded(value: &str, limit: usize) -> String {
+            let mut end = value.len().min(limit);
+            while !value.is_char_boundary(end) {
+                end -= 1;
+            }
+            value[..end].to_owned()
+        }
         let label = if let Some(n) = d.node(key) {
             let tag = n
                 .element_name()
-                .map(|e| e.local.to_string())
+                .map(|e| bounded(e.local, MAX_LABEL_TAG))
                 .unwrap_or_default();
-            let id = n.attr("id").unwrap_or_default().to_string();
-            let classes = n.attr("class").unwrap_or_default().to_string();
+            let id = bounded(n.attr("id").unwrap_or_default(), MAX_LABEL_ID);
+            let classes = bounded(n.attr("class").unwrap_or_default(), MAX_LABEL_CLASSES);
             ElementLabel { tag, id, classes }
         } else {
             ElementLabel::default()
@@ -546,7 +650,7 @@ impl NativeDocument {
         let mut chain = Vec::new();
         let mut at = node.parent();
         while let Some(parent) = at {
-            if chain.len() > 32 {
+            if chain.len() >= MAX_ANCESTORS {
                 chain.clear();
                 break;
             }

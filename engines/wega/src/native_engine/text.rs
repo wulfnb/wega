@@ -3,13 +3,14 @@
 use super::css::{Color, ComputedStyle, TextAlign, WhiteSpace};
 use super::layout::{LayoutBox, LineBox, Rect};
 use parley::{FontContext, LayoutContext, PositionedLayoutItem, TextStyle};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use wega_dom::NodeKey;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct TextBrush {
     node: Option<NodeKey>,
     color: Color,
+    hit: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -21,14 +22,70 @@ pub struct GlyphRun {
     pub coords: Vec<i16>,
     pub glyphs: Vec<anyrender::Glyph>,
     pub color: Color,
+    pub hit: bool,
     pub skew: Option<kurbo::Affine>,
     pub embolden: kurbo::Vec2,
 }
 
+type FontSource = Option<std::sync::Arc<Vec<Vec<u8>>>>;
 thread_local! {
-    // Reuse the system font database and shaping scratch buffers on the DOM thread.
-    static TEXT: RefCell<(FontContext, LayoutContext<TextBrush>)> =
-        RefCell::new((FontContext::new(), LayoutContext::new()));
+    static TEXT: RefCell<(FontContext, LayoutContext<TextBrush>)> = RefCell::new((
+        FontContext {collection:parley::fontique::Collection::new(parley::fontique::CollectionOptions{shared:false,system_fonts:false}),source_cache:Default::default()},LayoutContext::new()));
+    static SHAPING_NANOS: Cell<u128> = const {Cell::new(0)};
+    static FONT_SOURCE: RefCell<Option<FontSource>> = const {RefCell::new(None)};
+}
+/// Brokered renderers use only the host-selected font bytes. Development views
+/// may discover system fonts. No downloaded page fonts enter this shared cache.
+pub fn configure_fonts(source: FontSource) {
+    FONT_SOURCE.with(|active| {
+        let same = active
+            .borrow()
+            .as_ref()
+            .is_some_and(|current| match (current, &source) {
+                (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            });
+        if same {
+            return;
+        }
+        let fonts = if let Some(bytes) = &source {
+            use parley::fontique::{
+                Blob, Collection, CollectionOptions, GenericFamily, SourceCache,
+            };
+            let mut fonts = FontContext {
+                collection: Collection::new(CollectionOptions {
+                    shared: false,
+                    system_fonts: false,
+                }),
+                source_cache: SourceCache::new_shared(),
+            };
+            for (index, font) in bytes.iter().enumerate() {
+                let registered = fonts
+                    .collection
+                    .register_fonts(Blob::new(std::sync::Arc::new(font.clone()) as _), None);
+                let ids: Vec<_> = registered.iter().map(|(id, _)| *id).collect();
+                let generic = match index {
+                    0 => GenericFamily::SansSerif,
+                    1 => GenericFamily::Serif,
+                    _ => GenericFamily::Monospace,
+                };
+                fonts
+                    .collection
+                    .append_generic_families(generic, ids.iter().copied());
+                if index == 0 {
+                    fonts
+                        .collection
+                        .append_generic_families(GenericFamily::SystemUi, ids.iter().copied());
+                }
+            }
+            fonts
+        } else {
+            FontContext::new()
+        };
+        TEXT.with(|cx| *cx.borrow_mut() = (fonts, LayoutContext::new()));
+        *active.borrow_mut() = Some(source);
+    });
 }
 
 fn text_style(
@@ -63,7 +120,11 @@ fn text_style(
         ),
     };
     let mut color = style.color;
-    color.a = (color.a as f32 * alpha).round() as u8;
+    color.a = if style.visible {
+        (color.a as f32 * alpha).round() as u8
+    } else {
+        0
+    };
     TextStyle {
         font_family: parley::FontFamily::from(style.font_family.as_str()),
         font_size: style.font_size as f32,
@@ -76,7 +137,11 @@ fn text_style(
         line_height: parley::LineHeight::Absolute(style.line_height as f32),
         white_space_collapse: collapse,
         text_wrap_mode: wrap,
-        brush: TextBrush { node, color },
+        brush: TextBrush {
+            node,
+            color,
+            hit: style.visible && style.pointer_events,
+        },
         ..Default::default()
     }
 }
@@ -113,11 +178,18 @@ fn append_inline(
     builder.pop_style_span();
 }
 
+pub fn shaping_nanos() -> u128 {
+    SHAPING_NANOS.with(Cell::get)
+}
 pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec<LineBox> {
-    TEXT.with(|cx| {
+    let start = std::time::Instant::now();
+    if FONT_SOURCE.with(|s| s.borrow().is_none()) {
+        configure_fonts(None);
+    }
+    let result = TEXT.with(|cx| {
         let (fonts, layouts) = &mut *cx.borrow_mut();
         let root = TextStyle::<TextBrush>::default();
-        let mut builder = layouts.tree_builder(fonts, 1.0, false, &root);
+        let mut builder = layouts.tree_builder(fonts, 1.0, true, &root);
         for child in children {
             append_inline(&mut builder, child, None, 1.0);
         }
@@ -171,6 +243,7 @@ pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec
                             })
                             .collect(),
                         color: brush.color,
+                        hit: brush.hit,
                         skew: synthesis
                             .skew()
                             .map(|a| kurbo::Affine::skew(a.to_radians().tan() as f64, 0.0)),
@@ -192,5 +265,7 @@ pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec
                 }
             })
             .collect()
-    })
+    });
+    SHAPING_NANOS.with(|n| n.set(n.get() + start.elapsed().as_nanos()));
+    result
 }

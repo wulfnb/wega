@@ -20,6 +20,12 @@ impl<'i> AtRuleParser<'i> for Rules {
     }
 }
 fn consume(input: &mut Parser<'_>) -> Result<(), Error> {
+    consume_at(input, 0)
+}
+fn consume_at(input: &mut Parser<'_>, depth: usize) -> Result<(), Error> {
+    if depth > 64 {
+        return Err(ParseError::unexpected_token());
+    }
     while !input.is_exhausted() {
         let token = input.next()?.clone();
         if token.is_parse_error() {
@@ -32,7 +38,7 @@ fn consume(input: &mut Parser<'_>) -> Result<(), Error> {
                 | Token::SquareBracketBlock
                 | Token::CurlyBracketBlock
         ) {
-            input.parse_nested_block(consume)?;
+            input.parse_nested_block(|p| consume_at(p, depth + 1))?;
         }
     }
     Ok(())
@@ -60,18 +66,36 @@ impl<'i> QualifiedRuleParser<'i> for Rules {
             selectors,
             declarations: RuleBodyParser::new(input, &mut Declarations)
                 .filter_map(Result::ok)
+                .flat_map(expand_shorthand)
                 .collect(),
         })
     }
 }
 pub fn stylesheet(css: &str) -> StyleSheet {
+    if css.len() > 8 * 1024 * 1024 {
+        return StyleSheet {
+            rules: Vec::new(),
+            unsupported: vec!["stylesheet byte limit".into()],
+        };
+    }
     let mut parser = Parser::new(css);
     let mut rules = Rules {
         unsupported: Vec::new(),
     };
-    let parsed = StyleSheetParser::new(&mut parser, &mut rules)
+    let parsed: Vec<Rule> = StyleSheetParser::new(&mut parser, &mut rules)
         .filter_map(Result::ok)
         .collect();
+    for rule in &parsed {
+        for decl in &rule.declarations {
+            if !super::css::supported_property(&decl.property) && rules.unsupported.len() < 256 {
+                rules
+                    .unsupported
+                    .push(format!("property:{}", decl.property));
+            }
+        }
+    }
+    rules.unsupported.sort();
+    rules.unsupported.dedup();
     StyleSheet {
         rules: parsed,
         unsupported: rules.unsupported,
@@ -151,6 +175,7 @@ pub fn declarations(css: &str) -> Vec<Declaration> {
     let mut parser = Parser::new(css);
     RuleBodyParser::new(&mut parser, &mut Declarations)
         .filter_map(Result::ok)
+        .flat_map(expand_shorthand)
         .collect()
 }
 pub fn selectors(css: &str) -> Vec<ComplexSelector> {
@@ -383,21 +408,23 @@ fn atom(p: &mut Parser<'_>, depth: usize) -> Result<Quantity, Error> {
 }
 
 pub fn substitute(css: &str, vars: &std::collections::BTreeMap<String, String>) -> Option<String> {
-    expand(&mut Parser::new(css), vars, &mut Vec::new()).ok()
+    expand(&mut Parser::new(css), vars, &mut Vec::new(), 0).ok()
 }
 fn expand(
     p: &mut Parser<'_>,
     vars: &std::collections::BTreeMap<String, String>,
     stack: &mut Vec<String>,
+    depth: usize,
 ) -> Result<String, Error> {
-    if stack.len() > 32 {
+    if stack.len() > 32 || depth > 64 {
         return Err(ParseError::unexpected_token());
     }
     let mut out = String::new();
     while !p.is_exhausted() {
         let start = p.position();
-        let token = p.next_including_whitespace()?.clone();
+        let token = p.next_including_whitespace_and_comments()?.clone();
         match token {
+            Token::Comment(_) => out.push(' '),
             Token::Function(f) if f.eq_ignore_ascii_case("var") => {
                 let value = p.parse_nested_block(|p| {
                     let name = p.expect_ident()?.to_string();
@@ -406,7 +433,7 @@ fn expand(
                     }
                     let fallback = if !p.is_exhausted() {
                         p.expect_comma()?;
-                        Some(expand(p, vars, stack)?)
+                        Some(expand(p, vars, stack, depth + 1)?)
                     } else {
                         None
                     };
@@ -414,7 +441,7 @@ fn expand(
                         None
                     } else if let Some(raw) = vars.get(&name) {
                         stack.push(name);
-                        let result = expand(&mut Parser::new(raw), vars, stack).ok();
+                        let result = expand(&mut Parser::new(raw), vars, stack, depth + 1).ok();
                         stack.pop();
                         result
                     } else {
@@ -427,14 +454,14 @@ fn expand(
                 out.push_str(&value);
             }
             Token::Function(f) => {
-                let value = p.parse_nested_block(|p| expand(p, vars, stack))?;
+                let value = p.parse_nested_block(|p| expand(p, vars, stack, depth + 1))?;
                 out.push_str(&f);
                 out.push('(');
                 out.push_str(&value);
                 out.push(')');
             }
             Token::ParenthesisBlock => {
-                let value = p.parse_nested_block(|p| expand(p, vars, stack))?;
+                let value = p.parse_nested_block(|p| expand(p, vars, stack, depth + 1))?;
                 out.push('(');
                 out.push_str(&value);
                 out.push(')');
@@ -509,4 +536,188 @@ fn track_list(p: &mut Parser<'_>, depth: usize) -> Result<Vec<GridTrack>, Error>
         return Err(ParseError::unexpected_token());
     }
     Ok(out)
+}
+
+fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
+    let properties = if decl.property == "font" {
+        font_shorthand(&decl.value)
+    } else if decl.property == "flex" {
+        flex_shorthand(&decl.value)
+    } else {
+        return vec![decl];
+    };
+    properties
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(p, v)| Declaration {
+            property: p.to_owned(),
+            value: v,
+            important: decl.important,
+        })
+        .collect()
+}
+fn font_shorthand(css: &str) -> Option<Vec<(&'static str, String)>> {
+    use cssparser::ToCss;
+    let mut p = Parser::new(css);
+    let mut weight = "normal".to_owned();
+    let mut italic = "normal".to_owned();
+    let size = loop {
+        let token = p.next().ok()?.clone();
+        match &token {
+            Token::Ident(s) if s.eq_ignore_ascii_case("normal") => {}
+            Token::Ident(s)
+                if s.eq_ignore_ascii_case("italic") || s.eq_ignore_ascii_case("oblique") =>
+            {
+                italic = s.to_string()
+            }
+            Token::Ident(s) if s.eq_ignore_ascii_case("bold") => weight = s.to_string(),
+            Token::Number { value, .. } if *value >= 1.0 && *value <= 1000.0 => {
+                weight = value.to_string()
+            }
+            Token::Dimension { .. } | Token::Percentage { .. } => break token.to_css_string(),
+            _ => return None,
+        }
+    };
+    let line = if p.try_parse(|p| p.expect_delim('/')).is_ok() {
+        p.next().ok()?.to_css_string()
+    } else {
+        "normal".into()
+    };
+    let start = p.position();
+    consume(&mut p).ok()?;
+    let family = p.slice_from(start).trim().to_owned();
+    if family.is_empty() {
+        return None;
+    }
+    Some(vec![
+        ("font-weight", weight),
+        ("font-style", italic),
+        ("font-size", size),
+        ("line-height", line),
+        ("font-family", family),
+    ])
+}
+fn flex_shorthand(css: &str) -> Option<Vec<(&'static str, String)>> {
+    let values: Vec<_> = css.split_ascii_whitespace().collect();
+    let (grow, shrink, basis) = match values.as_slice() {
+        ["none"] => (0.0, 0.0, "auto".to_owned()),
+        ["auto"] => (1.0, 1.0, "auto".to_owned()),
+        ["initial"] => (0.0, 1.0, "auto".to_owned()),
+        [grow] => {
+            if let Ok(g) = grow.parse::<f64>() {
+                (g, 1.0, "0%".into())
+            } else {
+                Length::parse(grow)?;
+                (1.0, 1.0, grow.to_string())
+            }
+        }
+        [grow, second] => {
+            let g = grow.parse::<f64>().ok()?;
+            if let Ok(s) = second.parse::<f64>() {
+                (g, s, "0%".into())
+            } else {
+                Length::parse(second)?;
+                (g, 1.0, second.to_string())
+            }
+        }
+        [grow, shrink, basis] => {
+            Length::parse(basis)?;
+            (
+                grow.parse::<f64>().ok()?,
+                shrink.parse::<f64>().ok()?,
+                basis.to_string(),
+            )
+        }
+        _ => return None,
+    };
+    if !grow.is_finite() || !shrink.is_finite() || grow < 0.0 || shrink < 0.0 {
+        return None;
+    }
+    Some(vec![
+        ("flex-grow", grow.to_string()),
+        ("flex-shrink", shrink.to_string()),
+        ("flex-basis", basis),
+    ])
+}
+
+pub fn resolve_variables(
+    raw: &std::collections::BTreeMap<String, String>,
+) -> std::collections::BTreeMap<String, String> {
+    fn dependencies(p: &mut Parser<'_>, out: &mut Vec<String>, depth: usize) -> Result<(), Error> {
+        if depth > 64 {
+            return Err(ParseError::unexpected_token());
+        }
+        while !p.is_exhausted() {
+            match p.next()?.clone() {
+                Token::Function(name) => p.parse_nested_block(|p| {
+                    if name.eq_ignore_ascii_case("var") {
+                        out.push(p.expect_ident()?.to_string());
+                        if !p.is_exhausted() {
+                            p.expect_comma()?;
+                        }
+                    }
+                    dependencies(p, out, depth + 1)
+                })?,
+                Token::ParenthesisBlock | Token::SquareBracketBlock | Token::CurlyBracketBlock => {
+                    p.parse_nested_block(|p| dependencies(p, out, depth + 1))?
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    fn visit(
+        key: &str,
+        graph: &std::collections::BTreeMap<String, Vec<String>>,
+        states: &mut std::collections::HashMap<String, u8>,
+        path: &mut Vec<String>,
+        invalid: &mut std::collections::HashSet<String>,
+    ) {
+        if states.get(key) == Some(&1) {
+            if let Some(i) = path.iter().position(|k| k == key) {
+                invalid.extend(path[i..].iter().cloned());
+            }
+            return;
+        }
+        if states.get(key) == Some(&2) {
+            return;
+        }
+        if path.len() > 64 {
+            invalid.insert(key.to_owned());
+            return;
+        }
+        states.insert(key.to_owned(), 1);
+        path.push(key.to_owned());
+        if let Some(edges) = graph.get(key) {
+            for edge in edges {
+                if graph.contains_key(edge) {
+                    visit(edge, graph, states, path, invalid);
+                }
+            }
+        }
+        path.pop();
+        states.insert(key.to_owned(), 2);
+    }
+    let mut graph = std::collections::BTreeMap::new();
+    let mut invalid = std::collections::HashSet::new();
+    for (k, v) in raw {
+        let mut deps = Vec::new();
+        if dependencies(&mut Parser::new(v), &mut deps, 0).is_err() {
+            invalid.insert(k.clone());
+        }
+        graph.insert(k.clone(), deps);
+    }
+    let mut states = std::collections::HashMap::new();
+    for key in raw.keys() {
+        visit(key, &graph, &mut states, &mut Vec::new(), &mut invalid);
+    }
+    let valid: std::collections::BTreeMap<_, _> = raw
+        .iter()
+        .filter(|(k, _)| !invalid.contains(*k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    valid
+        .iter()
+        .filter_map(|(k, v)| substitute(v, &valid).map(|v| (k.clone(), v)))
+        .collect()
 }

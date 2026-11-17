@@ -507,12 +507,23 @@ impl View {
     /// their default (no) answer immediately.
     pub fn set_rendering_backend(&mut self, backend: crate::native_engine::RenderingBackend) {
         self.rendering_backend = backend;
+        if backend == crate::native_engine::RenderingBackend::Blitz {
+            self.native_document = None;
+            self.native_hover = None;
+            self.native_down = None;
+        }
         if backend == crate::native_engine::RenderingBackend::WegaNative
             && self.native_document.is_none()
         {
             self.native_document = Some(Rc::new(RefCell::new(
-                crate::native_engine::NativeDocument::new(self.document.clone()),
+                crate::native_engine::NativeDocument::with_font_source(
+                    self.document.clone(),
+                    self.network.fonts.clone(),
+                ),
             )));
+        }
+        if let Some(native) = &self.native_document {
+            native.borrow_mut().csp = Some(self.csp.clone());
         }
         if let Some(dom) = &self.dom {
             *dom.native_document.borrow_mut() =
@@ -753,11 +764,17 @@ impl View {
         self.native_document =
             if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
                 Some(Rc::new(RefCell::new(
-                    crate::native_engine::NativeDocument::new(self.document.clone()),
+                    crate::native_engine::NativeDocument::with_font_source(
+                        self.document.clone(),
+                        self.network.fonts.clone(),
+                    ),
                 )))
             } else {
                 None
             };
+        if let Some(native) = &self.native_document {
+            native.borrow_mut().csp = Some(self.csp.clone());
+        }
         self.script_failure = None;
         self.document_revision = document_revision;
         self.scheduler.replace(document_revision);
@@ -2681,9 +2698,12 @@ impl View {
         let (scene, animating) =
             if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
                 let native_doc = self.native_document.get_or_insert_with(|| {
-                    Rc::new(RefCell::new(crate::native_engine::NativeDocument::new(
-                        self.document.clone(),
-                    )))
+                    Rc::new(RefCell::new(
+                        crate::native_engine::NativeDocument::with_font_source(
+                            self.document.clone(),
+                            self.network.fonts.clone(),
+                        ),
+                    ))
                 });
                 let mut native_doc = native_doc.borrow_mut();
                 native_doc.viewport = viewport;
@@ -2986,8 +3006,20 @@ impl crate::inspector::PagePort for View {
     > {
         if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
             if let Some(native_doc) = &self.native_document {
+                if node.document != document {
+                    return Err(wega_protocol::inspector::InspectorError::new(
+                        wega_protocol::inspector::InspectorErrorCode::StaleDocument,
+                        "Node belongs to a replaced document",
+                    ));
+                }
                 let key = NodeKey::from_u64(node.key);
                 let native_doc = native_doc.borrow();
+                if native_doc.doc.borrow().node(key).is_none() {
+                    return Err(wega_protocol::inspector::InspectorError::new(
+                        wega_protocol::inspector::InspectorErrorCode::StaleNode,
+                        "Node was dropped",
+                    ));
+                }
                 return Ok(native_doc.inspect_geometry_report(document, key));
             }
         }
@@ -3165,6 +3197,87 @@ impl crate::inspector::PagePort for View {
                 },
             },
         })
+    }
+}
+
+impl View {
+    fn native_pointer_input(&mut self, pointer: Pointer) {
+        if self.frozen || !self.scheduler.script_allowed() {
+            return;
+        }
+        let Some(native) = self.native_document.clone() else {
+            return;
+        };
+        let hovered = if pointer.kind == PointerKind::Leave {
+            None
+        } else {
+            let mut native = native.borrow_mut();
+            native.ensure_layout();
+            native.element_at(Point {
+                x: pointer.x as f64,
+                y: pointer.y as f64,
+            })
+        };
+        let previous = self.native_hover;
+        self.native_hover = hovered;
+        if previous != hovered {
+            self.hover_changed(
+                previous.map(ToNodeId::node_id),
+                hovered.map(ToNodeId::node_id),
+                &pointer,
+            );
+        }
+        let target = hovered
+            .map(ToNodeId::node_id)
+            .or_else(|| self.document.borrow().try_root_element().map(|n| n.id));
+        let Some(target) = target else {
+            return;
+        };
+        match pointer.kind {
+            PointerKind::Leave => {}
+            PointerKind::Move => {
+                if !self.dispatch_pointer("pointermove", target, &pointer, None) {
+                    self.dispatch_pointer("mousemove", target, &pointer, None);
+                }
+            }
+            PointerKind::Down => {
+                self.activate();
+                self.native_down = hovered;
+                let cancelled = self.dispatch_pointer("pointerdown", target, &pointer, None)
+                    || self.dispatch_pointer("mousedown", target, &pointer, None);
+                if !cancelled {
+                    let focusable = self.document.borrow().node(target.key()).is_some_and(|n| {
+                        n.element_name().is_some_and(|e| {
+                            matches!(e.local, "input" | "button" | "select" | "textarea" | "a")
+                        }) || n.attr("tabindex").is_some()
+                    });
+                    if focusable {
+                        let _ = self.document.borrow_mut().set_focus(target.key());
+                    }
+                }
+            }
+            PointerKind::Up => {
+                self.activate();
+                self.dispatch_pointer("pointerup", target, &pointer, None);
+                self.dispatch_pointer("mouseup", target, &pointer, None);
+                if self.native_down.take() == hovered && hovered.is_some() && pointer.button == 0 {
+                    if let Some(event) = self.pointer_event(target, &pointer) {
+                        self.click_event(target, event, Some(&pointer));
+                    }
+                }
+            }
+            PointerKind::Wheel => {
+                if !self.dispatch_pointer("wheel", target, &pointer, None) {
+                    native.borrow_mut().scroll_by_at(
+                        target.key(),
+                        pointer.delta_x,
+                        pointer.delta_y,
+                    );
+                    self.run("window.dispatchEvent(new Event('scroll'))", "wega:scroll");
+                }
+            }
+        }
+        self.frame.invalidate();
     }
 }
 
@@ -3501,86 +3614,5 @@ mod tests {
             assert_eq!(val[kind]["loaded"], false, "{kind}");
             assert_eq!(val[kind]["code"], 4, "{kind}");
         }
-    }
-}
-
-impl View {
-    fn native_pointer_input(&mut self, pointer: Pointer) {
-        if self.frozen || !self.scheduler.script_allowed() {
-            return;
-        }
-        let Some(native) = self.native_document.clone() else {
-            return;
-        };
-        let hovered = if pointer.kind == PointerKind::Leave {
-            None
-        } else {
-            let mut native = native.borrow_mut();
-            native.ensure_layout();
-            native.element_at(Point {
-                x: pointer.x as f64,
-                y: pointer.y as f64,
-            })
-        };
-        let previous = self.native_hover;
-        self.native_hover = hovered;
-        if previous != hovered {
-            self.hover_changed(
-                previous.map(ToNodeId::node_id),
-                hovered.map(ToNodeId::node_id),
-                &pointer,
-            );
-        }
-        let target = hovered
-            .map(ToNodeId::node_id)
-            .or_else(|| self.document.borrow().try_root_element().map(|n| n.id));
-        let Some(target) = target else {
-            return;
-        };
-        match pointer.kind {
-            PointerKind::Leave => {}
-            PointerKind::Move => {
-                if !self.dispatch_pointer("pointermove", target, &pointer, None) {
-                    self.dispatch_pointer("mousemove", target, &pointer, None);
-                }
-            }
-            PointerKind::Down => {
-                self.activate();
-                self.native_down = hovered;
-                let cancelled = self.dispatch_pointer("pointerdown", target, &pointer, None)
-                    || self.dispatch_pointer("mousedown", target, &pointer, None);
-                if !cancelled {
-                    let focusable = self.document.borrow().node(target.key()).is_some_and(|n| {
-                        n.element_name().is_some_and(|e| {
-                            matches!(e.local, "input" | "button" | "select" | "textarea" | "a")
-                        }) || n.attr("tabindex").is_some()
-                    });
-                    if focusable {
-                        let _ = self.document.borrow_mut().set_focus(target.key());
-                    }
-                }
-            }
-            PointerKind::Up => {
-                self.activate();
-                self.dispatch_pointer("pointerup", target, &pointer, None);
-                self.dispatch_pointer("mouseup", target, &pointer, None);
-                if self.native_down.take() == hovered && hovered.is_some() && pointer.button == 0 {
-                    if let Some(event) = self.pointer_event(target, &pointer) {
-                        self.click_event(target, event, Some(&pointer));
-                    }
-                }
-            }
-            PointerKind::Wheel => {
-                if !self.dispatch_pointer("wheel", target, &pointer, None) {
-                    native.borrow_mut().scroll_by_at(
-                        target.key(),
-                        pointer.delta_x,
-                        pointer.delta_y,
-                    );
-                    self.run("window.dispatchEvent(new Event('scroll'))", "wega:scroll");
-                }
-            }
-        }
-        self.frame.invalidate();
     }
 }

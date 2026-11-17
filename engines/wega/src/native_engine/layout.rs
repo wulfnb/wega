@@ -47,6 +47,9 @@ pub struct LayoutBox {
     pub lines: Vec<LineBox>,
     pub text_content: Option<String>,
     pub fragments: Vec<Rect>,
+    pub image: Option<peniko::ImageData>,
+    pub is_root: bool,
+    pub flow_margin_top: f64,
     pub table_col_span: usize,
     pub table_row_span: usize,
     pub scroll_offset: Point,
@@ -74,6 +77,9 @@ impl LayoutBox {
             lines: Vec::new(),
             text_content: None,
             fragments: Vec::new(),
+            image: None,
+            is_root: false,
+            flow_margin_top: 0.0,
             table_col_span: 1,
             table_row_span: 1,
             scroll_offset: Point::default(),
@@ -146,6 +152,10 @@ impl LayoutBox {
 // BOX TREE GENERATOR
 // ---------------------------------------------------------------------------
 
+/// Bounded native recursion on the 8 MiB engine thread. The larger legacy
+/// layout limit is not safe for native debug frames (252-depth probe timed out).
+pub const MAX_NATIVE_LAYOUT_DEPTH: usize = 128;
+
 pub fn build_box_tree<D: DocumentView>(
     doc: &D,
     node_key: NodeKey,
@@ -153,11 +163,18 @@ pub fn build_box_tree<D: DocumentView>(
     author_sheets: &[&StyleSheet],
 ) -> Option<LayoutBox> {
     let mut pending = vec![(node_key, 0usize)];
+    let mut node_count = 0usize;
+    let mut text_bytes = 0usize;
     while let Some((key, depth)) = pending.pop() {
-        if depth > wega_dom::layout::MAX_LAYOUT_DEPTH {
+        node_count += 1;
+        if depth > MAX_NATIVE_LAYOUT_DEPTH || node_count > 30_000 || text_bytes > 4 * 1024 * 1024 {
             return None;
         }
         if let Some(n) = doc.node(key) {
+            text_bytes = text_bytes.saturating_add(n.text().map(str::len).unwrap_or(0));
+            if text_bytes > 4 * 1024 * 1024 {
+                return None;
+            }
             pending.extend(n.children().map(|k| (k, depth + 1)));
         }
     }
@@ -190,6 +207,11 @@ fn build_box_tree_inner<D: DocumentView>(
             };
 
             let mut layout_box = LayoutBox::new(Some(node_key), box_type, style.clone());
+            layout_box.is_root = node.element_name().is_some_and(|n| n.local == "html")
+                && node
+                    .parent()
+                    .and_then(|p| doc.node(p))
+                    .is_some_and(|n| n.kind() == NodeKind::Document);
 
             if node
                 .element_name()
@@ -260,8 +282,11 @@ fn build_box_tree_inner<D: DocumentView>(
                             current_inlines.push(child);
                         } else {
                             if !current_inlines.is_empty() {
-                                let mut anon =
-                                    LayoutBox::new(None, BoxType::AnonymousBlock, style.clone());
+                                let mut anon = LayoutBox::new(
+                                    None,
+                                    BoxType::AnonymousBlock,
+                                    anonymous_style(&style),
+                                );
                                 anon.children = std::mem::take(&mut current_inlines);
                                 clustered.push(anon);
                             }
@@ -269,7 +294,8 @@ fn build_box_tree_inner<D: DocumentView>(
                         }
                     }
                     if !current_inlines.is_empty() {
-                        let mut anon = LayoutBox::new(None, BoxType::AnonymousBlock, style.clone());
+                        let mut anon =
+                            LayoutBox::new(None, BoxType::AnonymousBlock, anonymous_style(&style));
                         anon.children = current_inlines;
                         clustered.push(anon);
                     }
@@ -299,6 +325,7 @@ fn build_box_tree_inner<D: DocumentView>(
                 ..Default::default()
             };
             let mut root_box = LayoutBox::new(Some(node_key), BoxType::Block, root_style.clone());
+            root_box.is_root = true;
             for child_key in node.children() {
                 if let Some(child_box) =
                     build_box_tree_inner(doc, child_key, Some(&root_style), author_sheets)
@@ -323,6 +350,71 @@ pub struct LayoutContext {
 }
 
 pub fn perform_layout(root: &mut LayoutBox, ctx: &LayoutContext) {
+    fn units(b: &mut LayoutBox, ctx: &LayoutContext) {
+        let cv = |l: &mut Length| {
+            *l = match *l {
+                Length::Vw(v) => Length::Px(v * ctx.viewport_width / 100.0),
+                Length::Vh(v) => Length::Px(v * ctx.viewport_height / 100.0),
+                Length::Px(v) => Length::Px(v.clamp(-16_777_216.0, 16_777_216.0)),
+                l => l,
+            };
+        };
+        let s = &mut b.style;
+        for l in [
+            &mut s.width,
+            &mut s.height,
+            &mut s.min_width,
+            &mut s.max_width,
+            &mut s.min_height,
+            &mut s.max_height,
+            &mut s.top,
+            &mut s.left,
+            &mut s.right,
+            &mut s.bottom,
+            &mut s.flex_basis,
+            &mut s.transform_origin.0,
+            &mut s.transform_origin.1,
+        ] {
+            cv(l);
+        }
+        for r in [&mut s.margin, &mut s.padding] {
+            for l in [&mut r.top, &mut r.right, &mut r.bottom, &mut r.left] {
+                cv(l);
+            }
+        }
+        fn track(t: &mut GridTrack, ctx: &LayoutContext) {
+            match t {
+                GridTrack::Length(l) => {
+                    *l = match *l {
+                        Length::Vw(v) => Length::Px(v * ctx.viewport_width / 100.0),
+                        Length::Vh(v) => Length::Px(v * ctx.viewport_height / 100.0),
+                        Length::Px(v) => Length::Px(v.clamp(-16_777_216.0, 16_777_216.0)),
+                        l => l,
+                    }
+                }
+                GridTrack::MinMax(l, max) => {
+                    let mut min = GridTrack::Length(*l);
+                    track(&mut min, ctx);
+                    if let GridTrack::Length(v) = min {
+                        *l = v;
+                    }
+                    track(max, ctx);
+                }
+                _ => {}
+            }
+        }
+        for t in s
+            .grid_template_columns
+            .iter_mut()
+            .chain(&mut s.grid_template_rows)
+        {
+            track(t, ctx);
+        }
+        for c in &mut b.children {
+            units(c, ctx);
+        }
+    }
+    units(root, ctx);
     let containing_block = Rect {
         x: 0.0,
         y: 0.0,
@@ -403,6 +495,8 @@ fn layout_block_or_flow(
         left: box_node.style.borders.left.width,
     };
     box_node.margin = resolve_insets(&box_node.style.margin, cb_w, fs, rfs);
+    box_node.flow_margin_top = collapsed_top(box_node, cb_w, ctx);
+    let collapse_children = collapses_top(box_node, cb_w, ctx);
 
     let total_border_w = box_node.border.left + box_node.border.right;
     let total_padding_w = box_node.padding.left + box_node.padding.right;
@@ -478,9 +572,18 @@ fn layout_block_or_flow(
         }
         Length::Em(em) => em * fs,
         Length::Rem(rem) => rem * rfs,
-        Length::Calc(_) => box_node.style.width.resolve(cb_w, fs, rfs),
+        Length::Calc(_) | Length::Vw(_) | Length::Vh(_) => {
+            box_node.style.width.resolve(cb_w, fs, rfs)
+        }
     };
 
+    if box_node.style.width == Length::Auto && box_node.style.height != Length::Auto {
+        if let Some(image) = &box_node.image {
+            content_w = box_node.style.height.resolve(effective_cb.height, fs, rfs)
+                * image.width as f64
+                / image.height.max(1) as f64;
+        }
+    }
     // Apply min-width and max-width constraints
     content_w = clamp_dimension(
         content_w,
@@ -541,7 +644,7 @@ fn layout_block_or_flow(
             effective_cb.y + box_node.margin.top
         }
     } else {
-        containing_block.y + box_node.margin.top
+        containing_block.y + box_node.flow_margin_top
     };
 
     box_node.border_box.x = x;
@@ -573,7 +676,11 @@ fn layout_block_or_flow(
             .iter()
             .all(|c| c.box_type == BoxType::Inline || c.box_type == BoxType::Text);
 
-    let mut content_h = 0.0;
+    let mut content_h = box_node
+        .image
+        .as_ref()
+        .map(|image| content_w * image.height as f64 / image.width.max(1) as f64)
+        .unwrap_or(0.0);
 
     if is_ifc {
         let lines = layout_inline_formatting_context(
@@ -609,11 +716,7 @@ fn layout_block_or_flow(
             if child_is_out_of_flow {
                 continue;
             }
-            let top = child
-                .style
-                .margin
-                .top
-                .resolve(content_w, child.style.font_size, rfs);
+            let top = collapsed_top(child, content_w, ctx);
             if !first {
                 let collapsed =
                     previous_bottom.max(top).max(0.0) + previous_bottom.min(top).min(0.0);
@@ -621,7 +724,7 @@ fn layout_block_or_flow(
             }
             let child_cb = Rect {
                 x: inner_cb.x,
-                y: cursor_y,
+                y: cursor_y - if first && collapse_children { top } else { 0.0 },
                 width: inner_cb.width,
                 height: inner_cb.height,
             };
@@ -629,7 +732,12 @@ fn layout_block_or_flow(
 
             if !child_is_out_of_flow {
                 let child_outer_h =
-                    child.border_box.height + child.margin.top + child.margin.bottom;
+                    child.border_box.height + child.flow_margin_top + child.margin.bottom
+                        - if first && collapse_children {
+                            child.flow_margin_top
+                        } else {
+                            0.0
+                        };
                 cursor_y += child_outer_h;
                 content_h = cursor_y - inner_cb.y;
                 previous_bottom = child.margin.bottom;
@@ -676,7 +784,9 @@ fn layout_block_or_flow(
         }
         Length::Em(em) => em * fs,
         Length::Rem(rem) => rem * rfs,
-        Length::Calc(_) => box_node.style.height.resolve(cb_h, fs, rfs),
+        Length::Calc(_) | Length::Vw(_) | Length::Vh(_) => {
+            box_node.style.height.resolve(cb_h, fs, rfs)
+        }
     };
 
     // Apply min-height and max-height constraints
@@ -782,6 +892,9 @@ fn translate_tree(b: &mut LayoutBox, dx: f64, dy: f64) {
     }
 }
 fn intrinsic_width(b: &LayoutBox, min: bool) -> f64 {
+    if let Some(image) = &b.image {
+        return image.width as f64;
+    }
     // Shape with Unicode break opportunities, rather than counting characters.
     let runs = super::text::shape_inline(
         std::slice::from_ref(b),
@@ -1366,8 +1479,8 @@ fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContex
             - b.style.row_gap * (rs - 1) as f64)
             .max(0.0)
             / *rs as f64;
-        for j in *row..row + rs {
-            heights[j] = heights[j].max(height);
+        for h in heights.iter_mut().skip(*row).take(*rs) {
+            *h = h.max(height);
         }
     }
     let row_sizes = track_sizes(
@@ -1530,8 +1643,8 @@ fn layout_table(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutConte
             None,
         );
         let height = (c.border_box.height - spacing * (rs - 1) as f64).max(0.0) / *rs as f64;
-        for rr in *r..r + rs {
-            heights[rr] = heights[rr].max(height);
+        for h in heights.iter_mut().skip(*r).take(*rs) {
+            *h = h.max(height);
         }
     }
     for (r, path) in paths.iter().enumerate() {
@@ -1598,15 +1711,7 @@ fn layout_table(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutConte
 // ---------------------------------------------------------------------------
 
 pub fn hit_test_node(box_node: &LayoutBox, point: Point) -> Option<NodeKey> {
-    if !rect_contains(&box_node.border_box, point) {
-        return None;
-    }
-    for child in box_node.children.iter().rev() {
-        if let Some(target) = hit_test_node(child, point) {
-            return Some(target);
-        }
-    }
-    box_node.node
+    super::display_list::DisplayList::build(box_node, &[], 1.0).hit_test(point)
 }
 
 fn assign_inline_geometry(children: &mut [LayoutBox], lines: &[LineBox], x: f64, y: f64) {
@@ -1644,5 +1749,61 @@ fn assign_inline_geometry(children: &mut [LayoutBox], lines: &[LineBox], x: f64,
             });
         }
         assign_inline_geometry(&mut child.children, lines, x, y);
+    }
+}
+
+fn anonymous_style(parent: &ComputedStyle) -> ComputedStyle {
+    ComputedStyle {
+        display: Display::Block,
+        color: parent.color,
+        visible: parent.visible,
+        pointer_events: parent.pointer_events,
+        font_size: parent.font_size,
+        line_height: parent.line_height,
+        line_height_factor: parent.line_height_factor,
+        font_family: parent.font_family.clone(),
+        font_weight: parent.font_weight,
+        font_italic: parent.font_italic,
+        white_space: parent.white_space,
+        text_align: parent.text_align,
+        custom_properties: parent.custom_properties.clone(),
+        ..Default::default()
+    }
+}
+
+fn collapse_margins(a: f64, b: f64) -> f64 {
+    a.max(b).max(0.0) + a.min(b).min(0.0)
+}
+fn collapses_top(b: &LayoutBox, width: f64, ctx: &LayoutContext) -> bool {
+    !b.is_root
+        && matches!(b.box_type, BoxType::Block | BoxType::AnonymousBlock)
+        && b.style.overflow_x == Overflow::Visible
+        && b.style.overflow_y == Overflow::Visible
+        && b.style.borders.top.width == 0.0
+        && b.style
+            .padding
+            .top
+            .resolve(width, b.style.font_size, ctx.font_size_root)
+            == 0.0
+        && b.children
+            .iter()
+            .find(|c| !matches!(c.style.position, Position::Absolute | Position::Fixed))
+            .is_some_and(|c| matches!(c.box_type, BoxType::Block | BoxType::AnonymousBlock))
+}
+fn collapsed_top(b: &LayoutBox, width: f64, ctx: &LayoutContext) -> f64 {
+    let own = b
+        .style
+        .margin
+        .top
+        .resolve(width, b.style.font_size, ctx.font_size_root);
+    if collapses_top(b, width, ctx) {
+        let child = b
+            .children
+            .iter()
+            .find(|c| !matches!(c.style.position, Position::Absolute | Position::Fixed))
+            .unwrap();
+        collapse_margins(own, collapsed_top(child, width, ctx))
+    } else {
+        own
     }
 }

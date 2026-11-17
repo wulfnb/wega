@@ -340,6 +340,7 @@ pub struct BaseDocument {
     /// added, replaced or removed), so that CSSOM wrappers can detect that
     /// their cached rule data is stale.
     pub(crate) stylesheet_generation: u64,
+    resource_generation:u64,
     /// Raw, broker-authorized CSS and request URL. Native style resolution must
     /// parse this source itself, never serialize Stylo computed declarations.
     pub(crate) stylesheet_sources: BTreeMap<NodeId, (String, String)>,
@@ -501,6 +502,7 @@ impl BaseDocument {
             url: base_url,
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
+            resource_generation:0,
             stylesheet_sources: BTreeMap::new(),
             font_ctx,
             #[cfg(feature = "parallel-construct")]
@@ -1185,6 +1187,8 @@ impl BaseDocument {
 
     /// Iterate over the author stylesheets (from `<style>` and `<link>` nodes)
     /// currently associated with this document
+    /// Completed authorized resources, independent of style/layout processing.
+    pub fn resource_generation(&self)->u64 {self.resource_generation}
     pub fn stylesheet_source(&self, node: NodeId) -> Option<(&str, &str)> {
         self.stylesheet_sources.get(&node).map(|(source, url)| (source.as_str(), url.as_str()))
     }
@@ -1331,6 +1335,7 @@ impl BaseDocument {
             }
         };
 
+        self.resource_generation=self.resource_generation.wrapping_add(1);
         match resource {
             Resource::Css(css, source, requested_url) => {
                 let node_id = res.node_id.unwrap();

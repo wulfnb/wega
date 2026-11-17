@@ -166,6 +166,11 @@ fn base64(bytes: &[u8]) -> String {
 }
 
 impl Csp {
+    /// Append-only policy revision for cache invalidation.
+    pub fn generation(&self) -> usize {
+        self.policies.len()
+    }
+
     /// Add one Content-Security-Policy header or meta value (comma-separated
     /// values are separate policies).
     pub fn add(&mut self, value: &str) {
