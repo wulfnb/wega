@@ -1312,8 +1312,16 @@ impl View {
         }
     }
     pub fn accessibility_tree(&self) -> Option<String> {
-        if self.native_document.is_some() {
-            return None;
+        if let Some(native) = &self.native_document {
+            let mut native = native.borrow_mut();
+            native.ensure_layout();
+            let doc = self.document.borrow();
+            return serde_json::to_string(&crate::native_engine::accessibility::build(
+                &native,
+                &*doc,
+                doc.focused(),
+            ))
+            .ok();
         }
         self.document
             .borrow_mut()
@@ -2510,6 +2518,7 @@ impl View {
                         NativeEvent::new("input", target.key()),
                         NativeEvent::new("change", target.key()),
                     ]);
+                    self.document.borrow_mut().record_external_mutation();
                     self.run(&source, "wega:native-toggle");
                     self.frame.invalidate();
                     return;
@@ -2899,11 +2908,8 @@ impl View {
 
         self.frame
             .recorded(another_frame || animating || frames_animating);
-        if self.accessibility_enabled && self.native_document.is_none() {
-            let update = self.document.borrow_mut().build_accessibility_tree();
-            if let Ok(json) = serde_json::to_string(&update) {
-                // Publish the newest complete tree; animations must not grow an
-                // unbounded queue of superseded accessibility snapshots.
+        if self.accessibility_enabled {
+            if let Some(json) = self.accessibility_tree() {
                 self.events
                     .retain(|event| !matches!(event, PageEvent::Accessibility(_)));
                 self.events.push_back(PageEvent::Accessibility(json));

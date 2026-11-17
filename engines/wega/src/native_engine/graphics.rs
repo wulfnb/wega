@@ -228,37 +228,15 @@ pub fn inline_svg<D: DocumentView>(doc: &D, key: NodeKey) -> Option<SvgGraphic> 
     }
     let mut xml = String::new();
     write(doc, key, &mut xml, 0, &mut 0)?;
-    let svg =
-        blitz_dom::node::SvgImageData::from_data(xml.as_bytes(), &usvg::Options::default()).ok()?;
-    Some(SvgGraphic::from(&svg))
-}
-
-pub fn raster(image: &blitz_dom::node::RasterImageData) -> peniko::ImageData {
-    peniko::ImageData {
-        data: image.data.clone(),
-        format: peniko::ImageFormat::Rgba8,
-        alpha_type: peniko::ImageAlphaType::Alpha,
-        width: image.width,
-        height: image.height,
-    }
+    super::dom_adapter::decode_svg(xml.as_bytes())
 }
 
 #[derive(Debug, Clone)]
 pub struct SvgGraphic {
     pub tree: Arc<usvg::Tree>,
-    view_box: Option<usvg::NonZeroRect>,
-    aspect: svgtypes::AspectRatio,
+    pub(crate) view_box: Option<usvg::NonZeroRect>,
+    pub(crate) aspect: svgtypes::AspectRatio,
     pub degenerate: bool,
-}
-impl From<&blitz_dom::node::SvgImageData> for SvgGraphic {
-    fn from(svg: &blitz_dom::node::SvgImageData) -> Self {
-        Self {
-            tree: svg.tree.clone(),
-            view_box: svg.intrinsic_dimensions.view_box,
-            aspect: svg.intrinsic_dimensions.preserve_aspect_ratio,
-            degenerate: svg.intrinsic_dimensions.degenerate_view_box,
-        }
-    }
 }
 impl SvgGraphic {
     pub fn transform(&self, w: f64, h: f64) -> kurbo::Affine {

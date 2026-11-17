@@ -1652,6 +1652,7 @@ impl Dom {
                     }
                     node.mark_ancestors_dirty();
                 }
+                doc.record_external_mutation();
                 self.invalidate();
                 Value::Null
             },
@@ -1664,6 +1665,7 @@ impl Dom {
                     if let Some(element)=node.element_data_mut(){element.set_checkbox_input_checked(checked);}
                     node.mark_ancestors_dirty();
                 });
+                doc.record_external_mutation();
                 Value::Null
             },
             // Blitz creates native text editors during layout. Initialize a

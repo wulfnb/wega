@@ -141,3 +141,30 @@ Readable glyphs or successful loading do not establish site compatibility.
 No public interactions were exercised. Evidence/logs:
 `/private/tmp/wega-round5-gate/`, `/private/tmp/wega-round5-public/` and
 `/private/tmp/wega-round5-clippy.log`. Round 6 and final validation pending.
+
+Round 6 checkpoint: native AccessKit trees expose supported roles, names,
+explicit/implicit/ARIA labels, values (passwords masked), toggles, focus and
+transformed/scrolled native bounds. Tree/action updates share the existing DOM;
+there is no reference-layout flush. Cross-frame accessibility grafts, complete
+ARIA/AccName and text navigation remain PARTIAL/UNSUPPORTED.
+
+Blitz-specific CSSOM/resource/font/control bridges are isolated in
+`native_engine/dom_adapter.rs` behind `NativeResources`. CSS, layout, shaping,
+graphics/display and accessibility consume Wega/native types. `NativeDocument`
+still holds the same `Rc<RefCell<BlitzDocument>>` used by V8; this is reduced
+coupling, not complete DOM-adapter independence. Broker, origin/CSP, sandbox,
+canvas readback and V8 authority paths remain enforced; no D4 work.
+
+Measured debug fixture (200 nodes/rules, 10 samples): geometry-query p50
+35.865ms -> 0.851ms, mutation stylesheet processing 6.433ms -> 0.071ms,
+mutation relayout 75.277ms -> 68.845ms. Geometry snapshots and compiled sheets
+are cached with mutation/resource/policy/owner/viewport/scroll invalidation.
+Focus/selection/toggle state changes also invalidate their native representation.
+These are local fixture observations, not whole-browser performance claims.
+Evidence: `/private/tmp/wega-round6-before/`, `/private/tmp/wega-round6-after/`.
+
+16 targeted tests passed; native broker/frame/origin/V8 security selection
+26 passed, one existing required-worker test pending signed-helper validation.
+Logs: `/private/tmp/wega-round6-checkpoint.log`,
+`/private/tmp/wega-round6-security.log`, `/private/tmp/wega-round6-clippy-final.log`.
+Final workspace/native/visual/security/sandbox/release validation remains pending.

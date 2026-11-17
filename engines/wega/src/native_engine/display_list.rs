@@ -254,6 +254,39 @@ impl DisplayList {
             }
         }
     }
+    pub(crate) fn geometry_snapshot(
+        &self,
+    ) -> (
+        std::collections::HashMap<NodeKey, Vec<Rect>>,
+        std::collections::HashMap<NodeKey, Affine>,
+    ) {
+        let mut rects: std::collections::HashMap<NodeKey, Vec<Rect>> =
+            std::collections::HashMap::new();
+        let mut transforms = std::collections::HashMap::new();
+        let mut current = Affine::IDENTITY;
+        let mut stack = Vec::new();
+        for item in &self.items {
+            match item {
+                DisplayItem::PushTransform { transform } => {
+                    stack.push(current);
+                    current *= *transform;
+                }
+                DisplayItem::PopTransform => current = stack.pop().unwrap_or(Affine::IDENTITY),
+                DisplayItem::HitRegion { node, rect, .. } => {
+                    transforms.entry(*node).or_insert(current);
+                    let r = current.transform_rect_bbox(kr(*rect));
+                    rects.entry(*node).or_default().push(Rect {
+                        x: r.x0,
+                        y: r.y0,
+                        width: r.width(),
+                        height: r.height(),
+                    });
+                }
+                _ => {}
+            }
+        }
+        (rects, transforms)
+    }
     pub fn node_transform(&self, key: NodeKey) -> Option<Affine> {
         let mut current = Affine::IDENTITY;
         let mut stack = Vec::new();

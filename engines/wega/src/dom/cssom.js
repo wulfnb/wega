@@ -60,6 +60,7 @@
   }
   for (const name of ["HTMLStyleElement", "HTMLLinkElement"]) {
     Object.defineProperties(globalThis[name].prototype, {
+      media: { configurable: true, get() { return this.getAttribute("media") || ""; }, set(value) { this.setAttribute("media", String(value)); } },
       sheet: { configurable: true, get() { return sheet(semantics.ids(this)[0]); } },
       disabled: { configurable: true,
         get() { return call("sheetDisabled", semantics.ids(this)[0]); },
