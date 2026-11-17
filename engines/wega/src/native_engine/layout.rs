@@ -916,8 +916,6 @@ fn layout_block_or_flow(
         c.box_type == BoxType::Inline
             || c.box_type == BoxType::Text
             || c.box_type == BoxType::InlineBlock
-            || c.form_state.is_some()
-            || c.replaced_size().is_some()
     };
     let is_ifc = !box_node.children.is_empty() && box_node.children.iter().all(is_inline_level);
 

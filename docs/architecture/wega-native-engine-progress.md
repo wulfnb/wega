@@ -119,3 +119,25 @@ HTML CSS styling of SVG descendants, complete SVG DOM targeting, multilayer
 backgrounds, inset/multiple shadows, 3D transforms and decoded video remain
 unsupported/partial. Existing video function generates synthetic pixels and
 was deliberately not presented as decoded video support.
+
+Round 5 checkpoint: mandatory `scripts/native-compat-gate.py` fails without
+Chrome and enforces the original 8-channel / 1%-pixel / 0.5px geometry limits.
+Eleven new Chrome fixtures all pass (nine pixel-identical; forms 0.41349%,
+scrolling 0.47619%; all zero geometry error), plus the graphics gate and four
+legacy Chrome gates. The full gate passed 38 Rust tests including 1685/1685
+unmodified pinned DOM WPT assertions and seven frame tests. The unmodified
+native overflow reftest passes byte-for-byte. No tolerance was increased.
+Root fixes: block controls no longer become inline boxes, iframe body colors
+propagate to the viewport, and `overflow:clip` clips without programmatic scroll.
+Legacy comparison: 8/12 joint reference gates; remaining login appearance,
+table sizing, and reference/native transformed/scrolled geometry differences
+are recorded. Chrome confirms the pinned transform and scrolling behavior.
+
+Four public broker probes loaded without authentication or security bypass:
+example.com, CERN's original page, rust-lang.org and doc.rust-lang.org/std/.
+These remain PARTIAL: manual screenshot inspection found severe overlapping
+content on Rust's homepage, and only sidebar content visible initially on std.
+Readable glyphs or successful loading do not establish site compatibility.
+No public interactions were exercised. Evidence/logs:
+`/private/tmp/wega-round5-gate/`, `/private/tmp/wega-round5-public/` and
+`/private/tmp/wega-round5-clippy.log`. Round 6 and final validation pending.

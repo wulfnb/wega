@@ -38,7 +38,7 @@ fn corpus() -> Vec<Case> {
             "<form data-probe id=form style='width:300px;padding:20px'><h1>Sign in</h1><label>Email</label><input style='display:block;width:260px;height:32px' value='person@example.test'><label>Password</label><input type=password style='display:block;width:260px;height:32px'><button style='display:block;width:260px;height:36px'>Sign in</button></form>",
             None,
             0.0,
-            &["native input widgets and editable text painting unsupported"][..],
+            &["control typography and UA appearance remain partial"][..],
         ),
         (
             "dashboard",
@@ -73,7 +73,7 @@ fn corpus() -> Vec<Case> {
             "<div data-probe id=media style='width:320px;height:180px;background:#ddd'><img width=100 height=100 src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect width=%22100%22 height=%22100%22 fill=%22red%22/%3E%3C/svg%3E'><p>Media placeholder</p></div>",
             None,
             0.0,
-            &["native replaced image content unsupported"][..],
+            &["SVG image supported; inline formatting and UA defaults may differ"][..],
         ),
         (
             "dynamic",
@@ -227,6 +227,13 @@ fn deterministic_native_blitz_visual_corpus() {
                         600,
                         420,
                     );
+                    if std::env::var("WEGA_NATIVE_PINNED").as_deref() == Ok("1") {
+                        assert!(
+                            diff.within_tolerance,
+                            "Pinned legacy Chrome fixture {} regressed: {diff:?}",
+                            case.name
+                        );
+                    }
                     serde_json::json!({"geometry":geometry,"diff":diff})
                 },
             )

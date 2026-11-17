@@ -546,6 +546,44 @@ impl NativeDocument {
                 viewport.height_px as f64,
             ),
         );
+        // CSS canvas background propagates from the root, or the body when
+        // the root is transparent, including otherwise empty child documents.
+        let backdrop = {
+            let doc = self.doc.borrow();
+            let mut html = None;
+            let mut body = None;
+            let mut stack = vec![tree];
+            while let Some(b) = stack.pop() {
+                if let Some(name) = b
+                    .node
+                    .and_then(|k| doc.node(k))
+                    .and_then(NodeView::element_name)
+                {
+                    if name.local == "html" {
+                        html = Some(b.style.background_color);
+                    }
+                    if name.local == "body" {
+                        body = Some(b.style.background_color);
+                    }
+                }
+                stack.extend(&b.children);
+            }
+            html.filter(|c| c.a > 0).or(body)
+        };
+        if let Some(c) = backdrop.filter(|c| c.a > 0) {
+            scene.fill(
+                peniko::Fill::NonZero,
+                kurbo::Affine::IDENTITY,
+                peniko::Color::from_rgba8(c.r, c.g, c.b, c.a),
+                None,
+                &kurbo::Rect::new(
+                    0.0,
+                    0.0,
+                    viewport.width_px as f64,
+                    viewport.height_px as f64,
+                ),
+            );
+        }
         dl.render_into(&mut scene);
         self.timings.scene_ms = start.elapsed().as_secs_f64() * 1000.0;
         scene
@@ -786,10 +824,18 @@ impl NativeDocument {
             .ok_or(LayoutError::Stale(key))?;
         let client = b.padding_box();
         b.scroll_offset = Point {
-            x: point.x.clamp(0.0, (b.scroll_width - client.width).max(0.0)),
-            y: point
-                .y
-                .clamp(0.0, (b.scroll_height - client.height).max(0.0)),
+            x: if b.style.overflow_x == super::css::Overflow::Clip {
+                0.0
+            } else {
+                point.x.clamp(0.0, (b.scroll_width - client.width).max(0.0))
+            },
+            y: if b.style.overflow_y == super::css::Overflow::Clip {
+                0.0
+            } else {
+                point
+                    .y
+                    .clamp(0.0, (b.scroll_height - client.height).max(0.0))
+            },
         };
         Ok(())
     }

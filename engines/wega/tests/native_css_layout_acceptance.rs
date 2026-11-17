@@ -394,12 +394,9 @@ body { margin: 0; padding: 20px; font-family: sans-serif; background: #f4f6f8; }
     let chrome_bin = std::env::var("WEGA_CHROME_BIN").unwrap_or_else(|_| {
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".to_string()
     });
-    unsafe {
-        std::env::set_var("WEGA_CHROME_BIN", &chrome_bin);
-    }
 
     if let Some((chrome_png, chrome_geom)) =
-        visual::chrome(html, None, 0.0, "css_layout", temp_dir.path())
+        visual::chrome_with_binary(&chrome_bin, html, None, 0.0, "css_layout", temp_dir.path())
     {
         assert!(!chrome_png.is_empty(), "Chrome capture succeeded");
         let n_card = native_geom

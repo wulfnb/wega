@@ -18,6 +18,8 @@ fn controlled_public_native_compatibility() {
     for (name, url) in [
         ("example", "https://example.com/"),
         ("cern", "http://info.cern.ch/hypertext/WWW/TheProject.html"),
+        ("rust", "https://www.rust-lang.org/"),
+        ("rust-std", "https://doc.rust-lang.org/std/"),
     ] {
         let mut view = engine
             .create_view(wega_engine::Url::parse(url).unwrap())
@@ -34,7 +36,13 @@ fn controlled_public_native_compatibility() {
             continue;
         }
         view.poll();
-        let title = view.evaluate_json("document.title").unwrap();
+        let title = match view.evaluate_json("document.title") {
+            Ok(title) => title,
+            Err(error) => {
+                reports.push(serde_json::json!({"page":name,"url":url,"status":"BLOCKED","loads":false,"reason":error}));
+                continue;
+            }
+        };
         let text = view
             .evaluate_json("document.body ? document.body.textContent.slice(0,240) : ''")
             .unwrap();

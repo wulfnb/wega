@@ -374,6 +374,7 @@ pub enum Overflow {
     #[default]
     Visible,
     Hidden,
+    Clip,
     Scroll,
     Auto,
 }
@@ -383,6 +384,7 @@ impl Overflow {
         match s.trim().to_ascii_lowercase().as_str() {
             "visible" => Some(Self::Visible),
             "hidden" => Some(Self::Hidden),
+            "clip" => Some(Self::Clip),
             "scroll" => Some(Self::Scroll),
             "auto" => Some(Self::Auto),
             _ => None,

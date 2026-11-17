@@ -121,6 +121,16 @@ pub fn chrome(
     dir: &Path,
 ) -> Option<(Vec<u8>, serde_json::Value)> {
     let binary = std::env::var("WEGA_CHROME_BIN").ok()?;
+    chrome_with_binary(&binary, html, script, scroll, name, dir)
+}
+pub fn chrome_with_binary(
+    binary: &str,
+    html: &str,
+    script: Option<&str>,
+    scroll: f64,
+    name: &str,
+    dir: &Path,
+) -> Option<(Vec<u8>, serde_json::Value)> {
     let profile = tempfile::tempdir().unwrap();
     let source = format!(
         "{html}<script>addEventListener('load',()=>{{{};window.scrollTo(0,{});document.documentElement.setAttribute('data-wega-geometry',btoa(JSON.stringify(Array.from(document.querySelectorAll('[data-probe]')).map(e=>{{let r=e.getBoundingClientRect();return [e.id,r.x,r.y,r.width,r.height]}}))))}})</script>",
@@ -136,7 +146,7 @@ pub fn chrome(
                 .join("tests/support/chrome_capture.mjs"),
         )
         .args([
-            binary.as_str(),
+            binary,
             profile.path().to_str().unwrap(),
             file.to_str().unwrap(),
             screenshot.to_str().unwrap(),
