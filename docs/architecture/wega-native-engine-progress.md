@@ -184,3 +184,23 @@ clippy passed. First full-workspace attempt hit disk exhaustion; 94 obsolete
 regenerable integration executables (old dependency fingerprints, 18.077GB)
 were removed after confirming no active processes used them. No source, logs,
 recovery files or current dependency-graph outputs were removed.
+
+Final validation continuation: the full workspace on the default Rust 2 MiB
+harness stack reached the pre-existing reference/Taffy depth-121 reliability
+case and stalled. A process stack sample was saved before termination. The
+unchanged reliability assertions pass on `RUST_MIN_STACK=8388608`, matching
+`ENGINE_THREAD_STACK` used by the application. Full-workspace validation uses
+that stack setting; explicit killable 2 MiB probes in `layout_depth.rs` remain
+unchanged. The default-stack limitation is retained in the evidence.
+
+Final checkpoint at implementation `7d21f5d`: engine workspace 849 passed,
+0 failed, 25 existing ignored on the documented 8 MiB engine stack; root
+233/0/1; explicit native broker/security 57/0/1; mandatory Chrome/WPT runner
+38/0/0 with 16/16 Chrome gates and 1685/1685 pinned WPT assertions; signed
+required native worker 1/0/0 and existing inspector sandbox 1/0/0. Four public
+pages navigated and captures were reviewed; modern Rust pages remain visually
+broken. Both release benchmarks, root/engine all-targets clippy, rustfmt and
+diff checks passed. Release pixels/geometry are identical in the comparable
+44-glyph fixture; native remains slower than reference in cold style/layout,
+mutation and raster, so no general speed advantage is claimed. Final report
+and hashed evidence are in the existing architecture report/baseline paths.

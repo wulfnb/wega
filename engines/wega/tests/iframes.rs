@@ -429,7 +429,12 @@ fn frame_limits_bound_nesting_count_and_srcdoc_size() {
         "for (let i = 0; i < 200; i++) document.body.appendChild(document.createElement('iframe')); 0",
     );
     pump(&mut flood, |_| false);
-    assert_eq!(flood.live_frames(), 32);
+    assert_eq!(
+        flood.live_frames(),
+        32,
+        "frame limit diagnostics: {:?}",
+        flood.notices
+    );
     let (mut big, _e3) = open(&server, "localhost", "/blank");
     // The script layer's attribute budget refuses the oversized srcdoc before the engine does.
     assert!(big.evaluate_json("const f = document.createElement('iframe'); f.srcdoc = 'x'.repeat(5 * 1024 * 1024); document.body.appendChild(f); 0").is_err());

@@ -1,0 +1,637 @@
+[
+  {
+    "page": "boxes",
+    "chrome": {
+      "geometry": [
+        [
+          "a",
+          0,
+          0,
+          120,
+          70
+        ],
+        [
+          "b",
+          0,
+          70,
+          180,
+          50
+        ]
+      ],
+      "diff": {
+        "channel_tolerance": 8,
+        "pixel_threshold_fraction": 0.01,
+        "geometry_tolerance_px": 0.5,
+        "differing_pixels": 12,
+        "total_pixels": 252000,
+        "mismatch_fraction": 0.00004761904761904762,
+        "mean_absolute_channel_error": 0.0019940476190476192,
+        "max_channel_error": 171,
+        "geometry_max_error_px": 0.0,
+        "within_tolerance": true
+      }
+    },
+    "loads": true,
+    "native_ink_pixels": 0,
+    "native_geometry": [
+      [
+        "a",
+        0,
+        0,
+        120,
+        70
+      ],
+      [
+        "b",
+        0,
+        70,
+        180,
+        50
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "a",
+        0,
+        0,
+        120,
+        70
+      ],
+      [
+        "b",
+        0,
+        70,
+        180,
+        50
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 13,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.000051587301587301586,
+      "mean_absolute_channel_error": 0.003017857142857143,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "known_limitations": [],
+    "status": "COMPLETE"
+  },
+  {
+    "page": "article",
+    "chrome": {
+      "geometry": [
+        [
+          "article",
+          0,
+          0,
+          520,
+          164
+        ]
+      ],
+      "diff": {
+        "channel_tolerance": 8,
+        "pixel_threshold_fraction": 0.01,
+        "geometry_tolerance_px": 0.5,
+        "differing_pixels": 2407,
+        "total_pixels": 252000,
+        "mismatch_fraction": 0.009551587301587302,
+        "mean_absolute_channel_error": 0.6005565476190476,
+        "max_channel_error": 255,
+        "geometry_max_error_px": 0.0,
+        "within_tolerance": true
+      }
+    },
+    "loads": true,
+    "native_ink_pixels": 8124,
+    "native_geometry": [
+      [
+        "article",
+        0,
+        0,
+        520,
+        164
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "article",
+        0,
+        0,
+        520,
+        164
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "known_limitations": [
+      "font rasterization and UA typography differences"
+    ],
+    "status": "COMPLETE"
+  },
+  {
+    "page": "navigation",
+    "chrome": null,
+    "loads": true,
+    "native_ink_pixels": 224,
+    "native_geometry": [
+      [
+        "nav",
+        0,
+        0,
+        560,
+        64
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "nav",
+        0,
+        0,
+        560,
+        64
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 685,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0027182539682539682,
+      "mean_absolute_channel_error": 0.06355952380952382,
+      "max_channel_error": 154,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "known_limitations": [
+      "anonymous flex inline item blockification"
+    ],
+    "status": "COMPLETE"
+  },
+  {
+    "page": "login",
+    "chrome": null,
+    "loads": true,
+    "native_ink_pixels": 1813,
+    "native_geometry": [
+      [
+        "form",
+        0,
+        0,
+        300,
+        224
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "form",
+        0,
+        0,
+        300,
+        224
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 4612,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0183015873015873,
+      "mean_absolute_channel_error": 1.195529761904762,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": false
+    },
+    "known_limitations": [
+      "control typography and UA appearance remain partial"
+    ],
+    "status": "PARTIAL"
+  },
+  {
+    "page": "dashboard",
+    "chrome": null,
+    "loads": true,
+    "native_ink_pixels": 1641,
+    "native_geometry": [
+      [
+        "dashboard",
+        0,
+        0,
+        560,
+        120
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "dashboard",
+        0,
+        0,
+        560,
+        120
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 1540,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.006111111111111111,
+      "mean_absolute_channel_error": 0.2959325396825397,
+      "max_channel_error": 200,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "known_limitations": [
+      "intrinsic grid and anonymous flex sizing partial"
+    ],
+    "status": "COMPLETE"
+  },
+  {
+    "page": "scrolling",
+    "chrome": {
+      "geometry": [
+        [
+          "card",
+          0,
+          20,
+          600,
+          80
+        ],
+        [
+          "fixed",
+          400,
+          10,
+          100,
+          30
+        ]
+      ],
+      "diff": {
+        "channel_tolerance": 8,
+        "pixel_threshold_fraction": 0.01,
+        "geometry_tolerance_px": 0.5,
+        "differing_pixels": 1004,
+        "total_pixels": 252000,
+        "mismatch_fraction": 0.003984126984126984,
+        "mean_absolute_channel_error": 0.20242063492063492,
+        "max_channel_error": 255,
+        "geometry_max_error_px": 0.0,
+        "within_tolerance": true
+      }
+    },
+    "loads": true,
+    "native_ink_pixels": 531,
+    "native_geometry": [
+      [
+        "card",
+        0,
+        20,
+        600,
+        80
+      ],
+      [
+        "fixed",
+        400,
+        10,
+        100,
+        30
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "card",
+        0,
+        20,
+        600,
+        80
+      ],
+      [
+        "fixed",
+        400,
+        -170,
+        100,
+        30
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 266,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0010555555555555555,
+      "mean_absolute_channel_error": 0.041873015873015874,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 180.0,
+      "within_tolerance": false
+    },
+    "known_limitations": [
+      "root margin propagation partial"
+    ],
+    "status": "PARTIAL"
+  },
+  {
+    "page": "positioned",
+    "chrome": null,
+    "loads": true,
+    "native_ink_pixels": 0,
+    "native_geometry": [
+      [
+        "outer",
+        0,
+        0,
+        400,
+        250
+      ],
+      [
+        "inner",
+        260,
+        140,
+        120,
+        80
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "outer",
+        0,
+        0,
+        400,
+        250
+      ],
+      [
+        "inner",
+        260,
+        140,
+        120,
+        80
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 527,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0020912698412698413,
+      "mean_absolute_channel_error": 0.19159126984126984,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "known_limitations": [],
+    "status": "COMPLETE"
+  },
+  {
+    "page": "table",
+    "chrome": null,
+    "loads": true,
+    "native_ink_pixels": 908,
+    "native_geometry": [
+      [
+        "table",
+        0,
+        0,
+        500,
+        88
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "table",
+        0,
+        0,
+        500,
+        94
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 3300,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.013095238095238096,
+      "mean_absolute_channel_error": 1.5037470238095239,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 6.0,
+      "within_tolerance": false
+    },
+    "known_limitations": [
+      "CSS table intrinsic distribution and header styling partial"
+    ],
+    "status": "PARTIAL"
+  },
+  {
+    "page": "image",
+    "chrome": null,
+    "loads": true,
+    "native_ink_pixels": 469,
+    "native_geometry": [
+      [
+        "media",
+        0,
+        0,
+        320,
+        180
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "media",
+        0,
+        0,
+        320,
+        180
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 1076,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.00426984126984127,
+      "mean_absolute_channel_error": 0.38750595238095237,
+      "max_channel_error": 221,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "known_limitations": [
+      "SVG image supported; inline formatting and UA defaults may differ"
+    ],
+    "status": "COMPLETE"
+  },
+  {
+    "page": "dynamic",
+    "chrome": null,
+    "loads": true,
+    "native_ink_pixels": 805,
+    "native_geometry": [
+      [
+        "target",
+        0,
+        0,
+        260,
+        50
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "target",
+        0,
+        0,
+        260,
+        50
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "known_limitations": [],
+    "status": "COMPLETE"
+  },
+  {
+    "page": "iframe",
+    "chrome": null,
+    "loads": true,
+    "native_ink_pixels": 599,
+    "native_geometry": [
+      [
+        "f",
+        0,
+        0,
+        250,
+        120
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "f",
+        0,
+        0,
+        250,
+        120
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 1104,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.004380952380952381,
+      "mean_absolute_channel_error": 0.12193253968253968,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "known_limitations": [],
+    "status": "COMPLETE"
+  },
+  {
+    "page": "overlap",
+    "chrome": {
+      "geometry": [
+        [
+          "one",
+          28.76275634765625,
+          28.76275634765625,
+          122.4744873046875,
+          122.4744873046875
+        ],
+        [
+          "two",
+          80,
+          60,
+          100,
+          100
+        ]
+      ],
+      "diff": {
+        "channel_tolerance": 8,
+        "pixel_threshold_fraction": 0.01,
+        "geometry_tolerance_px": 0.5,
+        "differing_pixels": 0,
+        "total_pixels": 252000,
+        "mismatch_fraction": 0.0,
+        "mean_absolute_channel_error": 0.0,
+        "max_channel_error": 0,
+        "geometry_max_error_px": 1.6552861836771626e-7,
+        "within_tolerance": true
+      }
+    },
+    "loads": true,
+    "native_ink_pixels": 0,
+    "native_geometry": [
+      [
+        "one",
+        28.762756430420538,
+        28.762756430420538,
+        122.47448713915891,
+        122.47448713915888
+      ],
+      [
+        "two",
+        80,
+        60,
+        100,
+        100
+      ]
+    ],
+    "reference_geometry": [
+      [
+        "one",
+        40,
+        40,
+        100,
+        100
+      ],
+      [
+        "two",
+        80,
+        60,
+        100,
+        100
+      ]
+    ],
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 22.47448713915891,
+      "within_tolerance": false
+    },
+    "known_limitations": [],
+    "status": "PARTIAL"
+  }
+]

@@ -1,0 +1,41 @@
+{
+  "head": "7d21f5db9ea520417b0f860b967e5ee351e95776",
+  "status": "",
+  "command": [
+    "cargo",
+    "test",
+    "--manifest-path",
+    "engines/Cargo.toml",
+    "-p",
+    "wega-engine",
+    "--offline",
+    "--test",
+    "native_chrome_compatibility",
+    "--test",
+    "native_graphics_acceptance",
+    "--test",
+    "native_forms_editing",
+    "--test",
+    "native_css_layout_acceptance",
+    "--test",
+    "native_css_at_rules_acceptance",
+    "--test",
+    "native_browser_behavior",
+    "--test",
+    "wpt",
+    "--test",
+    "iframe_wpt",
+    "--test",
+    "native_visual_corpus",
+    "--",
+    "--test-threads=4",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "seconds": 106.679,
+  "thresholds": {
+    "channel": 8,
+    "pixel_fraction": 0.01,
+    "geometry_px": 0.5
+  }
+}
