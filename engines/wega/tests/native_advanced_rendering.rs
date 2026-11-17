@@ -45,13 +45,13 @@ fn test_css_grid_layout() {
     assert_eq!(b2.border_box.y, 0.0);
     assert_eq!(b2.border_box.width, 250.0);
 
-    // Row 1: cell 3 at (0, 40), cell 4 at (150, 40)
+    // Definite 100px container stretches its two auto rows to 50px each.
     assert_eq!(b3.border_box.x, 0.0);
-    assert_eq!(b3.border_box.y, 40.0);
+    assert_eq!(b3.border_box.y, 50.0);
     assert_eq!(b3.border_box.width, 150.0);
 
     assert_eq!(b4.border_box.x, 150.0);
-    assert_eq!(b4.border_box.y, 40.0);
+    assert_eq!(b4.border_box.y, 50.0);
     assert_eq!(b4.border_box.width, 250.0);
 }
 
@@ -60,12 +60,12 @@ fn test_table_layout() {
     let html = r#"
         <!doctype html>
         <body style="margin: 0;">
-            <table id="tbl" style="display: table; width: 300px;">
-                <tr style="display: table-row;">
+            <table id="tbl" style="display: table; width: 300px; border-spacing: 0px;">
+                <tr style="display: table-row; height: 30px;">
                     <td id="td1" style="display: table-cell;">A1</td>
                     <td id="td2" style="display: table-cell;">B1</td>
                 </tr>
-                <tr style="display: table-row;">
+                <tr style="display: table-row; height: 30px;">
                     <td id="td3" style="display: table-cell;">A2</td>
                     <td id="td4" style="display: table-cell;">B2</td>
                 </tr>

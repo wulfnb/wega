@@ -447,3 +447,66 @@ fn expand(
     }
     Ok(out)
 }
+
+pub fn tracks(css: &str) -> Option<Vec<GridTrack>> {
+    if css.trim() == "none" {
+        return Some(Vec::new());
+    }
+    track_list(&mut Parser::new(css), 0).ok()
+}
+fn track_list(p: &mut Parser<'_>, depth: usize) -> Result<Vec<GridTrack>, Error> {
+    if depth > 16 {
+        return Err(ParseError::unexpected_token());
+    }
+    let mut out = Vec::new();
+    while !p.is_exhausted() {
+        let start = p.position();
+        match p.next()?.clone() {
+            Token::Function(f) if f.eq_ignore_ascii_case("minmax") => {
+                out.push(p.parse_nested_block(|p| {
+                    let start = p.position();
+                    p.parse_until_before(cssparser::Delimiter::Comma, consume)?;
+                    let min = Length::parse(p.slice_from(start).trim())
+                        .ok_or_else(ParseError::unexpected_token)?;
+                    p.expect_comma()?;
+                    let mut max = track_list(p, depth + 1)?;
+                    if max.len() != 1 {
+                        return Err(ParseError::unexpected_token());
+                    }
+                    Ok(GridTrack::MinMax(min, Box::new(max.remove(0))))
+                })?)
+            }
+            Token::Function(f) if f.eq_ignore_ascii_case("repeat") => {
+                let repeated = p.parse_nested_block(|p| {
+                    let count = p.expect_integer()?;
+                    if !(1..=256).contains(&count) {
+                        return Err(ParseError::unexpected_token());
+                    }
+                    p.expect_comma()?;
+                    let items = track_list(p, depth + 1)?;
+                    if items.len() * count as usize > 256 {
+                        return Err(ParseError::unexpected_token());
+                    }
+                    Ok((0..count).flat_map(|_| items.clone()).collect::<Vec<_>>())
+                })?;
+                out.extend(repeated);
+            }
+            Token::Dimension { value, unit, .. }
+                if unit.eq_ignore_ascii_case("fr") && value >= 0.0 && value.is_finite() =>
+            {
+                out.push(GridTrack::Fraction(value as f64))
+            }
+            _ => out.push(GridTrack::Length(
+                Length::parse(p.slice_from(start).trim())
+                    .ok_or_else(ParseError::unexpected_token)?,
+            )),
+        }
+        if out.len() > 256 {
+            return Err(ParseError::unexpected_token());
+        }
+    }
+    if out.is_empty() {
+        return Err(ParseError::unexpected_token());
+    }
+    Ok(out)
+}

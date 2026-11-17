@@ -46,6 +46,9 @@ pub struct LayoutBox {
     pub children: Vec<LayoutBox>,
     pub lines: Vec<LineBox>,
     pub text_content: Option<String>,
+    pub fragments: Vec<Rect>,
+    pub table_col_span: usize,
+    pub table_row_span: usize,
     pub scroll_offset: Point,
     pub scroll_width: f64,
     pub scroll_height: f64,
@@ -70,6 +73,9 @@ impl LayoutBox {
             children: Vec::new(),
             lines: Vec::new(),
             text_content: None,
+            fragments: Vec::new(),
+            table_col_span: 1,
+            table_row_span: 1,
             scroll_offset: Point::default(),
             scroll_width: 0.0,
             scroll_height: 0.0,
@@ -146,8 +152,24 @@ pub fn build_box_tree<D: DocumentView>(
     parent_style: Option<&ComputedStyle>,
     author_sheets: &[&StyleSheet],
 ) -> Option<LayoutBox> {
+    let mut pending = vec![(node_key, 0usize)];
+    while let Some((key, depth)) = pending.pop() {
+        if depth > wega_dom::layout::MAX_LAYOUT_DEPTH {
+            return None;
+        }
+        if let Some(n) = doc.node(key) {
+            pending.extend(n.children().map(|k| (k, depth + 1)));
+        }
+    }
+    build_box_tree_inner(doc, node_key, parent_style, author_sheets)
+}
+fn build_box_tree_inner<D: DocumentView>(
+    doc: &D,
+    node_key: NodeKey,
+    parent_style: Option<&ComputedStyle>,
+    author_sheets: &[&StyleSheet],
+) -> Option<LayoutBox> {
     let node = doc.node(node_key)?;
-
     match node.kind() {
         NodeKind::Element => {
             let style = resolve_computed_style(doc, node_key, parent_style, author_sheets);
@@ -175,9 +197,20 @@ pub fn build_box_tree<D: DocumentView>(
             {
                 layout_box.text_content = Some("\n".into());
             }
+            layout_box.table_col_span = node
+                .attr("colspan")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(1)
+                .clamp(1, 256);
+            layout_box.table_row_span = node
+                .attr("rowspan")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(1)
+                .clamp(1, 256);
             let mut raw_children = Vec::new();
             for child_key in node.children() {
-                if let Some(child_box) = build_box_tree(doc, child_key, Some(&style), author_sheets)
+                if let Some(child_box) =
+                    build_box_tree_inner(doc, child_key, Some(&style), author_sheets)
                 {
                     raw_children.push(child_box);
                 }
@@ -268,7 +301,7 @@ pub fn build_box_tree<D: DocumentView>(
             let mut root_box = LayoutBox::new(Some(node_key), BoxType::Block, root_style.clone());
             for child_key in node.children() {
                 if let Some(child_box) =
-                    build_box_tree(doc, child_key, Some(&root_style), author_sheets)
+                    build_box_tree_inner(doc, child_key, Some(&root_style), author_sheets)
                 {
                     root_box.children.push(child_box);
                 }
@@ -378,7 +411,14 @@ fn layout_block_or_flow(
 
     let is_absolute =
         box_node.style.position == Position::Absolute || box_node.style.position == Position::Fixed;
-    let effective_cb = if is_absolute {
+    let effective_cb = if box_node.style.position == Position::Fixed {
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            width: ctx.viewport_width,
+            height: ctx.viewport_height,
+        }
+    } else if is_absolute {
         positioned_cb
     } else {
         containing_block
@@ -416,10 +456,13 @@ fn layout_block_or_flow(
                         - total_padding_w)
                         .max(0.0)
                 } else {
-                    0.0
+                    intrinsic_width(box_node, false)
+                        .min(effective_cb.width)
+                        .max(intrinsic_width(box_node, true))
                 }
             } else if box_node.box_type == BoxType::Block
                 || box_node.box_type == BoxType::AnonymousBlock
+                || box_node.box_type == BoxType::TableCell
             {
                 (cb_w
                     - box_node.margin.left
@@ -428,7 +471,9 @@ fn layout_block_or_flow(
                     - total_padding_w)
                     .max(0.0)
             } else {
-                0.0 // Shrink-to-fit computed for inlines
+                intrinsic_width(box_node, false)
+                    .min(cb_w)
+                    .max(intrinsic_width(box_node, true))
             }
         }
         Length::Em(em) => em * fs,
@@ -448,6 +493,22 @@ fn layout_block_or_flow(
 
     let border_box_w = content_w + total_border_w + total_padding_w;
 
+    if !is_absolute && box_node.style.width != Length::Auto {
+        let remaining =
+            (cb_w - border_box_w - box_node.margin.left - box_node.margin.right).max(0.0);
+        match (
+            box_node.style.margin.left == Length::Auto,
+            box_node.style.margin.right == Length::Auto,
+        ) {
+            (true, true) => {
+                box_node.margin.left = remaining / 2.0;
+                box_node.margin.right = remaining / 2.0;
+            }
+            (true, false) => box_node.margin.left = remaining,
+            (false, true) => box_node.margin.right = remaining,
+            _ => {}
+        }
+    }
     // 2. Resolve X coordinate
     let x = if is_absolute {
         if box_node.style.left != Length::Auto {
@@ -486,6 +547,16 @@ fn layout_block_or_flow(
     box_node.border_box.x = x;
     box_node.border_box.y = y;
     box_node.border_box.width = border_box_w;
+    box_node.border_box.height = if box_node.style.height == Length::Auto {
+        0.0
+    } else {
+        let h = box_node.style.height.resolve(effective_cb.height, fs, rfs);
+        if box_node.style.box_sizing == BoxSizing::BorderBox {
+            h
+        } else {
+            h + total_border_h + total_padding_h
+        }
+    };
 
     // Determine positioned containing block for children
     let this_is_pos = box_node.style.position != Position::Static;
@@ -514,6 +585,12 @@ fn layout_block_or_flow(
         );
         content_h = lines.iter().map(|l| l.rect.height).sum();
         box_node.lines = lines;
+        assign_inline_geometry(
+            &mut box_node.children,
+            &box_node.lines,
+            x + box_node.border.left + box_node.padding.left,
+            y + box_node.border.top + box_node.padding.top,
+        );
     } else {
         let mut cursor_y = y + box_node.border.top + box_node.padding.top;
         let inner_cb_x = x + box_node.border.left + box_node.padding.left;
@@ -521,27 +598,42 @@ fn layout_block_or_flow(
             x: inner_cb_x,
             y: cursor_y,
             width: content_w,
-            height: 0.0,
+            height: box_node.content_box().height,
         };
-
+        let mut previous_bottom: f64 = 0.0;
+        let mut first = true;
         for child in &mut box_node.children {
             let child_is_out_of_flow = child.style.position == Position::Absolute
                 || child.style.position == Position::Fixed;
 
+            if child_is_out_of_flow {
+                continue;
+            }
+            let top = child
+                .style
+                .margin
+                .top
+                .resolve(content_w, child.style.font_size, rfs);
+            if !first {
+                let collapsed =
+                    previous_bottom.max(top).max(0.0) + previous_bottom.min(top).min(0.0);
+                cursor_y += collapsed - previous_bottom - top;
+            }
             let child_cb = Rect {
                 x: inner_cb.x,
                 y: cursor_y,
                 width: inner_cb.width,
-                height: 0.0,
+                height: inner_cb.height,
             };
-
             layout_box(child, child_cb, next_positioned_cb, ctx);
 
             if !child_is_out_of_flow {
                 let child_outer_h =
                     child.border_box.height + child.margin.top + child.margin.bottom;
                 cursor_y += child_outer_h;
-                content_h += child_outer_h;
+                content_h = cursor_y - inner_cb.y;
+                previous_bottom = child.margin.bottom;
+                first = false;
             }
         }
     }
@@ -627,15 +719,27 @@ fn layout_block_or_flow(
         }
     }
 
-    // 6. Compute scrollable overflow dimensions
-    let mut max_x = box_node.border_box.x + box_node.border_box.width;
-    let mut max_y = box_node.border_box.y + box_node.border_box.height;
-    for child in &box_node.children {
-        max_x = max_x.max(child.border_box.x + child.border_box.width + child.margin.right);
-        max_y = max_y.max(child.border_box.y + child.border_box.height + child.margin.bottom);
+    // Move descendants with relative/bottom positioning; local line geometry
+    // stays relative to its owning block.
+    let dx = box_node.border_box.x - x;
+    let dy = box_node.border_box.y - y;
+    for child in &mut box_node.children {
+        if !matches!(child.style.position, Position::Absolute | Position::Fixed) {
+            translate_tree(child, dx, dy);
+        }
     }
-    box_node.scroll_width = (max_x - box_node.border_box.x).max(box_node.border_box.width);
-    box_node.scroll_height = (max_y - box_node.border_box.y).max(box_node.border_box.height);
+    let positioned = if this_is_pos {
+        box_node.padding_box()
+    } else {
+        positioned_cb
+    };
+    let content = box_node.content_box();
+    for child in &mut box_node.children {
+        if matches!(child.style.position, Position::Absolute | Position::Fixed) {
+            layout_box(child, content, positioned, ctx);
+        }
+    }
+    update_overflow(box_node);
 }
 
 // ---------------------------------------------------------------------------
@@ -656,653 +760,837 @@ fn layout_inline_formatting_context(
 // FLEXBOX ENGINE
 // ---------------------------------------------------------------------------
 
-fn layout_flex(
-    box_node: &mut LayoutBox,
-    containing_block: Rect,
-    positioned_cb: Rect,
-    ctx: &LayoutContext,
-) {
-    let fs = box_node.style.font_size;
-    let rfs = ctx.font_size_root;
-    let cb_w = containing_block.width;
-    let cb_h = containing_block.height;
-
-    box_node.padding = resolve_insets(&box_node.style.padding, cb_w, fs, rfs);
-    box_node.border = Insets {
-        top: box_node.style.borders.top.width,
-        right: box_node.style.borders.right.width,
-        bottom: box_node.style.borders.bottom.width,
-        left: box_node.style.borders.left.width,
-    };
-    box_node.margin = resolve_insets(&box_node.style.margin, cb_w, fs, rfs);
-
-    let total_border_w = box_node.border.left + box_node.border.right;
-    let total_padding_w = box_node.padding.left + box_node.padding.right;
-    let total_border_h = box_node.border.top + box_node.border.bottom;
-    let total_padding_h = box_node.padding.top + box_node.padding.bottom;
-
-    let mut container_w = match box_node.style.width {
-        Length::Px(px) => {
-            if box_node.style.box_sizing == BoxSizing::BorderBox {
-                (px - total_border_w - total_padding_w).max(0.0)
-            } else {
-                px
-            }
+// Initialize the container through the same block sizing/positioning code used
+// elsewhere; layout algorithms below only decide the positions of its contents.
+fn init_container(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) -> Rect {
+    let children = std::mem::take(&mut b.children);
+    layout_block_or_flow(b, cb, positioned, ctx);
+    b.children = children;
+    b.content_box()
+}
+fn translate_tree(b: &mut LayoutBox, dx: f64, dy: f64) {
+    b.border_box.x += dx;
+    b.border_box.y += dy;
+    for r in &mut b.fragments {
+        r.x += dx;
+        r.y += dy;
+    }
+    for c in &mut b.children {
+        if c.style.position != Position::Fixed {
+            translate_tree(c, dx, dy);
         }
-        Length::Percent(pct) => {
-            let total = cb_w * (pct / 100.0);
-            if box_node.style.box_sizing == BoxSizing::BorderBox {
-                (total - total_border_w - total_padding_w).max(0.0)
-            } else {
-                total
-            }
-        }
-        _ => {
-            (cb_w - box_node.margin.left - box_node.margin.right - total_border_w - total_padding_w)
-                .max(0.0)
-        }
-    };
-
-    container_w = clamp_dimension(
-        container_w,
-        box_node.style.min_width,
-        box_node.style.max_width,
-        cb_w,
-        fs,
-        rfs,
+    }
+}
+fn intrinsic_width(b: &LayoutBox, min: bool) -> f64 {
+    // Shape with Unicode break opportunities, rather than counting characters.
+    let runs = super::text::shape_inline(
+        std::slice::from_ref(b),
+        if min { 0.0 } else { 1e7 },
+        TextAlign::Left,
     );
-    let border_box_w = container_w + total_border_w + total_padding_w;
-
-    box_node.border_box.x = containing_block.x + box_node.margin.left;
-    box_node.border_box.y = containing_block.y + box_node.margin.top;
-    box_node.border_box.width = border_box_w;
-
-    let inner_w = container_w;
+    runs.iter().map(|l| l.rect.width).fold(0.0, f64::max)
+}
+fn border_main_limit(
+    b: &LayoutBox,
+    main: f64,
+    is_row: bool,
+    min: bool,
+    ctx: &LayoutContext,
+) -> f64 {
+    let length = match (is_row, min) {
+        (true, true) => b.style.min_width,
+        (true, false) => b.style.max_width,
+        (false, true) => b.style.min_height,
+        (false, false) => b.style.max_height,
+    };
+    if length == Length::Auto {
+        return if min {
+            if is_row {
+                intrinsic_width(b, true)
+            } else {
+                0.0
+            }
+        } else {
+            f64::INFINITY
+        };
+    }
+    let value = length.resolve(main, b.style.font_size, ctx.font_size_root);
+    let extra = if b.style.box_sizing == BoxSizing::BorderBox {
+        0.0
+    } else if is_row {
+        b.padding.left + b.padding.right + b.border.left + b.border.right
+    } else {
+        b.padding.top + b.padding.bottom + b.border.top + b.border.bottom
+    };
+    (value + extra).max(0.0)
+}
+fn forced_size(
+    b: &mut LayoutBox,
+    cb: Rect,
+    positioned: Rect,
+    ctx: &LayoutContext,
+    width: Option<f64>,
+    height: Option<f64>,
+) {
+    let old = (b.style.width, b.style.height);
+    if let Some(w) = width {
+        let padding = resolve_insets(
+            &b.style.padding,
+            cb.width,
+            b.style.font_size,
+            ctx.font_size_root,
+        );
+        let extra = if b.style.box_sizing == BoxSizing::BorderBox {
+            0.0
+        } else {
+            padding.left + padding.right + b.style.borders.left.width + b.style.borders.right.width
+        };
+        b.style.width = Length::Px((w - extra).max(0.0));
+    }
+    if let Some(h) = height {
+        let padding = resolve_insets(
+            &b.style.padding,
+            cb.width,
+            b.style.font_size,
+            ctx.font_size_root,
+        );
+        let extra = if b.style.box_sizing == BoxSizing::BorderBox {
+            0.0
+        } else {
+            padding.top + padding.bottom + b.style.borders.top.width + b.style.borders.bottom.width
+        };
+        b.style.height = Length::Px((h - extra).max(0.0));
+    }
+    layout_box(b, cb, positioned, ctx);
+    b.style.width = old.0;
+    b.style.height = old.1;
+}
+fn layout_flex(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
+    let inner = init_container(b, cb, positioned, ctx);
     let is_row = matches!(
-        box_node.style.flex_direction,
+        b.style.flex_direction,
         FlexDirection::Row | FlexDirection::RowReverse
     );
-    let is_reverse = matches!(
-        box_node.style.flex_direction,
+    let reverse = matches!(
+        b.style.flex_direction,
         FlexDirection::RowReverse | FlexDirection::ColumnReverse
     );
-
-    let next_positioned_cb = if box_node.style.position != Position::Static {
-        box_node.padding_box()
+    let definite_height = b.style.height != Length::Auto;
+    let main_available = if is_row {
+        inner.width
+    } else if definite_height {
+        inner.height
     } else {
-        positioned_cb
+        f64::INFINITY
     };
-
-    // First pass: measure child natural/basis sizes and flex factors
-    let mut total_grow = 0.0;
-    let mut total_shrink = 0.0;
-    let mut total_base_main = 0.0;
-    let mut max_cross: f64 = 0.0;
-
-    let mut in_flow_indices = Vec::new();
-
-    for (idx, child) in box_node.children.iter_mut().enumerate() {
-        if child.style.position == Position::Absolute || child.style.position == Position::Fixed {
-            layout_box(
-                child,
-                Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: inner_w,
-                    height: 0.0,
-                },
-                next_positioned_cb,
-                ctx,
-            );
+    let main_gap = if is_row {
+        b.style.column_gap
+    } else {
+        b.style.row_gap
+    };
+    let cross_gap = if is_row {
+        b.style.row_gap
+    } else {
+        b.style.column_gap
+    };
+    let positioned = if b.style.position != Position::Static {
+        b.padding_box()
+    } else {
+        positioned
+    };
+    let mut bases = vec![0.0; b.children.len()];
+    let mut lines: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut used = 0.0;
+    for (i, c) in b.children.iter_mut().enumerate() {
+        if matches!(c.style.position, Position::Absolute | Position::Fixed) {
+            layout_box(c, inner, positioned, ctx);
             continue;
         }
-
-        in_flow_indices.push(idx);
-
-        let child_cb = Rect {
-            x: 0.0,
-            y: 0.0,
-            width: inner_w,
-            height: 0.0,
+        let natural = if is_row && c.style.width == Length::Auto {
+            Some(intrinsic_width(c, false))
+        } else {
+            None
         };
-        layout_box(child, child_cb, next_positioned_cb, ctx);
-
-        let base_main = if child.style.flex_basis != Length::Auto {
-            child
-                .style
-                .flex_basis
-                .resolve(inner_w, child.style.font_size, rfs)
+        forced_size(c, inner, positioned, ctx, natural, None);
+        let base = if c.style.flex_basis != Length::Auto {
+            c.style.flex_basis.resolve(
+                if is_row { inner.width } else { inner.height },
+                c.style.font_size,
+                ctx.font_size_root,
+            )
         } else if is_row {
-            child.border_box.width
+            c.border_box.width
         } else {
-            child.border_box.height
+            c.border_box.height
         };
-
-        let base_cross = if is_row {
-            child.border_box.height
-        } else {
-            child.border_box.width
-        };
-
-        total_base_main += base_main;
-        max_cross = max_cross.max(base_cross);
-        total_grow += child.style.flex_grow;
-        total_shrink += child.style.flex_shrink;
+        bases[i] = base;
+        let outer = base
+            + if is_row {
+                c.margin.left + c.margin.right
+            } else {
+                c.margin.top + c.margin.bottom
+            };
+        if b.style.flex_wrap
+            && !lines.last().unwrap().is_empty()
+            && used + main_gap + outer > main_available
+        {
+            lines.push(Vec::new());
+            used = 0.0;
+        }
+        if !lines.last().unwrap().is_empty() {
+            used += main_gap;
+        }
+        lines.last_mut().unwrap().push(i);
+        used += outer;
     }
-
-    let main_space = inner_w; // Available main space for row
-    let free_space = main_space - total_base_main;
-
-    // Distribute space or shrink
-    let count = in_flow_indices.len();
-    let mut gap_space = 0.0;
-    let mut start_offset = 0.0;
-
-    if free_space > 0.0 {
-        if total_grow > 0.0 {
-            for &idx in &in_flow_indices {
-                let child = &mut box_node.children[idx];
-                let extra = (child.style.flex_grow / total_grow) * free_space;
+    let mut cross_cursor = if is_row { inner.y } else { inner.x };
+    let mut total_main: f64 = 0.0;
+    let mut sizes = bases.clone();
+    let mut frozen = vec![false; b.children.len()];
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        let margin_sum: f64 = line
+            .iter()
+            .map(|i| {
+                let c = &b.children[*i];
                 if is_row {
-                    child.border_box.width += extra;
+                    c.margin.left + c.margin.right
                 } else {
-                    child.border_box.height += extra;
+                    c.margin.top + c.margin.bottom
                 }
-            }
+            })
+            .sum();
+        let available = if main_available.is_finite() {
+            main_available
         } else {
-            // Apply justify-content
-            match box_node.style.justify_content {
-                JustifyContent::FlexStart => start_offset = 0.0,
-                JustifyContent::FlexEnd => start_offset = free_space,
-                JustifyContent::Center => start_offset = free_space / 2.0,
-                JustifyContent::SpaceBetween => {
-                    if count > 1 {
-                        gap_space = free_space / (count - 1) as f64;
-                    }
-                }
-                JustifyContent::SpaceAround => {
-                    if count > 0 {
-                        gap_space = free_space / count as f64;
-                        start_offset = gap_space / 2.0;
-                    }
-                }
-                JustifyContent::SpaceEvenly => {
-                    if count > 0 {
-                        gap_space = free_space / (count + 1) as f64;
-                        start_offset = gap_space;
-                    }
-                }
-            }
-        }
-    } else if free_space < 0.0 && total_shrink > 0.0 {
-        let overflow = -free_space;
-        for &idx in &in_flow_indices {
-            let child = &mut box_node.children[idx];
-            let shrink_amount = (child.style.flex_shrink / total_shrink) * overflow;
-            if is_row {
-                child.border_box.width = (child.border_box.width - shrink_amount).max(0.0);
-            } else {
-                child.border_box.height = (child.border_box.height - shrink_amount).max(0.0);
-            }
-        }
-    }
-
-    // Position children along main and cross axes
-    let inner_origin_x = box_node.border_box.x + box_node.border.left + box_node.padding.left;
-    let inner_origin_y = box_node.border_box.y + box_node.border.top + box_node.padding.top;
-
-    let mut cursor_main = if is_row {
-        inner_origin_x + start_offset
-    } else {
-        inner_origin_y + start_offset
-    };
-
-    let cross_start = if is_row {
-        inner_origin_y
-    } else {
-        inner_origin_x
-    };
-    let cross_avail = max_cross;
-
-    let ordered_indices: Vec<usize> = if is_reverse {
-        in_flow_indices.into_iter().rev().collect()
-    } else {
-        in_flow_indices
-    };
-
-    for idx in ordered_indices {
-        let child = &mut box_node.children[idx];
-        let child_cross = if is_row {
-            child.border_box.height
-        } else {
-            child.border_box.width
+            line.iter().map(|i| bases[*i]).sum::<f64>()
+                + margin_sum
+                + main_gap * (line.len() - 1) as f64
         };
-
-        // Align-items on cross axis
-        let cross_pos = match box_node.style.align_items {
-            AlignItems::FlexStart | AlignItems::Baseline => cross_start,
-            AlignItems::FlexEnd => cross_start + (cross_avail - child_cross).max(0.0),
-            AlignItems::Center => cross_start + (cross_avail - child_cross).max(0.0) / 2.0,
-            AlignItems::Stretch => {
-                if is_row {
-                    child.border_box.height = cross_avail;
+        let target_space = (available - margin_sum - main_gap * (line.len() - 1) as f64).max(0.0);
+        let growing = target_space > line.iter().map(|i| bases[*i]).sum::<f64>();
+        for i in &line {
+            sizes[*i] = bases[*i];
+            frozen[*i] = false;
+        }
+        // Freeze at min/max constraints, then redistribute only among flexible
+        // items. Each pass freezes at least one item or finishes.
+        for _ in 0..=line.len() {
+            let free = target_space
+                - line
+                    .iter()
+                    .map(|i| if frozen[*i] { sizes[*i] } else { bases[*i] })
+                    .sum::<f64>();
+            let factors: f64 = line
+                .iter()
+                .filter(|i| !frozen[**i])
+                .map(|i| {
+                    let c = &b.children[*i];
+                    if growing {
+                        c.style.flex_grow
+                    } else {
+                        c.style.flex_shrink * bases[*i]
+                    }
+                })
+                .sum();
+            let mut violation = false;
+            for i in &line {
+                if frozen[*i] {
+                    continue;
+                }
+                let c = &b.children[*i];
+                let factor = if growing {
+                    c.style.flex_grow
                 } else {
-                    child.border_box.width = cross_avail;
+                    c.style.flex_shrink * bases[*i]
+                };
+                let proposed = bases[*i]
+                    + if factors > 0.0 {
+                        free * factor / factors
+                    } else {
+                        0.0
+                    };
+                let min = border_main_limit(c, available, is_row, true, ctx);
+                let max = border_main_limit(c, available, is_row, false, ctx).max(min);
+                sizes[*i] = proposed.clamp(min, max);
+                if (sizes[*i] - proposed).abs() > 0.001 {
+                    frozen[*i] = true;
+                    violation = true;
                 }
-                cross_start
             }
+            if !violation {
+                break;
+            }
+        }
+        let occupied = line.iter().map(|i| sizes[*i]).sum::<f64>()
+            + margin_sum
+            + main_gap * (line.len() - 1) as f64;
+        let free = (available - occupied).max(0.0);
+        let n = line.len() as f64;
+        let (offset, extra) = match b.style.justify_content {
+            JustifyContent::FlexEnd => (free, 0.0),
+            JustifyContent::Center => (free / 2.0, 0.0),
+            JustifyContent::SpaceBetween if n > 1.0 => (0.0, free / (n - 1.0)),
+            JustifyContent::SpaceAround => (free / (2.0 * n), free / n),
+            JustifyContent::SpaceEvenly => (free / (n + 1.0), free / (n + 1.0)),
+            _ => (0.0, 0.0),
         };
-
-        if is_row {
-            child.border_box.x = cursor_main;
-            child.border_box.y = cross_pos;
-            cursor_main += child.border_box.width + gap_space;
+        let mut cross: f64 = if !b.style.flex_wrap {
+            if is_row && definite_height {
+                inner.height
+            } else if !is_row {
+                inner.width
+            } else {
+                0.0
+            }
         } else {
-            child.border_box.x = cross_pos;
-            child.border_box.y = cursor_main;
-            cursor_main += child.border_box.height + gap_space;
-        }
-    }
-
-    // Resolve container height
-    let mut final_content_h = match box_node.style.height {
-        Length::Px(px) => {
-            if box_node.style.box_sizing == BoxSizing::BorderBox {
-                (px - total_border_h - total_padding_h).max(0.0)
+            0.0
+        };
+        for i in &line {
+            let c = &mut b.children[*i];
+            forced_size(
+                c,
+                inner,
+                positioned,
+                ctx,
+                if is_row { Some(sizes[*i]) } else { None },
+                if is_row { None } else { Some(sizes[*i]) },
+            );
+            cross = cross.max(if is_row {
+                c.border_box.height + c.margin.top + c.margin.bottom
             } else {
-                px
+                c.border_box.width + c.margin.left + c.margin.right
+            });
+        }
+        let origin = if is_row { inner.x } else { inner.y };
+        let mut cursor = if reverse {
+            origin + available - offset
+        } else {
+            origin + offset
+        };
+        for i in line {
+            let c = &mut b.children[i];
+            let auto_cross = if is_row {
+                c.style.height == Length::Auto
+            } else {
+                c.style.width == Length::Auto
+            };
+            if b.style.align_items == AlignItems::Stretch && auto_cross {
+                let size = if is_row {
+                    (cross - c.margin.top - c.margin.bottom).max(0.0)
+                } else {
+                    (cross - c.margin.left - c.margin.right).max(0.0)
+                };
+                forced_size(
+                    c,
+                    inner,
+                    positioned,
+                    ctx,
+                    if is_row { Some(sizes[i]) } else { Some(size) },
+                    if is_row { Some(size) } else { Some(sizes[i]) },
+                );
+            }
+            let (before, after, cross_before, cross_after) = if is_row {
+                (c.margin.left, c.margin.right, c.margin.top, c.margin.bottom)
+            } else {
+                (c.margin.top, c.margin.bottom, c.margin.left, c.margin.right)
+            };
+            let cross_size = if is_row {
+                c.border_box.height
+            } else {
+                c.border_box.width
+            };
+            let extra_cross = (cross - cross_size - cross_before - cross_after).max(0.0);
+            let cross_pos = cross_cursor
+                + cross_before
+                + match b.style.align_items {
+                    AlignItems::Center => extra_cross / 2.0,
+                    AlignItems::FlexEnd => extra_cross,
+                    _ => 0.0,
+                };
+            let main = if reverse {
+                cursor -= after + sizes[i];
+                cursor
+            } else {
+                cursor + before
+            };
+            let (x, y) = if is_row {
+                (main, cross_pos)
+            } else {
+                (cross_pos, main)
+            };
+            translate_tree(c, x - c.border_box.x, y - c.border_box.y);
+            if reverse {
+                cursor -= before + main_gap + extra;
+            } else {
+                cursor += before + sizes[i] + after + main_gap + extra;
             }
         }
-        Length::Percent(pct) => {
-            let total = cb_h * (pct / 100.0);
-            if box_node.style.box_sizing == BoxSizing::BorderBox {
-                (total - total_border_h - total_padding_h).max(0.0)
-            } else {
-                total
-            }
-        }
-        Length::Auto => {
-            if is_row {
-                max_cross
-            } else {
-                cursor_main - inner_origin_y
-            }
-        }
-        Length::Em(em) => em * fs,
-        Length::Rem(rem) => rem * rfs,
-        Length::Calc(_) => box_node.style.height.resolve(cb_h, fs, rfs),
-    };
-
-    final_content_h = clamp_dimension(
-        final_content_h,
-        box_node.style.min_height,
-        box_node.style.max_height,
-        cb_h,
-        fs,
-        rfs,
-    );
-
-    let border_box_h = final_content_h + total_border_h + total_padding_h;
-    box_node.border_box.height = border_box_h;
-
-    // Apply relative positioning if applicable
-    if box_node.style.position == Position::Relative {
-        if box_node.style.left != Length::Auto {
-            box_node.border_box.x += box_node.style.left.resolve(cb_w, fs, rfs);
-        } else if box_node.style.right != Length::Auto {
-            box_node.border_box.x -= box_node.style.right.resolve(cb_w, fs, rfs);
-        }
-        if box_node.style.top != Length::Auto {
-            box_node.border_box.y += box_node.style.top.resolve(cb_h, fs, rfs);
-        } else if box_node.style.bottom != Length::Auto {
-            box_node.border_box.y -= box_node.style.bottom.resolve(cb_h, fs, rfs);
-        }
+        cross_cursor += cross + cross_gap;
+        total_main = total_main.max(occupied);
     }
-
-    let mut max_x = box_node.border_box.x + box_node.border_box.width;
-    let mut max_y = box_node.border_box.y + box_node.border_box.height;
-    for child in &box_node.children {
-        max_x = max_x.max(child.border_box.x + child.border_box.width);
-        max_y = max_y.max(child.border_box.y + child.border_box.height);
+    if !definite_height {
+        let height = if is_row {
+            (cross_cursor - inner.y - cross_gap).max(0.0)
+        } else {
+            total_main
+        };
+        b.border_box.height =
+            height + b.border.top + b.border.bottom + b.padding.top + b.padding.bottom;
     }
-    box_node.scroll_width = (max_x - box_node.border_box.x).max(box_node.border_box.width);
-    box_node.scroll_height = (max_y - box_node.border_box.y).max(box_node.border_box.height);
+    update_overflow(b);
 }
 
 // ---------------------------------------------------------------------------
 // GRID & TABLE LAYOUT BASICS
 // ---------------------------------------------------------------------------
 
-fn layout_grid(
-    box_node: &mut LayoutBox,
-    containing_block: Rect,
-    positioned_cb: Rect,
+fn track_sizes(
+    tracks: &[GridTrack],
+    mins: &[f64],
+    maxs: &[f64],
+    available: Option<f64>,
+    gap: f64,
     ctx: &LayoutContext,
-) {
-    let fs = box_node.style.font_size;
-    let rfs = ctx.font_size_root;
-    let cb_w = containing_block.width;
-    let cb_h = containing_block.height;
-
-    box_node.padding = resolve_insets(&box_node.style.padding, cb_w, fs, rfs);
-    box_node.border = Insets {
-        top: box_node.style.borders.top.width,
-        right: box_node.style.borders.right.width,
-        bottom: box_node.style.borders.bottom.width,
-        left: box_node.style.borders.left.width,
-    };
-    box_node.margin = resolve_insets(&box_node.style.margin, cb_w, fs, rfs);
-
-    let total_border_w = box_node.border.left + box_node.border.right;
-    let total_padding_w = box_node.padding.left + box_node.padding.right;
-    let total_border_h = box_node.border.top + box_node.border.bottom;
-    let total_padding_h = box_node.padding.top + box_node.padding.bottom;
-
-    let container_w = match box_node.style.width {
-        Length::Px(px) => {
-            if box_node.style.box_sizing == BoxSizing::BorderBox {
-                (px - total_border_w - total_padding_w).max(0.0)
-            } else {
-                px
+    fs: f64,
+) -> Vec<f64> {
+    let count = mins.len();
+    let mut sizes = vec![0.0; count];
+    let mut flex = vec![0.0; count];
+    let mut autos = Vec::new();
+    for i in 0..count {
+        let track = tracks
+            .get(i)
+            .cloned()
+            .unwrap_or(GridTrack::Length(Length::Auto));
+        let (min, max) = match track {
+            GridTrack::MinMax(min, max) => (min, *max),
+            other => (Length::Auto, other),
+        };
+        let minimum = if min == Length::Auto {
+            mins[i]
+        } else {
+            min.resolve(available.unwrap_or(0.0), fs, ctx.font_size_root)
+        };
+        match max {
+            GridTrack::Fraction(fr) => {
+                sizes[i] = minimum;
+                flex[i] = fr;
             }
-        }
-        Length::Percent(pct) => {
-            let total = cb_w * (pct / 100.0);
-            if box_node.style.box_sizing == BoxSizing::BorderBox {
-                (total - total_border_w - total_padding_w).max(0.0)
-            } else {
-                total
+            GridTrack::Length(Length::Auto) => {
+                sizes[i] = maxs[i].max(minimum);
+                autos.push(i);
             }
-        }
-        _ => {
-            (cb_w - box_node.margin.left - box_node.margin.right - total_border_w - total_padding_w)
-                .max(0.0)
-        }
-    };
-
-    box_node.border_box.x = containing_block.x + box_node.margin.left;
-    box_node.border_box.y = containing_block.y + box_node.margin.top;
-    box_node.border_box.width = container_w + total_border_w + total_padding_w;
-
-    let inner_origin_x = box_node.border_box.x + box_node.border.left + box_node.padding.left;
-    let inner_origin_y = box_node.border_box.y + box_node.border.top + box_node.padding.top;
-    let inner_w = container_w;
-
-    // Resolve column track widths
-    let num_cols = if !box_node.style.grid_template_columns.is_empty() {
-        box_node.style.grid_template_columns.len()
-    } else {
-        1
-    };
-
-    let mut col_widths = vec![0.0; num_cols];
-    let mut fixed_sum = 0.0;
-    let mut auto_count = 0;
-
-    for (c, len) in box_node.style.grid_template_columns.iter().enumerate() {
-        match len {
-            Length::Px(px) => {
-                col_widths[c] = *px;
-                fixed_sum += px;
+            GridTrack::Length(length) => {
+                sizes[i] = length
+                    .resolve(available.unwrap_or(0.0), fs, ctx.font_size_root)
+                    .max(if min == Length::Auto { 0.0 } else { minimum })
             }
-            Length::Percent(pct) => {
-                let w = inner_w * (pct / 100.0);
-                col_widths[c] = w;
-                fixed_sum += w;
-            }
-            _ => auto_count += 1,
+            GridTrack::MinMax(_, _) => sizes[i] = minimum, // nested minmax is rejected by syntax
         }
     }
-
-    let remaining_w = (inner_w - fixed_sum).max(0.0);
-    let auto_w = if auto_count > 0 {
-        remaining_w / auto_count as f64
-    } else {
-        0.0
-    };
-
-    for (c, len) in box_node.style.grid_template_columns.iter().enumerate() {
-        if matches!(len, Length::Auto | Length::Em(_) | Length::Rem(_)) {
-            col_widths[c] = auto_w;
+    if let Some(available) = available {
+        let room = (available - gap * count.saturating_sub(1) as f64).max(0.0);
+        let mut frozen = vec![false; count];
+        for _ in 0..=count {
+            let fixed: f64 = (0..count)
+                .filter(|i| flex[*i] == 0.0 || frozen[*i])
+                .map(|i| sizes[i])
+                .sum();
+            let factor: f64 = (0..count).filter(|i| !frozen[*i]).map(|i| flex[i]).sum();
+            if factor == 0.0 {
+                break;
+            }
+            let unit = ((room - fixed) / factor).max(0.0);
+            let mut violation = false;
+            for i in 0..count {
+                if flex[i] > 0.0 && !frozen[i] {
+                    if unit * flex[i] < sizes[i] {
+                        frozen[i] = true;
+                        violation = true;
+                    } else {
+                        sizes[i] = unit * flex[i];
+                    }
+                }
+            }
+            if !violation {
+                break;
+            }
+        }
+        if flex.iter().all(|f| *f == 0.0) && !autos.is_empty() {
+            let extra = ((room - sizes.iter().sum::<f64>()) / autos.len() as f64).max(0.0);
+            for i in autos {
+                sizes[i] += extra;
+            }
         }
     }
-    if box_node.style.grid_template_columns.is_empty() && num_cols == 1 {
-        col_widths[0] = inner_w;
-    }
-
-    // Row tracks
-    let default_row_h = 40.0;
-
-    let next_positioned_cb = if box_node.style.position != Position::Static {
-        box_node.padding_box()
-    } else {
-        positioned_cb
-    };
-
-    let mut auto_col = 0;
-    let mut auto_row = 0;
-    let mut max_row_seen = 0;
-
-    for child in &mut box_node.children {
-        if child.style.position == Position::Absolute || child.style.position == Position::Fixed {
-            layout_box(
-                child,
-                Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: inner_w,
-                    height: 0.0,
-                },
-                next_positioned_cb,
-                ctx,
-            );
+    sizes
+}
+fn update_overflow(b: &mut LayoutBox) {
+    let content = b.content_box();
+    let mut width = content.width;
+    let mut height = content.height;
+    for c in &b.children {
+        if c.style.position == Position::Fixed {
             continue;
         }
-
-        let (col_idx, row_idx) = match (child.style.grid_column_start, child.style.grid_row_start) {
-            (Some(c), Some(r)) => (
-                ((c - 1).max(0) as usize).min(num_cols.saturating_sub(1)),
-                (r - 1).max(0) as usize,
-            ),
-            (Some(c), None) => (
-                ((c - 1).max(0) as usize).min(num_cols.saturating_sub(1)),
-                auto_row,
-            ),
-            (None, Some(r)) => (auto_col, (r - 1).max(0) as usize),
-            (None, None) => {
-                let c = auto_col;
-                let r = auto_row;
-                auto_col += 1;
-                if auto_col >= num_cols {
-                    auto_col = 0;
-                    auto_row += 1;
-                }
-                (c, r)
-            }
-        };
-
-        max_row_seen = max_row_seen.max(row_idx);
-
-        let cell_x = inner_origin_x + col_widths[..col_idx].iter().sum::<f64>();
-        let cell_y = inner_origin_y + (row_idx as f64 * default_row_h);
-        let cell_w = col_widths.get(col_idx).copied().unwrap_or(inner_w);
-        let cell_h = default_row_h;
-
-        let cell_cb = Rect {
-            x: cell_x,
-            y: cell_y,
-            width: cell_w,
-            height: cell_h,
-        };
-        layout_box(child, cell_cb, next_positioned_cb, ctx);
-
-        child.border_box.x = cell_x;
-        child.border_box.y = cell_y;
-        child.border_box.width = cell_w;
-        if child.border_box.height == 0.0 {
-            child.border_box.height = cell_h;
+        width = width.max(c.border_box.right() - content.x + c.margin.right);
+        height = height.max(c.border_box.bottom() - content.y + c.margin.bottom);
+        if c.style.overflow_x == Overflow::Visible {
+            width = width.max(c.border_box.x - content.x + c.scroll_width);
+        }
+        if c.style.overflow_y == Overflow::Visible {
+            height = height.max(c.border_box.y - content.y + c.scroll_height);
         }
     }
-
-    let total_rows_h = (max_row_seen + 1) as f64 * default_row_h;
-    let final_content_h = match box_node.style.height {
-        Length::Px(px) => px,
-        Length::Percent(pct) => cb_h * (pct / 100.0),
-        _ => total_rows_h,
+    for line in &b.lines {
+        width = width.max(line.rect.x + line.rect.width);
+        height = height.max(line.rect.y + line.rect.height);
+    }
+    b.scroll_width = width + b.padding.left + b.padding.right;
+    b.scroll_height = height + b.padding.top + b.padding.bottom;
+}
+fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
+    let inner = init_container(b, cb, positioned, ctx);
+    let positioned = if b.style.position != Position::Static {
+        b.padding_box()
+    } else {
+        positioned
     };
-
-    box_node.border_box.height = final_content_h + total_border_h + total_padding_h;
+    let cols = b
+        .style
+        .grid_template_columns
+        .len()
+        .max(
+            b.children
+                .iter()
+                .map(|c| {
+                    c.style.grid_column_start.unwrap_or(1).max(1) as usize
+                        + c.style.grid_column_span
+                        - 1
+                })
+                .max()
+                .unwrap_or(1),
+        )
+        .clamp(1, 256);
+    let mut occupied = std::collections::HashSet::new();
+    let mut cursor = 0;
+    let mut places = Vec::new();
+    let mut rows = b.style.grid_template_rows.len().max(1);
+    for (i, c) in b.children.iter_mut().enumerate() {
+        if matches!(c.style.position, Position::Absolute | Position::Fixed) {
+            layout_box(c, inner, positioned, ctx);
+            continue;
+        }
+        let cs = c.style.grid_column_span.min(cols);
+        let rs = c.style.grid_row_span.clamp(1, 256);
+        let explicit_col = c
+            .style
+            .grid_column_start
+            .map(|c| (c.max(1) as usize - 1).min(cols - cs));
+        let explicit_row = c
+            .style
+            .grid_row_start
+            .map(|r| (r.max(1) as usize - 1).min(4095));
+        let mut row = explicit_row.unwrap_or(cursor / cols);
+        let mut col = explicit_col.unwrap_or(cursor % cols).min(cols - cs);
+        for _ in 0..4096 * cols {
+            let free =
+                (row..row + rs).all(|r| (col..col + cs).all(|c| !occupied.contains(&(r, c))));
+            if free || (explicit_col.is_some() && explicit_row.is_some()) {
+                break;
+            }
+            if explicit_col.is_some() {
+                row += 1;
+            } else {
+                col += 1;
+                if col + cs > cols {
+                    col = 0;
+                    row += 1;
+                }
+            }
+            if row >= 4096 {
+                break;
+            }
+        }
+        if row >= 4096 {
+            continue;
+        }
+        for r in row..row + rs {
+            for c in col..col + cs {
+                occupied.insert((r, c));
+            }
+        }
+        if explicit_row.is_none() {
+            cursor = row * cols + col + cs;
+        }
+        rows = rows.max(row + rs);
+        places.push((i, row, col, rs, cs));
+    }
+    let mut mins = vec![0.0_f64; cols];
+    let mut maxs = mins.clone();
+    for (i, _, col, _, span) in &places {
+        let c = &b.children[*i];
+        let min = intrinsic_width(c, true) / *span as f64;
+        let max = intrinsic_width(c, false) / *span as f64;
+        for j in *col..col + span {
+            mins[j] = mins[j].max(min);
+            maxs[j] = maxs[j].max(max);
+        }
+    }
+    let widths = track_sizes(
+        &b.style.grid_template_columns,
+        &mins,
+        &maxs,
+        Some(inner.width),
+        b.style.column_gap,
+        ctx,
+        b.style.font_size,
+    );
+    let mut heights = vec![0.0_f64; rows];
+    for (i, row, col, rs, cs) in &places {
+        let width =
+            widths[*col..col + cs].iter().sum::<f64>() + b.style.column_gap * (cs - 1) as f64;
+        let c = &mut b.children[*i];
+        forced_size(
+            c,
+            Rect { width, ..inner },
+            positioned,
+            ctx,
+            Some(width),
+            None,
+        );
+        let height = (c.border_box.height + c.margin.top + c.margin.bottom
+            - b.style.row_gap * (rs - 1) as f64)
+            .max(0.0)
+            / *rs as f64;
+        for j in *row..row + rs {
+            heights[j] = heights[j].max(height);
+        }
+    }
+    let row_sizes = track_sizes(
+        &b.style.grid_template_rows,
+        &heights,
+        &heights,
+        if b.style.height == Length::Auto {
+            None
+        } else {
+            Some(inner.height)
+        },
+        b.style.row_gap,
+        ctx,
+        b.style.font_size,
+    );
+    for (i, row, col, rs, cs) in places {
+        let x = inner.x + widths[..col].iter().sum::<f64>() + b.style.column_gap * col as f64;
+        let y = inner.y + row_sizes[..row].iter().sum::<f64>() + b.style.row_gap * row as f64;
+        let w = widths[col..col + cs].iter().sum::<f64>() + b.style.column_gap * (cs - 1) as f64;
+        let h = row_sizes[row..row + rs].iter().sum::<f64>() + b.style.row_gap * (rs - 1) as f64;
+        let c = &mut b.children[i];
+        let stretch_w = c.style.width == Length::Auto;
+        let stretch_h = c.style.height == Length::Auto;
+        forced_size(
+            c,
+            Rect {
+                x,
+                y,
+                width: w,
+                height: h,
+            },
+            positioned,
+            ctx,
+            stretch_w.then_some((w - c.margin.left - c.margin.right).max(0.0)),
+            stretch_h.then_some((h - c.margin.top - c.margin.bottom).max(0.0)),
+        );
+    }
+    if b.style.height == Length::Auto {
+        b.border_box.height = row_sizes.iter().sum::<f64>()
+            + b.style.row_gap * rows.saturating_sub(1) as f64
+            + b.border.top
+            + b.border.bottom
+            + b.padding.top
+            + b.padding.bottom;
+    }
+    update_overflow(b);
 }
 
-fn layout_table(
-    box_node: &mut LayoutBox,
-    containing_block: Rect,
-    positioned_cb: Rect,
-    ctx: &LayoutContext,
-) {
-    let fs = box_node.style.font_size;
-    let rfs = ctx.font_size_root;
-    let cb_w = containing_block.width;
-
-    box_node.padding = resolve_insets(&box_node.style.padding, cb_w, fs, rfs);
-    box_node.border = Insets {
-        top: box_node.style.borders.top.width,
-        right: box_node.style.borders.right.width,
-        bottom: box_node.style.borders.bottom.width,
-        left: box_node.style.borders.left.width,
-    };
-    box_node.margin = resolve_insets(&box_node.style.margin, cb_w, fs, rfs);
-
-    let total_border_w = box_node.border.left + box_node.border.right;
-    let total_padding_w = box_node.padding.left + box_node.padding.right;
-    let total_border_h = box_node.border.top + box_node.border.bottom;
-    let total_padding_h = box_node.padding.top + box_node.padding.bottom;
-
-    let container_w = match box_node.style.width {
-        Length::Px(px) => px,
-        Length::Percent(pct) => cb_w * (pct / 100.0),
-        _ => (cb_w - box_node.margin.left - box_node.margin.right).max(100.0),
-    };
-
-    box_node.border_box.x = containing_block.x + box_node.margin.left;
-    box_node.border_box.y = containing_block.y + box_node.margin.top;
-    box_node.border_box.width = container_w;
-
-    let inner_origin_x = box_node.border_box.x + box_node.border.left + box_node.padding.left;
-    let inner_origin_y = box_node.border_box.y + box_node.border.top + box_node.padding.top;
-    let inner_w = (container_w - total_border_w - total_padding_w).max(0.0);
-
-    // Collect all table rows whether directly under <table> or inside <tbody>/<thead>/<tfoot>
-    let has_direct_rows = box_node
-        .children
-        .iter()
-        .any(|c| c.box_type == BoxType::TableRow);
-    let mut num_cols = 1;
-
-    if has_direct_rows {
-        for child in &box_node.children {
-            if child.box_type == BoxType::TableRow {
-                num_cols = num_cols.max(child.children.len());
-            }
+fn row_paths(b: &LayoutBox, path: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+    for (i, c) in b.children.iter().enumerate() {
+        path.push(i);
+        if c.box_type == BoxType::TableRow {
+            out.push(path.clone());
+        } else if matches!(c.box_type, BoxType::Block | BoxType::Inline) {
+            row_paths(c, path, out);
         }
-    } else {
-        for section in &box_node.children {
-            for row in &section.children {
-                if row.box_type == BoxType::TableRow {
-                    num_cols = num_cols.max(row.children.len());
-                }
-            }
-        }
+        path.pop();
     }
-
-    let col_w = if num_cols > 0 {
-        inner_w / num_cols as f64
+}
+fn at_path<'a>(b: &'a mut LayoutBox, path: &[usize]) -> &'a mut LayoutBox {
+    if let Some((first, rest)) = path.split_first() {
+        at_path(&mut b.children[*first], rest)
     } else {
-        inner_w
-    };
-    let mut cursor_y = inner_origin_y;
-
-    if has_direct_rows {
-        for row in &mut box_node.children {
-            if row.box_type != BoxType::TableRow {
+        b
+    }
+}
+fn layout_table(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
+    let inner = init_container(b, cb, positioned, ctx);
+    let spacing = b.style.border_spacing;
+    let mut paths = Vec::new();
+    row_paths(b, &mut Vec::new(), &mut paths);
+    if paths.is_empty() {
+        return;
+    }
+    let count = paths.len();
+    let mut places = Vec::new();
+    let mut occupied = std::collections::HashSet::new();
+    let mut cols = 0;
+    for (r, path) in paths.iter().enumerate() {
+        let row = at_path(b, path);
+        let mut col = 0;
+        for (i, cell) in row.children.iter().enumerate() {
+            if cell.box_type != BoxType::TableCell {
                 continue;
             }
-            layout_single_table_row(
-                row,
-                inner_origin_x,
-                &mut cursor_y,
-                inner_w,
-                col_w,
-                positioned_cb,
-                ctx,
-            );
-        }
-    } else {
-        for section in &mut box_node.children {
-            section.border_box.x = inner_origin_x;
-            section.border_box.y = cursor_y;
-            section.border_box.width = inner_w;
-            let section_start_y = cursor_y;
-
-            for row in &mut section.children {
-                if row.box_type != BoxType::TableRow {
-                    continue;
-                }
-                layout_single_table_row(
-                    row,
-                    inner_origin_x,
-                    &mut cursor_y,
-                    inner_w,
-                    col_w,
-                    positioned_cb,
-                    ctx,
-                );
+            let cs = cell.table_col_span;
+            let rs = cell.table_row_span.min(count - r);
+            while (col..col + cs).any(|c| occupied.contains(&(r, c))) && col < 256 {
+                col += 1;
             }
-            section.border_box.height = cursor_y - section_start_y;
+            if col + cs > 256 {
+                continue;
+            }
+            for rr in r..r + rs {
+                for cc in col..col + cs {
+                    occupied.insert((rr, cc));
+                }
+            }
+            places.push((r, i, col, rs, cs));
+            cols = cols.max(col + cs);
+            col += cs;
         }
     }
-
-    let final_table_h = cursor_y - inner_origin_y;
-    box_node.border_box.height = final_table_h + total_border_h + total_padding_h;
-}
-
-fn layout_single_table_row(
-    row: &mut LayoutBox,
-    inner_origin_x: f64,
-    cursor_y: &mut f64,
-    inner_w: f64,
-    col_w: f64,
-    positioned_cb: Rect,
-    ctx: &LayoutContext,
-) {
-    row.border_box.x = inner_origin_x;
-    row.border_box.y = *cursor_y;
-    row.border_box.width = inner_w;
-
-    let mut row_h = 30.0_f64;
-    let mut cursor_x = inner_origin_x;
-
-    for cell in &mut row.children {
-        let cell_cb = Rect {
-            x: cursor_x,
-            y: *cursor_y,
-            width: col_w,
-            height: 0.0,
+    if cols == 0 {
+        return;
+    }
+    let mut mins = vec![0.0_f64; cols];
+    let mut maxs = mins.clone();
+    for (r, i, col, _, cs) in &places {
+        let c = &at_path(b, &paths[*r]).children[*i];
+        let padding = resolve_insets(
+            &c.style.padding,
+            inner.width,
+            c.style.font_size,
+            ctx.font_size_root,
+        );
+        let extra =
+            padding.left + padding.right + c.style.borders.left.width + c.style.borders.right.width;
+        let explicit = if c.style.width == Length::Auto {
+            0.0
+        } else {
+            c.style
+                .width
+                .resolve(inner.width, c.style.font_size, ctx.font_size_root)
         };
-        layout_box(cell, cell_cb, positioned_cb, ctx);
-        cell.border_box.x = cursor_x;
-        cell.border_box.y = *cursor_y;
-        cell.border_box.width = col_w;
-        row_h = row_h.max(cell.border_box.height);
-        cursor_x += col_w;
+        let min = (intrinsic_width(c, true) + extra).max(explicit) / *cs as f64;
+        let max = (intrinsic_width(c, false) + extra).max(explicit) / *cs as f64;
+        for cc in *col..col + cs {
+            mins[cc] = mins[cc].max(min);
+            maxs[cc] = maxs[cc].max(max);
+        }
     }
-
-    for cell in &mut row.children {
-        cell.border_box.height = row_h;
+    let room = (inner.width - spacing * (cols + 1) as f64).max(0.0);
+    let min_sum: f64 = mins.iter().sum();
+    let max_sum: f64 = maxs.iter().sum();
+    let mut widths = mins.clone();
+    if room > min_sum {
+        if max_sum > room {
+            let factor = (room - min_sum) / (max_sum - min_sum).max(0.001);
+            for c in 0..cols {
+                widths[c] += factor * (maxs[c] - mins[c]);
+            }
+        } else {
+            let extra = (room - max_sum) / cols as f64;
+            for c in 0..cols {
+                widths[c] = maxs[c] + extra;
+            }
+        }
     }
-
-    row.border_box.height = row_h;
-    *cursor_y += row_h;
+    let mut heights = vec![0.0_f64; count];
+    for (r, i, col, rs, cs) in &places {
+        let c = &mut at_path(b, &paths[*r]).children[*i];
+        let width = widths[*col..col + cs].iter().sum::<f64>() + spacing * (cs - 1) as f64;
+        forced_size(
+            c,
+            Rect { width, ..inner },
+            positioned,
+            ctx,
+            Some(width),
+            None,
+        );
+        let height = (c.border_box.height - spacing * (rs - 1) as f64).max(0.0) / *rs as f64;
+        for rr in *r..r + rs {
+            heights[rr] = heights[rr].max(height);
+        }
+    }
+    for (r, path) in paths.iter().enumerate() {
+        let row = at_path(b, path);
+        if row.style.height != Length::Auto {
+            heights[r] = heights[r].max(row.style.height.resolve(
+                inner.height,
+                row.style.font_size,
+                ctx.font_size_root,
+            ));
+        }
+        row.border_box = Rect {
+            x: inner.x + spacing,
+            y: inner.y + spacing + heights[..r].iter().sum::<f64>() + spacing * r as f64,
+            width: widths.iter().sum::<f64>() + spacing * cols.saturating_sub(1) as f64,
+            height: heights[r],
+        };
+    }
+    for (r, i, col, rs, cs) in places {
+        let row_y = at_path(b, &paths[r]).border_box.y;
+        let c = &mut at_path(b, &paths[r]).children[i];
+        let x = inner.x + spacing + widths[..col].iter().sum::<f64>() + spacing * col as f64;
+        let w = widths[col..col + cs].iter().sum::<f64>() + spacing * (cs - 1) as f64;
+        let h = heights[r..r + rs].iter().sum::<f64>() + spacing * (rs - 1) as f64;
+        forced_size(
+            c,
+            Rect {
+                x,
+                y: row_y,
+                width: w,
+                height: h,
+            },
+            positioned,
+            ctx,
+            Some(w),
+            Some(h),
+        );
+    }
+    // Section boxes enclose their rows, so their backgrounds and geometry agree.
+    for section in &mut b.children {
+        if section.box_type == BoxType::TableRow || section.children.is_empty() {
+            continue;
+        }
+        let first = section.children.first().unwrap().border_box;
+        let last = section.children.last().unwrap().border_box;
+        section.border_box = Rect {
+            x: inner.x,
+            y: first.y,
+            width: inner.width,
+            height: (last.bottom() - first.y).max(0.0),
+        };
+    }
+    b.border_box.height = heights.iter().sum::<f64>()
+        + spacing * (count + 1) as f64
+        + b.padding.top
+        + b.padding.bottom
+        + b.border.top
+        + b.border.bottom;
+    update_overflow(b);
 }
 
 // ---------------------------------------------------------------------------
@@ -1319,4 +1607,42 @@ pub fn hit_test_node(box_node: &LayoutBox, point: Point) -> Option<NodeKey> {
         }
     }
     box_node.node
+}
+
+fn assign_inline_geometry(children: &mut [LayoutBox], lines: &[LineBox], x: f64, y: f64) {
+    fn keys(b: &LayoutBox, out: &mut std::collections::HashSet<NodeKey>) {
+        if let Some(k) = b.node {
+            out.insert(k);
+        }
+        for c in &b.children {
+            keys(c, out);
+        }
+    }
+    for child in children {
+        let mut descendants = std::collections::HashSet::new();
+        keys(child, &mut descendants);
+        child.fragments = lines
+            .iter()
+            .flat_map(|l| &l.text_runs)
+            .filter(|r| r.node.is_some_and(|k| descendants.contains(&k)))
+            .map(|r| Rect {
+                x: x + r.rect.x,
+                y: y + r.rect.y,
+                ..r.rect
+            })
+            .collect();
+        if let Some(first) = child.fragments.first().copied() {
+            child.border_box = child.fragments.iter().fold(first, |a, b| {
+                let left = a.x.min(b.x);
+                let top = a.y.min(b.y);
+                Rect {
+                    x: left,
+                    y: top,
+                    width: a.right().max(b.right()) - left,
+                    height: a.bottom().max(b.bottom()) - top,
+                }
+            });
+        }
+        assign_inline_geometry(&mut child.children, lines, x, y);
+    }
 }

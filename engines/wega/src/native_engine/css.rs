@@ -437,7 +437,7 @@ impl AlignItems {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RectLengths {
     pub top: Length,
     pub right: Length,
@@ -445,6 +445,16 @@ pub struct RectLengths {
     pub left: Length,
 }
 
+impl Default for RectLengths {
+    fn default() -> Self {
+        Self {
+            top: Length::Px(0.0),
+            right: Length::Px(0.0),
+            bottom: Length::Px(0.0),
+            left: Length::Px(0.0),
+        }
+    }
+}
 impl RectLengths {
     pub fn parse_quad(s: &str) -> Self {
         let parts: Vec<&str> = s.split_whitespace().collect();
@@ -644,10 +654,16 @@ pub struct ComputedStyle {
     pub flex_grow: f64,
     pub flex_shrink: f64,
     pub flex_basis: Length,
-    pub grid_template_columns: Vec<Length>,
-    pub grid_template_rows: Vec<Length>,
+    pub flex_wrap: bool,
+    pub row_gap: f64,
+    pub column_gap: f64,
+    pub grid_template_columns: Vec<GridTrack>,
+    pub grid_template_rows: Vec<GridTrack>,
     pub grid_column_start: Option<i32>,
     pub grid_row_start: Option<i32>,
+    pub grid_column_span: usize,
+    pub grid_row_span: usize,
+    pub border_spacing: f64,
     pub border_radius: f64,
     pub transform: Option<Transform>,
     pub box_shadow: Option<BoxShadow>,
@@ -693,10 +709,16 @@ impl Default for ComputedStyle {
             flex_grow: 0.0,
             flex_shrink: 1.0,
             flex_basis: Length::Auto,
+            flex_wrap: false,
+            row_gap: 0.0,
+            column_gap: 0.0,
             grid_template_columns: Vec::new(),
             grid_template_rows: Vec::new(),
             grid_column_start: None,
             grid_row_start: None,
+            grid_column_span: 1,
+            grid_row_span: 1,
+            border_spacing: 2.0,
             border_radius: 0.0,
             transform: None,
             box_shadow: None,
@@ -1357,6 +1379,11 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 style.borders.left.color = c;
             }
         }
+        "border-spacing" => {
+            if let Some(l) = Length::parse(val) {
+                style.border_spacing = l.resolve(0.0, style.font_size, 16.0).max(0.0);
+            }
+        }
         "border-radius" => {
             if let Some(Length::Px(r)) = Length::parse(val) {
                 style.border_radius = r;
@@ -1489,12 +1516,62 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 style.flex_basis = l;
             }
         }
+        "flex-wrap" => style.flex_wrap = val == "wrap",
+        "gap" => {
+            let values: Vec<_> = val
+                .split_ascii_whitespace()
+                .filter_map(Length::parse)
+                .collect();
+            if let Some(v) = values.first() {
+                style.row_gap = v.resolve(0.0, style.font_size, 16.0).max(0.0);
+                style.column_gap = values
+                    .get(1)
+                    .unwrap_or(v)
+                    .resolve(0.0, style.font_size, 16.0)
+                    .max(0.0);
+            }
+        }
+        "row-gap" => {
+            if let Some(v) = Length::parse(val) {
+                style.row_gap = v.resolve(0.0, style.font_size, 16.0).max(0.0);
+            }
+        }
+        "column-gap" => {
+            if let Some(v) = Length::parse(val) {
+                style.column_gap = v.resolve(0.0, style.font_size, 16.0).max(0.0);
+            }
+        }
         "grid-template-columns" => {
-            style.grid_template_columns =
-                val.split_whitespace().filter_map(Length::parse).collect();
+            if let Some(tracks) = super::syntax::tracks(val) {
+                style.grid_template_columns = tracks;
+            }
         }
         "grid-template-rows" => {
-            style.grid_template_rows = val.split_whitespace().filter_map(Length::parse).collect();
+            if let Some(tracks) = super::syntax::tracks(val) {
+                style.grid_template_rows = tracks;
+            }
+        }
+        "grid-column" | "grid-row" => {
+            let mut parts = val.split('/');
+            let start = parts.next().and_then(|s| s.trim().parse::<i32>().ok());
+            let end = parts.next().map(str::trim).unwrap_or("");
+            let span = end
+                .strip_prefix("span ")
+                .and_then(|s| s.trim().parse::<usize>().ok())
+                .or_else(|| {
+                    end.parse::<i32>()
+                        .ok()
+                        .and_then(|e| start.map(|s| (e - s).max(1) as usize))
+                })
+                .unwrap_or(1)
+                .clamp(1, 256);
+            if prop == "grid-column" {
+                style.grid_column_start = start;
+                style.grid_column_span = span;
+            } else {
+                style.grid_row_start = start;
+                style.grid_row_span = span;
+            }
         }
         "grid-column-start" => style.grid_column_start = val.trim().parse::<i32>().ok(),
         "grid-row-start" => style.grid_row_start = val.trim().parse::<i32>().ok(),
@@ -1543,4 +1620,11 @@ fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, prop: &str)
         target.line_height = source.line_height;
         target.line_height_factor = source.line_height_factor;
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum GridTrack {
+    Length(Length),
+    Fraction(f64),
+    MinMax(Length, Box<GridTrack>),
 }
