@@ -4,7 +4,7 @@
 //! multi-pass layout calculations (Block formatting, Inline formatting,
 //! Flexbox, Min/Max constraints, Positioning, and Overflow).
 
-use crate::native_engine::css::*;
+use super::css::*;
 pub use wega_dom::layout::{BoxModel, ClientBox, ContentBox, Insets, Point, Rect, Size};
 use wega_dom::{DocumentView, NodeKey, NodeKind, NodeView};
 
@@ -385,7 +385,6 @@ fn build_box_node<D: DocumentView>(
                 .unwrap_or(1)
                 .clamp(1, 256);
             if node.element_name().is_some_and(|n| n.local == "svg") {
-                layout_box.svg = super::graphics::inline_svg(doc, node_key);
                 return Some(layout_box);
             }
             if let Some(ref form) = layout_box.form_state {
@@ -451,21 +450,18 @@ fn build_box_node<D: DocumentView>(
                     Some(FormControlKind::Select) => {
                         let mut selected_text = None;
                         for ck in node.children() {
-                            if let Some(cn) = doc.node(ck) {
-                                if cn
+                            if let Some(cn) = doc.node(ck)
+                                && cn
                                     .element_name()
                                     .is_some_and(|e| e.local.eq_ignore_ascii_case("option"))
-                                {
-                                    if cn.attr("selected").is_some() || selected_text.is_none() {
-                                        selected_text =
-                                            cn.text().map(str::to_string).or_else(|| {
-                                                cn.children()
-                                                    .next()
-                                                    .and_then(|tk| doc.node(tk))
-                                                    .and_then(|t| t.text().map(str::to_string))
-                                            });
-                                    }
-                                }
+                                && (cn.attr("selected").is_some() || selected_text.is_none())
+                            {
+                                selected_text = cn.text().map(str::to_string).or_else(|| {
+                                    cn.children()
+                                        .next()
+                                        .and_then(|tk| doc.node(tk))
+                                        .and_then(|t| t.text().map(str::to_string))
+                                });
                             }
                         }
                         raw_children.clear();
@@ -828,25 +824,24 @@ fn layout_block_or_flow(
         }
     };
 
-    if box_node.style.width == Length::Auto {
-        if let Some((iw, ih)) = box_node.replaced_size() {
-            if box_node.style.height != Length::Auto {
-                content_w =
-                    box_node.style.height.resolve(effective_cb.height, fs, rfs) * iw / ih.max(1.0);
-            } else {
-                content_w = iw;
-            }
+    if box_node.style.width == Length::Auto
+        && let Some((iw, ih)) = box_node.replaced_size()
+    {
+        if box_node.style.height != Length::Auto {
+            content_w =
+                box_node.style.height.resolve(effective_cb.height, fs, rfs) * iw / ih.max(1.0);
+        } else {
+            content_w = iw;
         }
     }
-    if let Some(ref form) = box_node.form_state {
-        if matches!(
+    if let Some(ref form) = box_node.form_state
+        && matches!(
             form.kind,
             Some(FormControlKind::Checkbox | FormControlKind::Radio)
-        ) {
-            if box_node.style.width == Length::Auto {
-                content_w = 13.0;
-            }
-        }
+        )
+        && box_node.style.width == Length::Auto
+    {
+        content_w = 13.0;
     }
     // Apply min-width and max-width constraints
     content_w = clamp_dimension(
@@ -1136,8 +1131,8 @@ fn layout_block_or_flow(
 
     let border_box_h = final_content_h + total_border_h + total_padding_h;
     box_node.border_box.height = border_box_h;
-    if let Some(ref form) = box_node.form_state {
-        if matches!(
+    if let Some(ref form) = box_node.form_state
+        && matches!(
             form.kind,
             Some(
                 FormControlKind::TextInput {
@@ -1146,20 +1141,19 @@ fn layout_block_or_flow(
                 } | FormControlKind::Button
                     | FormControlKind::Select
             )
-        ) {
-            if !box_node.lines.is_empty() {
-                let cb = box_node.content_box();
-                let cb_h = cb.height;
-                let cb_w = cb.width;
-                let is_button = matches!(form.kind, Some(FormControlKind::Button));
-                let line = &mut box_node.lines[0];
-                if cb_h > line.rect.height {
-                    line.rect.y = ((cb_h - line.rect.height) / 2.0).max(0.0);
-                }
-                if is_button && cb_w > line.rect.width {
-                    line.rect.x = ((cb_w - line.rect.width) / 2.0).max(0.0);
-                }
-            }
+        )
+        && !box_node.lines.is_empty()
+    {
+        let cb = box_node.content_box();
+        let cb_h = cb.height;
+        let cb_w = cb.width;
+        let is_button = matches!(form.kind, Some(FormControlKind::Button));
+        let line = &mut box_node.lines[0];
+        if cb_h > line.rect.height {
+            line.rect.y = ((cb_h - line.rect.height) / 2.0).max(0.0);
+        }
+        if is_button && cb_w > line.rect.width {
+            line.rect.x = ((cb_w - line.rect.width) / 2.0).max(0.0);
         }
     }
 

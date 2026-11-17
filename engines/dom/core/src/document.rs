@@ -31,6 +31,8 @@ struct Node {
     parent: Option<NodeKey>,
     children: Vec<NodeKey>,
     template: Option<NodeKey>,
+    // Ownership is separate from observable DOM parentage for template contents.
+    owner: Option<NodeKey>,
 }
 impl Node {
     fn new(data: Data) -> Self {
@@ -39,6 +41,7 @@ impl Node {
             parent: None,
             children: Vec::new(),
             template: None,
+            owner: None,
         }
     }
 }
@@ -97,7 +100,9 @@ impl Document {
         self.dirty.structure |= structure;
         self.dirty.style = true;
         self.dirty.layout = true;
-        self.dirty.nodes.insert(key);
+        if self.nodes.contains_key(&key) {
+            self.dirty.nodes.insert(key);
+        }
     }
     fn container(&self, key: NodeKey) -> Result<(), MutationError> {
         match self.get(key)?.data {
@@ -120,13 +125,26 @@ impl Document {
                 if k == child {
                     return Err(MutationError::HierarchyCycle { parent, child });
                 }
-                at = self.get(k)?.parent;
+                let n = self.get(k)?;
+                at = n.parent.or(n.owner);
             }
             if child == self.root {
                 return Err(MutationError::InvalidParent(child));
             }
         }
         Ok(())
+    }
+    fn expand_fragments(&self, children: &[NodeKey]) -> Result<Vec<NodeKey>, MutationError> {
+        let mut result = Vec::new();
+        for &key in children {
+            let n = self.get(key)?;
+            if matches!(n.data, Data::Fragment) {
+                result.extend(&n.children);
+            } else {
+                result.push(key);
+            }
+        }
+        Ok(result)
     }
     fn detach(&mut self, key: NodeKey) {
         let parent = self.nodes.get_mut(&key).and_then(|n| n.parent.take());
@@ -294,6 +312,7 @@ impl Mutator for DocumentMutator<'_> {
         }
         let fragment = self.0.create_fragment();
         self.0.nodes.get_mut(&key).unwrap().template = Some(fragment);
+        self.0.nodes.get_mut(&fragment).unwrap().owner = Some(key);
         Ok(fragment)
     }
     fn append_children(
@@ -301,6 +320,9 @@ impl Mutator for DocumentMutator<'_> {
         parent: NodeKey,
         children: &[NodeKey],
     ) -> Result<(), MutationError> {
+        self.0.validate(parent, children)?;
+        let expanded = self.0.expand_fragments(children)?;
+        let children = expanded.as_slice();
         self.0.validate(parent, children)?;
         if children.is_empty() {
             return Ok(());
@@ -323,6 +345,9 @@ impl Mutator for DocumentMutator<'_> {
             .parent
             .ok_or(MutationError::Detached(anchor))?;
         self.0.validate(parent, children)?;
+        let expanded = self.0.expand_fragments(children)?;
+        let children = expanded.as_slice();
+        self.0.validate(parent, children)?;
         let old = self.0.get(parent)?.children.clone();
         self.0.insert(parent, Some(anchor), children);
         if self.0.get(parent)?.children != old {
@@ -335,6 +360,9 @@ impl Mutator for DocumentMutator<'_> {
         parent: NodeKey,
         children: &[NodeKey],
     ) -> Result<(), MutationError> {
+        self.0.validate(parent, children)?;
+        let expanded = self.0.expand_fragments(children)?;
+        let children = expanded.as_slice();
         self.0.validate(parent, children)?;
         let old = self.0.get(parent)?.children.clone();
         // Detach first; a retained descendant stays live and is then moved.
@@ -363,6 +391,9 @@ impl Mutator for DocumentMutator<'_> {
         let mut stack = vec![key];
         while let Some(k) = stack.pop() {
             if let Some(n) = self.0.nodes.remove(&k) {
+                if let Some(owner) = n.owner.and_then(|k| self.0.nodes.get_mut(&k)) {
+                    owner.template = None;
+                }
                 stack.extend(n.children);
                 stack.extend(n.template);
                 self.0.dirty.nodes.remove(&k);
@@ -408,6 +439,7 @@ impl Mutator for DocumentMutator<'_> {
             if let Some(template) = template {
                 let copy = self.0.create_fragment();
                 self.0.nodes.get_mut(&dest).unwrap().template = Some(copy);
+                self.0.nodes.get_mut(&copy).unwrap().owner = Some(dest);
                 stack.push((template, copy));
             }
         }

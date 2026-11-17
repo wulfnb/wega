@@ -6892,7 +6892,6 @@ dependencies = [
  "accesskit",
  "anyrender",
  "anyrender_skia",
- "anyrender_svg",
  "base64 0.23.1",
  "blitz-dom",
  "blitz-traits",
@@ -6914,7 +6913,6 @@ dependencies = [
  "skia-safe",
  "stylo",
  "stylo_dom",
- "svgtypes",
  "tempfile",
  "tokio",
  "url",
@@ -6924,6 +6922,7 @@ dependencies = [
  "wega-adapter-v8",
  "wega-dom",
  "wega-html",
+ "wega-native",
  "wega-network",
  "wega-permissions",
  "wega-platform",
@@ -6938,6 +6937,25 @@ dependencies = [
  "html5ever",
  "url",
  "wega-dom",
+]
+
+[[package]]
+name = "wega-native"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_skia",
+ "anyrender_svg",
+ "cssparser 0.38.0",
+ "html5ever",
+ "kurbo",
+ "parley",
+ "peniko",
+ "svgtypes",
+ "url",
+ "usvg",
+ "wega-dom",
+ "wega-html",
 ]
 
 [[package]]

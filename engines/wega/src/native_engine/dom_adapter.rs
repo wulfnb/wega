@@ -102,7 +102,7 @@ impl NativeResources for BlitzDocument {
 }
 pub(crate) fn decode_svg(source: &[u8]) -> Option<SvgGraphic> {
     let svg = blitz_dom::node::SvgImageData::from_data(source, &usvg::Options::default()).ok()?;
-    Some(SvgGraphic::from(&svg))
+    Some(svg_graphic(&svg))
 }
 pub fn raster(image: &blitz_dom::node::RasterImageData) -> peniko::ImageData {
     peniko::ImageData {
@@ -114,17 +114,23 @@ pub fn raster(image: &blitz_dom::node::RasterImageData) -> peniko::ImageData {
     }
 }
 
-impl From<&blitz_dom::node::SvgImageData> for SvgGraphic {
-    fn from(svg: &blitz_dom::node::SvgImageData) -> Self {
-        Self {
-            tree: svg.tree.clone(),
-            view_box: svg.intrinsic_dimensions.view_box,
-            aspect: svg.intrinsic_dimensions.preserve_aspect_ratio,
-            degenerate: svg.intrinsic_dimensions.degenerate_view_box,
-        }
-    }
+fn svg_graphic(svg: &blitz_dom::node::SvgImageData) -> SvgGraphic {
+    SvgGraphic::from_decoded(
+        svg.tree.clone(),
+        svg.intrinsic_dimensions.view_box,
+        svg.intrinsic_dimensions.preserve_aspect_ratio,
+        svg.intrinsic_dimensions.degenerate_view_box,
+    )
 }
 fn images(b: &mut LayoutBox, doc: &mut BlitzDocument) {
+    if let Some(source) = b.node.and_then(|key| {
+        doc.node(key)
+            .and_then(NodeView::element_name)
+            .filter(|n| n.local == "svg")
+            .and_then(|_| super::graphics::svg_source(doc, key))
+    }) {
+        b.svg = decode_svg(source.as_bytes());
+    }
     if let Some(image) = b
         .node
         .and_then(|k| doc.get_node(k.node_id()))
@@ -133,7 +139,7 @@ fn images(b: &mut LayoutBox, doc: &mut BlitzDocument) {
     {
         match image {
             blitz_dom::node::ImageData::Raster(image) => b.image = Some(raster(image)),
-            blitz_dom::node::ImageData::Svg(svg) => b.svg = Some(SvgGraphic::from(svg)),
+            blitz_dom::node::ImageData::Svg(svg) => b.svg = Some(svg_graphic(svg)),
             _ => {}
         }
     }
@@ -148,7 +154,7 @@ fn images(b: &mut LayoutBox, doc: &mut BlitzDocument) {
                 b.background_image = Some(raster(&image))
             }
             Some(blitz_dom::node::ImageData::Svg(svg)) => {
-                b.background_svg = Some(SvgGraphic::from(&svg))
+                b.background_svg = Some(svg_graphic(&svg))
             }
             _ => {}
         }

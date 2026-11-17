@@ -1851,23 +1851,19 @@ pub fn resolve_computed_style<D: DocumentView>(
     if let Some(el_name) = node.element_name() {
         let tag = el_name.local;
         if matches!(tag, "img" | "iframe" | "canvas" | "video" | "embed" | "svg") {
-            if style.width == Length::Auto {
-                if let Some(w_attr) = node.attr("width") {
-                    if let Some(l) =
-                        Length::parse(w_attr).or_else(|| w_attr.parse::<f64>().ok().map(Length::Px))
-                    {
-                        style.width = l;
-                    }
-                }
+            if style.width == Length::Auto
+                && let Some(w_attr) = node.attr("width")
+                && let Some(l) =
+                    Length::parse(w_attr).or_else(|| w_attr.parse::<f64>().ok().map(Length::Px))
+            {
+                style.width = l;
             }
-            if style.height == Length::Auto {
-                if let Some(h_attr) = node.attr("height") {
-                    if let Some(l) =
-                        Length::parse(h_attr).or_else(|| h_attr.parse::<f64>().ok().map(Length::Px))
-                    {
-                        style.height = l;
-                    }
-                }
+            if style.height == Length::Auto
+                && let Some(h_attr) = node.attr("height")
+                && let Some(l) =
+                    Length::parse(h_attr).or_else(|| h_attr.parse::<f64>().ok().map(Length::Px))
+            {
+                style.height = l;
             }
         }
     }
@@ -2238,10 +2234,10 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
         }
         "z-index" => style.z_index = val.trim().parse::<i32>().ok(),
         "opacity" => {
-            if let Ok(op) = val.trim().parse::<f32>() {
-                if op.is_finite() {
-                    style.opacity = op.clamp(0.0, 1.0);
-                }
+            if let Ok(op) = val.trim().parse::<f32>()
+                && op.is_finite()
+            {
+                style.opacity = op.clamp(0.0, 1.0);
             }
         }
         "overflow" => {

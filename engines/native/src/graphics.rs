@@ -165,7 +165,7 @@ impl ClipPath {
     }
 }
 
-pub fn inline_svg<D: DocumentView>(doc: &D, key: NodeKey) -> Option<SvgGraphic> {
+pub fn svg_source<D: DocumentView>(doc: &D, key: NodeKey) -> Option<String> {
     fn escape(value: &str) -> String {
         value
             .replace('&', "&amp;")
@@ -228,7 +228,7 @@ pub fn inline_svg<D: DocumentView>(doc: &D, key: NodeKey) -> Option<SvgGraphic> 
     }
     let mut xml = String::new();
     write(doc, key, &mut xml, 0, &mut 0)?;
-    super::dom_adapter::decode_svg(xml.as_bytes())
+    Some(xml)
 }
 
 #[derive(Debug, Clone)]
@@ -239,6 +239,21 @@ pub struct SvgGraphic {
     pub degenerate: bool,
 }
 impl SvgGraphic {
+    /// Attach a tree already decoded by the embedding browser's bounded decoder.
+    /// This crate performs no network/file access or image decoding.
+    pub fn from_decoded(
+        tree: Arc<usvg::Tree>,
+        view_box: Option<usvg::NonZeroRect>,
+        aspect: svgtypes::AspectRatio,
+        degenerate: bool,
+    ) -> Self {
+        Self {
+            tree,
+            view_box,
+            aspect,
+            degenerate,
+        }
+    }
     pub fn transform(&self, w: f64, h: f64) -> kurbo::Affine {
         fn map(v: usvg::NonZeroRect, a: svgtypes::AspectRatio, w: f64, h: f64) -> kurbo::Affine {
             use svgtypes::Align;

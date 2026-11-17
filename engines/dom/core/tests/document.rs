@@ -227,3 +227,41 @@ fn attribute_creation_and_missing_updates_deduplicate_by_namespace() {
         .unwrap();
     assert_eq!(d.mutation_epoch(), before);
 }
+
+#[test]
+fn fragments_insert_contents_and_template_ownership_cannot_cycle() {
+    let mut d = doc();
+    let p = element(&mut d, "p");
+    let f = d.create_fragment();
+    let text = d.mutate().create_text("fragment");
+    d.mutate().append_children(f, &[text]).unwrap();
+    d.mutate().append_children(p, &[f]).unwrap();
+    assert_eq!(d.node(p).unwrap().children().collect::<Vec<_>>(), [text]);
+    assert_eq!(d.node(f).unwrap().children().len(), 0);
+    assert_eq!(d.node(text).unwrap().parent(), Some(p));
+    assert_eq!(d.node(f).unwrap().parent(), None);
+    let t = element(&mut d, "template");
+    let contents = d.mutate().template_contents(t).unwrap();
+    let before = d.mutation_epoch();
+    assert!(matches!(
+        d.mutate().append_children(contents, &[t]),
+        Err(MutationError::HierarchyCycle { .. })
+    ));
+    assert_eq!(d.mutation_epoch(), before);
+    d.mutate().remove_and_drop(contents).unwrap();
+    let replacement = d.mutate().template_contents(t).unwrap();
+    assert_ne!(replacement, contents);
+    assert!(d.is_fragment(replacement));
+}
+#[test]
+fn repeated_collection_does_not_retain_deleted_keys_in_invalidation_set() {
+    let mut d = doc();
+    for _ in 0..5000 {
+        let key = element(&mut d, "p");
+        d.mutate().remove_and_drop(key).unwrap();
+    }
+    assert_eq!(d.node_count(), 1);
+    let dirty = d.take_invalidations();
+    assert!(dirty.structure);
+    assert!(dirty.nodes.is_empty());
+}

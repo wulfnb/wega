@@ -32,3 +32,18 @@ The native backend is opt-in (`WEGA_RENDER_BACKEND=native` / view selection).
 Production constructors in `view.rs` create Blitz documents for blank/navigation
 and share them with the native backend. Existing native rendering tests therefore
 do **not** establish native-only construction or linking.
+
+## Verified component migration
+
+`wega-native` now owns CSS, selector/cascade syntax, layout, Parley shaping,
+SVG geometry/serialization and display-list algorithms. The engine re-exports
+these modules for existing callers. The crate's normal/build and test graphs
+exclude all Blitz packages; its owner-to-raster test uses only `wega-dom::Document`.
+Inline SVG decoding moved to the existing resource bridge with the same bounded
+SVG decoder; the new algorithm crate never fetches or decodes resources.
+
+`wega-dom::Document` supplies flat owned nodes and the html5ever mutation contract.
+It is **not wired into production views yet**. The five production dependency
+names remain: `blitz-dom`, `blitz-html`, `blitz-paint`, `blitz-traits`,
+`wega-adapter-blitz`. The signed worker/browser is not native-only, even when its
+native rendering backend is selected. No reference code/vendor source was deleted.

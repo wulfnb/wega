@@ -42,3 +42,24 @@
   previous captures already show restored rustdoc 200px sidebar/600px main.
 - Next: isolate native algorithms in an independent crate while retaining the
   authorized decoder in the resource bridge. Production owner integration remains.
+
+## Independent algorithm milestone
+
+- `wega-native` extracted from engine modules; production engine uses the extracted
+  algorithms. Resource binding remains at the explicit existing bridge.
+- Component graph is Blitz-free, including test/raster dependencies. Real owned
+  HTML -> mutation -> native layout -> hit-test -> AnyRender/Skia pixels passes.
+- Independent owner/parser/native tests: 25 passed, no ignored; strict component
+  Clippy passes. Production SVG/canvas regression smoke passed, 6 tests.
+- Owner fragment insertion/cycle checks and invalidation cleanup tests added.
+- Release benchmark source added for independent 200-element/201-rule stages;
+  release measurements not yet run. No speedup claim.
+- New Skia component graph required its pinned prebuilt: restricted attempt failed
+  DNS, normal approved network retry succeeded. No sandbox/browser policy changed.
+- Disk recovery: 90 obsolete generated test executables (17,197,188,768 bytes)
+  matched old dependency fingerprints, all checked not running, were removed;
+  explicit manifest `/private/tmp/wega-obsolete-test-executables.json` preserved.
+- Next: full sequential workspace/root/Clippy, native broker/security and signed
+  worker, final Chrome/WPT and public captures, release benchmarks and reports.
+- Production DOM/CSSOM/resource/control/VM/frame integration remains incomplete;
+  production independence gate must fail until those owners migrate.

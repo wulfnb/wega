@@ -68,10 +68,10 @@ fn parse_import_url(input: &mut Parser<'_>) -> Result<String, Error> {
 
 fn unquote(s: &str) -> &str {
     let s = s.trim();
-    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with("'") && s.ends_with("'")) {
-        if s.len() >= 2 {
-            return &s[1..s.len() - 1];
-        }
+    if ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with("'") && s.ends_with("'")))
+        && s.len() >= 2
+    {
+        return &s[1..s.len() - 1];
     }
     s
 }

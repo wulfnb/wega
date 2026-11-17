@@ -254,7 +254,8 @@ impl DisplayList {
             }
         }
     }
-    pub(crate) fn geometry_snapshot(
+    /// Snapshot used by the embedding backend's measured geometry cache.
+    pub fn geometry_snapshot(
         &self,
     ) -> (
         std::collections::HashMap<NodeKey, Vec<Rect>>,
@@ -651,14 +652,14 @@ fn content(
         }
     }
     if let Some(ref form) = b.form_state {
-        if form.is_focused {
-            if let Some(caret) = form.caret_rect {
-                list.items.push(DisplayItem::FillRect {
-                    rect: scaled(caret, s),
-                    color: b.style.color,
-                    border_radius: 0.0,
-                });
-            }
+        if form.is_focused
+            && let Some(caret) = form.caret_rect
+        {
+            list.items.push(DisplayItem::FillRect {
+                rect: scaled(caret, s),
+                color: b.style.color,
+                border_radius: 0.0,
+            });
         }
         if matches!(form.kind, Some(super::layout::FormControlKind::Checkbox)) {
             let rect = scaled(b.content_box(), s);

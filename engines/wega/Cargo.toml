@@ -8,6 +8,7 @@ publish = false
 description = "Wega's experimental Blitz-based page engine"
 
 [dependencies]
+wega-native = { path = "../native" }
 wega-protocol = { path = "../protocol" }
 wega-network = {path="../network"}
 wega-security = { path = "../services/security" }
@@ -19,9 +20,7 @@ wega-dom = { path = "../dom/core" }
 wega-html = { path = "../html/parser" }
 wega-platform = {path="../platform"}
 anyrender = "=0.14.0"
-anyrender_svg = "=0.15.0"
 usvg = "=0.48.1"
-svgtypes = "=0.16.1"
 cssparser = "=0.38.0"
 parley = { version = "=0.12.0", features = ["system", "complex-scripts"] }
 kurbo = "=0.13.1"
