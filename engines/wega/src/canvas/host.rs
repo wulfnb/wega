@@ -122,13 +122,18 @@ pub(crate) fn host_call(
                 let src_id = text(2)
                     .parse::<u64>()
                     .map_err(|_| "Invalid source canvas ID")?;
-                let is_clean = text(3) != "tainted";
-                let (src_pixels, src_w, src_h) = {
+                let (src_pixels, src_w, src_h, is_clean) = {
                     let src = engine
                         .get_mut(crate::canvas::CanvasId(src_id))
                         .ok_or("Source canvas not found")?;
-                    let pixels = src.get_image_data(0, 0, src.width as i32, src.height as i32)?;
-                    (pixels, src.width as i32, src.height as i32)
+                    let pixels =
+                        src.presentation_pixels(0, 0, src.width as i32, src.height as i32)?;
+                    (
+                        pixels,
+                        src.width as i32,
+                        src.height as i32,
+                        src.origin_clean,
+                    )
                 };
                 let target = engine
                     .get_mut(crate::canvas::CanvasId(target_id))

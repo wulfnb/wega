@@ -54,6 +54,13 @@ pub enum DisplayItem {
         rect: Rect,
         border_radius: f64,
     },
+    PushPathClip {
+        path: kurbo::BezPath,
+    },
+    Svg {
+        rect: Rect,
+        tree: super::graphics::SvgGraphic,
+    },
     PopClip,
     PushOpacity {
         opacity: f32,
@@ -227,6 +234,22 @@ impl DisplayList {
                         .append_scene(child.clone(), current * Affine::translate((rect.x, rect.y)));
                     scene.pop_layer();
                 }
+                DisplayItem::PushPathClip { path } => {
+                    scene.push_clip_layer(peniko::Fill::NonZero, current, path)
+                }
+                DisplayItem::Svg { rect, tree } => {
+                    scene.push_clip_layer(peniko::Fill::NonZero, current, &kr(*rect));
+                    if !tree.degenerate {
+                        anyrender_svg::render_svg_tree(
+                            scene,
+                            &tree.tree,
+                            current
+                                * Affine::translate((rect.x, rect.y))
+                                * tree.transform(rect.width, rect.height),
+                        );
+                    }
+                    scene.pop_layer();
+                }
                 DisplayItem::HitRegion { .. } => {}
             }
         }
@@ -291,9 +314,10 @@ impl DisplayList {
                     rect,
                     border_radius,
                 } => clips.push((
-                    kurbo::RoundedRect::from_rect(kr(*rect), *border_radius),
+                    kurbo::RoundedRect::from_rect(kr(*rect), *border_radius).to_path(0.1),
                     current,
                 )),
+                DisplayItem::PushPathClip { path } => clips.push((path.clone(), current)),
                 DisplayItem::PopClip => {
                     clips.pop();
                 }
@@ -324,7 +348,8 @@ impl DisplayList {
     }
 }
 fn context(b: &LayoutBox, parent_flex: bool) -> bool {
-    b.style.transform.is_some()
+    b.style.clip_path.is_some()
+        || b.style.transform.is_some()
         || b.style.opacity < 1.0
         || (b.style.z_index.is_some() && (b.style.position != Position::Static || parent_flex))
         || b.style.position == Position::Fixed
@@ -374,7 +399,12 @@ fn decorations(b: &LayoutBox, list: &mut DisplayList, s: f64) {
         }
         if let Some(shadow) = b.style.box_shadow {
             list.items.push(DisplayItem::BoxShadow {
-                rect,
+                rect: Rect {
+                    x: rect.x - shadow.spread * s,
+                    y: rect.y - shadow.spread * s,
+                    width: (rect.width + 2.0 * shadow.spread * s).max(0.0),
+                    height: (rect.height + 2.0 * shadow.spread * s).max(0.0),
+                },
                 offset_x: shadow.offset_x * s,
                 offset_y: shadow.offset_y * s,
                 blur_radius: shadow.blur_radius * s,
@@ -389,6 +419,7 @@ fn decorations(b: &LayoutBox, list: &mut DisplayList, s: f64) {
                 border_radius: radius,
             });
         }
+        background(b, list, s);
         let border = b.style.borders;
         if border.top == border.right && border.top == border.bottom && border.top == border.left {
             if border.top.width > 0.0 {
@@ -464,6 +495,12 @@ fn content(
         });
     }
     let c = b.content_box();
+    if let Some(tree) = b.svg.as_ref().filter(|_| b.style.visible) {
+        list.items.push(DisplayItem::Svg {
+            rect: scaled(c, s),
+            tree: tree.clone(),
+        });
+    }
     if let Some(image) = b.image.as_ref().filter(|_| b.style.visible) {
         let iw = image.width as f64;
         let ih = image.height as f64;
@@ -794,6 +831,11 @@ fn paint_context(
             opacity: b.style.opacity,
         });
     }
+    if let Some(clip) = &b.style.clip_path {
+        list.items.push(DisplayItem::PushPathClip {
+            path: Affine::scale(s) * clip.path(b.border_box, b.style.font_size),
+        });
+    }
     decorations(b, list, s);
     push_contents(b, list, s);
     let scroll = Point {
@@ -829,10 +871,94 @@ fn paint_context(
     if b.style.opacity < 1.0 {
         list.items.push(DisplayItem::PopOpacity);
     }
+    if b.style.clip_path.is_some() {
+        list.items.push(DisplayItem::PopClip);
+    }
     if transform.is_some() {
         list.items.push(DisplayItem::PopTransform);
     }
     if fixed {
         list.items.push(DisplayItem::PopTransform);
     }
+}
+
+fn background(b: &LayoutBox, list: &mut DisplayList, s: f64) {
+    let size = b
+        .background_image
+        .as_ref()
+        .map(|i| (i.width as f64, i.height as f64))
+        .or_else(|| {
+            b.background_svg
+                .as_ref()
+                .map(|t| (t.tree.size().width() as f64, t.tree.size().height() as f64))
+        });
+    let Some((iw, ih)) = size else {
+        return;
+    };
+    let r = b.padding_box();
+    let (w, h) = b
+        .style
+        .background_size
+        .resolve(r.width, r.height, iw, ih, b.style.font_size);
+    if w <= 0.0 || h <= 0.0 || !w.is_finite() || !h.is_finite() {
+        return;
+    }
+    let x = b
+        .style
+        .background_position
+        .0
+        .resolve(r.width - w, b.style.font_size, 16.0);
+    let y = b
+        .style
+        .background_position
+        .1
+        .resolve(r.height - h, b.style.font_size, 16.0);
+    let (rx, ry) = b.style.background_repeat;
+    let x = if rx { x.rem_euclid(w) - w } else { x };
+    let y = if ry { y.rem_euclid(h) - h } else { y };
+    let nx = if rx {
+        ((r.width - x) / w).ceil().min(256.0) as usize
+    } else {
+        1
+    };
+    let ny = if ry {
+        ((r.height - y) / h).ceil().min(256.0) as usize
+    } else {
+        1
+    };
+    list.items.push(DisplayItem::PushClip {
+        rect: scaled(b.border_box, s),
+        border_radius: b.style.border_radius * s,
+    });
+    let mut budget = 4096;
+    for row in 0..ny {
+        for col in 0..nx {
+            if budget == 0 {
+                break;
+            }
+            budget -= 1;
+            let rect = scaled(
+                Rect {
+                    x: r.x + x + col as f64 * w,
+                    y: r.y + y + row as f64 * h,
+                    width: w,
+                    height: h,
+                },
+                s,
+            );
+            if let Some(image) = &b.background_image {
+                list.items.push(DisplayItem::Image {
+                    rect,
+                    image: image.clone(),
+                });
+            }
+            if let Some(tree) = &b.background_svg {
+                list.items.push(DisplayItem::Svg {
+                    rect,
+                    tree: tree.clone(),
+                });
+            }
+        }
+    }
+    list.items.push(DisplayItem::PopClip);
 }

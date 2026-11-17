@@ -624,52 +624,77 @@ impl Transform {
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        let parsed = Self::parse_unchecked(s)?;
-        parsed
-            .matrix
-            .iter()
-            .all(|n| n.is_finite())
-            .then_some(parsed)
-    }
-    fn parse_unchecked(s: &str) -> Option<Self> {
-        let s = s.trim();
-        if s.starts_with("translate(") && s.ends_with(")") {
-            let inner = &s[10..s.len() - 1];
-            let parts: Vec<&str> = inner.split(",").map(str::trim).collect();
-            let tx = parts.get(0)?.trim_end_matches("px").parse::<f64>().ok()?;
-            let ty = if let Some(p1) = parts.get(1) {
-                p1.trim_end_matches("px").parse::<f64>().ok()?
-            } else {
-                0.0
+        let mut rest = s.trim();
+        let mut matrix = kurbo::Affine::IDENTITY;
+        let mut count = 0;
+        while !rest.is_empty() {
+            count += 1;
+            if count > 32 {
+                return None;
+            }
+            let open = rest.find('(')?;
+            let close = rest.find(')')?;
+            let name = rest[..open].trim();
+            let args = rest[open + 1..close].replace(',', " ");
+            let values: Vec<_> = args.split_whitespace().collect();
+            let number = |i: usize| values.get(i)?.parse::<f64>().ok().filter(|v| v.is_finite());
+            let length = |i: usize| {
+                let v = *values.get(i)?;
+                v.strip_suffix("px")
+                    .unwrap_or(v)
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|v| v.is_finite())
             };
-            return Some(Self {
-                matrix: [1.0, 0.0, 0.0, 1.0, tx, ty],
-            });
-        }
-        if s.starts_with("scale(") && s.ends_with(")") {
-            let inner = &s[6..s.len() - 1];
-            let parts: Vec<&str> = inner.split(",").map(str::trim).collect();
-            let sx = parts.get(0)?.parse::<f64>().ok()?;
-            let sy = if let Some(p1) = parts.get(1) {
-                p1.parse::<f64>().ok()?
-            } else {
-                sx
+            let angle = |i: usize| {
+                let v = *values.get(i)?;
+                if let Some(v) = v.strip_suffix("deg") {
+                    v.parse::<f64>().ok().map(f64::to_radians)
+                } else if let Some(v) = v.strip_suffix("rad") {
+                    v.parse::<f64>().ok()
+                } else if let Some(v) = v.strip_suffix("turn") {
+                    v.parse::<f64>().ok().map(|v| v * std::f64::consts::TAU)
+                } else if v == "0" {
+                    Some(0.0)
+                } else {
+                    None
+                }
             };
-            return Some(Self {
-                matrix: [sx, 0.0, 0.0, sy, 0.0, 0.0],
-            });
+            let transform = match (name, values.len()) {
+                ("matrix", 6) => kurbo::Affine::new([
+                    number(0)?,
+                    number(1)?,
+                    number(2)?,
+                    number(3)?,
+                    number(4)?,
+                    number(5)?,
+                ]),
+                ("translate", 1 | 2) => kurbo::Affine::translate((
+                    length(0)?,
+                    if values.len() == 2 { length(1)? } else { 0.0 },
+                )),
+                ("translateX", 1) => kurbo::Affine::translate((length(0)?, 0.0)),
+                ("translateY", 1) => kurbo::Affine::translate((0.0, length(0)?)),
+                ("scale", 1 | 2) => kurbo::Affine::scale_non_uniform(
+                    number(0)?,
+                    if values.len() == 2 {
+                        number(1)?
+                    } else {
+                        number(0)?
+                    },
+                ),
+                ("scaleX", 1) => kurbo::Affine::scale_non_uniform(number(0)?, 1.0),
+                ("scaleY", 1) => kurbo::Affine::scale_non_uniform(1.0, number(0)?),
+                ("rotate", 1) => kurbo::Affine::rotate(angle(0)?),
+                ("skewX", 1) => kurbo::Affine::new([1.0, 0.0, angle(0)?.tan(), 1.0, 0.0, 0.0]),
+                ("skewY", 1) => kurbo::Affine::new([1.0, angle(0)?.tan(), 0.0, 1.0, 0.0, 0.0]),
+                _ => return None,
+            };
+            matrix *= transform;
+            rest = rest[close + 1..].trim();
         }
-        if s.starts_with("rotate(") && s.ends_with(")") {
-            let inner = s[7..s.len() - 1].trim();
-            let deg = inner.trim_end_matches("deg").parse::<f64>().ok()?;
-            let rad = deg.to_radians();
-            let cos = rad.cos();
-            let sin = rad.sin();
-            return Some(Self {
-                matrix: [cos, sin, -sin, cos, 0.0, 0.0],
-            });
-        }
-        None
+        let matrix = matrix.as_coeffs();
+        (count > 0 && matrix.iter().all(|v| v.is_finite())).then_some(Self { matrix })
     }
 }
 
@@ -678,35 +703,48 @@ pub struct BoxShadow {
     pub offset_x: f64,
     pub offset_y: f64,
     pub blur_radius: f64,
+    pub spread: f64,
     pub color: Color,
 }
 
 impl BoxShadow {
     pub fn parse(s: &str) -> Option<Self> {
-        let parts: Vec<&str> = s.split_whitespace().collect();
-        if parts.len() >= 3 {
-            let ox = parts[0].trim_end_matches("px").parse::<f64>().ok()?;
-            let oy = parts[1].trim_end_matches("px").parse::<f64>().ok()?;
-            let mut blur = 0.0;
-            let color_str = if parts.len() >= 4 {
-                blur = parts[2]
-                    .trim_end_matches("px")
-                    .parse::<f64>()
-                    .unwrap_or(0.0);
-                parts[3..].join(" ")
-            } else {
-                parts[2..].join(" ")
-            };
-            let color = Color::parse(&color_str).unwrap_or(Color::BLACK);
-            Some(Self {
-                offset_x: ox,
-                offset_y: oy,
-                blur_radius: blur,
-                color,
-            })
-        } else {
-            None
+        let mut parser = cssparser::Parser::new(s);
+        let mut lengths = Vec::new();
+        let mut color = Color::BLACK;
+        while !parser.is_exhausted() {
+            let start = parser.position();
+            let token = parser.next().ok()?.clone();
+            match token {
+                cssparser::Token::Dimension {
+                    value, ref unit, ..
+                } if unit.eq_ignore_ascii_case("px") => lengths.push(value as f64),
+                cssparser::Token::Number { value: 0.0, .. } => lengths.push(0.0),
+                cssparser::Token::Function(_) => {
+                    parser
+                        .parse_nested_block(|p| {
+                            while p.next().is_ok() {}
+                            Ok::<_, cssparser::ParseError<()>>(())
+                        })
+                        .ok()?;
+                    color = Color::parse(parser.slice_from(start))?;
+                }
+                _ => color = Color::parse(parser.slice_from(start))?,
+            }
         }
+        if !(2..=4).contains(&lengths.len())
+            || lengths.iter().any(|v| !v.is_finite())
+            || lengths.get(2).is_some_and(|b| *b < 0.0)
+        {
+            return None;
+        }
+        Some(Self {
+            offset_x: lengths[0],
+            offset_y: lengths[1],
+            blur_radius: *lengths.get(2).unwrap_or(&0.0),
+            spread: *lengths.get(3).unwrap_or(&0.0),
+            color,
+        })
     }
 }
 
@@ -745,6 +783,11 @@ pub struct ComputedStyle {
     pub pointer_events: bool,
     pub color: Color,
     pub background_color: Color,
+    pub background_image: Option<String>,
+    pub background_position: (Length, Length),
+    pub background_size: super::graphics::BackgroundSize,
+    pub background_repeat: (bool, bool),
+    pub clip_path: Option<super::graphics::ClipPath>,
     pub custom_properties: std::collections::BTreeMap<String, String>,
     pub line_height_factor: Option<f64>,
     pub font_size: f64,
@@ -807,6 +850,11 @@ impl Default for ComputedStyle {
             pointer_events: true,
             color: Color::BLACK,
             background_color: Color::TRANSPARENT,
+            background_image: None,
+            background_position: (Length::Percent(0.0), Length::Percent(0.0)),
+            background_size: super::graphics::BackgroundSize::Auto,
+            background_repeat: (true, true),
+            clip_path: None,
             custom_properties: Default::default(),
             line_height_factor: Some(1.25),
             font_size: 16.0,
@@ -1452,6 +1500,8 @@ img, button, input, textarea, select { display: inline-block; }
 button { box-sizing: border-box; padding: 2px 6px; border: 2px solid #aaaaaa; background-color: #f0f0f0; }
 input, textarea, select { box-sizing: border-box; width: 185px; height: 24px; border: 1px solid #aaaaaa; background-color: white; }
 textarea { white-space: pre-wrap; height: 60px; }
+svg { display: inline-block; }
+canvas { display:inline-block; }
 iframe { display: inline-block; border: 1px solid black; width: 300px; height: 150px; }
 h1 { margin: 16px 0; font-size: 32px; font-weight: bold; }
 h2 { margin: 14px 0; font-size: 24px; font-weight: bold; }
@@ -1548,7 +1598,7 @@ pub fn resolve_computed_style<D: DocumentView>(
     // HTML dimensions are author presentational hints, below authored rules.
     if node
         .element_name()
-        .is_some_and(|n| matches!(n.local, "img" | "iframe" | "video" | "canvas"))
+        .is_some_and(|n| matches!(n.local, "img" | "iframe" | "video" | "canvas" | "svg"))
     {
         for property in ["width", "height"] {
             if let Some(value) = node
@@ -1741,7 +1791,7 @@ pub fn resolve_computed_style<D: DocumentView>(
     }
     if let Some(el_name) = node.element_name() {
         let tag = el_name.local;
-        if matches!(tag, "img" | "iframe" | "canvas" | "video" | "embed") {
+        if matches!(tag, "img" | "iframe" | "canvas" | "video" | "embed" | "svg") {
             if style.width == Length::Auto {
                 if let Some(w_attr) = node.attr("width") {
                     if let Some(l) =
@@ -1760,6 +1810,14 @@ pub fn resolve_computed_style<D: DocumentView>(
                     }
                 }
             }
+        }
+    }
+    if node.element_name().is_some_and(|n| n.local == "canvas") {
+        if style.width == Length::Auto {
+            style.width = Length::Px(300.0);
+        }
+        if style.height == Length::Auto {
+            style.height = Length::Px(150.0);
         }
     }
     style
@@ -2020,7 +2078,30 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 style.color = c;
             }
         }
+        "background-image" => style.background_image = super::graphics::image_url(val),
+        "background-position" => {
+            if let Some(p) = super::graphics::position(val) {
+                style.background_position = p;
+            }
+        }
+        "background-size" => {
+            if let Some(size) = super::graphics::BackgroundSize::parse(val) {
+                style.background_size = size;
+            }
+        }
+        "background-repeat" => {
+            style.background_repeat = match val {
+                "no-repeat" => (false, false),
+                "repeat-x" => (true, false),
+                "repeat-y" => (false, true),
+                _ => (true, true),
+            };
+        }
+        "clip-path" => style.clip_path = super::graphics::ClipPath::parse(val),
         "background" | "background-color" => {
+            if prop == "background" {
+                style.background_image = super::graphics::image_url(val);
+            }
             if let Some(c) = Color::parse(val) {
                 style.background_color = c;
             }
@@ -2322,6 +2403,11 @@ pub(super) fn supported_property(property: &str) -> bool {
             "align-items"
                 | "background"
                 | "background-color"
+                | "background-image"
+                | "background-position"
+                | "background-size"
+                | "background-repeat"
+                | "clip-path"
                 | "bold"
                 | "border"
                 | "border-bottom"

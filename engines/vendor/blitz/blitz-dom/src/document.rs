@@ -403,6 +403,17 @@ impl BaseDocument {
     pub fn set_style_threading(&mut self, threading: StyleThreading) { self.style_threading = threading; }
     /// Release redundant decoded-image cache references. Live nodes retain their
     /// images so freezing never loses pixels or requires a network reload.
+    /// Native image lookup/discovery reuses the authorized provider and bounded decoder.
+    pub fn native_image(&mut self, url: url::Url) -> Option<crate::node::ImageData> {
+        if let Some(image) = self.image_cache.get(url.as_str()) { return Some(image.clone()); }
+        if !self.pending_images.contains_key(url.as_str()) {
+            self.pending_images.insert(url.to_string(), Vec::new());
+            self.net_provider.fetch(self.id(), crate::net::destined_request(url, self.abort_signal.as_ref(), "image"),
+                crate::net::ResourceHandler::boxed(self.tx.clone(), self.id(), None, self.shell_provider.clone(),
+                    crate::net::ImageHandler::new(crate::util::ImageType::Image)));
+        }
+        None
+    }
     pub fn release_image_cache(&mut self) { self.image_cache.clear(); }
 
     /// Create a new (empty) [`BaseDocument`] with the specified configuration

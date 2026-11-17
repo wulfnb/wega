@@ -70,6 +70,9 @@ pub struct LayoutBox {
     pub text_content: Option<String>,
     pub fragments: Vec<Rect>,
     pub image: Option<peniko::ImageData>,
+    pub svg: Option<super::graphics::SvgGraphic>,
+    pub background_image: Option<peniko::ImageData>,
+    pub background_svg: Option<super::graphics::SvgGraphic>,
     pub is_root: bool,
     pub flow_margin_top: f64,
     pub table_col_span: usize,
@@ -94,6 +97,16 @@ pub struct LineBox {
 }
 
 impl LayoutBox {
+    pub fn replaced_size(&self) -> Option<(f64, f64)> {
+        self.image
+            .as_ref()
+            .map(|i| (i.width as f64, i.height as f64))
+            .or_else(|| {
+                self.svg
+                    .as_ref()
+                    .map(|t| (t.tree.size().width() as f64, t.tree.size().height() as f64))
+            })
+    }
     pub fn new(node: Option<NodeKey>, box_type: BoxType, style: ComputedStyle) -> Self {
         Self {
             node,
@@ -108,6 +121,9 @@ impl LayoutBox {
             text_content: None,
             fragments: Vec::new(),
             image: None,
+            svg: None,
+            background_image: None,
+            background_svg: None,
             is_root: false,
             flow_margin_top: 0.0,
             table_col_span: 1,
@@ -321,6 +337,10 @@ fn build_box_tree_inner<D: DocumentView>(
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(1)
                 .clamp(1, 256);
+            if node.element_name().is_some_and(|n| n.local == "svg") {
+                layout_box.svg = super::graphics::inline_svg(doc, node_key);
+                return Some(layout_box);
+            }
             let mut raw_children = Vec::new();
             for child_key in node.children() {
                 if let Some(child_box) =
@@ -774,13 +794,12 @@ fn layout_block_or_flow(
     };
 
     if box_node.style.width == Length::Auto {
-        if let Some(image) = &box_node.image {
+        if let Some((iw, ih)) = box_node.replaced_size() {
             if box_node.style.height != Length::Auto {
-                content_w = box_node.style.height.resolve(effective_cb.height, fs, rfs)
-                    * image.width as f64
-                    / image.height.max(1) as f64;
+                content_w =
+                    box_node.style.height.resolve(effective_cb.height, fs, rfs) * iw / ih.max(1.0);
             } else {
-                content_w = image.width as f64;
+                content_w = iw;
             }
         }
     }
@@ -898,15 +917,15 @@ fn layout_block_or_flow(
             || c.box_type == BoxType::Text
             || c.box_type == BoxType::InlineBlock
             || c.form_state.is_some()
-            || c.image.is_some()
+            || c.replaced_size().is_some()
     };
     let is_ifc = !box_node.children.is_empty() && box_node.children.iter().all(is_inline_level);
 
-    let mut content_h = if let Some(image) = &box_node.image {
+    let mut content_h = if let Some((iw, ih)) = box_node.replaced_size() {
         if box_node.style.height != Length::Auto {
             box_node.style.height.resolve(effective_cb.height, fs, rfs)
         } else {
-            content_w * image.height as f64 / image.width.max(1) as f64
+            content_w * ih / iw.max(1.0)
         }
     } else {
         0.0
@@ -924,7 +943,7 @@ fn layout_block_or_flow(
         for child in &mut box_node.children {
             if child.box_type == BoxType::InlineBlock
                 || child.form_state.is_some()
-                || child.image.is_some()
+                || child.replaced_size().is_some()
             {
                 layout_box(child, inner_cb, next_positioned_cb, ctx);
             }
@@ -1206,8 +1225,8 @@ fn translate_tree(b: &mut LayoutBox, dx: f64, dy: f64) {
     }
 }
 fn intrinsic_width(b: &LayoutBox, min: bool) -> f64 {
-    if let Some(image) = &b.image {
-        return image.width as f64;
+    if let Some((iw, _)) = b.replaced_size() {
+        return iw;
     }
     // Shape with Unicode break opportunities, rather than counting characters.
     let runs = super::text::shape_inline(
@@ -2040,9 +2059,12 @@ fn assign_inline_geometry(children: &mut [LayoutBox], lines: &[LineBox], x: f64,
         }
     }
     for child in children {
+        if matches!(child.style.position, Position::Absolute | Position::Fixed) {
+            continue;
+        }
         if child.box_type == BoxType::InlineBlock
             || child.form_state.is_some()
-            || child.image.is_some()
+            || child.replaced_size().is_some()
         {
             if let Some(ibox) = lines
                 .iter()

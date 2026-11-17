@@ -2522,7 +2522,9 @@
         if (this._webglCtx) return null;
         if (!this._canvasId) {
           this._canvasId = host("canvasCreate", String(this.width), String(this.height), "false");
+          host("canvasAttach", this._id, String(this._canvasId));
         }
+        host("canvasAttach", this._id, String(this._canvasId));
         if (!this._context2d) {
           this._context2d = new CanvasRenderingContext2D(this, this._canvasId, false);
         }
@@ -2594,6 +2596,7 @@
       this._transferredToOffscreen = true;
       if (!this._canvasId) {
         this._canvasId = host("canvasCreate", String(this.width), String(this.height), "true");
+        host("canvasAttach", this._id, String(this._canvasId));
       }
       const offscreen = new OffscreenCanvas(this.width, this.height, this._canvasId);
       offscreen._placeholder = true;
@@ -4236,6 +4239,7 @@
   Object.defineProperty(ClipboardEvent.prototype, Symbol.toStringTag, { value: "ClipboardEvent" });
 
   class Document extends Node {
+    elementFromPoint(x,y) { return wrap(host("elementFromPoint",this._id,String(Number(x)),String(Number(y)))); }
     constructor(id, info) {
       if (id === undefined) return wrap(host("createDocument"));
       super(id, info);

@@ -180,6 +180,12 @@ fn append_inline(
     owner: Option<NodeKey>,
     alpha: f32,
 ) {
+    if matches!(
+        b.style.position,
+        super::css::Position::Absolute | super::css::Position::Fixed
+    ) {
+        return;
+    }
     if b.box_type == super::layout::BoxType::InlineBlock
         || b.form_state.is_some()
         || b.image.is_some()

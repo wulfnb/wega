@@ -109,8 +109,8 @@ impl SvgImageData {
         // Gzip magic bytes, matching the SVGZ detection in `usvg::Tree::from_data`.
         use std::io::Read;
         const MAX_SVG: usize = 8 * 1024 * 1024;
-        let permit = crate::image_budget::DecodePermit::reserve()
-            .map_err(|_| usvg::Error::ElementsLimitReached)?;
+        let permit = if depth==0 { Some(crate::image_budget::DecodePermit::reserve()
+            .map_err(|_| usvg::Error::ElementsLimitReached)?) } else {None};
         let mut decompressed = Vec::new();
         let data = if data.starts_with(&[0x1f, 0x8b]) {
             flate2::read::GzDecoder::new(data)
@@ -203,9 +203,9 @@ impl SvgImageData {
                 (budget.pixels.load(std::sync::atomic::Ordering::Relaxed) as usize)
                     .saturating_mul(4),
             );
-        permit
-            .retain(&tree, charge)
-            .map_err(|_| usvg::Error::ElementsLimitReached)?;
+        if let Some(permit)=permit {
+            permit.retain(&tree,charge).map_err(|_| usvg::Error::ElementsLimitReached)?;
+        }
         Ok(Self {
             tree,
             intrinsic_dimensions: SvgIntrinsicDimensions::from_xmltree(&doc),

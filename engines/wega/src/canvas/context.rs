@@ -92,6 +92,7 @@ impl CanvasContext2D {
         self.state_stack.clear();
         self.current_state = CanvasState::default();
         self.current_path.begin_path();
+        self.origin_clean = true;
         self.clear_to_transparent();
         Ok(())
     }
@@ -304,6 +305,16 @@ impl CanvasContext2D {
         if !self.origin_clean {
             return Err("SecurityError: The operation is insecure".into());
         }
+        self.presentation_pixels(sx, sy, sw, sh)
+    }
+
+    pub(crate) fn presentation_pixels(
+        &mut self,
+        sx: i32,
+        sy: i32,
+        sw: i32,
+        sh: i32,
+    ) -> Result<Vec<u8>, String> {
         let info = ImageInfo::new((sw, sh), ColorType::RGBA8888, AlphaType::Unpremul, None);
         let mut pixels = vec![0u8; (sw * sh * 4) as usize];
         let read = self
@@ -674,7 +685,10 @@ impl CanvasEngine {
         height: u32,
         is_offscreen: bool,
     ) -> Result<CanvasId, String> {
-        let bytes = (width as usize) * (height as usize) * 4;
+        if width > 8192 || height > 8192 {
+            return Err("QuotaExceededError: Canvas dimension limit".into());
+        }
+        let bytes = (width.max(1) as usize) * (height.max(1) as usize) * 4;
         if self.total_pixel_bytes + bytes > self.max_pixel_bytes {
             return Err("QuotaExceededError: Canvas memory quota exceeded".into());
         }
@@ -690,9 +704,12 @@ impl CanvasEngine {
     pub fn resize_canvas(&mut self, id: CanvasId, width: u32, height: u32) -> Result<(), String> {
         let old_bytes = {
             let ctx = self.canvases.get(&id).ok_or("Canvas not found")?;
-            (ctx.width as usize) * (ctx.height as usize) * 4
+            (ctx.width.max(1) as usize) * (ctx.height.max(1) as usize) * 4
         };
-        let new_bytes = (width as usize) * (height as usize) * 4;
+        if width > 8192 || height > 8192 {
+            return Err("QuotaExceededError: Canvas dimension limit".into());
+        }
+        let new_bytes = (width.max(1) as usize) * (height.max(1) as usize) * 4;
         if self.total_pixel_bytes - old_bytes + new_bytes > self.max_pixel_bytes {
             return Err("QuotaExceededError: Canvas memory quota exceeded".into());
         }
@@ -705,7 +722,7 @@ impl CanvasEngine {
 
     pub fn destroy_canvas(&mut self, id: CanvasId) -> bool {
         if let Some(ctx) = self.canvases.remove(&id) {
-            let bytes = (ctx.width as usize) * (ctx.height as usize) * 4;
+            let bytes = (ctx.width.max(1) as usize) * (ctx.height.max(1) as usize) * 4;
             self.total_pixel_bytes = self.total_pixel_bytes.saturating_sub(bytes);
             true
         } else {

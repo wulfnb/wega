@@ -606,8 +606,8 @@ impl ImageHandler {
             }
             Err(error) => error.to_string(),
         };
+        // Raster probing has finished. SVG parsing reserves its own bounded budget.
         drop(permit);
-
         #[cfg(feature = "svg")]
         let svg_err = {
             use crate::util::parse_svg_image;

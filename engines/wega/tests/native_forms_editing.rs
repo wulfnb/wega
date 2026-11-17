@@ -106,7 +106,9 @@ button[type="submit"] {
     // Count non-background pixels to verify actual content ink
     let non_bg = pixels
         .rgba
-        .as_chunks::<4>().0.iter()
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|p| !(p[0] == 240 && p[1] == 242 && p[2] == 245))
         .count();
     assert!(

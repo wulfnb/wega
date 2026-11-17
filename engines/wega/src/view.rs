@@ -2856,6 +2856,26 @@ impl View {
             }
         }
 
+        if let (Some(dom), Some(native)) = (&self.dom, &self.native_document) {
+            use anyrender::PaintScene;
+            let native = native.borrow();
+            for (key, image) in dom.canvas_images() {
+                let Some(b) = native.find_box(key) else {
+                    continue;
+                };
+                let rect = b.content_box();
+                let mut scene = anyrender::Scene::new();
+                let brush = peniko::ImageBrush::new(image.clone());
+                scene.draw_image(
+                    (&brush).into(),
+                    kurbo::Affine::scale_non_uniform(
+                        rect.width * device / image.width as f64,
+                        rect.height * device / image.height as f64,
+                    ),
+                );
+                child_scenes.push((key, scene));
+            }
+        }
         let (scene, animating) =
             if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
                 let native_doc = self.native_document.get_or_insert_with(|| {

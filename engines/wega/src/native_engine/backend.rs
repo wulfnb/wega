@@ -282,7 +282,7 @@ impl NativeDocument {
         self.sync_author_stylesheets();
         self.timings.stylesheet_parse_ms = start.elapsed().as_secs_f64() * 1000.0;
         let style_start = std::time::Instant::now();
-        let d = self.doc.borrow();
+        let mut d = self.doc.borrow_mut();
         let root_key = d.root();
         let sheets_ref: Vec<&StyleSheet> = self.author_sheets.iter().collect();
 
@@ -290,26 +290,44 @@ impl NativeDocument {
         if let Some(mut box_tree) =
             build_box_tree(&*d, root_key, None, &sheets_ref, Some(&media_ctx))
         {
-            fn images(b: &mut LayoutBox, doc: &BlitzDocument) {
+            fn images(b: &mut LayoutBox, doc: &mut BlitzDocument) {
                 if let Some(image) = b
                     .node
                     .and_then(|k| doc.get_node(k.node_id()))
                     .and_then(|n| n.element_data())
-                    .and_then(|e| e.raster_image_data())
+                    .and_then(|e| e.image_data())
                 {
-                    b.image = Some(peniko::ImageData {
-                        data: image.data.clone(),
-                        format: peniko::ImageFormat::Rgba8,
-                        width: image.width,
-                        height: image.height,
-                        alpha_type: peniko::ImageAlphaType::Alpha,
-                    });
+                    match image {
+                        blitz_dom::node::ImageData::Raster(image) => {
+                            b.image = Some(super::graphics::raster(image))
+                        }
+                        blitz_dom::node::ImageData::Svg(svg) => {
+                            b.svg = Some(super::graphics::SvgGraphic::from(svg))
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(url) = b
+                    .style
+                    .background_image
+                    .as_ref()
+                    .and_then(|u| doc.url().join(u).ok())
+                {
+                    match doc.native_image(url) {
+                        Some(blitz_dom::node::ImageData::Raster(image)) => {
+                            b.background_image = Some(super::graphics::raster(&image))
+                        }
+                        Some(blitz_dom::node::ImageData::Svg(svg)) => {
+                            b.background_svg = Some(super::graphics::SvgGraphic::from(&svg))
+                        }
+                        _ => {}
+                    }
                 }
                 for c in &mut b.children {
                     images(c, doc);
                 }
             }
-            images(&mut box_tree, &d);
+            images(&mut box_tree, &mut d);
             sync_form_state(&mut box_tree, &d);
             self.timings.style_and_box_tree_ms = style_start.elapsed().as_secs_f64() * 1000.0;
             let layout_start = std::time::Instant::now();

@@ -99,3 +99,23 @@ Round 3 checkpoint: 33 tests pass across eight targeted suites with
 sandbox socket denial and intermediate border/clippy failures are retained
 in `/private/tmp/wega-round3-*.log`; no tests were weakened. Chrome was not
 enabled for this checkpoint. Rounds 4–6 and final validation remain pending.
+
+Round 4 checkpoint: SVG shape/path/transform/viewBox/fill/stroke/clipping
+rendering for inline SVG and authorized SVG images; canvas Skia surface
+presentation, resize/reset and taint-preserving readback; compound 2D matrices;
+circle/polygon/inset clip paths shared with picking; positioned background
+raster/SVG layers and outer-shadow spread. SVG decoding keeps existing memory,
+node, byte and nesting bounds; transient admission queues for at most 2 seconds.
+Nested SVGs share their root's aggregate reservation. No unrestricted resolver
+was introduced. Fixed positioned replaced-element fragment geometry.
+
+31 graphics/browser/canvas tests passed in `/private/tmp/wega-round4-final.log`;
+another 31-test earlier-round checkpoint passed in
+`/private/tmp/wega-round4-regression2.log`. Engine clippy passed. New graphics
+Chrome gate: 275/252000 differing pixels (0.10913%, channel tolerance 8),
+zero geometry error, 1%/0.5px gate passed. Evidence:
+`/private/tmp/wega-round4-evidence/`. SVG external nested resources, global
+HTML CSS styling of SVG descendants, complete SVG DOM targeting, multilayer
+backgrounds, inset/multiple shadows, 3D transforms and decoded video remain
+unsupported/partial. Existing video function generates synthetic pixels and
+was deliberately not presented as decoded video support.

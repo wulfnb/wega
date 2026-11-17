@@ -84,6 +84,7 @@ pub(crate) struct Dom {
     created: Instant,
     pub workers: RefCell<crate::workers::WorkerManager>,
     pub canvas_engine: RefCell<crate::canvas::CanvasEngine>,
+    canvas_nodes: RefCell<std::collections::HashMap<wega_dom::NodeKey, crate::canvas::CanvasId>>,
     pub webgl_engine: RefCell<crate::webgl::WebGLEngine>,
     pub media_engine: RefCell<crate::media::MediaEngine>,
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
@@ -153,6 +154,7 @@ impl Dom {
             },
             created: Instant::now(),
             workers,
+            canvas_nodes: Default::default(),
             canvas_engine: RefCell::new(crate::canvas::CanvasEngine::new(limits.max_pixels * 4)),
             webgl_engine: RefCell::new(crate::webgl::WebGLEngine::new(limits.max_pixels * 8)),
             media_engine: RefCell::new(crate::media::MediaEngine::new(limits.resource_bytes * 8)),
@@ -161,6 +163,47 @@ impl Dom {
             revision: Cell::new(0),
             layout_dirty: Cell::new(true),
         }
+    }
+    /// Internal presentation may read tainted pixels; script readback remains checked.
+    pub(crate) fn canvas_images(&self) -> Vec<(wega_dom::NodeKey, peniko::ImageData)> {
+        self.apply_worker_frames();
+        let mut engine = self.canvas_engine.borrow_mut();
+        let mut images = Vec::new();
+        for (&key, &id) in self.canvas_nodes.borrow().iter() {
+            if self.document.borrow().node(key).is_none() {
+                continue;
+            }
+            let Some(ctx) = engine.get_mut(id) else {
+                continue;
+            };
+            if ctx.width == 0 || ctx.height == 0 {
+                continue;
+            }
+            let mut bytes = vec![0; ctx.width as usize * ctx.height as usize * 4];
+            let info = skia_safe::ImageInfo::new(
+                (ctx.width as i32, ctx.height as i32),
+                skia_safe::ColorType::RGBA8888,
+                skia_safe::AlphaType::Unpremul,
+                None,
+            );
+            if !ctx
+                .surface
+                .read_pixels(&info, &mut bytes, ctx.width as usize * 4, (0, 0))
+            {
+                continue;
+            }
+            images.push((
+                key,
+                peniko::ImageData {
+                    data: peniko::Blob::new(std::sync::Arc::new(bytes)),
+                    format: peniko::ImageFormat::Rgba8,
+                    alpha_type: peniko::ImageAlphaType::Alpha,
+                    width: ctx.width,
+                    height: ctx.height,
+                },
+            ));
+        }
+        images
     }
     fn port_hub(&self) -> std::sync::MutexGuard<'_, crate::workers::MessagePortHub> {
         self.hubs
@@ -369,7 +412,25 @@ impl Dom {
         if text(0) == "origin" {
             return Ok(json!(self.origin()));
         }
+        if text(0) == "canvasAttach" {
+            let key =
+                wega_dom::NodeKey::from_u64(text(1).parse().map_err(|_| "Invalid canvas node")?);
+            let id = crate::canvas::CanvasId(text(2).parse().map_err(|_| "Invalid canvas ID")?);
+            if !self
+                .document
+                .borrow()
+                .node(key)
+                .and_then(NodeView::element_name)
+                .is_some_and(|n| n.local == "canvas")
+                || self.canvas_engine.borrow().get(id).is_none()
+            {
+                return Err("InvalidStateError: canvas association".into());
+            }
+            self.canvas_nodes.borrow_mut().insert(key, id);
+            return Ok(Value::Null);
+        }
         if text(0).starts_with("canvas") {
+            self.invalidate();
             self.apply_worker_frames();
         }
         if let Some(result) =
@@ -1262,6 +1323,11 @@ impl Dom {
                 }
                 json!(owners)
             },
+            "elementFromPoint"=> {
+                self.resolve(&mut doc);
+                let x=text(2).parse::<f64>().map_err(|_|"Invalid coordinate")?;let y=text(3).parse::<f64>().map_err(|_|"Invalid coordinate")?;
+                json!(wega_dom::layout::HitTest::element_at(&*doc,Point{x,y}).map(|k|k.to_string()))
+            },
             "sheetHas" => json!(doc.node_has_stylesheet(node_id()?)),
             "sheetDisabled" => json!(doc.stylesheet_disabled(node_id()?)),
             "sheetDisabledSet" => {
@@ -1738,6 +1804,14 @@ impl Dom {
             "setAttr" => {
                 let id = node_id()?;
                 let old = Self::attribute(&doc, id, text(2));
+                if matches!(text(2),"width"|"height") {
+                    if let Some(canvas)=self.canvas_nodes.borrow().get(&id.key()).copied() {
+                        let node=doc.node(id.key()).ok_or("Canvas removed")?;
+                        let width=if text(2)=="width"{text(3)}else{node.attr("width").unwrap_or("300")}.parse().unwrap_or(300);
+                        let height=if text(2)=="height"{text(3)}else{node.attr("height").unwrap_or("150")}.parse().unwrap_or(150);
+                        self.canvas_engine.borrow_mut().resize_canvas(canvas,width,height)?;
+                    }
+                }
                 if text(3).len() > 1024 * 1024 {
                     return Err("DOM attribute budget exceeded".into());
                 }
@@ -2507,6 +2581,7 @@ impl Dom {
                 | "eventParent"
                 | "shadowHost"
                 | "sheetOwners"
+                | "elementFromPoint"
         );
         if is_node_result {
             match res {
@@ -2541,7 +2616,8 @@ impl Dom {
         let command = text(0);
         if !matches!(
             command,
-            "computed"
+            "elementFromPoint"
+                | "computed"
                 | "box"
                 | "clientBox"
                 | "offsetBox"
@@ -2580,6 +2656,17 @@ impl Dom {
                     y: number(2)?,
                 });
                 return Ok(Value::Null);
+            }
+            if command == "elementFromPoint" {
+                let p = Point {
+                    x: number(2)?,
+                    y: number(3)?,
+                };
+                let v = native.media_context();
+                if p.x < 0.0 || p.y < 0.0 || p.x >= v.viewport_width || p.y >= v.viewport_height {
+                    return Ok(Value::Null);
+                }
+                return Ok(json!(native.element_at(p).map(|k| k.to_string())));
             }
             let key = wega_dom::NodeKey::from_u64(
                 text(1)
