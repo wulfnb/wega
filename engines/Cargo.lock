@@ -6895,6 +6895,7 @@ dependencies = [
  "base64 0.23.1",
  "blitz-dom",
  "blitz-traits",
+ "cssparser 0.38.0",
  "data-url",
  "deno_core",
  "encoding_rs",

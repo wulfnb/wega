@@ -3,6 +3,7 @@ pub mod backend;
 pub mod css;
 pub mod display_list;
 pub mod layout;
+mod syntax;
 pub mod text;
 
 pub use backend::{NativeDocument, RenderingBackend};

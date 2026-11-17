@@ -33,7 +33,7 @@ use super::display_list::DisplayList;
 use super::layout::{LayoutBox, LayoutContext, build_box_tree, hit_test_node, perform_layout};
 use std::cell::RefCell;
 use std::rc::Rc;
-use wega_adapter_blitz::BlitzDocument;
+use wega_adapter_blitz::{BlitzDocument, ToNodeId};
 use wega_dom::layout::*;
 use wega_dom::style::StyleError;
 use wega_dom::{DocumentView, NodeKey, NodeKind, NodeView};
@@ -94,25 +94,36 @@ impl NativeDocument {
         let mut stack = vec![root];
         while let Some(k) = stack.pop() {
             if let Some(node) = d.node(k) {
-                if node.kind() == NodeKind::Element {
+                if node.kind() == NodeKind::Element && !d.stylesheet_disabled(k.node_id()) {
                     if let Some(elem) = node.element_name() {
                         if elem.local.eq_ignore_ascii_case("style") {
-                            // Extract text from children
                             let mut css_text = String::new();
                             for child_k in node.children() {
-                                if let Some(child_node) = d.node(child_k) {
-                                    if let Some(t) = child_node.text() {
-                                        css_text.push_str(t);
-                                    }
+                                if let Some(text) = d.node(child_k).and_then(NodeView::text) {
+                                    css_text.push_str(text);
                                 }
                             }
-                            if !css_text.is_empty() {
-                                sheets.push(StyleSheet::parse(&css_text));
+                            sheets.push(StyleSheet::parse(&css_text));
+                        } else if elem.local.eq_ignore_ascii_case("link")
+                            && node.attr("rel").is_some_and(|r| {
+                                r.split_ascii_whitespace()
+                                    .any(|r| r.eq_ignore_ascii_case("stylesheet"))
+                            })
+                        {
+                            if let Some((source, requested_url)) = d.stylesheet_source(k.node_id())
+                            {
+                                if node
+                                    .attr("href")
+                                    .and_then(|href| d.url().join(href).ok())
+                                    .is_some_and(|u| u.as_str() == requested_url)
+                                {
+                                    sheets.push(StyleSheet::parse(source));
+                                }
                             }
                         }
                     }
                 }
-                for c in node.children() {
+                for c in node.children().rev() {
                     stack.push(c);
                 }
             }

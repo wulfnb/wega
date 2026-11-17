@@ -433,6 +433,7 @@ fn layout_block_or_flow(
         }
         Length::Em(em) => em * fs,
         Length::Rem(rem) => rem * rfs,
+        Length::Calc(_) => box_node.style.width.resolve(cb_w, fs, rfs),
     };
 
     // Apply min-width and max-width constraints
@@ -583,6 +584,7 @@ fn layout_block_or_flow(
         }
         Length::Em(em) => em * fs,
         Length::Rem(rem) => rem * rfs,
+        Length::Calc(_) => box_node.style.height.resolve(cb_h, fs, rfs),
     };
 
     // Apply min-height and max-height constraints
@@ -928,6 +930,7 @@ fn layout_flex(
         }
         Length::Em(em) => em * fs,
         Length::Rem(rem) => rem * rfs,
+        Length::Calc(_) => box_node.style.height.resolve(cb_h, fs, rfs),
     };
 
     final_content_h = clamp_dimension(

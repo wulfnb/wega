@@ -340,6 +340,9 @@ pub struct BaseDocument {
     /// added, replaced or removed), so that CSSOM wrappers can detect that
     /// their cached rule data is stale.
     pub(crate) stylesheet_generation: u64,
+    /// Raw, broker-authorized CSS and request URL. Native style resolution must
+    /// parse this source itself, never serialize Stylo computed declarations.
+    pub(crate) stylesheet_sources: BTreeMap<NodeId, (String, String)>,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
@@ -498,6 +501,7 @@ impl BaseDocument {
             url: base_url,
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
+            stylesheet_sources: BTreeMap::new(),
             font_ctx,
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
@@ -614,6 +618,12 @@ impl BaseDocument {
     /// when `&self` would conflict with a held `&mut` borrow on a field.
     pub(crate) fn build_request(&self, url: url::Url) -> Request {
         crate::net::stamped_request(url, self.abort_signal.as_ref())
+    }
+
+    pub(crate) fn build_stylesheet_request(&self, url: url::Url) -> Request {
+        let mut request = self.build_request(url);
+        request.headers.insert("sec-fetch-dest", "style".parse().unwrap());
+        request
     }
 
     pub fn favicon_url(&self) -> Option<String> {
@@ -1134,7 +1144,7 @@ impl BaseDocument {
                         let resolved_href = self.resolve_url(href);
                         self.net_provider.fetch(
                             self.id(),
-                            self.build_request(resolved_href.clone()),
+                            self.build_stylesheet_request(resolved_href.clone()),
                             ResourceHandler::boxed(
                                 self.tx.clone(),
                                 self.id,
@@ -1175,6 +1185,10 @@ impl BaseDocument {
 
     /// Iterate over the author stylesheets (from `<style>` and `<link>` nodes)
     /// currently associated with this document
+    pub fn stylesheet_source(&self, node: NodeId) -> Option<(&str, &str)> {
+        self.stylesheet_sources.get(&node).map(|(source, url)| (source.as_str(), url.as_str()))
+    }
+
     pub fn author_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
         self.nodes_to_stylesheet.values()
     }
@@ -1318,8 +1332,13 @@ impl BaseDocument {
         };
 
         match resource {
-            Resource::Css(css) => {
+            Resource::Css(css, source, requested_url) => {
                 let node_id = res.node_id.unwrap();
+                // Ignore late completions after removal or href replacement.
+                let current = self.nodes.get(node_id).and_then(|n| n.attr(local_name!("href")))
+                    .and_then(|href| self.url.join(href).ok());
+                if current.as_ref().map(Url::as_str) != Some(requested_url.as_str()) { return; }
+                self.stylesheet_sources.insert(node_id, (source, requested_url));
                 self.add_stylesheet_for_node(css, node_id);
             }
             Resource::ImportedCss(import_rule, sheet) => {

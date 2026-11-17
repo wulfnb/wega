@@ -233,7 +233,16 @@ impl NetProvider for Resources {
         let in_flight = self.in_flight.clone();
         let completed = self.completed.clone();
         let limit = self.limit;
-        let mut context = FetchContext::subresource(&self.document, destination(&request.url));
+        let resource_destination = if request
+            .headers
+            .get("sec-fetch-dest")
+            .is_some_and(|h| h == "style")
+        {
+            Destination::Style
+        } else {
+            destination(&request.url)
+        };
+        let mut context = FetchContext::subresource(&self.document, resource_destination);
         context.omit_credentials = self.omit_credentials;
         context.referrer_policy = self.referrer_policy.clone();
         in_flight.fetch_add(1, Ordering::Relaxed);
@@ -266,6 +275,18 @@ impl NetProvider for Resources {
                 return;
             }
             let (url, bytes, ok) = match response {
+                Ok(response)
+                    if resource_destination == Destination::Style
+                        && (response.status >= 400
+                            || !response.header("content-type").is_some_and(|h| {
+                                h.split(';').next().is_some_and(|mime| {
+                                    mime.trim().eq_ignore_ascii_case("text/css")
+                                })
+                            })) =>
+                {
+                    eprintln!("Wega stylesheet rejected: status or content type");
+                    (response.url, vec![], false)
+                }
                 Ok(response) => (response.url, response.bytes, true),
                 Err(error) => {
                     eprintln!("Wega resource: {error}");

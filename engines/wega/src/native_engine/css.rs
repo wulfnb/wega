@@ -202,6 +202,7 @@ pub enum Length {
     Percent(f64),
     Em(f64),
     Rem(f64),
+    Calc([f64; 4]),
     #[default]
     Auto,
 }
@@ -221,13 +222,21 @@ impl Length {
         if let Some(pct) = s.strip_suffix('%') {
             return pct.trim().parse::<f64>().ok().map(Self::Percent);
         }
-        if let Some(em) = s.strip_suffix("em") {
-            return em.trim().parse::<f64>().ok().map(Self::Em);
-        }
         if let Some(rem) = s.strip_suffix("rem") {
             return rem.trim().parse::<f64>().ok().map(Self::Rem);
         }
-        s.parse::<f64>().ok().map(Self::Px)
+        if let Some(em) = s.strip_suffix("em") {
+            return em
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|n| n.is_finite())
+                .map(Self::Em);
+        }
+        if s.starts_with("calc(") {
+            return super::syntax::calc_length(s);
+        }
+        None
     }
 
     pub fn resolve(&self, parent_len: f64, font_size: f64, root_font_size: f64) -> f64 {
@@ -236,6 +245,9 @@ impl Length {
             Self::Percent(pct) => parent_len * (pct / 100.0),
             Self::Em(em) => em * font_size,
             Self::Rem(rem) => rem * root_font_size,
+            Self::Calc(v) => {
+                v[0] + v[1] * parent_len / 100.0 + v[2] * font_size + v[3] * root_font_size
+            }
             Self::Auto => 0.0,
         }
     }
@@ -617,6 +629,8 @@ pub struct ComputedStyle {
     pub opacity: f32,
     pub color: Color,
     pub background_color: Color,
+    pub custom_properties: std::collections::BTreeMap<String, String>,
+    pub line_height_factor: Option<f64>,
     pub font_size: f64,
     pub line_height: f64,
     pub text_align: TextAlign,
@@ -664,6 +678,8 @@ impl Default for ComputedStyle {
             opacity: 1.0,
             color: Color::BLACK,
             background_color: Color::TRANSPARENT,
+            custom_properties: Default::default(),
+            line_height_factor: Some(1.25),
             font_size: 16.0,
             line_height: 20.0,
             text_align: TextAlign::Left,
@@ -700,12 +716,24 @@ pub enum SimpleSelector {
     Id(String),
     AttrPresent(String),
     AttrEquals(String, String),
+    AttrMatch(String, String, char, bool),
+    Root,
+    Empty,
+    FirstChild,
+    LastChild,
+    OnlyChild,
+    NthChild(i32, i32, bool),
+    Is(Vec<ComplexSelector>),
+    Where(Vec<ComplexSelector>),
+    Not(Vec<ComplexSelector>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Combinator {
     Descendant,
     Child,
+    Adjacent,
+    Sibling,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -725,7 +753,18 @@ impl CompoundSelector {
                 | SimpleSelector::AttrPresent(_)
                 | SimpleSelector::AttrEquals(_, _) => classes += 1,
                 SimpleSelector::Type(_) => types += 1,
-                SimpleSelector::Universal => {}
+                SimpleSelector::Is(list) | SimpleSelector::Not(list) => {
+                    let s = list
+                        .iter()
+                        .map(ComplexSelector::specificity)
+                        .max()
+                        .unwrap_or_default();
+                    ids += s.0;
+                    classes += s.1;
+                    types += s.2;
+                }
+                SimpleSelector::Universal | SimpleSelector::Where(_) => {}
+                _ => classes += 1,
             }
         }
         (ids, classes, types)
@@ -773,6 +812,87 @@ impl CompoundSelector {
                         return false;
                     }
                 }
+                SimpleSelector::AttrMatch(name, value, op, insensitive) => {
+                    let Some(attr) = node.attr(name) else {
+                        return false;
+                    };
+                    let (attr, value) = if *insensitive {
+                        (attr.to_ascii_lowercase(), value.to_ascii_lowercase())
+                    } else {
+                        (attr.to_owned(), value.clone())
+                    };
+                    let matched = match op {
+                        '=' => attr == value,
+                        '~' => {
+                            !value.is_empty() && attr.split_ascii_whitespace().any(|v| v == value)
+                        }
+                        '|' => attr == value || attr.starts_with(&format!("{value}-")),
+                        '^' => !value.is_empty() && attr.starts_with(&value),
+                        '$' => !value.is_empty() && attr.ends_with(&value),
+                        '*' => !value.is_empty() && attr.contains(&value),
+                        _ => false,
+                    };
+                    if !matched {
+                        return false;
+                    }
+                }
+                SimpleSelector::Is(list) | SimpleSelector::Where(list) => {
+                    if !list.iter().any(|s| s.matches(doc, node_key)) {
+                        return false;
+                    }
+                }
+                SimpleSelector::Not(list) => {
+                    if list.iter().any(|s| s.matches(doc, node_key)) {
+                        return false;
+                    }
+                }
+                SimpleSelector::Root => {
+                    if node
+                        .parent()
+                        .and_then(|p| doc.node(p))
+                        .is_none_or(|p| p.kind() != NodeKind::Document)
+                    {
+                        return false;
+                    }
+                }
+                SimpleSelector::Empty => {
+                    if node.children().filter_map(|c| doc.node(c)).any(|c| {
+                        c.kind() == NodeKind::Element || c.text().is_some_and(|t| !t.is_empty())
+                    }) {
+                        return false;
+                    }
+                }
+                structural => {
+                    let Some(parent) = node.parent().and_then(|p| doc.node(p)) else {
+                        return false;
+                    };
+                    let siblings: Vec<_> = parent
+                        .children()
+                        .filter(|k| doc.node(*k).is_some_and(|n| n.kind() == NodeKind::Element))
+                        .collect();
+                    let Some(index) = siblings.iter().position(|k| *k == node_key) else {
+                        return false;
+                    };
+                    let index = index as i64 + 1;
+                    let count = siblings.len() as i64;
+                    let matches = match structural {
+                        SimpleSelector::FirstChild => index == 1,
+                        SimpleSelector::LastChild => index == count,
+                        SimpleSelector::OnlyChild => count == 1,
+                        SimpleSelector::NthChild(a, b, reverse) => {
+                            let n = if *reverse { count - index + 1 } else { index } - *b as i64;
+                            if *a == 0 {
+                                n == 0
+                            } else {
+                                n % *a as i64 == 0 && n / *a as i64 >= 0
+                            }
+                        }
+                        _ => false,
+                    };
+                    if !matches {
+                        return false;
+                    }
+                }
             }
         }
         true
@@ -808,43 +928,50 @@ impl ComplexSelector {
             return true;
         }
 
-        let mut curr_node = node_key;
-        let mut idx = self.items.len() - 1;
-
-        while idx > 0 {
-            let (_, combinator) = &self.items[idx - 1];
-            let (target_compound, _) = &self.items[idx - 1];
-            match combinator {
-                Some(Combinator::Child) => {
-                    let parent = doc.node(curr_node).and_then(NodeView::parent);
-                    let Some(p) = parent else {
-                        return false;
-                    };
-                    if !target_compound.matches(doc, p) {
-                        return false;
+        self.matches_at(doc, node_key, self.items.len() - 1)
+    }
+    fn matches_at<D: DocumentView>(&self, doc: &D, key: NodeKey, index: usize) -> bool {
+        if !self.items[index].0.matches(doc, key) {
+            return false;
+        }
+        if index == 0 {
+            return true;
+        }
+        let combinator = self.items[index - 1].1.unwrap_or(Combinator::Descendant);
+        let parent = || doc.node(key).and_then(NodeView::parent);
+        match combinator {
+            Combinator::Child => parent().is_some_and(|p| self.matches_at(doc, p, index - 1)),
+            Combinator::Descendant => {
+                let mut ancestor = parent();
+                while let Some(p) = ancestor {
+                    if self.matches_at(doc, p, index - 1) {
+                        return true;
                     }
-                    curr_node = p;
-                    idx -= 1;
+                    ancestor = doc.node(p).and_then(NodeView::parent);
                 }
-                Some(Combinator::Descendant) | None => {
-                    let mut found = false;
-                    let mut ancestor = doc.node(curr_node).and_then(NodeView::parent);
-                    while let Some(a) = ancestor {
-                        if target_compound.matches(doc, a) {
-                            curr_node = a;
-                            found = true;
-                            idx -= 1;
-                            break;
-                        }
-                        ancestor = doc.node(a).and_then(NodeView::parent);
-                    }
-                    if !found {
-                        return false;
-                    }
+                false
+            }
+            Combinator::Adjacent | Combinator::Sibling => {
+                let Some(parent) = parent().and_then(|p| doc.node(p)) else {
+                    return false;
+                };
+                let previous: Vec<_> = parent
+                    .children()
+                    .take_while(|k| *k != key)
+                    .filter(|k| doc.node(*k).is_some_and(|n| n.kind() == NodeKind::Element))
+                    .collect();
+                if combinator == Combinator::Adjacent {
+                    previous
+                        .last()
+                        .is_some_and(|p| self.matches_at(doc, *p, index - 1))
+                } else {
+                    previous
+                        .into_iter()
+                        .rev()
+                        .any(|p| self.matches_at(doc, p, index - 1))
                 }
             }
         }
-        true
     }
 }
 
@@ -868,200 +995,27 @@ pub struct Rule {
 #[derive(Debug, Clone, Default)]
 pub struct StyleSheet {
     pub rules: Vec<Rule>,
+    pub unsupported: Vec<String>,
 }
 
 impl StyleSheet {
     pub fn parse(css: &str) -> Self {
-        let mut sheet = Self::default();
-        let mut remaining = css;
-        while let Some(open) = remaining.find('{') {
-            let selector_str = &remaining[..open].trim();
-            remaining = &remaining[open + 1..];
-            let close = match remaining.find('}') {
-                Some(idx) => idx,
-                None => break,
-            };
-            let body = &remaining[..close];
-            remaining = &remaining[close + 1..];
-
-            let selectors = parse_selector_list(selector_str);
-            let declarations = parse_declarations(body);
-            if !selectors.is_empty() && !declarations.is_empty() {
-                sheet.rules.push(Rule {
-                    selectors,
-                    declarations,
-                });
-            }
-        }
-        sheet
+        super::syntax::stylesheet(css)
     }
 }
-
 pub fn parse_declarations(s: &str) -> Vec<Declaration> {
-    let mut declarations = Vec::new();
-    for item in s.split(';') {
-        let item = item.trim();
-        if item.is_empty() {
-            continue;
-        }
-        if let Some((prop, val)) = item.split_once(':') {
-            let prop = prop.trim().to_ascii_lowercase();
-            let mut val = val.trim();
-            let mut important = false;
-            if let Some(rest) = val.strip_suffix("!important") {
-                val = rest.trim();
-                important = true;
-            }
-            declarations.push(Declaration {
-                property: prop,
-                value: val.to_string(),
-                important,
-            });
-        }
-    }
-    declarations
+    super::syntax::declarations(s)
 }
-
 pub fn parse_selector_list(s: &str) -> Vec<ComplexSelector> {
-    s.split(',')
-        .filter_map(|part| parse_complex_selector(part.trim()))
-        .collect()
+    super::syntax::selectors(s)
 }
-
 pub fn parse_complex_selector(s: &str) -> Option<ComplexSelector> {
-    if s.is_empty() {
-        return None;
-    }
-    let mut tokens = Vec::new();
-    let mut curr = String::new();
-
-    for c in s.chars() {
-        if c == '>' {
-            if !curr.trim().is_empty() {
-                tokens.push(curr.trim().to_string());
-                curr.clear();
-            }
-            tokens.push(">".to_string());
-        } else if c.is_whitespace() {
-            if !curr.trim().is_empty() {
-                tokens.push(curr.trim().to_string());
-                curr.clear();
-            }
-        } else {
-            curr.push(c);
-        }
-    }
-    if !curr.trim().is_empty() {
-        tokens.push(curr.trim().to_string());
-    }
-
-    if tokens.is_empty() {
-        return None;
-    }
-
-    let mut items = Vec::new();
-    let mut i = 0;
-    while i < tokens.len() {
-        if tokens[i] == ">" {
-            i += 1;
-            continue;
-        }
-        let compound = parse_compound_selector(&tokens[i])?;
-        let combinator = if i + 1 < tokens.len() {
-            if tokens[i + 1] == ">" {
-                Some(Combinator::Child)
-            } else {
-                Some(Combinator::Descendant)
-            }
-        } else {
-            None
-        };
-        items.push((compound, combinator));
-        i += 1;
-    }
-
-    Some(ComplexSelector { items })
+    let mut list = parse_selector_list(s);
+    (list.len() == 1).then(|| list.remove(0))
 }
-
 pub fn parse_compound_selector(s: &str) -> Option<CompoundSelector> {
-    let mut components = Vec::new();
-    let mut chars = s.chars().peekable();
-
-    while let Some(&c) = chars.peek() {
-        match c {
-            '*' => {
-                chars.next();
-                components.push(SimpleSelector::Universal);
-            }
-            '#' => {
-                chars.next();
-                let mut name = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_alphanumeric() || ch == '-' || ch == '_' {
-                        name.push(chars.next().unwrap());
-                    } else {
-                        break;
-                    }
-                }
-                if !name.is_empty() {
-                    components.push(SimpleSelector::Id(name));
-                }
-            }
-            '.' => {
-                chars.next();
-                let mut name = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_alphanumeric() || ch == '-' || ch == '_' {
-                        name.push(chars.next().unwrap());
-                    } else {
-                        break;
-                    }
-                }
-                if !name.is_empty() {
-                    components.push(SimpleSelector::Class(name));
-                }
-            }
-            '[' => {
-                chars.next();
-                let mut attr = String::new();
-                for ch in chars.by_ref() {
-                    if ch == ']' {
-                        break;
-                    }
-                    attr.push(ch);
-                }
-                if let Some((k, v)) = attr.split_once('=') {
-                    let k = k.trim().to_string();
-                    let v = v.trim().trim_matches('"').trim_matches('\'').to_string();
-                    components.push(SimpleSelector::AttrEquals(k, v));
-                } else if !attr.trim().is_empty() {
-                    components.push(SimpleSelector::AttrPresent(attr.trim().to_string()));
-                }
-            }
-            ch if ch.is_alphanumeric() || ch == '-' || ch == '_' => {
-                let mut tag = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_alphanumeric() || ch == '-' || ch == '_' {
-                        tag.push(chars.next().unwrap());
-                    } else {
-                        break;
-                    }
-                }
-                if !tag.is_empty() {
-                    components.push(SimpleSelector::Type(tag.to_ascii_lowercase()));
-                }
-            }
-            _ => {
-                chars.next();
-            }
-        }
-    }
-
-    if components.is_empty() {
-        None
-    } else {
-        Some(CompoundSelector { components })
-    }
+    let mut sel = parse_complex_selector(s)?;
+    (sel.items.len() == 1).then(|| sel.items.remove(0).0)
 }
 
 // ---------------------------------------------------------------------------
@@ -1115,6 +1069,8 @@ pub fn resolve_computed_style<D: DocumentView>(
 ) -> ComputedStyle {
     let mut style = parent_style.map_or_else(ComputedStyle::default, |p| ComputedStyle {
         // Inherited properties:
+        custom_properties: p.custom_properties.clone(),
+        line_height_factor: p.line_height_factor,
         color: p.color,
         font_size: p.font_size,
         line_height: p.line_height,
@@ -1204,7 +1160,10 @@ pub fn resolve_computed_style<D: DocumentView>(
             return a.important.cmp(&b.important);
         }
         let (origin_a, origin_b) = if a.important {
-            (2 - a.origin, 2 - b.origin)
+            (
+                if a.origin == 0 { 3 } else { a.origin },
+                if b.origin == 0 { 3 } else { b.origin },
+            )
         } else {
             (a.origin, b.origin)
         };
@@ -1217,11 +1176,61 @@ pub fn resolve_computed_style<D: DocumentView>(
         a.source_order.cmp(&b.source_order)
     });
 
-    // Apply declarations to ComputedStyle
-    for decl in matched {
-        apply_declaration(&mut style, &decl.property, &decl.value);
+    // Resolve custom properties before ordinary properties, independent of order.
+    for decl in &matched {
+        if decl.property.starts_with("--") {
+            match decl.value.trim() {
+                "initial" => {
+                    style.custom_properties.remove(&decl.property);
+                }
+                "inherit" | "unset" => {}
+                _ => {
+                    style
+                        .custom_properties
+                        .insert(decl.property.clone(), decl.value.clone());
+                }
+            }
+        }
     }
-
+    let raw = style.custom_properties.clone();
+    style.custom_properties = raw
+        .iter()
+        .filter_map(|(k, v)| super::syntax::substitute(v, &raw).map(|v| (k.clone(), v)))
+        .collect();
+    for decl in matched {
+        if decl.property.starts_with("--") {
+            continue;
+        }
+        let value = super::syntax::substitute(&decl.value, &style.custom_properties);
+        let inherited = matches!(
+            decl.property.as_str(),
+            "color"
+                | "font-size"
+                | "font-family"
+                | "font-weight"
+                | "font-style"
+                | "line-height"
+                | "text-align"
+                | "white-space"
+        );
+        let value = value
+            .as_deref()
+            .unwrap_or(if inherited { "inherit" } else { "initial" });
+        if value == "inherit" || (value == "unset" && inherited) {
+            copy_property(
+                &mut style,
+                parent_style.unwrap_or(&ComputedStyle::default()),
+                &decl.property,
+            );
+        } else if value == "initial" || value == "unset" {
+            copy_property(&mut style, &ComputedStyle::default(), &decl.property);
+        } else {
+            apply_declaration(&mut style, &decl.property, value);
+        }
+    }
+    if let Some(factor) = style.line_height_factor {
+        style.line_height = style.font_size * factor;
+    }
     style
 }
 
@@ -1381,14 +1390,26 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
             }
         }
         "font-size" => {
-            if let Some(Length::Px(s)) = Length::parse(val) {
-                style.font_size = s;
-                style.line_height = s * 1.25;
+            if let Some(l) = Length::parse(val) {
+                let size = l.resolve(style.font_size, style.font_size, 16.0);
+                if size >= 0.0 && size.is_finite() {
+                    style.font_size = size;
+                }
             }
         }
         "line-height" => {
-            if let Some(Length::Px(h)) = Length::parse(val) {
-                style.line_height = h;
+            if val == "normal" {
+                style.line_height_factor = Some(1.25);
+            } else if let Ok(factor) = val.parse::<f64>() {
+                if factor >= 0.0 && factor.is_finite() {
+                    style.line_height_factor = Some(factor);
+                }
+            } else if let Some(l) = Length::parse(val) {
+                let h = l.resolve(style.font_size, style.font_size, 16.0);
+                if h >= 0.0 && h.is_finite() {
+                    style.line_height = h;
+                    style.line_height_factor = None;
+                }
             }
         }
         "text-align" => {
@@ -1504,5 +1525,22 @@ impl WhiteSpace {
             "break-spaces" => Self::BreakSpaces,
             _ => return None,
         })
+    }
+}
+
+fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, prop: &str) {
+    macro_rules! copy { ($($name:literal => $field:ident),* $(,)?) => { match prop { $( $name => target.$field=source.$field.clone(), )* _=>{} } }; }
+    copy! { "display"=>display,"position"=>position,"box-sizing"=>box_sizing,
+    "color"=>color,"background-color"=>background_color,"background"=>background_color,
+    "width"=>width,"height"=>height,"min-width"=>min_width,"max-width"=>max_width,"min-height"=>min_height,"max-height"=>max_height,
+    "margin"=>margin,"padding"=>padding,"border"=>borders,"font-size"=>font_size,"font-family"=>font_family,
+    "font-weight"=>font_weight,"font-style"=>font_italic,"white-space"=>white_space,"text-align"=>text_align,
+    "opacity"=>opacity,"top"=>top,"right"=>right,"bottom"=>bottom,"left"=>left,"z-index"=>z_index,
+    "transform"=>transform,"box-shadow"=>box_shadow,"border-radius"=>border_radius,
+    "overflow-x"=>overflow_x,"overflow-y"=>overflow_y,"flex-direction"=>flex_direction,
+    "flex-grow"=>flex_grow,"flex-shrink"=>flex_shrink,"flex-basis"=>flex_basis,"align-items"=>align_items,"justify-content"=>justify_content }
+    if prop == "line-height" {
+        target.line_height = source.line_height;
+        target.line_height_factor = source.line_height_factor;
     }
 }
