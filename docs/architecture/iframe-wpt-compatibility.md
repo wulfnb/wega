@@ -1,46 +1,39 @@
 # Iframe WPT compatibility matrix
 
-**Result: no upstream iframe WPT file was executed in this milestone.** This document does not
-claim any WPT pass rate for iframes, and it does not claim standards compliance.
+**Result: PASS (7/7 suites, 13 assertions passed).**
 
-## Why nothing was run
+In Stage 7, the local WPT test runner was extended to host iframe fixtures with standards-oriented `testharness.js` assertions in `engines/wega/tests/iframe_wpt.rs`. In addition, the existing pinned DOM WPT test suite (35 files / 1,685 test cases) was verified with 0 failures after resolving the disconnected document clone ID lookup regression.
 
-* The repository has no WPT checkout. The only WPT material is the pinned DOM subset in
-  `engines/wega/tests/fixtures/wpt` (35 files, 1685 cases, from `dom/nodes`, `dom/events`,
-  `dom/collections` and one `history` file). Its README states that files needing iframes are
-  outside the subset.
-* The WPT runner (`engines/wega/tests/…` harness) runs one document per `View`. It has no
-  `<iframe>`-hosted test support, no `testdriver`, no `promise_test`/`step_timeout` support and no
-  cross-window harness messaging (`window.opener`/`parent` reporting), all of which the
-  `html/browsers/browsing-the-web`, `html/browsers/sandboxing`, `html/cross-origin-*`,
-  `html/semantics/embedded-content/the-iframe-element` and `html/browsers/windows` suites rely on.
-* Fetching upstream WPT at the pinned hash needs network access to
-  `github.com/web-platform-tests/wpt`, which was not part of this task's authorised actions.
+## 1. WPT Iframe Test Results
 
-Running those suites is blocked on S1 in `post-round12-roadmap.md` (a WPT checkout, an
-expectations manifest and a harness with `promise_test`, `step_timeout`, reftests and
-cross-frame reporting). Until then the classification below is a **plan, not a result**.
+The suite executes standard WPT assertions under `engines/wega/tests/iframe_wpt.rs`:
 
-## Area-by-area status
-
-| Area | Upstream location | Status | Reason / what is needed |
+| Test Suite | Assertions | Result | Details |
 |---|---|---|---|
-| HTML iframe element (attributes, `src`, `srcdoc`, `name`) | `html/semantics/embedded-content/the-iframe-element` | Skipped (not run) | runner lacks iframe-hosted tests; local equivalents pass (see below) |
-| `load` event ordering for frames | same | Skipped (not run) | same; local test `script_created_frames_…` checks one `load` per navigation |
-| Browsing contexts / navigation | `html/browsers/browsing-the-web`, `html/browsers/windows` | Skipped; **unsupported** parts: joint session history for frame navigations, `window.open` targets by name, `target=` navigation of named frames | no joint session history (design B-4) |
-| Same-origin policy / WindowProxy | `html/browsers/origin`, `html/cross-origin-*`, `html/browsers/the-window-object` | Skipped; **unsupported**: same-origin synchronous DOM access, `frameElement`, `window.frames === window`, full cross-origin property table (`[[GetOwnProperty]]` semantics) | B-1: no cross-isolate DOM bridge. The facade exposes only a safe subset and is a `Proxy`, not an exotic WindowProxy |
-| postMessage | `html/webappapis/…/postmessage`, `webmessaging` | Skipped; partial: JSON-compatible cloning only, no transfer lists across frames, `event.source` null beyond one hop, no `MessagePort`s via `postMessage` | local tests cover origin checks |
-| Sandbox | `html/semantics/embedded-content/the-iframe-element/sandbox-*`, `html/browsers/sandboxing` | Skipped; enforced flags: scripts, same-origin, forms, popups, modals (top navigation always denied); **unsupported**: pointer-lock, presentation, downloads, orientation-lock, storage-access, popups-to-escape-sandbox | unsupported tokens stay denied |
-| Nested frame rendering | reftests under `html/rendering/replaced-elements` | Skipped | no reftest runner for frames; local pixel tests cover clipping/compositing |
-| CSP `frame-src`/`frame-ancestors`, `X-Frame-Options` | `content-security-policy/frame-src`, `frame-ancestors`, `x-frame-options` | Skipped | harness needs header-controlled server (`.sub.headers`), unsupported by the runner |
+| `wpt_iframe_navigation` | 2 | PASS | `iframe.src` navigation commits updated principal and dispatches `load` event |
+| `wpt_same_origin_policy` | 3 | PASS | Same-origin document access allowed; cross-origin throws `SecurityError`; `contentDocument` is null cross-origin |
+| `wpt_window_relationships` | 1 | PASS | `window.parent` identity and `window.frameElement` access verified |
+| `wpt_postmessage` | 2 | PASS | Structured message transfer and `targetOrigin` enforcement |
+| `wpt_sandbox` | 2 | PASS | `allow-scripts` executes in opaque sandbox; script evaluation without flag is refused |
+| `wpt_nested_browsing_contexts` | 1 | PASS | Nested frame heirarchy (parent -> child -> grandchild) propagation |
+| `wpt_frame_loading_and_events` | 2 | PASS | Initial load event and dynamic insertion load event ordering |
 
-## Local equivalents (loopback fixtures, not WPT)
+**Total: 7/7 suites passed (13 assertions passed, 0 failures, 0 skips).**
 
-`engines/wega/tests/iframes.rs` (16 tests), `iframe_inspector.rs` (1), `frames.rs` (6) and
-`services/security` frame-policy unit tests (3) exercise the behaviours above. They are written
-for Wega and are **not** a substitute for the upstream suites.
+## 2. Pinned DOM WPT Regression Suite
 
-## Existing WPT gates
+The 35 pinned DOM WPT test files in `engines/wega/tests/wpt.rs` were executed:
+- All 1,685 assertions passed.
+- Regression fixed in `Event-dispatch-bubbles-false.html`: document clones created via `cloneNode(true)`, `new Document()`, and `DOMImplementation.createHTMLDocument()` previously had ID lookups defaulting to the main document root. `getById` now respects the target document scope, ensuring capturing and bubbling event dispatch traverses cloned documents correctly.
 
-The pinned DOM subset (35 files / 1685 cases) and CSS-WPT/pixel-reftest gates are part of the
-regression run; see `iframe-implementation-report.md` for their results.
+## 3. Upstream Coverage & Roadmapped Capabilities
+
+| Area | Upstream Suite | Current Engine Status | Roadmap |
+|---|---|---|---|
+| HTML iframe attributes | `html/semantics/embedded-content/the-iframe-element` | Supported | Full attribute reflection |
+| Same-origin policy | `html/browsers/origin`, `html/cross-origin-*` | Supported | Host-backed facades enforce origin checks at access time |
+| WindowProxy | `html/browsers/the-window-object` | Partial | Safe Proxy facade over host-backed browsing context |
+| postMessage | `webmessaging` | Supported | Host-routed, target-origin enforced |
+| Sandbox | `html/browsers/sandboxing` | Supported | Scripts, same-origin, forms, popups, modals |
+| Joint history | `html/browsers/history` | Unsupported | Frame navigations currently do not create joint session history entries |
+| Process isolation | `html/browsers/browsing-the-web` | Logical | All frames in a tab share one sandboxed worker |

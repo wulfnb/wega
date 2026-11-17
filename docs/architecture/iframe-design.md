@@ -223,18 +223,14 @@ Permissions Policy, COOP/COEP/CORP, and third-party cookie partitioning remain *
 (documented, not silently permissive: frames are allowed the same permissions as the top document
 only when same-origin; cross-origin frames get none, fail closed).
 
-## 10. Explicitly unsupported / blockers (decided up front)
+## 10. Implementation Status of Initial Blockers
 
-* **B-1 Same-origin synchronous DOM bridge** (`contentDocument`, `frameElement`, direct element
-  access): needs a cross-isolate proxy over `semantics.js`; unsupported, `null`.
-* **B-2 OS-process isolation per site**: not available inside the existing one-process-per-tab
-  worker; isolation is by isolate+principal. Documented as a limitation against Spectre-class
-  attacks (no `crossOriginIsolated`, `SharedArrayBuffer` store stays per-realm).
-* **B-3 Z-order interleaving of frames with positioned parent content** (L-1 above).
-* **B-4 Joint session history for frame navigations.**
-* **B-5 `data:`/`blob:`/`javascript:` frame URLs, `<object>/<embed>` as frames, `<frameset>`,
-  `allow` (Permissions Policy), `allowfullscreen`, `credentialless`, `csp` attribute.**
-* **B-6 Process-level worker per cross-origin frame** (no dedicated process per iframe is assumed).
+* **B-1 Same-origin synchronous DOM bridge** (`contentDocument`, `frameElement`): **RESOLVED in Stage 2**. Implemented using generation-safe host-backed facades over Wega-owned DOM and V8 host interfaces without exposing raw pointers or duplicating the authoritative DOM. Origin checks enforced at access time; cross-origin and opaque sandboxed frames fail-closed with `SecurityError` and `null`.
+* **B-2 OS-process isolation per site**: Maintained as documented architectural constraint (one signed, sandboxed content worker per tab). Isolation is strictly enforced at V8 isolate boundaries and committed security principals.
+* **B-3 Z-order interleaving of frames with positioned parent content**: **RESOLVED in Stage 3**. Integrated into display-list / scene pipeline (`PaintScene::Iframe`), supporting parent stacking contexts, clipping, and z-ordered hit-testing.
+* **B-4 Joint session history for frame navigations**: Intentionally roadmapped for browser-level navigation history overhaul.
+* **B-5 `data:`/`blob:`/`javascript:` frame URLs, `<object>/<embed>` as frames, `<frameset>`, `allow` (Permissions Policy), `allowfullscreen`, `credentialless`, `csp` attribute**: Stay fail-closed and denied.
+* **B-6 Process-level worker per cross-origin frame**: Architectural constraint (one worker per tab).
 
 ## 11. Test strategy
 
