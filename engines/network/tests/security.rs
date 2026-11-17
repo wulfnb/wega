@@ -369,12 +369,18 @@ fn test_adversarial_iframe_network_authority_and_isolation() {
     // 1. Frame navigation request without valid parent fails
     let child_url = Url::parse("https://child.example/").unwrap();
     let req_invalid_parent = Request::iframe(&child_url, &top_url, 2, Some(999), 4096);
-    assert!(remote.fetch(&req_invalid_parent).is_err(), "Must reject non-existent parent");
+    assert!(
+        remote.fetch(&req_invalid_parent).is_err(),
+        "Must reject non-existent parent"
+    );
 
     // 2. Frame navigation with spoofed initiator fails
     let fake_parent = Url::parse("https://fake.example/").unwrap();
     let req_spoofed_init = Request::iframe(&child_url, &fake_parent, 2, Some(1), 4096);
-    assert!(remote.fetch(&req_spoofed_init).is_err(), "Must reject spoofed parent initiator");
+    assert!(
+        remote.fetch(&req_spoofed_init).is_err(),
+        "Must reject spoofed parent initiator"
+    );
 
     // 3. Valid frame navigation registers frame state
     let req_valid = Request::iframe(&child_url, &top_url, 2, Some(1), 4096);
@@ -393,10 +399,35 @@ fn test_adversarial_iframe_network_authority_and_isolation() {
     session.detach_frame(2);
     {
         let frames = session.session.frames.lock().unwrap();
-        assert!(frames.get(&2).unwrap().detached, "Frame 2 must be marked detached");
+        assert!(
+            frames.get(&2).unwrap().detached,
+            "Frame 2 must be marked detached"
+        );
     }
-    assert!(remote.cookie_read_frame(&child_url, true, wega_network::SiteContext::SameSite, false, Some(2)).is_err(), "Detached frame cannot read cookies");
-    assert!(remote.cookie_write_frame(&child_url, "k=v", true, wega_network::SiteContext::SameSite, Some(2)).is_err(), "Detached frame cannot write cookies");
+    assert!(
+        remote
+            .cookie_read_frame(
+                &child_url,
+                true,
+                wega_network::SiteContext::SameSite,
+                false,
+                Some(2)
+            )
+            .is_err(),
+        "Detached frame cannot read cookies"
+    );
+    assert!(
+        remote
+            .cookie_write_frame(
+                &child_url,
+                "k=v",
+                true,
+                wega_network::SiteContext::SameSite,
+                Some(2)
+            )
+            .is_err(),
+        "Detached frame cannot write cookies"
+    );
 
     // 5. Remote detach_frame capability call works
     let req_frame3 = Request::iframe(&child_url, &top_url, 3, Some(1), 4096);
@@ -404,7 +435,9 @@ fn test_adversarial_iframe_network_authority_and_isolation() {
     assert!(remote.detach_frame(3).is_ok());
     {
         let frames = session.session.frames.lock().unwrap();
-        assert!(frames.get(&3).unwrap().detached, "Frame 3 must be detached via Remote");
+        assert!(
+            frames.get(&3).unwrap().detached,
+            "Frame 3 must be detached via Remote"
+        );
     }
 }
-

@@ -776,8 +776,6 @@ pub struct FrameDescription {
     pub revision: u64,
 }
 
-
-
 #[cfg(test)]
 #[path = "inspector_tests.rs"]
 mod tests;

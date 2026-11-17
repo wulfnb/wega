@@ -144,7 +144,11 @@ fn container_overflow_clipping_clips_frame() {
     };
 
     // Inside the container (30, 30): Frame paints red [255, 0, 0]
-    assert_eq!(px(30, 30), [255, 0, 0], "inside clipped container must show frame content");
+    assert_eq!(
+        px(30, 30),
+        [255, 0, 0],
+        "inside clipped container must show frame content"
+    );
 
     // Outside the container (100, 100): Clipped away by overflow: hidden, so background is white [255, 255, 255]
     assert_eq!(

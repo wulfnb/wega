@@ -71,7 +71,10 @@ pub(crate) struct Snapshot {
     /// Resource and containment failures require an explicit restart, not automatic fallback.
     pub recovery_reason: Option<String>,
     pub authority: Option<FrameAuthority>,
-    pub authorities: std::collections::BTreeMap<protocol::identity::FrameId, protocol::authority::FrameAuthority>,
+    pub authorities: std::collections::BTreeMap<
+        protocol::identity::FrameId,
+        protocol::authority::FrameAuthority,
+    >,
     pub grants: std::collections::BTreeSet<protocol::permissions::PermissionFeature>,
     pub lifecycle: Lifecycle,
     pub native: std::collections::VecDeque<(TrustedRequest, ContentEvent)>,
@@ -472,7 +475,10 @@ impl Snapshot {
 
     /// The grant decision: from the committed principal, with the user's explicit override only
     /// for an opaque one. Returns what to record and what to send.
-    fn frame_principal(&self, frame: Option<FrameId>) -> Option<(DocumentContext, protocol::authority::Principal)> {
+    fn frame_principal(
+        &self,
+        frame: Option<FrameId>,
+    ) -> Option<(DocumentContext, protocol::authority::Principal)> {
         match frame {
             None => self.current_principal(),
             Some(f) => {
@@ -522,7 +528,11 @@ impl Snapshot {
         Ok((context, principal, scope))
     }
 
-    fn mutation_token_for_frame(&self, session: InspectorSessionId, frame: Option<FrameId>) -> Option<GrantToken> {
+    fn mutation_token_for_frame(
+        &self,
+        session: InspectorSessionId,
+        frame: Option<FrameId>,
+    ) -> Option<GrantToken> {
         let (context, principal) = self.frame_principal(frame)?;
         self.inspector
             .as_ref()?
@@ -540,6 +550,7 @@ impl Snapshot {
     }
 
     /// Like [`Self::evaluation_token`], for the separate mutation grant.
+    #[allow(dead_code)]
     fn mutation_token(&self, session: InspectorSessionId) -> Option<GrantToken> {
         self.mutation_token_for_frame(session, None)
     }
@@ -1352,11 +1363,10 @@ impl Page {
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            let child_ident = SessionIdentity {
-                                frame,
-                                ..identity
-                            };
-                            state.authorities.insert(frame, FrameAuthority::new(child_ident));
+                            let child_ident = SessionIdentity { frame, ..identity };
+                            state
+                                .authorities
+                                .insert(frame, FrameAuthority::new(child_ident));
                             let doc_context = DocumentContext {
                                 document: state.requests.document(),
                                 revision: state.requests.revision(),
@@ -1398,7 +1408,8 @@ impl Page {
                             url: nav_url,
                             origin: _,
                         } => {
-                            let committed = reader_broker.take_frame_committed_principal(frame.0, Some(&nav_url));
+                            let committed = reader_broker
+                                .take_frame_committed_principal(frame.0, Some(&nav_url));
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1410,7 +1421,8 @@ impl Page {
                             if let Some(auth) = state.authorities.get_mut(&frame) {
                                 auth.bind(child_context, committed);
                             } else {
-                                let mut auth = FrameAuthority::new(SessionIdentity { frame, ..identity });
+                                let mut auth =
+                                    FrameAuthority::new(SessionIdentity { frame, ..identity });
                                 auth.bind(child_context, committed);
                                 state.authorities.insert(frame, auth);
                             }
@@ -1550,7 +1562,10 @@ impl Page {
 
     /// The target this page's sessions are scoped to (tab, frame, process).
     pub fn frame_tree(&self) -> Vec<protocol::inspector::FrameDescription> {
-        let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(tree) = &state.frame_tree else {
             return Vec::new();
         };
@@ -1771,7 +1786,8 @@ impl Page {
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let (document, principal, scope) = state.evaluation_scope_for_frame(opaque_override, frame)?;
+            let (document, principal, scope) =
+                state.evaluation_scope_for_frame(opaque_override, frame)?;
             state
                 .inspector
                 .as_mut()

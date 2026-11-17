@@ -379,7 +379,13 @@ impl View {
         self.frames.refused.insert((node, signature));
     }
 
-    fn frame_role(&self, frame_id: u64, sandbox: Sandbox, opaque: bool, inherits: bool) -> FrameRole {
+    fn frame_role(
+        &self,
+        frame_id: u64,
+        sandbox: Sandbox,
+        opaque: bool,
+        inherits: bool,
+    ) -> FrameRole {
         let own = self.role.as_ref();
         let mut ancestors = vec![self.document.borrow().url().clone()];
         if let Some(role) = own {
@@ -1108,7 +1114,8 @@ impl crate::dom::Dom {
                 } else {
                     let node: u64 = text(1).parse().map_err(|_| "Invalid node identity")?;
                     if let Some(child) = shared.children.iter().find(|c| c.node.as_u64() == node) {
-                        if !child.opaque && child.origin != "null" && child.origin == caller_origin {
+                        if !child.opaque && child.origin != "null" && child.origin == caller_origin
+                        {
                             let root_id = child.document.borrow().root_node().id.as_u64();
                             let generation = child.document_generation.get();
                             json!(format!("f:{}:{}:{}", child.key, generation, root_id))
@@ -1145,8 +1152,14 @@ impl crate::dom::Dom {
                 }
                 if let Some(parent) = &shared.parent {
                     if !parent.opaque && parent.origin != "null" && parent.origin == caller_origin {
-                        let doc = parent.document.upgrade().ok_or("Parent document detached")?;
-                        let gen_rc = parent.document_generation.upgrade().ok_or("Parent document detached")?;
+                        let doc = parent
+                            .document
+                            .upgrade()
+                            .ok_or("Parent document detached")?;
+                        let gen_rc = parent
+                            .document_generation
+                            .upgrade()
+                            .ok_or("Parent document detached")?;
                         let root_id = doc.borrow().root_node().id.as_u64();
                         json!(format!("p:{}:{}", gen_rc.get(), root_id))
                     } else {
@@ -1163,7 +1176,10 @@ impl crate::dom::Dom {
                 }
                 if let Some(parent) = &shared.parent {
                     if !parent.opaque && parent.origin != "null" && parent.origin == caller_origin {
-                        let gen_rc = parent.document_generation.upgrade().ok_or("Parent document detached")?;
+                        let gen_rc = parent
+                            .document_generation
+                            .upgrade()
+                            .ok_or("Parent document detached")?;
                         json!(format!("p:{}:{}", gen_rc.get(), parent.frame_node.as_u64()))
                     } else {
                         Value::Null

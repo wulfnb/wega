@@ -37,7 +37,12 @@ struct Inner {
     args: Vec<(InspectorCommand, InspectorArgs)>,
     frames: Vec<wega::engine_protocol::inspector::FrameDescription>,
     frame_requests: Vec<(InspectorSessionId, InspectorCommand, Option<FrameId>)>,
-    frame_mutations: Vec<(Option<FrameId>, u64, u64, wega::engine_protocol::inspector::edit::MutationOp)>,
+    frame_mutations: Vec<(
+        Option<FrameId>,
+        u64,
+        u64,
+        wega::engine_protocol::inspector::edit::MutationOp,
+    )>,
 }
 
 /// A scripted page: it enforces session liveness exactly like the real registry does.
@@ -221,7 +226,10 @@ impl InspectorPort for Fake {
         let mut inner = self.inner.borrow_mut();
         inner.calls += 1;
         if inner.live != Some(session) {
-            return Err(InspectorError::new(InspectorErrorCode::StaleSession, "stale"));
+            return Err(InspectorError::new(
+                InspectorErrorCode::StaleSession,
+                "stale",
+            ));
         }
         inner.frame_requests.push((session, command, frame));
         inner.args.push((command, args));
@@ -245,7 +253,10 @@ impl InspectorPort for Fake {
         op: wega::engine_protocol::inspector::edit::MutationOp,
         frame: Option<FrameId>,
     ) -> Result<(), InspectorError> {
-        self.inner.borrow_mut().frame_mutations.push((frame, node.key, epoch, op.clone()));
+        self.inner
+            .borrow_mut()
+            .frame_mutations
+            .push((frame, node.key, epoch, op.clone()));
         self.mutate(session, node, epoch, op)
     }
     fn target(&self) -> Option<TargetId> {
@@ -1462,7 +1473,6 @@ fn an_edit_refused_as_unauthorised_or_stale_is_reported_and_never_retried_blindl
     );
 }
 
-
 #[test]
 fn devtools_frame_selector_and_navigation_between_parent_and_child() {
     let tabs = Tabs::new(&[1]);
@@ -1503,14 +1513,21 @@ fn devtools_frame_selector_and_navigation_between_parent_and_child() {
     // Running tick should send requests targeted to FrameId(2)
     run(&mut view, &tabs, &clock, 110, 1, false);
     let reqs = tabs.pages[&1].inner.borrow().frame_requests.clone();
-    assert!(reqs.iter().any(|(_, cmd, f)| *cmd == InspectorCommand::GetDomRoot && *f == Some(FrameId(2))));
+    assert!(
+        reqs.iter()
+            .any(|(_, cmd, f)| *cmd == InspectorCommand::GetDomRoot && *f == Some(FrameId(2)))
+    );
 
     // Select nested child frame 3
     view.select_frame(Some(FrameId(3)), &|k| tabs.resolve(k));
     assert_eq!(view.target_frame, Some(FrameId(3)));
 
     // Navigate back to parent (frame 2)
-    let parent = view.frames_cache.iter().find(|f| f.key == 3).and_then(|f| f.parent);
+    let parent = view
+        .frames_cache
+        .iter()
+        .find(|f| f.key == 3)
+        .and_then(|f| f.parent);
     assert_eq!(parent, Some(2));
     view.select_frame(parent.map(FrameId), &|k| tabs.resolve(k));
     assert_eq!(view.target_frame, Some(FrameId(2)));
@@ -1527,8 +1544,8 @@ fn devtools_frame_specific_mutation_and_revocation_on_detachment() {
     let mut view = DevtoolsView::default();
     attach(&mut view, &tabs, &clock, 1, false);
 
-    tabs.pages[&1].inner.borrow_mut().frames = vec![
-        wega::engine_protocol::inspector::FrameDescription {
+    tabs.pages[&1].inner.borrow_mut().frames =
+        vec![wega::engine_protocol::inspector::FrameDescription {
             key: 5,
             parent: None,
             url: "https://example.test/frame5".into(),
@@ -1536,8 +1553,7 @@ fn devtools_frame_specific_mutation_and_revocation_on_detachment() {
             name: "frame5".into(),
             sandboxed: false,
             revision: 1,
-        },
-    ];
+        }];
     run(&mut view, &tabs, &clock, 100, 1, false);
 
     // Select frame 5
@@ -1562,7 +1578,11 @@ fn devtools_frame_specific_mutation_and_revocation_on_detachment() {
 
     let frame_muts = tabs.pages[&1].inner.borrow().frame_mutations.clone();
     assert_eq!(frame_muts.len(), 1);
-    assert_eq!(frame_muts[0].0, Some(FrameId(5)), "mutation sent to frame 5");
+    assert_eq!(
+        frame_muts[0].0,
+        Some(FrameId(5)),
+        "mutation sent to frame 5"
+    );
 
     // Frame 5 detaches (disappears from frames_cache)
     tabs.pages[&1].inner.borrow_mut().frames.clear();

@@ -263,40 +263,88 @@ impl Dom {
                 .map_err(|_| "InvalidStateError: reentrant native DOM borrow")?;
             let caller_origin = self.origin();
             for identity in identities {
-                let id_str = identity.as_str().ok_or("TypeError: invalid binding node identity")?;
+                let id_str = identity
+                    .as_str()
+                    .ok_or("TypeError: invalid binding node identity")?;
                 if let Some((target, node_id)) = self.parse_cross_frame_id(id_str) {
                     if caller_origin == "null" {
-                        return Err("SecurityError: Opaque documents cannot access other browsing contexts".into());
+                        return Err(
+                            "SecurityError: Opaque documents cannot access other browsing contexts"
+                                .into(),
+                        );
                     }
                     match target {
                         CrossFrameTarget::Child { key, generation } => {
                             let shared = self.frames.borrow();
-                            let child = shared.children.iter().find(|c| c.key == key).cloned().ok_or("InvalidStateError: frame no longer exists")?;
-                            if child.opaque || child.origin == "null" || child.origin != caller_origin {
+                            let child = shared
+                                .children
+                                .iter()
+                                .find(|c| c.key == key)
+                                .cloned()
+                                .ok_or("InvalidStateError: frame no longer exists")?;
+                            if child.opaque
+                                || child.origin == "null"
+                                || child.origin != caller_origin
+                            {
                                 return Err("SecurityError: Blocked a frame from accessing a cross-origin frame.".into());
                             }
                             if child.document_generation.get() != generation {
-                                return Err("InvalidStateError: The frame document has navigated.".into());
+                                return Err(
+                                    "InvalidStateError: The frame document has navigated.".into()
+                                );
                             }
-                            let child_doc = child.document.try_borrow().map_err(|_| "InvalidStateError: reentrant DOM borrow")?;
-                            if wega_dom::DocumentView::node(&*child_doc, wega_dom::NodeKey::from_u64(node_id)).is_none() {
-                                return Err("InvalidStateError: binding node no longer exists".into());
+                            let child_doc = child
+                                .document
+                                .try_borrow()
+                                .map_err(|_| "InvalidStateError: reentrant DOM borrow")?;
+                            if wega_dom::DocumentView::node(
+                                &*child_doc,
+                                wega_dom::NodeKey::from_u64(node_id),
+                            )
+                            .is_none()
+                            {
+                                return Err(
+                                    "InvalidStateError: binding node no longer exists".into()
+                                );
                             }
                         }
                         CrossFrameTarget::Parent { generation } => {
                             let shared = self.frames.borrow();
-                            let parent = shared.parent.clone().ok_or("InvalidStateError: no parent browsing context")?;
-                            if parent.opaque || parent.origin == "null" || parent.origin != caller_origin {
+                            let parent = shared
+                                .parent
+                                .clone()
+                                .ok_or("InvalidStateError: no parent browsing context")?;
+                            if parent.opaque
+                                || parent.origin == "null"
+                                || parent.origin != caller_origin
+                            {
                                 return Err("SecurityError: Blocked a frame from accessing a cross-origin frame.".into());
                             }
-                            let gen_rc = parent.document_generation.upgrade().ok_or("Parent document detached")?;
-                            let doc_rc = parent.document.upgrade().ok_or("Parent document detached")?;
+                            let gen_rc = parent
+                                .document_generation
+                                .upgrade()
+                                .ok_or("Parent document detached")?;
+                            let doc_rc = parent
+                                .document
+                                .upgrade()
+                                .ok_or("Parent document detached")?;
                             if gen_rc.get() != generation {
-                                return Err("InvalidStateError: The parent document has navigated.".into());
+                                return Err(
+                                    "InvalidStateError: The parent document has navigated.".into(),
+                                );
                             }
-                            let parent_doc = doc_rc.try_borrow().map_err(|_| "InvalidStateError: reentrant DOM borrow")?;
-                            if wega_dom::DocumentView::node(&*parent_doc, wega_dom::NodeKey::from_u64(node_id)).is_none() {
-                                return Err("InvalidStateError: binding node no longer exists".into());
+                            let parent_doc = doc_rc
+                                .try_borrow()
+                                .map_err(|_| "InvalidStateError: reentrant DOM borrow")?;
+                            if wega_dom::DocumentView::node(
+                                &*parent_doc,
+                                wega_dom::NodeKey::from_u64(node_id),
+                            )
+                            .is_none()
+                            {
+                                return Err(
+                                    "InvalidStateError: binding node no longer exists".into()
+                                );
                             }
                         }
                     }
@@ -1315,7 +1363,27 @@ impl Dom {
             "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "matches"=>json!(doc.matches_selector(node_id()?,text(2)).map_err(|_|"Invalid selector")?),
             "closest"=>json!(doc.closest(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
-            "getById"=>json!(wega_dom::DocumentView::element_by_id(&*doc,text(1)).map(|key|key.to_string())),
+            "getById" => {
+                let id_str = text(1);
+                let target_scope = text(2).parse::<u64>().ok().map(NodeId::from_u64);
+                let found = if let Some(scope) = target_scope.filter(|&s| s != doc.root_node().id) {
+                    let mut pending = vec![scope];
+                    let mut result = None;
+                    while let Some(curr) = pending.pop() {
+                        if let Some(node) = doc.node(curr.key()) {
+                            if NodeView::attr(node, "id") == Some(id_str) {
+                                result = Some(curr.key());
+                                break;
+                            }
+                            pending.extend(node.children().rev().map(ToNodeId::node_id));
+                        }
+                    }
+                    result
+                } else {
+                    wega_dom::DocumentView::element_by_id(&*doc, id_str)
+                };
+                json!(found.map(|key| key.to_string()))
+            },
             "outerHTML"=>json!(doc.get_node(node_id()?).unwrap().outer_html()),
             "innerHTML" | "contextualFragment"=>{
                 let mut target=node_id()?;
@@ -2188,11 +2256,16 @@ impl Dom {
         }
     }
 
-    fn detect_cross_frame_target(&self, args: &[serde_json::Value]) -> Option<(CrossFrameTarget, String)> {
+    fn detect_cross_frame_target(
+        &self,
+        args: &[serde_json::Value],
+    ) -> Option<(CrossFrameTarget, String)> {
         use serde_json::Value;
         let op = args.get(0).and_then(Value::as_str).unwrap_or_default();
         let candidate = match op {
-            "create" | "createText" | "createComment" | "getById" => args.get(2).and_then(Value::as_str),
+            "create" | "createText" | "createComment" | "getById" => {
+                args.get(2).and_then(Value::as_str)
+            }
             "createNS" => args.get(3).and_then(Value::as_str),
             "createFragment" => args.get(1).and_then(Value::as_str),
             _ => args.get(1).and_then(Value::as_str),
@@ -2211,10 +2284,12 @@ impl Dom {
         target: CrossFrameTarget,
         prefix: &str,
     ) -> Result<serde_json::Value, String> {
-        use serde_json::{json, Value};
+        use serde_json::{Value, json};
         let caller_origin = self.origin();
         if caller_origin == "null" {
-            return Err("SecurityError: Opaque documents cannot access other browsing contexts".into());
+            return Err(
+                "SecurityError: Opaque documents cannot access other browsing contexts".into(),
+            );
         }
         let dom = match target {
             CrossFrameTarget::Child { key, generation } => {
@@ -2224,7 +2299,10 @@ impl Dom {
                     return Err("NotFoundError: Frame no longer exists".into());
                 };
                 if child.opaque || child.origin == "null" || child.origin != caller_origin {
-                    return Err("SecurityError: Blocked a frame from accessing a cross-origin frame.".into());
+                    return Err(
+                        "SecurityError: Blocked a frame from accessing a cross-origin frame."
+                            .into(),
+                    );
                 }
                 if child.document_generation.get() != generation {
                     return Err("InvalidStateError: The frame document has navigated.".into());
@@ -2235,9 +2313,15 @@ impl Dom {
                 let shared = self.frames.borrow();
                 let parent = shared.parent.clone().ok_or("No parent browsing context")?;
                 if parent.opaque || parent.origin == "null" || parent.origin != caller_origin {
-                    return Err("SecurityError: Blocked a frame from accessing a cross-origin frame.".into());
+                    return Err(
+                        "SecurityError: Blocked a frame from accessing a cross-origin frame."
+                            .into(),
+                    );
                 }
-                let gen_rc = parent.document_generation.upgrade().ok_or("Parent document detached")?;
+                let gen_rc = parent
+                    .document_generation
+                    .upgrade()
+                    .ok_or("Parent document detached")?;
                 let dom_rc = parent.dom.upgrade().ok_or("Parent document detached")?;
                 if gen_rc.get() != generation {
                     return Err("InvalidStateError: The parent document has navigated.".into());

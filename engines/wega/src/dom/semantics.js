@@ -286,11 +286,21 @@
         }
       })
     : null;
+  function setOwner(node, owner) {
+    if (node && owner) {
+      Object.defineProperty(node, "_owner", {
+        value: owner,
+        writable: true,
+        configurable: true,
+        enumerable: false,
+      });
+    }
+  }
   function wrap(id, owner) {
     if (id === null || id === undefined) return null;
     let result = weak ? cache.get(id)?.deref() : cache.get(id);
     if (result) {
-      if (owner && !result._owner) result._owner = owner;
+      if (owner && !result._owner) setOwner(result, owner);
       return result;
     }
     const info = host("info", id);
@@ -338,7 +348,7 @@
     cache.set(id, weak ? new WeakRef(result) : result);
     host("retain", id);
     finalizer?.register(result, id);
-    if (owner) result._owner = owner;
+    if (owner) setOwner(result, owner);
     if (host("connected", id)) connected.set(id, result);
     if (info.nodeType === 1) {
       if (typeof customElements === "object") {
@@ -790,7 +800,7 @@
         : this.childNodes.length - Number(oldParent === this);
       insertedRangeNode(this, index);
       host("insert", this._id, child._id, reference ? reference._id : "");
-      child._owner = this.ownerDocument || this;
+      setOwner(child, this.ownerDocument || this);
       retainTree(child, this.isConnected);
       if (wasConnected) triggerDisconnected(child);
       if (oldParent) {
@@ -1127,7 +1137,7 @@
       if (token !== shadowToken) fail("TypeError", "Illegal constructor");
       super(descriptor.root, host("info", descriptor.root));
       shadowDescriptors.set(this, descriptor);
-      this._owner = wrap(descriptor.host)?.ownerDocument || document;
+      setOwner(this, wrap(descriptor.host)?.ownerDocument || document);
     }
     get host() { return wrap(shadowDescriptors.get(this).host); }
     get activeElement() {
@@ -1882,7 +1892,7 @@
     constructor(token, state) {
       if (token !== internalToken) throw new TypeError("Illegal constructor");
       super("", { nodeType: 2, nodeName: state.name });
-      attrData.set(this, state); this._owner = state.document;
+      attrData.set(this, state); setOwner(this, state.document);
     }
     get namespaceURI() { return attrData.get(this).namespace; }
     get prefix() { return attrData.get(this).prefix; }
@@ -1933,7 +1943,7 @@
       const old = previous?.value;
       element.setAttributeNS(state.namespace, state.name, state.value);
       if (previous) { const s = attrData.get(previous); s.owner = null; s.value = old; }
-      state.owner = element; state.document = element.ownerDocument; attr._owner = state.document;
+      state.owner = element; state.document = element.ownerDocument; setOwner(attr, state.document);
       attributesFor(element).set(attributeKey(state.namespace, state.localName), attr);
       return previous;
     }
@@ -4500,14 +4510,14 @@
     }
     importNode(node, deep = false) {
       const clone = node.cloneNode(deep);
-      clone._owner = this;
+      setOwner(clone, this);
       return clone;
     }
     adoptNode(node) {
       const oldOwner = node.ownerDocument;
       node.remove();
       component("customAdopt", node._id, oldOwner?._id || "", this._id);
-      node._owner = this;
+      setOwner(node, this);
       flushComponents();
       return node;
     }

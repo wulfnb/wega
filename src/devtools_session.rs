@@ -442,7 +442,9 @@ impl DevtoolsView {
             self.edit.notice = "The page is not connected.".into();
             return;
         };
-        if let Err(error) = page.grant_mutation_for_frame(session, opaque_override, self.target_frame) {
+        if let Err(error) =
+            page.grant_mutation_for_frame(session, opaque_override, self.target_frame)
+        {
             self.edit.notice = format!("Editing was not enabled: {}", error.message);
         }
     }
@@ -792,7 +794,13 @@ impl DevtoolsView {
             if let Some(epoch) = self.elements.epoch
                 && let Some(queued) = self.edit.next(now)
             {
-                if let Err(error) = page.mutate_for_frame(session, queued.node, epoch, queued.op.clone(), self.target_frame) {
+                if let Err(error) = page.mutate_for_frame(
+                    session,
+                    queued.node,
+                    epoch,
+                    queued.op.clone(),
+                    self.target_frame,
+                ) {
                     self.edit.unsent(error);
                 }
             }

@@ -475,9 +475,13 @@ impl Browser {
         plans
     }
     /// The user's explicit "Enable editing" action (a separate grant from evaluation).
-    pub(crate) fn devtools_select_frame(&mut self, frame: Option<wega::engine_protocol::identity::FrameId>) {
+    pub(crate) fn devtools_select_frame(
+        &mut self,
+        frame: Option<wega::engine_protocol::identity::FrameId>,
+    ) {
         let session = &self.session;
-        self.devtools.select_frame(frame, &|key| Self::resolve_tab(session, key));
+        self.devtools
+            .select_frame(frame, &|key| Self::resolve_tab(session, key));
     }
 
     pub(crate) fn devtools_enable_editing(&mut self, opaque_override: bool) {

@@ -322,7 +322,13 @@ impl Request {
             limit,
         }
     }
-    pub fn iframe(url: &Url, parent_url: &Url, frame: u64, parent_frame: Option<u64>, limit: usize) -> Self {
+    pub fn iframe(
+        url: &Url,
+        parent_url: &Url,
+        frame: u64,
+        parent_frame: Option<u64>,
+        limit: usize,
+    ) -> Self {
         Self {
             url: url.to_string(),
             method: "GET".into(),
@@ -829,15 +835,12 @@ impl Session {
         if f.detached || f.opaque {
             return None;
         }
-        f.committed
-            .clone()
-            .or_else(|| f.last.clone())
-            .or_else(|| {
-                f.allowed
-                    .first()
-                    .filter(|url| !matches!(url.scheme(), "http" | "https"))
-                    .cloned()
-            })
+        f.committed.clone().or_else(|| f.last.clone()).or_else(|| {
+            f.allowed
+                .first()
+                .filter(|url| !matches!(url.scheme(), "http" | "https"))
+                .cloned()
+        })
     }
     fn document(&self) -> Option<Url> {
         self.document_for_frame(None)
@@ -857,7 +860,9 @@ impl Session {
                 return Err("Frame is detached or sandboxed opaque".into());
             }
         }
-        let document = self.document_for_frame(frame).ok_or("No document cookie authority")?;
+        let document = self
+            .document_for_frame(frame)
+            .ok_or("No document cookie authority")?;
         if !matches!(document.scheme(), "http" | "https") || document.origin() != url.origin() {
             return Err("Cookie document origin mismatch".into());
         }
@@ -967,15 +972,18 @@ impl SessionHandle {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         frames.clear();
-        frames.insert(1, FrameState {
-            parent: None,
-            committed,
-            allowed: vec![url.clone()],
-            last: None,
-            opaque: false,
-            depth: 0,
-            detached: false,
-        });
+        frames.insert(
+            1,
+            FrameState {
+                parent: None,
+                committed,
+                allowed: vec![url.clone()],
+                last: None,
+                opaque: false,
+                depth: 0,
+                detached: false,
+            },
+        );
     }
     pub fn detach_frame(&self, frame: u64) {
         self.session.detach_frame(frame);

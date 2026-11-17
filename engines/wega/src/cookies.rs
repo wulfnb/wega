@@ -23,7 +23,13 @@ impl Cookies {
                 .unwrap_or_default(),
         }
     }
-    pub fn get_frame(&self, url: &Url, script: bool, context: SiteContext, frame: Option<u64>) -> String {
+    pub fn get_frame(
+        &self,
+        url: &Url,
+        script: bool,
+        context: SiteContext,
+        frame: Option<u64>,
+    ) -> String {
         match self {
             Self::Local(jar) => jar.get(url, script, context),
             Self::Remote(remote) => remote
@@ -31,7 +37,14 @@ impl Cookies {
                 .unwrap_or_default(),
         }
     }
-    pub fn set_frame(&self, url: &Url, value: &str, script: bool, context: SiteContext, frame: Option<u64>) {
+    pub fn set_frame(
+        &self,
+        url: &Url,
+        value: &str,
+        script: bool,
+        context: SiteContext,
+        frame: Option<u64>,
+    ) {
         match self {
             Self::Local(jar) => jar.set(url, value, script, context),
             Self::Remote(remote) => {
