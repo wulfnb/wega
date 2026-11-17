@@ -258,6 +258,7 @@ impl NetProvider for Resources {
         let limit = self.limit;
         let mut context = FetchContext::subresource(&self.document, resource_destination);
         context.omit_credentials = self.omit_credentials;
+        context.resource_csp = Some(self.csp.clone());
         context.referrer_policy = self.referrer_policy.clone();
         in_flight.fetch_add(1, Ordering::Relaxed);
         let handler = Arc::new(Mutex::new(Some(handler)));
@@ -1098,6 +1099,7 @@ impl View {
             encode_body(&options.document_resource, options.content_type.as_deref());
         let context = FetchContext {
             method: reqwest::Method::POST,
+            resource_csp: None,
             body: Some(body),
             content_type: Some(content_type),
             initiator: Some(self.document.borrow().url().clone()),

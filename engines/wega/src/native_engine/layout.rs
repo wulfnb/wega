@@ -226,20 +226,65 @@ pub fn build_box_tree<D: DocumentView>(
             pending.extend(n.children().map(|k| (k, depth + 1)));
         }
     }
-    build_box_tree_inner(doc, node_key, parent_style, author_sheets, media_ctx)
+    // Styles flow down; completed boxes flow up. Keep traversal frames on the
+    // heap so accepted-depth documents do not exhaust the engine thread stack.
+    use std::rc::Rc;
+    let mut work = vec![(node_key, parent_style.cloned().map(Rc::new), false)];
+    let mut built = std::collections::HashMap::new();
+    while let Some((key, parent, exit)) = work.pop() {
+        let Some(node) = doc.node(key) else {
+            continue;
+        };
+        if !exit {
+            let style = match node.kind() {
+                NodeKind::Element => Rc::new(resolve_computed_style(
+                    doc,
+                    key,
+                    parent.as_deref(),
+                    author_sheets,
+                    media_ctx,
+                )),
+                NodeKind::Document => Rc::new(ComputedStyle {
+                    display: Display::Block,
+                    ..Default::default()
+                }),
+                NodeKind::Text => parent.unwrap_or_else(|| Rc::new(ComputedStyle::default())),
+                _ => continue,
+            };
+            if style.display == Display::None {
+                continue;
+            }
+            work.push((key, Some(style.clone()), true));
+            if !node.element_name().is_some_and(|n| n.local == "svg") {
+                work.extend(
+                    node.children()
+                        .rev()
+                        .map(|child| (child, Some(style.clone()), false)),
+                );
+            }
+        } else {
+            let children = node
+                .children()
+                .filter_map(|child| built.remove(&child).map(|b: Box<LayoutBox>| *b))
+                .collect();
+            let style = parent.unwrap();
+            let style = Rc::try_unwrap(style).unwrap_or_else(|s| (*s).clone());
+            if let Some(b) = build_box_node(doc, key, style, children) {
+                built.insert(key, b);
+            }
+        }
+    }
+    built.remove(&node_key).map(|b| *b)
 }
-fn build_box_tree_inner<D: DocumentView>(
+fn build_box_node<D: DocumentView>(
     doc: &D,
     node_key: NodeKey,
-    parent_style: Option<&ComputedStyle>,
-    author_sheets: &[&StyleSheet],
-    media_ctx: Option<&MediaContext>,
-) -> Option<LayoutBox> {
+    style: ComputedStyle,
+    mut raw_children: Vec<LayoutBox>,
+) -> Option<Box<LayoutBox>> {
     let node = doc.node(node_key)?;
     match node.kind() {
         NodeKind::Element => {
-            let style =
-                resolve_computed_style(doc, node_key, parent_style, author_sheets, media_ctx);
             if style.display == Display::None {
                 return None;
             }
@@ -256,7 +301,7 @@ fn build_box_tree_inner<D: DocumentView>(
                 Display::None => return None,
             };
 
-            let mut layout_box = LayoutBox::new(Some(node_key), box_type, style.clone());
+            let mut layout_box = Box::new(LayoutBox::new(Some(node_key), box_type, style.clone()));
             layout_box.is_root = node.element_name().is_some_and(|n| n.local == "html")
                 && node
                     .parent()
@@ -340,14 +385,6 @@ fn build_box_tree_inner<D: DocumentView>(
             if node.element_name().is_some_and(|n| n.local == "svg") {
                 layout_box.svg = super::graphics::inline_svg(doc, node_key);
                 return Some(layout_box);
-            }
-            let mut raw_children = Vec::new();
-            for child_key in node.children() {
-                if let Some(child_box) =
-                    build_box_tree_inner(doc, child_key, Some(&style), author_sheets, media_ctx)
-                {
-                    raw_children.push(child_box);
-                }
             }
             if let Some(ref form) = layout_box.form_state {
                 match form.kind {
@@ -523,29 +560,22 @@ fn build_box_tree_inner<D: DocumentView>(
             if text.is_empty() {
                 return None;
             }
-            let style = parent_style.cloned().unwrap_or_default();
             let mut text_box = LayoutBox::new(Some(node_key), BoxType::Text, style);
             text_box.text_content = Some(text.to_string());
-            Some(text_box)
+            Some(Box::new(text_box))
         }
         NodeKind::Document => {
             let root_style = ComputedStyle {
                 display: Display::Block,
                 ..Default::default()
             };
-            let mut root_box = LayoutBox::new(Some(node_key), BoxType::Block, root_style.clone());
+            let mut root_box = Box::new(LayoutBox::new(
+                Some(node_key),
+                BoxType::Block,
+                root_style.clone(),
+            ));
             root_box.is_root = true;
-            for child_key in node.children() {
-                if let Some(child_box) = build_box_tree_inner(
-                    doc,
-                    child_key,
-                    Some(&root_style),
-                    author_sheets,
-                    media_ctx,
-                ) {
-                    root_box.children.push(child_box);
-                }
-            }
+            root_box.children = raw_children;
             Some(root_box)
         }
         _ => None,

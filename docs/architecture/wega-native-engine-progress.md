@@ -168,3 +168,19 @@ Evidence: `/private/tmp/wega-round6-before/`, `/private/tmp/wega-round6-after/`.
 Logs: `/private/tmp/wega-round6-checkpoint.log`,
 `/private/tmp/wega-round6-security.log`, `/private/tmp/wega-round6-clippy-final.log`.
 Final workspace/native/visual/security/sandbox/release validation remains pending.
+
+Final-audit fixes: resource redirects now recheck the exact style/font/image
+CSP directive before every HTTP hop. The strict regression observes exactly
+one request to each permitted redirect endpoint and zero forbidden-origin
+requests. Duplicate parser/mutation style notifications no longer refetch
+identical sheets; a CSSOM generation change still forces reparsing when style
+text is assigned again. Both regressions pass with all exact assertions retained.
+
+The existing 124-depth deadline exposed excessive recursive builder stack use.
+Box construction now uses explicit heap traversal frames with top-down style
+and bottom-up box assembly. The depth/node/text limits and test deadline are
+unchanged; the original depth/stability suite passes. Workspace all-targets
+clippy passed. First full-workspace attempt hit disk exhaustion; 94 obsolete
+regenerable integration executables (old dependency fingerprints, 18.077GB)
+were removed after confirming no active processes used them. No source, logs,
+recovery files or current dependency-graph outputs were removed.

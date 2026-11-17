@@ -69,6 +69,7 @@ pub(crate) struct FetchContext {
     pub omit_credentials: bool,
     pub frame: Option<u64>,
     pub parent_frame: Option<u64>,
+    pub resource_csp: Option<std::sync::Arc<std::sync::RwLock<crate::csp::Csp>>>,
 }
 impl Default for FetchContext {
     fn default() -> Self {
@@ -84,6 +85,7 @@ impl Default for FetchContext {
             omit_credentials: false,
             frame: None,
             parent_frame: None,
+            resource_csp: None,
         }
     }
 }
@@ -561,6 +563,25 @@ impl Network {
         let mut body = context.body.clone();
         let mut content_type = context.content_type.clone();
         for _hop in 0..=8 {
+            if let (Some(csp), Some(document)) = (&context.resource_csp, &context.initiator) {
+                let directive = match context.destination {
+                    Destination::Style => Some("style-src-elem"),
+                    Destination::Font => Some("font-src"),
+                    Destination::Image => Some("img-src"),
+                    _ => None,
+                };
+                if let Some(directive) = directive {
+                    if !csp
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .allows_url(directive, &url, document, None)
+                    {
+                        return Err(format!(
+                            "Content Security Policy blocks resource redirect: {url}"
+                        ));
+                    }
+                }
+            }
             if !self.policy().permits(&url) {
                 return Err("Network request blocked by browsing policy".into());
             }

@@ -344,6 +344,7 @@ pub struct BaseDocument {
     /// Raw, broker-authorized CSS and request URL. Native style resolution must
     /// parse this source itself, never serialize Stylo computed declarations.
     pub(crate) stylesheet_sources: BTreeMap<NodeId, (String, String)>,
+    inline_stylesheet_sources: BTreeMap<NodeId,(String,u64)>,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
@@ -515,6 +516,7 @@ impl BaseDocument {
             stylesheet_generation: 0,
             resource_generation:0,
             stylesheet_sources: BTreeMap::new(),
+            inline_stylesheet_sources: BTreeMap::new(),
             font_ctx,
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
@@ -1180,8 +1182,7 @@ impl BaseDocument {
     pub fn process_style_element(&mut self, target_id: NodeId) {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
-        let sheet = self.make_stylesheet(&css, Origin::Author);
-        self.add_stylesheet_for_node(sheet, target_id);
+        self.upsert_stylesheet_text(target_id,css.as_ref());
     }
 
     pub fn remove_user_agent_stylesheet(&mut self, sheet: &UserAgentStylesheet) {
@@ -1255,8 +1256,17 @@ impl BaseDocument {
 
     pub fn upsert_stylesheet_for_node(&mut self, node_id: NodeId) {
         let raw_styles = self.nodes[node_id].text_content();
-        let sheet = self.make_stylesheet(raw_styles, Origin::Author);
-        self.add_stylesheet_for_node(sheet, node_id);
+        self.upsert_stylesheet_text(node_id,&raw_styles);
+    }
+
+    fn upsert_stylesheet_text(&mut self,node_id:NodeId,source:&str) {
+        // Parser and mutation notifications may report the same completed style.
+        // A CSSOM edit changes the generation and must still be reset by text edits.
+        if self.nodes_to_stylesheet.contains_key(&node_id) && self.inline_stylesheet_sources.get(&node_id)
+            .is_some_and(|(old,generation)|old==source&&*generation==self.stylesheet_generation){return;}
+        let sheet=self.make_stylesheet(source,Origin::Author);
+        self.add_stylesheet_for_node(sheet,node_id);
+        self.inline_stylesheet_sources.insert(node_id,(source.to_owned(),self.stylesheet_generation));
     }
 
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: NodeId) {
