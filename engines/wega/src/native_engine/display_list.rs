@@ -33,10 +33,8 @@ pub enum DisplayItem {
         border_radius: f64,
     },
     Text {
-        rect: Rect,
-        text: String,
-        color: Color,
-        font_size: f64,
+        run: super::text::GlyphRun,
+        transform: kurbo::Affine,
     },
     PushClip {
         rect: Rect,
@@ -168,28 +166,22 @@ impl DisplayList {
                         scene.stroke(&stroke, kurbo::Affine::IDENTITY, p_color, None, &kurbo_rect);
                     }
                 }
-                DisplayItem::Text {
-                    rect,
-                    text: _,
-                    color,
-                    font_size: _,
-                } => {
-                    let p_color = peniko::Color::from_rgba8(
-                        color.r,
-                        color.g,
-                        color.b,
-                        (color.a as f32 * 0.9) as u8,
-                    );
-                    let bar_h = (rect.height * 0.7).max(2.0);
-                    let bar_y = rect.y + (rect.height - bar_h) / 2.0;
-                    let kurbo_rect =
-                        kurbo::Rect::new(rect.x, bar_y, rect.x + rect.width, bar_y + bar_h);
-                    scene.fill(
+                DisplayItem::Text { run, transform } => {
+                    let color = run.color;
+                    scene.draw_glyphs(
+                        &run.font,
+                        run.font_size,
+                        true,
+                        &run.coords,
+                        run.embolden,
                         peniko::Fill::NonZero,
-                        kurbo::Affine::IDENTITY,
-                        p_color,
-                        None,
-                        &kurbo_rect,
+                        &anyrender::Paint::from(peniko::Color::from_rgba8(
+                            color.r, color.g, color.b, color.a,
+                        )),
+                        1.0,
+                        *transform,
+                        run.skew,
+                        run.glyphs.iter().copied(),
                     );
                 }
                 DisplayItem::PushClip { rect } => {
@@ -352,17 +344,11 @@ fn paint_box(
     let pad_border_y = (layout_box.border.top + layout_box.padding.top) * scale;
 
     for line in &layout_box.lines {
-        for (run_rect, text, run_color, run_fs) in &line.text_runs {
-            let mut r = *run_rect;
-            r.x = rect.x + pad_border_x + r.x * scale;
-            r.y = rect.y + pad_border_y + r.y * scale;
-            r.width *= scale;
-            r.height *= scale;
+        for run in &line.text_runs {
             list.items.push(DisplayItem::Text {
-                rect: r,
-                text: text.clone(),
-                color: *run_color,
-                font_size: run_fs * scale,
+                run: run.clone(),
+                transform: kurbo::Affine::translate((rect.x + pad_border_x, rect.y + pad_border_y))
+                    * kurbo::Affine::scale(scale),
             });
         }
     }

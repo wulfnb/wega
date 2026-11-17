@@ -6901,6 +6901,7 @@ dependencies = [
  "html5ever",
  "keyboard-types",
  "kurbo",
+ "parley",
  "peniko",
  "reqwest",
  "selectors 0.42.0",

@@ -54,7 +54,7 @@ pub struct LayoutBox {
 #[derive(Debug, Clone)]
 pub struct LineBox {
     pub rect: Rect,
-    pub text_runs: Vec<(Rect, String, Color, f64)>, // rect, text, color, font_size
+    pub text_runs: Vec<super::text::GlyphRun>,
 }
 
 impl LayoutBox {
@@ -169,12 +169,42 @@ pub fn build_box_tree<D: DocumentView>(
 
             let mut layout_box = LayoutBox::new(Some(node_key), box_type, style.clone());
 
+            if node
+                .element_name()
+                .is_some_and(|n| n.local.eq_ignore_ascii_case("br"))
+            {
+                layout_box.text_content = Some("\n".into());
+            }
             let mut raw_children = Vec::new();
             for child_key in node.children() {
                 if let Some(child_box) = build_box_tree(doc, child_key, Some(&style), author_sheets)
                 {
                     raw_children.push(child_box);
                 }
+            }
+
+            // Whitespace-only anonymous items between block/flex/grid/table children
+            // do not generate boxes. Keep them inside an inline formatting context.
+            let has_block = raw_children
+                .iter()
+                .any(|c| !matches!(c.box_type, BoxType::Text | BoxType::Inline));
+            if has_block
+                || matches!(
+                    box_type,
+                    BoxType::Flex | BoxType::Grid | BoxType::Table | BoxType::TableRow
+                )
+            {
+                raw_children.retain(|c| {
+                    !(c.box_type == BoxType::Text
+                        && matches!(
+                            c.style.white_space,
+                            WhiteSpace::Normal | WhiteSpace::NoWrap | WhiteSpace::PreLine
+                        )
+                        && c.text_content.as_ref().is_some_and(|t| {
+                            t.chars()
+                                .all(|c| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0c'))
+                        }))
+                });
             }
 
             // Anonymous block box generation for mixed inline and block siblings
@@ -221,7 +251,7 @@ pub fn build_box_tree<D: DocumentView>(
             Some(layout_box)
         }
         NodeKind::Text => {
-            let text = node.text()?.trim();
+            let text = node.text()?;
             if text.is_empty() {
                 return None;
             }
@@ -610,122 +640,14 @@ fn layout_block_or_flow(
 // INLINE FORMATTING CONTEXT WITH FONT METRICS & TEXT WRAPPING
 // ---------------------------------------------------------------------------
 
-/// Estimate character width using proportional glyph metrics for typical sans-serif fonts.
-fn char_advance(c: char, font_size: f64) -> f64 {
-    let factor = match c {
-        'i' | 'l' | '!' | '|' | ':' | ';' | '\'' | '.' | ',' => 0.28,
-        'f' | 'r' | 't' | 'I' | 'j' | '(' | ')' | '[' | ']' => 0.35,
-        'm' | 'w' | 'M' | 'W' => 0.85,
-        'A' | 'B' | 'D' | 'G' | 'H' | 'N' | 'O' | 'Q' | 'R' | 'U' => 0.70,
-        'C' | 'E' | 'F' | 'K' | 'P' | 'S' | 'T' | 'V' | 'X' | 'Y' | 'Z' => 0.65,
-        ' ' => 0.33,
-        _ => 0.52, // average lowercase letters and digits
-    };
-    factor * font_size
-}
-
-fn measure_word(word: &str, font_size: f64) -> f64 {
-    word.chars().map(|c| char_advance(c, font_size)).sum()
-}
-
-fn collect_inline_runs(box_node: &LayoutBox, out: &mut Vec<(String, Color, f64)>) {
-    if let Some(text) = &box_node.text_content {
-        out.push((text.clone(), box_node.style.color, box_node.style.font_size));
-    }
-    for child in &box_node.children {
-        collect_inline_runs(child, out);
-    }
-}
-
 fn layout_inline_formatting_context(
     children: &mut [LayoutBox],
     avail_w: f64,
-    font_size: f64,
-    line_height: f64,
+    _font_size: f64,
+    _line_height: f64,
     align: TextAlign,
 ) -> Vec<LineBox> {
-    let mut lines: Vec<LineBox> = Vec::new();
-    let mut current_runs: Vec<(Rect, String, Color, f64)> = Vec::new();
-    let mut current_x = 0.0;
-    let mut current_y = 0.0;
-
-    let space_w = char_advance(' ', font_size);
-
-    // Collect all text runs from inline children
-    let mut raw_runs = Vec::new();
-    for child in children.iter() {
-        collect_inline_runs(child, &mut raw_runs);
-    }
-
-    for (text, color, run_fs) in raw_runs {
-        for word in text.split_whitespace() {
-            let word_w = measure_word(word, run_fs);
-
-            // Wrap line if word overflows current line
-            if current_x + word_w > avail_w && current_x > 0.0 {
-                let line_w = current_runs
-                    .last()
-                    .map(|(r, ..)| r.x + r.width)
-                    .unwrap_or(0.0);
-                let line_rect = Rect {
-                    x: 0.0,
-                    y: current_y,
-                    width: line_w,
-                    height: line_height,
-                };
-                lines.push(LineBox {
-                    rect: line_rect,
-                    text_runs: std::mem::take(&mut current_runs),
-                });
-                current_y += line_height;
-                current_x = 0.0;
-            }
-
-            let run_rect = Rect {
-                x: current_x,
-                y: current_y,
-                width: word_w,
-                height: line_height,
-            };
-            current_runs.push((run_rect, word.to_string(), color, run_fs));
-            current_x += word_w + space_w;
-        }
-    }
-
-    if !current_runs.is_empty() {
-        let line_w = current_runs
-            .last()
-            .map(|(r, ..)| r.x + r.width)
-            .unwrap_or(0.0);
-        let line_rect = Rect {
-            x: 0.0,
-            y: current_y,
-            width: line_w,
-            height: line_height,
-        };
-        lines.push(LineBox {
-            rect: line_rect,
-            text_runs: current_runs,
-        });
-    }
-
-    // Apply text alignment
-    for line in &mut lines {
-        let remaining = (avail_w - line.rect.width).max(0.0);
-        let offset = match align {
-            TextAlign::Left | TextAlign::Justify => 0.0,
-            TextAlign::Center => remaining / 2.0,
-            TextAlign::Right => remaining,
-        };
-        if offset > 0.0 {
-            line.rect.x += offset;
-            for (r, _, _, _) in &mut line.text_runs {
-                r.x += offset;
-            }
-        }
-    }
-
-    lines
+    super::text::shape_inline(children, avail_w, align)
 }
 
 // ---------------------------------------------------------------------------

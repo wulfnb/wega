@@ -196,8 +196,7 @@ impl Color {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Length {
     Px(f64),
     Percent(f64),
@@ -206,7 +205,6 @@ pub enum Length {
     #[default]
     Auto,
 }
-
 
 impl Length {
     pub fn parse(s: &str) -> Option<Self> {
@@ -623,6 +621,9 @@ pub struct ComputedStyle {
     pub line_height: f64,
     pub text_align: TextAlign,
     pub font_family: String,
+    pub font_weight: f32,
+    pub font_italic: bool,
+    pub white_space: WhiteSpace,
     pub flex_direction: FlexDirection,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
@@ -667,6 +668,9 @@ impl Default for ComputedStyle {
             line_height: 20.0,
             text_align: TextAlign::Left,
             font_family: "sans-serif".into(),
+            font_weight: 400.0,
+            font_italic: false,
+            white_space: WhiteSpace::Normal,
             flex_direction: FlexDirection::Row,
             justify_content: JustifyContent::FlexStart,
             align_items: AlignItems::Stretch,
@@ -1082,6 +1086,9 @@ p { margin: 12px 0; }
 ul, ol { margin: 12px 0; padding-left: 40px; }
 li { display: block; }
 b, strong { font-weight: bold; }
+i, em { font-style: italic; }
+pre { display: block; white-space: pre; font-family: monospace; }
+code { font-family: monospace; }
 "#,
     )
 }
@@ -1113,6 +1120,9 @@ pub fn resolve_computed_style<D: DocumentView>(
         line_height: p.line_height,
         text_align: p.text_align,
         font_family: p.font_family.clone(),
+        font_weight: p.font_weight,
+        font_italic: p.font_italic,
+        white_space: p.white_space,
         ..Default::default()
     });
 
@@ -1353,6 +1363,23 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 style.background_color = c;
             }
         }
+        "font-family" => style.font_family = val.to_owned(),
+        "font-weight" => {
+            style.font_weight = match val {
+                "bold" => 700.0,
+                "normal" => 400.0,
+                _ => val
+                    .parse::<f32>()
+                    .unwrap_or(style.font_weight)
+                    .clamp(1.0, 1000.0),
+            };
+        }
+        "font-style" => style.font_italic = matches!(val, "italic" | "oblique"),
+        "white-space" => {
+            if let Some(value) = WhiteSpace::parse(val) {
+                style.white_space = value;
+            }
+        }
         "font-size" => {
             if let Some(Length::Px(s)) = Length::parse(val) {
                 style.font_size = s;
@@ -1453,5 +1480,29 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
         "transform" => style.transform = Transform::parse(val),
         "box-shadow" => style.box_shadow = BoxShadow::parse(val),
         _ => {}
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WhiteSpace {
+    #[default]
+    Normal,
+    NoWrap,
+    Pre,
+    PreWrap,
+    PreLine,
+    BreakSpaces,
+}
+impl WhiteSpace {
+    fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "normal" => Self::Normal,
+            "nowrap" => Self::NoWrap,
+            "pre" => Self::Pre,
+            "pre-wrap" => Self::PreWrap,
+            "pre-line" => Self::PreLine,
+            "break-spaces" => Self::BreakSpaces,
+            _ => return None,
+        })
     }
 }
