@@ -195,6 +195,7 @@ struct Resources {
     completed: Arc<Mutex<Vec<(String, bool)>>>,
     /// Opaque-origin documents never send ambient credentials.
     omit_credentials: bool,
+    resource_requests: AtomicUsize,
 }
 fn destination(url: &Url) -> Destination {
     let path = url.path().to_ascii_lowercase();
@@ -236,7 +237,9 @@ impl NetProvider for Resources {
             }
         };
         drop(csp);
-        let blocked = request.method != blitz_traits::net::http::Method::GET || !permitted;
+        let blocked = request.method != blitz_traits::net::http::Method::GET
+            || !permitted
+            || self.resource_requests.fetch_add(1, Ordering::Relaxed) >= 512;
         if blocked {
             eprintln!("Wega resource blocked: {}", request.url);
             self.completed
@@ -741,6 +744,7 @@ impl View {
                 in_flight: self.in_flight.clone(),
                 completed: self.completed.clone(),
                 omit_credentials: self.restrictions().opaque,
+                resource_requests: AtomicUsize::new(0),
             })),
             navigation_provider: Some(Arc::new(Navigation(sender, self.network.wake.clone()))),
         };
@@ -1470,7 +1474,8 @@ impl View {
                         if let Some(input_data) = el.text_input_data_mut() {
                             let mut font_ctx = parley::FontContext::new();
                             let mut layout_ctx = parley::LayoutContext::new();
-                            let mut driver = input_data.editor.driver(&mut font_ctx, &mut layout_ctx);
+                            let mut driver =
+                                input_data.editor.driver(&mut font_ctx, &mut layout_ctx);
                             let selected = driver.editor.selected_text().map(str::to_string);
                             if selected.is_some() {
                                 driver.delete_selection();
@@ -1514,7 +1519,8 @@ impl View {
                         if let Some(input_data) = el.text_input_data_mut() {
                             let mut font_ctx = parley::FontContext::new();
                             let mut layout_ctx = parley::LayoutContext::new();
-                            let mut driver = input_data.editor.driver(&mut font_ctx, &mut layout_ctx);
+                            let mut driver =
+                                input_data.editor.driver(&mut font_ctx, &mut layout_ctx);
                             driver.insert_or_replace_selection(text);
                             node.mark_ancestors_dirty();
                             true
@@ -1549,7 +1555,10 @@ impl View {
                         if let Some(input_data) = el.text_input_data_mut() {
                             let mut font_ctx = parley::FontContext::new();
                             let mut layout_ctx = parley::LayoutContext::new();
-                            input_data.editor.driver(&mut font_ctx, &mut layout_ctx).select_all();
+                            input_data
+                                .editor
+                                .driver(&mut font_ctx, &mut layout_ctx)
+                                .select_all();
                             node.mark_ancestors_dirty();
                             true
                         } else {
@@ -2417,17 +2426,26 @@ impl View {
             }
             let is_btn = {
                 let doc = self.document.borrow();
-                doc.get_node(target).and_then(|n| n.element_data()).is_some_and(|el| {
-                    el.name.local == LocalName::from("button")
-                        || (el.name.local == LocalName::from("input")
-                            && matches!(
-                                el.attr(LocalName::from("type")).unwrap_or_default().to_ascii_lowercase().as_str(),
-                                "button" | "submit" | "reset"
-                            ))
-                })
+                doc.get_node(target)
+                    .and_then(|n| n.element_data())
+                    .is_some_and(|el| {
+                        el.name.local == LocalName::from("button")
+                            || (el.name.local == LocalName::from("input")
+                                && matches!(
+                                    el.attr(LocalName::from("type"))
+                                        .unwrap_or_default()
+                                        .to_ascii_lowercase()
+                                        .as_str(),
+                                    "button" | "submit" | "reset"
+                                ))
+                    })
             };
             if is_btn && (key == " " || key == "Space" || key == "Enter") {
-                let click_ev = self.document.borrow().get_node(target).map(|n| n.synthetic_click_event_data(event.modifiers));
+                let click_ev = self
+                    .document
+                    .borrow()
+                    .get_node(target)
+                    .map(|n| n.synthetic_click_event_data(event.modifiers));
                 if let Some(click_ev) = click_ev {
                     self.click_event(target, click_ev, None);
                     self.frame.invalidate();
@@ -3386,15 +3404,18 @@ impl View {
                     if let Some(ref native_doc) = self.native_document {
                         if let Some(b) = native_doc.borrow().find_box(down) {
                             let cb = b.content_box();
-                            let rel_x = (pointer.x as f32 - cb.x as f32).max(0.0);
-                            let rel_y = (pointer.y as f32 - cb.y as f32).max(0.0);
+                            let rel_x = (pointer.x - cb.x as f32).max(0.0);
+                            let rel_y = (pointer.y - cb.y as f32).max(0.0);
                             let mut doc = self.document.borrow_mut();
                             if let Some(node) = doc.get_node_mut(down.node_id()) {
                                 if let Some(el) = node.element_data_mut() {
                                     if let Some(input_data) = el.text_input_data_mut() {
                                         let mut font_ctx = parley::FontContext::new();
                                         let mut layout_ctx = parley::LayoutContext::new();
-                                        input_data.editor.driver(&mut font_ctx, &mut layout_ctx).extend_selection_to_point(rel_x, rel_y);
+                                        input_data
+                                            .editor
+                                            .driver(&mut font_ctx, &mut layout_ctx)
+                                            .extend_selection_to_point(rel_x, rel_y);
                                         node.mark_ancestors_dirty();
                                     }
                                 }
@@ -3420,15 +3441,18 @@ impl View {
                     if let Some(ref native_doc) = self.native_document {
                         if let Some(b) = native_doc.borrow().find_box(target.key()) {
                             let cb = b.content_box();
-                            let rel_x = (pointer.x as f32 - cb.x as f32).max(0.0);
-                            let rel_y = (pointer.y as f32 - cb.y as f32).max(0.0);
+                            let rel_x = (pointer.x - cb.x as f32).max(0.0);
+                            let rel_y = (pointer.y - cb.y as f32).max(0.0);
                             let mut doc = self.document.borrow_mut();
                             if let Some(node) = doc.get_node_mut(target) {
                                 if let Some(el) = node.element_data_mut() {
                                     if let Some(input_data) = el.text_input_data_mut() {
                                         let mut font_ctx = parley::FontContext::new();
                                         let mut layout_ctx = parley::LayoutContext::new();
-                                        input_data.editor.driver(&mut font_ctx, &mut layout_ctx).move_to_point(rel_x, rel_y);
+                                        input_data
+                                            .editor
+                                            .driver(&mut font_ctx, &mut layout_ctx)
+                                            .move_to_point(rel_x, rel_y);
                                         node.mark_ancestors_dirty();
                                     }
                                 }

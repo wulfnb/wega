@@ -1095,11 +1095,16 @@ impl Dom {
                 | "createFragment"
                 | "createDocument"
                 | "setAttrNS"
+                | "sheetInsert"
+                | "sheetDelete"
+                | "sheetDisabledSet"
                 | "styleSet"
                 | "styleSetImportant"
                 | "focus"
                 | "blur"
-                | "setChecked" | "setInputValue" | "setSelectionRange"
+                | "setChecked"
+                | "setInputValue"
+                | "setSelectionRange"
                 | "setText"
                 | "setAttr"
                 | "removeAttr"
@@ -1219,6 +1224,7 @@ impl Dom {
             "innerHTML" | "contextualFragment" => text(2).len() + 32,
             "write" => text(1).len(),
             "styleSet" | "styleSetImportant" => text(2).len() + text(3).len() + 32,
+            "sheetInsert" => text(2).len() + 32,
             _ => 0,
         };
         self.charge_text(charge)?;
@@ -1244,6 +1250,57 @@ impl Dom {
             }
         };
         let value = match text(0) {
+            "sheetOwners" => {
+                let root = node_id()?.key();
+                let mut owners = Vec::new();
+                let mut stack = vec![root];
+                while let Some(key) = stack.pop() {
+                    if let Some(node) = doc.node(key) {
+                        if doc.node_has_stylesheet(key.node_id()) { owners.push(key.to_string()); }
+                        stack.extend(node.children().rev());
+                    }
+                }
+                json!(owners)
+            },
+            "sheetHas" => json!(doc.node_has_stylesheet(node_id()?)),
+            "sheetDisabled" => json!(doc.stylesheet_disabled(node_id()?)),
+            "sheetDisabledSet" => {
+                let target = node_id()?;
+                doc.set_stylesheet_disabled(target, text(2) == "true");
+                Value::Null
+            },
+            "sheetRules" | "sheetInsert" | "sheetDelete" => {
+                let target = node_id()?;
+                let sheet_url = doc.stylesheet_url(target).ok_or("NotFoundError: stylesheet removed")?;
+                if doc.node(target.key()).and_then(NodeView::element_name).is_some_and(|n| n.local == "link")
+                    && (sheet_url.origin() != doc.url().origin() || self.restrictions.opaque) {
+                    return Err("SecurityError: stylesheet is not origin-clean".into());
+                }
+                match text(0) {
+                    "sheetRules" => {
+                        let count = doc.stylesheet_rule_count(target, &[]).unwrap_or(0);
+                        let rules: Vec<_> = (0..count).filter_map(|index| {
+                            let info = doc.stylesheet_rule_info(target, &[index])?;
+                            Some(json!({"cssText":info.css_text,"type":info.rule_type}))
+                        }).collect();
+                        json!(rules)
+                    },
+                    "sheetInsert" => {
+                        if doc.stylesheet_rule_count(target, &[]).unwrap_or(0) >= 16384 {
+                            return Err("QuotaExceededError: stylesheet rule budget".into());
+                        }
+                        let index = text(3).parse::<usize>().map_err(|_| "IndexSizeError: invalid rule index")?;
+                        json!(doc.stylesheet_insert_rule(target, &[], text(2), index)
+                            .map_err(|e| format!("{}: insertRule",e.dom_exception_name()))?)
+                    },
+                    _ => {
+                        let index = text(2).parse::<usize>().map_err(|_| "IndexSizeError: invalid rule index")?;
+                        doc.stylesheet_delete_rule(target, &[], index)
+                            .map_err(|e| format!("{}: deleteRule",e.dom_exception_name()))?;
+                        Value::Null
+                    }
+                }
+            },
             "customUpgrade" => {
                 let target = node_id()?;
                 let name = doc.node(target.key()).and_then(NodeView::element_name).map_or("", |name| name.local);
@@ -2449,6 +2506,7 @@ impl Dom {
                 | "templateContent"
                 | "eventParent"
                 | "shadowHost"
+                | "sheetOwners"
         );
         if is_node_result {
             match res {

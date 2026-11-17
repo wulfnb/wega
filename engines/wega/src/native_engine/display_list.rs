@@ -149,7 +149,11 @@ impl DisplayList {
                 DisplayItem::FillPath { path, color: c } => {
                     scene.fill(peniko::Fill::NonZero, current, color(*c), None, path)
                 }
-                DisplayItem::StrokePath { path, color: c, width } => {
+                DisplayItem::StrokePath {
+                    path,
+                    color: c,
+                    width,
+                } => {
                     scene.stroke(&kurbo::Stroke::new(*width), current, color(*c), None, path);
                 }
                 DisplayItem::BoxShadow {
@@ -543,7 +547,12 @@ fn content(
         for sel in &form.selection_rects {
             list.items.push(DisplayItem::FillRect {
                 rect: scaled(*sel, s),
-                color: Color { r: 180, g: 213, b: 254, a: 180 },
+                color: Color {
+                    r: 180,
+                    g: 213,
+                    b: 254,
+                    a: 180,
+                },
                 border_radius: 0.0,
             });
         }
@@ -584,7 +593,21 @@ fn content(
         if matches!(form.kind, Some(super::layout::FormControlKind::Checkbox)) {
             let rect = scaled(b.content_box(), s);
             if form.checked {
-                let accent = if form.disabled { Color { r: 200, g: 200, b: 200, a: 255 } } else { Color { r: 0, g: 117, b: 255, a: 255 } };
+                let accent = if form.disabled {
+                    Color {
+                        r: 200,
+                        g: 200,
+                        b: 200,
+                        a: 255,
+                    }
+                } else {
+                    Color {
+                        r: 0,
+                        g: 117,
+                        b: 255,
+                        a: 255,
+                    }
+                };
                 list.items.push(DisplayItem::FillRect {
                     rect,
                     color: accent,
@@ -608,13 +631,32 @@ fn content(
             let outer = kurbo::Circle::new(center, radius).to_path(0.1);
             list.items.push(DisplayItem::StrokePath {
                 path: outer,
-                color: Color { r: 118, g: 118, b: 118, a: 255 },
+                color: Color {
+                    r: 118,
+                    g: 118,
+                    b: 118,
+                    a: 255,
+                },
                 width: 1.0 * s,
             });
             if form.checked {
                 let dot_r = radius * 0.5;
                 let inner = kurbo::Circle::new(center, dot_r).to_path(0.1);
-                let accent = if form.disabled { Color { r: 200, g: 200, b: 200, a: 255 } } else { Color { r: 0, g: 117, b: 255, a: 255 } };
+                let accent = if form.disabled {
+                    Color {
+                        r: 200,
+                        g: 200,
+                        b: 200,
+                        a: 255,
+                    }
+                } else {
+                    Color {
+                        r: 0,
+                        g: 117,
+                        b: 255,
+                        a: 255,
+                    }
+                };
                 list.items.push(DisplayItem::FillPath {
                     path: inner,
                     color: accent,
@@ -631,7 +673,12 @@ fn content(
             arrow.close_path();
             list.items.push(DisplayItem::FillPath {
                 path: arrow,
-                color: Color { r: 100, g: 100, b: 100, a: 255 },
+                color: Color {
+                    r: 100,
+                    g: 100,
+                    b: 100,
+                    a: 255,
+                },
             });
         }
     }

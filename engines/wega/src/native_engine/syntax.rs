@@ -7,16 +7,259 @@ use cssparser::{
 };
 type Error = ParseError<()>;
 
+#[derive(Debug)]
+enum AtRulePrelude {
+    Media(Vec<MediaQuery>),
+    FontFace,
+    Import(ImportRule),
+}
+
+#[derive(Debug, Clone)]
+enum ParsedRule {
+    Style(Rule),
+    Media { rules: Vec<Rule> },
+    FontFace(FontFaceRule),
+    Import(ImportRule),
+}
+
+fn push_token(s: &mut String, token: &Token) {
+    match token {
+        Token::Ident(id) => {
+            s.push_str(id);
+            s.push(' ');
+        }
+        Token::Colon => s.push(':'),
+        Token::Comma => s.push(','),
+        Token::Dimension { value, unit, .. } => {
+            s.push_str(&format!("{value}{unit} "));
+        }
+        Token::Number { value, .. } => {
+            s.push_str(&format!("{value} "));
+        }
+        Token::QuotedString(q) => {
+            s.push('"');
+            s.push_str(q);
+            s.push('"');
+            s.push(' ');
+        }
+        _ => {}
+    }
+}
+
+fn parse_import_url(input: &mut Parser<'_>) -> Result<String, Error> {
+    let token = input.next().map_err(|_| ParseError::unexpected_token())?;
+    match token {
+        Token::QuotedString(s) => Ok(s.to_string()),
+        Token::UnquotedUrl(s) => Ok(s.to_string()),
+        Token::Function(name) if name.eq_ignore_ascii_case("url") => {
+            input.parse_nested_block(|p| {
+                let t = p.next().map_err(|_| ParseError::unexpected_token())?;
+                match t {
+                    Token::QuotedString(s) | Token::UnquotedUrl(s) | Token::Ident(s) => {
+                        Ok(s.to_string())
+                    }
+                    _ => Err(ParseError::unexpected_token()),
+                }
+            })
+        }
+        _ => Err(ParseError::unexpected_token()),
+    }
+}
+
+fn unquote(s: &str) -> &str {
+    let s = s.trim();
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with("'") && s.ends_with("'")) {
+        if s.len() >= 2 {
+            return &s[1..s.len() - 1];
+        }
+    }
+    s
+}
+fn parse_font_face_rule(decls: Vec<Declaration>) -> FontFaceRule {
+    let mut font_family = String::new();
+    let mut src = Vec::new();
+    let mut font_weight = None;
+    let mut font_style = None;
+
+    for d in decls {
+        match d.property.to_ascii_lowercase().as_str() {
+            "font-family" => {
+                let name = unquote(d.value.trim());
+                font_family = name.to_string();
+            }
+            "src" => {
+                for part in d.value.split(',') {
+                    let p = part.trim();
+                    let mut url = String::new();
+                    let mut format = None;
+                    if let Some(start) = p.find("url(") {
+                        let rest = &p[start + 4..];
+                        if let Some(end) = rest.find(')') {
+                            url = unquote(rest[..end].trim()).to_string();
+                        }
+                    }
+                    if let Some(start) = p.find("format(") {
+                        let rest = &p[start + 7..];
+                        if let Some(end) = rest.find(')') {
+                            format = Some(unquote(rest[..end].trim()).to_string());
+                        }
+                    }
+                    if !url.is_empty() {
+                        src.push(FontSourceSpec { url, format });
+                    }
+                }
+            }
+            "font-weight" => {
+                font_weight = match d.value.trim().to_ascii_lowercase().as_str() {
+                    "bold" => Some(700),
+                    "normal" => Some(400),
+                    other => other.parse::<u16>().ok(),
+                };
+            }
+            "font-style" => {
+                font_style = Some(d.value.trim().to_string());
+            }
+            _ => {}
+        }
+    }
+
+    FontFaceRule {
+        font_family,
+        src,
+        font_weight,
+        font_style,
+    }
+}
+
 struct Rules {
     unsupported: Vec<String>,
+    depth: usize,
 }
+
 impl<'i> AtRuleParser<'i> for Rules {
-    type Prelude = ();
-    type AtRule = Rule;
+    type Prelude = AtRulePrelude;
+    type AtRule = ParsedRule;
     type Error = ();
-    fn parse_prelude(&mut self, name: CowRcStr<'i>, _: &mut Parser<'i>) -> Result<(), Error> {
-        self.unsupported.push(format!("@{name}"));
-        Err(ParseError::unexpected_token())
+
+    fn parse_prelude(
+        &mut self,
+        name: CowRcStr<'i>,
+        input: &mut Parser<'i>,
+    ) -> Result<Self::Prelude, Error> {
+        match name.to_ascii_lowercase().as_str() {
+            "media" => {
+                let mut s = String::new();
+                while let Ok(token) = input.next() {
+                    match token {
+                        Token::ParenthesisBlock => {
+                            s.push('(');
+                            input.parse_nested_block(|p| {
+                                while let Ok(t) = p.next() {
+                                    push_token(&mut s, t);
+                                }
+                                Ok::<(), ParseError<()>>(())
+                            })?;
+                            s.push(')');
+                        }
+                        other => push_token(&mut s, other),
+                    }
+                }
+                let queries = parse_media_query_list(&s);
+                Ok(AtRulePrelude::Media(queries))
+            }
+            "font-face" => Ok(AtRulePrelude::FontFace),
+            "import" => {
+                let url = parse_import_url(input)?;
+                let mut media_s = String::new();
+                while let Ok(token) = input.next() {
+                    match token {
+                        Token::ParenthesisBlock => {
+                            media_s.push('(');
+                            input.parse_nested_block(|p| {
+                                while let Ok(t) = p.next() {
+                                    push_token(&mut media_s, t);
+                                }
+                                Ok::<(), ParseError<()>>(())
+                            })?;
+                            media_s.push(')');
+                        }
+                        other => push_token(&mut media_s, other),
+                    }
+                }
+                let media = if media_s.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    parse_media_query_list(&media_s)
+                };
+                Ok(AtRulePrelude::Import(ImportRule { url, media }))
+            }
+            _ => {
+                self.unsupported.push(format!("@{name}"));
+                Err(ParseError::unexpected_token())
+            }
+        }
+    }
+
+    fn parse_block(
+        &mut self,
+        prelude: Self::Prelude,
+        _: &ParserState,
+        input: &mut Parser<'i>,
+    ) -> Result<Self::AtRule, Error> {
+        match prelude {
+            AtRulePrelude::Media(queries) => {
+                let mut nested_rules = Rules {
+                    unsupported: Vec::new(),
+                    depth: self.depth + 1,
+                };
+                if self.depth >= 32 {
+                    return Err(ParseError::unexpected_token());
+                }
+                let inner_parsed: Vec<ParsedRule> = StyleSheetParser::new(input, &mut nested_rules)
+                    .filter_map(Result::ok)
+                    .collect();
+                self.unsupported.extend(nested_rules.unsupported);
+
+                let mut collected_rules = Vec::new();
+                for p in inner_parsed {
+                    match p {
+                        ParsedRule::Style(mut r) => {
+                            r.media.push(queries.clone());
+                            collected_rules.push(r);
+                        }
+                        ParsedRule::Media { rules } => {
+                            for mut r in rules {
+                                r.media.push(queries.clone());
+
+                                collected_rules.push(r);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(ParsedRule::Media {
+                    rules: collected_rules,
+                })
+            }
+            AtRulePrelude::FontFace => {
+                let decls: Vec<Declaration> = RuleBodyParser::new(input, &mut Declarations)
+                    .filter_map(Result::ok)
+                    .collect();
+                Ok(ParsedRule::FontFace(parse_font_face_rule(decls)))
+            }
+            _ => Err(ParseError::unexpected_token()),
+        }
+    }
+
+    fn rule_without_block(
+        &mut self,
+        prelude: Self::Prelude,
+        _: &ParserState,
+    ) -> Result<Self::AtRule, ()> {
+        match prelude {
+            AtRulePrelude::Import(imp) => Ok(ParsedRule::Import(imp)),
+            _ => Err(()),
+        }
     }
 }
 fn consume(input: &mut Parser<'_>) -> Result<(), Error> {
@@ -45,7 +288,7 @@ fn consume_at(input: &mut Parser<'_>, depth: usize) -> Result<(), Error> {
 }
 impl<'i> QualifiedRuleParser<'i> for Rules {
     type Prelude = Vec<ComplexSelector>;
-    type QualifiedRule = Rule;
+    type QualifiedRule = ParsedRule;
     type Error = ();
     fn parse_prelude(&mut self, input: &mut Parser<'i>) -> Result<Self::Prelude, Error> {
         match selector_list(input, 0) {
@@ -61,31 +304,49 @@ impl<'i> QualifiedRuleParser<'i> for Rules {
         selectors: Self::Prelude,
         _: &ParserState,
         input: &mut Parser<'i>,
-    ) -> Result<Rule, Error> {
-        Ok(Rule {
+    ) -> Result<Self::QualifiedRule, Error> {
+        Ok(ParsedRule::Style(Rule {
             selectors,
             declarations: RuleBodyParser::new(input, &mut Declarations)
                 .filter_map(Result::ok)
                 .flat_map(expand_shorthand)
                 .collect(),
-        })
+            media: Vec::new(),
+        }))
     }
 }
 pub fn stylesheet(css: &str) -> StyleSheet {
     if css.len() > 8 * 1024 * 1024 {
         return StyleSheet {
             rules: Vec::new(),
+            font_faces: Vec::new(),
+            imports: Vec::new(),
             unsupported: vec!["stylesheet byte limit".into()],
         };
     }
     let mut parser = Parser::new(css);
     let mut rules = Rules {
         unsupported: Vec::new(),
+        depth: 0,
     };
-    let parsed: Vec<Rule> = StyleSheetParser::new(&mut parser, &mut rules)
+    let parsed: Vec<ParsedRule> = StyleSheetParser::new(&mut parser, &mut rules)
         .filter_map(Result::ok)
         .collect();
-    for rule in &parsed {
+
+    let mut sheet_rules = Vec::new();
+    let mut font_faces = Vec::new();
+    let mut imports = Vec::new();
+
+    for p in parsed {
+        match p {
+            ParsedRule::Style(r) => sheet_rules.push(r),
+            ParsedRule::Media { rules, .. } => sheet_rules.extend(rules),
+            ParsedRule::FontFace(f) => font_faces.push(f),
+            ParsedRule::Import(i) => imports.push(i),
+        }
+    }
+
+    for rule in &sheet_rules {
         for decl in &rule.declarations {
             if matches!(decl.property.as_str(), "font-size" | "line-height")
                 && (decl.value.contains("vw") || decl.value.contains("vh"))
@@ -105,7 +366,9 @@ pub fn stylesheet(css: &str) -> StyleSheet {
     rules.unsupported.sort();
     rules.unsupported.dedup();
     StyleSheet {
-        rules: parsed,
+        rules: sheet_rules,
+        font_faces,
+        imports,
         unsupported: rules.unsupported,
     }
 }

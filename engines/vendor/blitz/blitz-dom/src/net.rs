@@ -159,7 +159,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
 
         let sheet = Stylesheet::from_str(
             css,
-            self.data.source_url.clone().into(),
+            Url::parse(&resolved_url).unwrap_or_else(|_| self.data.source_url.clone()).into(),
             Origin::Author,
             ServoArc::new(self.data.guard.wrap(MediaList::empty())),
             self.data.guard.clone(),
@@ -187,7 +187,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
 /// are refused, preventing unbounded recursion (e.g. a stylesheet whose
 /// resolved `@import` URL yields another stylesheet importing in turn, with
 /// the URL growing geometrically at each level).
-const MAX_IMPORT_DEPTH: usize = 16;
+const MAX_IMPORT_DEPTH: usize = 8;
 
 #[derive(Clone)]
 pub(crate) struct StylesheetLoader {
@@ -276,7 +276,7 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
 
         let sheet = ServoArc::new(Stylesheet::from_str(
             css,
-            UrlExtraData(self.data.url.clone()),
+            UrlExtraData(ServoArc::new(Url::parse(&resolved_url).unwrap_or_else(|_| (*self.data.url).clone()))),
             Origin::Author,
             self.data.media.clone(),
             self.data.lock.clone(),

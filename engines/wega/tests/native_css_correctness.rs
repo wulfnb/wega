@@ -83,12 +83,14 @@ fn cascade_variables_importance_and_inheritance() {
     let sheet = StyleSheet::parse(
         "#p {color:blue;--Size:calc(50% - 2px)} #x {width:200px !important; color:red; height:var(--missing, 12px);min-width:var(--Size);--loop:var(--loop);max-height:var(--loop,20px)}",
     );
-    let parent = resolve_computed_style(&doc, doc.element_by_id("p").unwrap(), None, &[&sheet]);
+    let parent =
+        resolve_computed_style(&doc, doc.element_by_id("p").unwrap(), None, &[&sheet], None);
     let child = resolve_computed_style(
         &doc,
         doc.element_by_id("x").unwrap(),
         Some(&parent),
         &[&sheet],
+        None,
     );
     assert_eq!(child.width, Length::Px(1.0));
     assert_eq!(child.height, Length::Px(12.0));

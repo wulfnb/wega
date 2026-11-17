@@ -88,6 +88,34 @@ pub fn configure_fonts(source: FontSource) {
     });
 }
 
+pub fn sync_font_context(doc_fonts: std::sync::Arc<std::sync::Mutex<FontContext>>) {
+    if let Ok(guard) = doc_fonts.lock() {
+        TEXT.with(|cx| {
+            cx.borrow_mut().0 = guard.clone();
+        });
+    }
+}
+
+pub fn register_font_bytes(
+    family_name: &str,
+    bytes: &[u8],
+    weight: Option<u16>,
+    style: Option<parley::fontique::FontStyle>,
+) {
+    use parley::fontique::{Blob, FontInfoOverride, FontWeight};
+    let font = Blob::new(std::sync::Arc::new(bytes.to_vec()) as _);
+    let info = FontInfoOverride {
+        family_name: Some(family_name),
+        weight: weight.map(|w| FontWeight::new(w as f32)),
+        style,
+        ..Default::default()
+    };
+    TEXT.with(|cx| {
+        let mut text = cx.borrow_mut();
+        text.0.collection.register_fonts(font, Some(info));
+    });
+}
+
 fn text_style(
     style: &ComputedStyle,
     node: Option<NodeKey>,
@@ -238,7 +266,13 @@ pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec
             append_inline(&mut builder, child, None, 1.0);
         }
         let (mut shaped, text) = builder.build();
-        if text.is_empty() && !children.iter().any(|c| c.box_type == super::layout::BoxType::InlineBlock || c.form_state.is_some() || c.image.is_some()) {
+        if text.is_empty()
+            && !children.iter().any(|c| {
+                c.box_type == super::layout::BoxType::InlineBlock
+                    || c.form_state.is_some()
+                    || c.image.is_some()
+            })
+        {
             return Vec::new();
         }
         shaped.break_all_lines(Some(width.max(0.0) as f32));

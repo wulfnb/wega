@@ -1,12 +1,12 @@
 //! Round 1 Acceptance Test: Native Forms, Editing, and Keyboard Interaction.
+mod support;
 #[path = "support/native_visual.rs"]
 mod visual;
-mod support;
 
 use keyboard_types::{Code, Key, Location, Modifiers};
 use support::{Reply, Server, engine, open, settle};
-use wega_engine::events::{BlitzKeyEvent, KeyState};
 use wega_engine::RenderingBackend;
+use wega_engine::events::{BlitzKeyEvent, KeyState};
 
 fn press_key(view: &mut wega_engine::View, key_str: &str, code: Code, text: Option<&str>) {
     let key: Key = key_str
@@ -98,10 +98,15 @@ button[type="submit"] {
 
     // Initial paint
     let pixels = view.paint(800, 600, 1.0, 1.0, false).unwrap();
-    assert!(!pixels.rgba.is_empty(), "native paint must produce pixel bytes");
+    assert!(
+        !pixels.rgba.is_empty(),
+        "native paint must produce pixel bytes"
+    );
 
     // Count non-background pixels to verify actual content ink
-    let non_bg = pixels.rgba.chunks_exact(4)
+    let non_bg = pixels
+        .rgba
+        .as_chunks::<4>().0.iter()
         .filter(|p| !(p[0] == 240 && p[1] == 242 && p[2] == 245))
         .count();
     assert!(
@@ -363,15 +368,32 @@ button[type="submit"] {
     let chrome_bin = std::env::var("WEGA_CHROME_BIN").unwrap_or_else(|_| {
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".to_string()
     });
-    unsafe { std::env::set_var("WEGA_CHROME_BIN", &chrome_bin); }
+    unsafe {
+        std::env::set_var("WEGA_CHROME_BIN", &chrome_bin);
+    }
 
-    if let Some((chrome_png, chrome_geom)) = visual::chrome(html, None, 0.0, "login_form", temp_dir.path()) {
+    if let Some((chrome_png, chrome_geom)) =
+        visual::chrome(html, None, 0.0, "login_form", temp_dir.path())
+    {
         assert!(!chrome_png.is_empty(), "Chrome capture succeeded");
         // Compare probe element positions: card width must be within 2px
-        let n_card = native_geom.as_array().unwrap().iter().find(|e| e[0] == "card").unwrap();
-        let c_card = chrome_geom.as_array().unwrap().iter().find(|e| e[0] == "card").unwrap();
+        let n_card = native_geom
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e[0] == "card")
+            .unwrap();
+        let c_card = chrome_geom
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e[0] == "card")
+            .unwrap();
         let n_w = n_card[3].as_f64().unwrap();
         let c_w = c_card[3].as_f64().unwrap();
-        assert!((n_w - c_w).abs() < 5.0, "Card width native={n_w} chrome={c_w}");
+        assert!(
+            (n_w - c_w).abs() < 5.0,
+            "Card width native={n_w} chrome={c_w}"
+        );
     }
 }

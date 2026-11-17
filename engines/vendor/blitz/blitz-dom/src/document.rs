@@ -1192,6 +1192,14 @@ impl BaseDocument {
     pub fn stylesheet_source(&self, node: NodeId) -> Option<(&str, &str)> {
         self.stylesheet_sources.get(&node).map(|(source, url)| (source.as_str(), url.as_str()))
     }
+    pub fn stylesheet_source_by_url(&self, url: &str) -> Option<&str> {
+        self.stylesheet_sources.values()
+            .find(|(_, u)| u == url)
+            .map(|(s, _)| s.as_str())
+    }
+    pub fn font_ctx(&self) -> Arc<Mutex<parley::FontContext>> {
+        self.font_ctx.clone()
+    }
 
     pub fn author_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
         self.nodes_to_stylesheet.values()

@@ -69,7 +69,7 @@ fn test_css_cascade_and_inheritance() {
     let d = native_doc.doc.borrow();
     let sheets_ref: Vec<&StyleSheet> = native_doc.author_sheets.iter().collect();
     let special_key = d.element_by_id("special").unwrap();
-    let style = resolve_computed_style(&*d, special_key, None, &sheets_ref);
+    let style = resolve_computed_style(&*d, special_key, None, &sheets_ref, None);
 
     // ID selector beats class selector for width
     assert_eq!(style.width, Length::Px(500.0));

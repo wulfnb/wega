@@ -32,7 +32,10 @@ pub enum BoxType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormControlKind {
-    TextInput { is_password: bool, is_textarea: bool },
+    TextInput {
+        is_password: bool,
+        is_textarea: bool,
+    },
     Checkbox,
     Radio,
     Button,
@@ -189,6 +192,7 @@ pub fn build_box_tree<D: DocumentView>(
     node_key: NodeKey,
     parent_style: Option<&ComputedStyle>,
     author_sheets: &[&StyleSheet],
+    media_ctx: Option<&MediaContext>,
 ) -> Option<LayoutBox> {
     let mut pending = vec![(node_key, 0usize)];
     let mut node_count = 0usize;
@@ -206,18 +210,20 @@ pub fn build_box_tree<D: DocumentView>(
             pending.extend(n.children().map(|k| (k, depth + 1)));
         }
     }
-    build_box_tree_inner(doc, node_key, parent_style, author_sheets)
+    build_box_tree_inner(doc, node_key, parent_style, author_sheets, media_ctx)
 }
 fn build_box_tree_inner<D: DocumentView>(
     doc: &D,
     node_key: NodeKey,
     parent_style: Option<&ComputedStyle>,
     author_sheets: &[&StyleSheet],
+    media_ctx: Option<&MediaContext>,
 ) -> Option<LayoutBox> {
     let node = doc.node(node_key)?;
     match node.kind() {
         NodeKind::Element => {
-            let style = resolve_computed_style(doc, node_key, parent_style, author_sheets);
+            let style =
+                resolve_computed_style(doc, node_key, parent_style, author_sheets, media_ctx);
             if style.display == Display::None {
                 return None;
             }
@@ -248,7 +254,7 @@ fn build_box_tree_inner<D: DocumentView>(
                 layout_box.text_content = Some("\n".into());
             }
             if let Some(el_name) = node.element_name() {
-                let tag: &str = el_name.local.as_ref();
+                let tag: &str = el_name.local;
                 if tag.eq_ignore_ascii_case("input") {
                     let input_type = node.attr("type").unwrap_or("text").to_ascii_lowercase();
                     if input_type == "checkbox" {
@@ -274,14 +280,20 @@ fn build_box_tree_inner<D: DocumentView>(
                     } else {
                         let is_password = input_type == "password";
                         layout_box.form_state = Some(FormState {
-                            kind: Some(FormControlKind::TextInput { is_password, is_textarea: false }),
+                            kind: Some(FormControlKind::TextInput {
+                                is_password,
+                                is_textarea: false,
+                            }),
                             disabled: node.attr("disabled").is_some(),
                             ..Default::default()
                         });
                     }
                 } else if tag.eq_ignore_ascii_case("textarea") {
                     layout_box.form_state = Some(FormState {
-                        kind: Some(FormControlKind::TextInput { is_password: false, is_textarea: true }),
+                        kind: Some(FormControlKind::TextInput {
+                            is_password: false,
+                            is_textarea: true,
+                        }),
                         disabled: node.attr("disabled").is_some(),
                         ..Default::default()
                     });
@@ -312,14 +324,17 @@ fn build_box_tree_inner<D: DocumentView>(
             let mut raw_children = Vec::new();
             for child_key in node.children() {
                 if let Some(child_box) =
-                    build_box_tree_inner(doc, child_key, Some(&style), author_sheets)
+                    build_box_tree_inner(doc, child_key, Some(&style), author_sheets, media_ctx)
                 {
                     raw_children.push(child_box);
                 }
             }
             if let Some(ref form) = layout_box.form_state {
                 match form.kind {
-                    Some(FormControlKind::TextInput { is_password, is_textarea }) => {
+                    Some(FormControlKind::TextInput {
+                        is_password,
+                        is_textarea,
+                    }) => {
                         if raw_children.is_empty() {
                             let val = node.attr("value").unwrap_or("");
                             let ph = node.attr("placeholder");
@@ -340,9 +355,15 @@ fn build_box_tree_inner<D: DocumentView>(
                                     text_style.white_space = WhiteSpace::PreWrap;
                                 }
                                 if is_ph {
-                                    text_style.color = Color { r: 117, g: 117, b: 117, a: 255 };
+                                    text_style.color = Color {
+                                        r: 117,
+                                        g: 117,
+                                        b: 117,
+                                        a: 255,
+                                    };
                                 }
-                                let mut text_child = LayoutBox::new(Some(node_key), BoxType::Text, text_style);
+                                let mut text_child =
+                                    LayoutBox::new(Some(node_key), BoxType::Text, text_style);
                                 text_child.text_content = Some(disp);
                                 raw_children.push(text_child);
                             }
@@ -350,9 +371,19 @@ fn build_box_tree_inner<D: DocumentView>(
                     }
                     Some(FormControlKind::Button) => {
                         if raw_children.is_empty() {
-                            let val = node.attr("value").unwrap_or(if node.attr("type").is_some_and(|t| t.eq_ignore_ascii_case("submit")) { "Submit" } else { "" });
+                            let val = node.attr("value").unwrap_or(
+                                if node
+                                    .attr("type")
+                                    .is_some_and(|t| t.eq_ignore_ascii_case("submit"))
+                                {
+                                    "Submit"
+                                } else {
+                                    ""
+                                },
+                            );
                             if !val.is_empty() {
-                                let mut btn_text = LayoutBox::new(Some(node_key), BoxType::Text, style.clone());
+                                let mut btn_text =
+                                    LayoutBox::new(Some(node_key), BoxType::Text, style.clone());
                                 btn_text.text_content = Some(val.to_string());
                                 raw_children.push(btn_text);
                             }
@@ -362,18 +393,26 @@ fn build_box_tree_inner<D: DocumentView>(
                         let mut selected_text = None;
                         for ck in node.children() {
                             if let Some(cn) = doc.node(ck) {
-                                if cn.element_name().is_some_and(|e| e.local.eq_ignore_ascii_case("option")) {
+                                if cn
+                                    .element_name()
+                                    .is_some_and(|e| e.local.eq_ignore_ascii_case("option"))
+                                {
                                     if cn.attr("selected").is_some() || selected_text.is_none() {
-                                        selected_text = cn.text().map(str::to_string).or_else(|| {
-                                            cn.children().next().and_then(|tk| doc.node(tk)).and_then(|t| t.text().map(str::to_string))
-                                        });
+                                        selected_text =
+                                            cn.text().map(str::to_string).or_else(|| {
+                                                cn.children()
+                                                    .next()
+                                                    .and_then(|tk| doc.node(tk))
+                                                    .and_then(|t| t.text().map(str::to_string))
+                                            });
                                     }
                                 }
                             }
                         }
                         raw_children.clear();
                         if let Some(opt_text) = selected_text {
-                            let mut opt_child = LayoutBox::new(Some(node_key), BoxType::Text, style.clone());
+                            let mut opt_child =
+                                LayoutBox::new(Some(node_key), BoxType::Text, style.clone());
                             opt_child.text_content = Some(opt_text);
                             raw_children.push(opt_child);
                         }
@@ -477,9 +516,13 @@ fn build_box_tree_inner<D: DocumentView>(
             let mut root_box = LayoutBox::new(Some(node_key), BoxType::Block, root_style.clone());
             root_box.is_root = true;
             for child_key in node.children() {
-                if let Some(child_box) =
-                    build_box_tree_inner(doc, child_key, Some(&root_style), author_sheets)
-                {
+                if let Some(child_box) = build_box_tree_inner(
+                    doc,
+                    child_key,
+                    Some(&root_style),
+                    author_sheets,
+                    media_ctx,
+                ) {
                     root_box.children.push(child_box);
                 }
             }
@@ -742,7 +785,10 @@ fn layout_block_or_flow(
         }
     }
     if let Some(ref form) = box_node.form_state {
-        if matches!(form.kind, Some(FormControlKind::Checkbox | FormControlKind::Radio)) {
+        if matches!(
+            form.kind,
+            Some(FormControlKind::Checkbox | FormControlKind::Radio)
+        ) {
             if box_node.style.width == Length::Auto {
                 content_w = 13.0;
             }
@@ -892,12 +938,7 @@ fn layout_block_or_flow(
         );
         content_h = lines.iter().map(|l| l.rect.height).sum();
         box_node.lines = lines;
-        assign_inline_geometry(
-            &mut box_node.children,
-            &box_node.lines,
-            inner_x,
-            inner_y,
-        );
+        assign_inline_geometry(&mut box_node.children, &box_node.lines, inner_x, inner_y);
     } else {
         let mut cursor_y = y + box_node.border.top + box_node.padding.top;
         let inner_cb_x = x + box_node.border.left + box_node.padding.left;
@@ -965,7 +1006,10 @@ fn layout_block_or_flow(
         }
         Length::Auto => {
             if let Some(ref form) = box_node.form_state {
-                if matches!(form.kind, Some(FormControlKind::Checkbox | FormControlKind::Radio)) {
+                if matches!(
+                    form.kind,
+                    Some(FormControlKind::Checkbox | FormControlKind::Radio)
+                ) {
                     13.0
                 } else if is_absolute
                     && box_node.style.top != Length::Auto
@@ -1036,7 +1080,16 @@ fn layout_block_or_flow(
     let border_box_h = final_content_h + total_border_h + total_padding_h;
     box_node.border_box.height = border_box_h;
     if let Some(ref form) = box_node.form_state {
-        if matches!(form.kind, Some(FormControlKind::TextInput { is_textarea: false, .. } | FormControlKind::Button | FormControlKind::Select)) {
+        if matches!(
+            form.kind,
+            Some(
+                FormControlKind::TextInput {
+                    is_textarea: false,
+                    ..
+                } | FormControlKind::Button
+                    | FormControlKind::Select
+            )
+        ) {
             if !box_node.lines.is_empty() {
                 let cb = box_node.content_box();
                 let cb_h = cb.height;

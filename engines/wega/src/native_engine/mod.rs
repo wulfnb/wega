@@ -8,7 +8,8 @@ pub mod text;
 
 pub use backend::{NativeDocument, RenderingBackend};
 pub use css::{
-    Color, ComputedStyle, Display, Length, ObjectFit, Position, StyleSheet, VerticalAlign,
-    default_user_agent_stylesheet, resolve_computed_style,
+    Color, ComputedStyle, Display, FontFaceRule, ImportRule, Length, MediaContext, MediaQuery,
+    ObjectFit, Position, StyleSheet, VerticalAlign, default_user_agent_stylesheet,
+    resolve_computed_style,
 };
 pub use display_list::{DisplayItem, DisplayList};

@@ -76,3 +76,26 @@ No source changes follow the tested implementation head. D4 remains untouched.
 Next milestone: native inline/replaced formatting and editable controls with
 pinned WPT-derived gates, then at-rules/web fonts and wider layout correctness.
 Native remains opt-in for general browsing.
+
+## Recovered continuation: Rounds 3–6
+
+Recovery started at `d909d41` on `feature/dom-rounds-9-12`; nine modified
+files, no staged/untracked files, no live build/test processes. Exact originals,
+metadata, hashes and binary diffs are in
+`/private/tmp/wega-gemini-recovery-20261117-205428`. Round 1 (`22a55b0`) and
+Round 2 (`d909d41`) remain intact. No push and no D4 work.
+
+Round 3: supported media width/height/orientation/resolution/color-scheme,
+nested media conjunction, broker-loaded imports (depth 8; document resource
+request budget 512), authoritative owner-backed CSSOM insertion/deletion and
+disabled state, live document stylesheet order, cross-origin CSSOM denial,
+and broker/CSP-loaded fonts now affect native glyphs and pixels. Constructed
+stylesheets, mutable CSSRule wrappers, cascade layers and full CSSOM remain
+unsupported. CSSOM serialization exposed a border-default regression; fixed
+in the renderer without changing the acceptance assertion.
+
+Round 3 checkpoint: 33 tests pass across eight targeted suites with
+`WEGA_TEST_BROKER=1`; log `/private/tmp/wega-round3-verified.log`. Initial
+sandbox socket denial and intermediate border/clippy failures are retained
+in `/private/tmp/wega-round3-*.log`; no tests were weakened. Chrome was not
+enabled for this checkpoint. Rounds 4–6 and final validation remain pending.

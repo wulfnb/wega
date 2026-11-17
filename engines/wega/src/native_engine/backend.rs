@@ -28,7 +28,7 @@ fn to_box_set(b: BoxModel) -> BoxSet {
 }
 
 /// Native Engine Backend: Backend selector, NativeDocument, and Wega DOM integration.
-use super::css::{StyleSheet, resolve_computed_style};
+use super::css::{MediaContext, StyleSheet, parse_media_query_list, resolve_computed_style};
 use super::display_list::DisplayList;
 use super::layout::{LayoutBox, LayoutContext, build_box_tree, perform_layout};
 use std::cell::RefCell;
@@ -82,6 +82,43 @@ pub struct NativeDocument {
 }
 
 impl NativeDocument {
+    pub fn media_context(&self) -> MediaContext {
+        let v = self.viewport;
+        let scale = (v.scale * v.zoom) as f64;
+        let scale = if scale > 0.0 { scale } else { 1.0 };
+        MediaContext {
+            viewport_width: v.width_px as f64 / scale,
+            viewport_height: v.height_px as f64 / scale,
+            device_pixel_ratio: scale,
+            dark_mode: v.dark,
+        }
+    }
+
+    pub fn register_font_bytes(
+        &self,
+        family_name: &str,
+        bytes: &[u8],
+        weight: Option<u16>,
+        style: Option<parley::fontique::FontStyle>,
+    ) {
+        use parley::fontique::{Blob, FontInfoOverride, FontWeight};
+        let font = Blob::new(std::sync::Arc::new(bytes.to_vec()) as _);
+        let info = FontInfoOverride {
+            family_name: Some(family_name),
+            weight: weight.map(|w| FontWeight::new(w as f32)),
+            style,
+            ..Default::default()
+        };
+        self.doc
+            .borrow()
+            .font_ctx()
+            .lock()
+            .unwrap()
+            .collection
+            .register_fonts(font, Some(info));
+        super::text::register_font_bytes(family_name, bytes, weight, style);
+    }
+
     pub fn new(doc: Rc<RefCell<BlitzDocument>>) -> Self {
         Self::with_font_source(doc, None)
     }
@@ -122,26 +159,19 @@ impl NativeDocument {
     pub fn sync_author_stylesheets(&mut self) {
         let d = self.doc.borrow();
         let mut sheets = Vec::new();
-        // Traverse DOM looking for <style> elements
+
         let root = d.root();
         let mut stack = vec![root];
         while let Some(k) = stack.pop() {
             if let Some(node) = d.node(k) {
                 if node.kind() == NodeKind::Element && !d.stylesheet_disabled(k.node_id()) {
                     if let Some(elem) = node.element_name() {
-                        if matches!(elem.local, "style" | "link")
-                            && node.attr("media").is_some_and(|m| {
-                                !m.trim().is_empty() && !matches!(m.trim(), "all" | "screen")
-                            })
-                        {
-                            sheets.push(StyleSheet {
-                                rules: Vec::new(),
-                                unsupported: vec![format!(
-                                    "media attribute:{}",
-                                    node.attr("media").unwrap_or("")
-                                )],
-                            });
-                        } else if elem.local.eq_ignore_ascii_case("style") {
+                        let media_queries = node
+                            .attr("media")
+                            .filter(|m| !m.trim().is_empty())
+                            .map(parse_media_query_list);
+
+                        if elem.local.eq_ignore_ascii_case("style") {
                             let mut css_text = String::new();
                             for child_k in node.children() {
                                 if let Some(text) = d.node(child_k).and_then(NodeView::text) {
@@ -154,7 +184,15 @@ impl NativeDocument {
                                     .allows_inline("style-src-elem", node.attr("nonce"), &css_text)
                             });
                             if allowed {
-                                sheets.push(StyleSheet::parse(&css_text));
+                                let mut sheet = StyleSheet::parse(
+                                    &d.native_stylesheet_text(k.node_id()).unwrap_or(css_text),
+                                );
+                                if let Some(ref mq) = media_queries {
+                                    for r in &mut sheet.rules {
+                                        r.media.push(mq.clone());
+                                    }
+                                }
+                                sheets.push(sheet);
                             }
                         } else if elem.local.eq_ignore_ascii_case("link")
                             && node.attr("rel").is_some_and(|r| {
@@ -169,7 +207,16 @@ impl NativeDocument {
                                     .and_then(|href| d.url().join(href).ok())
                                     .is_some_and(|u| u.as_str() == requested_url)
                                 {
-                                    sheets.push(StyleSheet::parse(source));
+                                    let mut sheet = StyleSheet::parse(
+                                        &d.native_stylesheet_text(k.node_id())
+                                            .unwrap_or_else(|| source.to_owned()),
+                                    );
+                                    if let Some(ref mq) = media_queries {
+                                        for r in &mut sheet.rules {
+                                            r.media.push(mq.clone());
+                                        }
+                                    }
+                                    sheets.push(sheet);
                                 }
                             }
                         }
@@ -217,6 +264,7 @@ impl NativeDocument {
     }
     pub fn flush_layout(&mut self) {
         super::text::configure_fonts(self.font_source.clone());
+        super::text::sync_font_context(self.doc.borrow().font_ctx());
         let mut offsets = std::collections::HashMap::new();
         fn save(b: &LayoutBox, out: &mut std::collections::HashMap<NodeKey, Point>) {
             if let Some(k) = b.node {
@@ -238,7 +286,10 @@ impl NativeDocument {
         let root_key = d.root();
         let sheets_ref: Vec<&StyleSheet> = self.author_sheets.iter().collect();
 
-        if let Some(mut box_tree) = build_box_tree(&*d, root_key, None, &sheets_ref) {
+        let media_ctx = self.media_context();
+        if let Some(mut box_tree) =
+            build_box_tree(&*d, root_key, None, &sheets_ref, Some(&media_ctx))
+        {
             fn images(b: &mut LayoutBox, doc: &BlitzDocument) {
                 if let Some(image) = b
                     .node
@@ -504,7 +555,13 @@ impl NativeDocument {
             }
             let mut parent = None;
             for k in ancestors.into_iter().rev() {
-                parent = Some(resolve_computed_style(&*d, k, parent.as_ref(), &sheets_ref));
+                parent = Some(resolve_computed_style(
+                    &*d,
+                    k,
+                    parent.as_ref(),
+                    &sheets_ref,
+                    Some(&self.media_context()),
+                ));
             }
             parent.unwrap_or_default()
         };
@@ -778,15 +835,24 @@ fn ensure_form_control_data(doc: &mut BlitzDocument) {
             if let Some(el) = node.element_data_mut() {
                 let tag: &str = el.name.local.as_ref();
                 if tag.eq_ignore_ascii_case("input") {
-                    let kind = el.attr(local_name!("type")).unwrap_or("text").to_ascii_lowercase();
+                    let kind = el
+                        .attr(local_name!("type"))
+                        .unwrap_or("text")
+                        .to_ascii_lowercase();
                     if matches!(kind.as_str(), "checkbox" | "radio") {
                         if el.checkbox_input_checked().is_none() {
                             let checked = el.attr(local_name!("checked")).is_some();
                             el.set_checkbox_input_checked(checked);
                         }
-                    } else if !matches!(kind.as_str(), "button" | "submit" | "reset" | "image" | "file") {
+                    } else if !matches!(
+                        kind.as_str(),
+                        "button" | "submit" | "reset" | "image" | "file"
+                    ) {
                         if el.text_input_data().is_none() {
-                            let val = el.attr(local_name!("value")).unwrap_or_default().to_string();
+                            let val = el
+                                .attr(local_name!("value"))
+                                .unwrap_or_default()
+                                .to_string();
                             let mut data = TextInputData::new(false);
                             data.editor.set_text(&val);
                             el.special_data = SpecialElementData::TextInput(data);
@@ -794,7 +860,10 @@ fn ensure_form_control_data(doc: &mut BlitzDocument) {
                     }
                 } else if tag.eq_ignore_ascii_case("textarea") {
                     if el.text_input_data().is_none() {
-                        let val = el.attr(local_name!("value")).map(str::to_string).unwrap_or_default();
+                        let val = el
+                            .attr(local_name!("value"))
+                            .map(str::to_string)
+                            .unwrap_or_default();
                         let mut data = TextInputData::new(true);
                         data.editor.set_text(&val);
                         el.special_data = SpecialElementData::TextInput(data);
@@ -819,7 +888,13 @@ fn sync_form_state(b: &mut LayoutBox, doc: &BlitzDocument) {
                     }
                     if let Some(input_data) = el.text_input_data() {
                         let editor_text = input_data.editor.text().to_string();
-                        let is_pwd = matches!(form.kind, Some(FormControlKind::TextInput { is_password: true, .. }));
+                        let is_pwd = matches!(
+                            form.kind,
+                            Some(FormControlKind::TextInput {
+                                is_password: true,
+                                ..
+                            })
+                        );
                         let ph = node.attr(blitz_dom::local_name!("placeholder"));
                         let (disp, is_ph) = if !editor_text.is_empty() {
                             if is_pwd {
@@ -836,9 +911,18 @@ fn sync_form_state(b: &mut LayoutBox, doc: &BlitzDocument) {
                         if !disp.is_empty() {
                             let mut child_style = b.style.clone();
                             if is_ph {
-                                child_style.color = super::css::Color { r: 117, g: 117, b: 117, a: 255 };
+                                child_style.color = super::css::Color {
+                                    r: 117,
+                                    g: 117,
+                                    b: 117,
+                                    a: 255,
+                                };
                             }
-                            let mut text_child = LayoutBox::new(Some(node_key), super::layout::BoxType::Text, child_style);
+                            let mut text_child = LayoutBox::new(
+                                Some(node_key),
+                                super::layout::BoxType::Text,
+                                child_style,
+                            );
                             text_child.text_content = Some(disp);
                             b.children.push(text_child);
                         }
@@ -860,7 +944,13 @@ fn compute_form_decorations(b: &mut LayoutBox, doc: &BlitzDocument) {
                 if let Some(input_data) = el.text_input_data() {
                     let (is_pwd, is_focused) = if let Some(ref form) = b.form_state {
                         (
-                            matches!(form.kind, Some(FormControlKind::TextInput { is_password: true, .. })),
+                            matches!(
+                                form.kind,
+                                Some(FormControlKind::TextInput {
+                                    is_password: true,
+                                    ..
+                                })
+                            ),
                             form.is_focused,
                         )
                     } else {
@@ -899,12 +989,18 @@ fn compute_form_decorations(b: &mut LayoutBox, doc: &BlitzDocument) {
                             };
                             let full_text = input_data.editor.text().to_string();
                             let sel_min_char = if is_pwd {
-                                full_text.get(..sel_min).map(|s| s.chars().count()).unwrap_or(0)
+                                full_text
+                                    .get(..sel_min)
+                                    .map(|s| s.chars().count())
+                                    .unwrap_or(0)
                             } else {
                                 sel_min
                             };
                             let sel_max_char = if is_pwd {
-                                full_text.get(..sel_max).map(|s| s.chars().count()).unwrap_or(0)
+                                full_text
+                                    .get(..sel_max)
+                                    .map(|s| s.chars().count())
+                                    .unwrap_or(0)
                             } else {
                                 sel_max
                             };

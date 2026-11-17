@@ -734,6 +734,7 @@ pub struct ComputedStyle {
     pub margin: RectLengths,
     pub padding: RectLengths,
     pub borders: Borders,
+    pub border_hidden: [bool; 4],
     pub top: Length,
     pub right: Length,
     pub bottom: Length,
@@ -795,6 +796,7 @@ impl Default for ComputedStyle {
             margin: RectLengths::default(),
             padding: RectLengths::default(),
             borders: Borders::default(),
+            border_hidden: [false; 4],
             top: Length::Auto,
             right: Length::Auto,
             bottom: Length::Auto,
@@ -1124,14 +1126,288 @@ pub struct Declaration {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct MediaQuery {
+    pub negated: bool,
+    pub media_type: Option<MediaType>,
+    pub features: Vec<MediaFeature>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaType {
+    All,
+    Screen,
+    Print,
+    Speech,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MediaFeature {
+    MinWidth(Length),
+    MaxWidth(Length),
+    Width(Length),
+    MinHeight(Length),
+    MaxHeight(Length),
+    Height(Length),
+    Orientation(Orientation),
+    MinResolution(f64),
+    MaxResolution(f64),
+    Resolution(f64),
+    PrefersColorScheme(ColorScheme),
+    Unknown(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Orientation {
+    Portrait,
+    Landscape,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorScheme {
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MediaContext {
+    pub viewport_width: f64,
+    pub viewport_height: f64,
+    pub device_pixel_ratio: f64,
+    pub dark_mode: bool,
+}
+
+impl Default for MediaContext {
+    fn default() -> Self {
+        Self {
+            viewport_width: 800.0,
+            viewport_height: 600.0,
+            device_pixel_ratio: 1.0,
+            dark_mode: false,
+        }
+    }
+}
+
+impl MediaQuery {
+    pub fn matches(&self, ctx: &MediaContext) -> bool {
+        let type_matches = match self.media_type {
+            None | Some(MediaType::All | MediaType::Screen) => true,
+            Some(MediaType::Print | MediaType::Speech) => false,
+        };
+        if !type_matches {
+            return self.negated;
+        }
+        for feature in &self.features {
+            let feat_matches = match feature {
+                MediaFeature::MinWidth(len) => {
+                    let px = len.resolve(ctx.viewport_width, 16.0, 16.0);
+                    ctx.viewport_width >= px
+                }
+                MediaFeature::MaxWidth(len) => {
+                    let px = len.resolve(ctx.viewport_width, 16.0, 16.0);
+                    ctx.viewport_width <= px
+                }
+                MediaFeature::Width(len) => {
+                    let px = len.resolve(ctx.viewport_width, 16.0, 16.0);
+                    (ctx.viewport_width - px).abs() < 0.5
+                }
+                MediaFeature::MinHeight(len) => {
+                    let px = len.resolve(ctx.viewport_height, 16.0, 16.0);
+                    ctx.viewport_height >= px
+                }
+                MediaFeature::MaxHeight(len) => {
+                    let px = len.resolve(ctx.viewport_height, 16.0, 16.0);
+                    ctx.viewport_height <= px
+                }
+                MediaFeature::Height(len) => {
+                    let px = len.resolve(ctx.viewport_height, 16.0, 16.0);
+                    (ctx.viewport_height - px).abs() < 0.5
+                }
+                MediaFeature::Orientation(o) => {
+                    let current = if ctx.viewport_width > ctx.viewport_height {
+                        Orientation::Landscape
+                    } else {
+                        Orientation::Portrait
+                    };
+                    *o == current
+                }
+                MediaFeature::MinResolution(dppx) => ctx.device_pixel_ratio >= *dppx,
+                MediaFeature::MaxResolution(dppx) => ctx.device_pixel_ratio <= *dppx,
+                MediaFeature::Resolution(dppx) => (ctx.device_pixel_ratio - *dppx).abs() < 0.01,
+                MediaFeature::PrefersColorScheme(cs) => match cs {
+                    ColorScheme::Light => !ctx.dark_mode,
+                    ColorScheme::Dark => ctx.dark_mode,
+                },
+                MediaFeature::Unknown(_) => false,
+            };
+            if !feat_matches {
+                return self.negated;
+            }
+        }
+        !self.negated
+    }
+}
+
+pub fn matches_media(queries: &[MediaQuery], ctx: &MediaContext) -> bool {
+    if queries.is_empty() {
+        return true;
+    }
+    queries.iter().any(|q| q.matches(ctx))
+}
+
+pub fn parse_media_query_list(s: &str) -> Vec<MediaQuery> {
+    s.split(',')
+        .filter_map(|part| {
+            let p = part.trim();
+            if p.is_empty() {
+                return None;
+            }
+            let mut negated = false;
+            let mut media_type = None;
+            let mut features = Vec::new();
+
+            let mut remaining = p;
+            while let Some(start) = remaining.find('(') {
+                let prefix = remaining[..start].trim();
+                if !prefix.is_empty() {
+                    for word in prefix.split_whitespace() {
+                        let w = word.to_ascii_lowercase();
+                        if w == "not" {
+                            negated = true;
+                        } else if w == "only" {
+                        } else if w == "all" {
+                            media_type = Some(MediaType::All);
+                        } else if w == "screen" {
+                            media_type = Some(MediaType::Screen);
+                        } else if w == "print" {
+                            media_type = Some(MediaType::Print);
+                        } else if w == "speech" {
+                            media_type = Some(MediaType::Speech);
+                        } else if w != "and" {
+                            features.push(MediaFeature::Unknown(w));
+                        }
+                    }
+                }
+                if let Some(end) = remaining[start..].find(')') {
+                    let feat_str = &remaining[start + 1..start + end];
+                    if let Some((name, val)) = feat_str.split_once(':') {
+                        let name = name.trim().to_ascii_lowercase();
+                        let val = val.trim();
+                        let feat = match name.as_str() {
+                            "min-width" => Length::parse(val).map(MediaFeature::MinWidth),
+                            "max-width" => Length::parse(val).map(MediaFeature::MaxWidth),
+                            "width" => Length::parse(val).map(MediaFeature::Width),
+                            "min-height" => Length::parse(val).map(MediaFeature::MinHeight),
+                            "max-height" => Length::parse(val).map(MediaFeature::MaxHeight),
+                            "height" => Length::parse(val).map(MediaFeature::Height),
+                            "orientation" => match val.to_ascii_lowercase().as_str() {
+                                "landscape" => {
+                                    Some(MediaFeature::Orientation(Orientation::Landscape))
+                                }
+                                "portrait" => {
+                                    Some(MediaFeature::Orientation(Orientation::Portrait))
+                                }
+                                _ => None,
+                            },
+                            "prefers-color-scheme" => match val.to_ascii_lowercase().as_str() {
+                                "dark" => Some(MediaFeature::PrefersColorScheme(ColorScheme::Dark)),
+                                "light" => {
+                                    Some(MediaFeature::PrefersColorScheme(ColorScheme::Light))
+                                }
+                                _ => None,
+                            },
+                            "min-resolution" | "max-resolution" | "resolution" => {
+                                let num = if let Some(dppx) =
+                                    val.strip_suffix("dppx").or_else(|| val.strip_suffix("x"))
+                                {
+                                    dppx.trim().parse::<f64>().ok()
+                                } else if let Some(dpi) = val.strip_suffix("dpi") {
+                                    dpi.trim().parse::<f64>().ok().map(|d| d / 96.0)
+                                } else {
+                                    val.parse::<f64>().ok()
+                                };
+                                num.map(|n| match name.as_str() {
+                                    "min-resolution" => MediaFeature::MinResolution(n),
+                                    "max-resolution" => MediaFeature::MaxResolution(n),
+                                    _ => MediaFeature::Resolution(n),
+                                })
+                            }
+                            _ => Some(MediaFeature::Unknown(name.clone())),
+                        };
+                        if let Some(f) = feat {
+                            features.push(f);
+                        } else {
+                            features.push(MediaFeature::Unknown(name));
+                        }
+                    } else {
+                        features.push(MediaFeature::Unknown(feat_str.into()));
+                    }
+                    remaining = &remaining[start + end + 1..];
+                } else {
+                    features.push(MediaFeature::Unknown(remaining.into()));
+                    break;
+                }
+            }
+            let tail = remaining.trim();
+            if !tail.is_empty() {
+                for word in tail.split_whitespace() {
+                    let w = word.to_ascii_lowercase();
+                    if w == "not" {
+                        negated = true;
+                    } else if w == "only" {
+                    } else if w == "all" {
+                        media_type = Some(MediaType::All);
+                    } else if w == "screen" {
+                        media_type = Some(MediaType::Screen);
+                    } else if w == "print" {
+                        media_type = Some(MediaType::Print);
+                    } else if w == "speech" {
+                        media_type = Some(MediaType::Speech);
+                    } else if w != "and" {
+                        features.push(MediaFeature::Unknown(w));
+                    }
+                }
+            }
+            Some(MediaQuery {
+                negated,
+                media_type,
+                features,
+            })
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FontSourceSpec {
+    pub url: String,
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FontFaceRule {
+    pub font_family: String,
+    pub src: Vec<FontSourceSpec>,
+    pub font_weight: Option<u16>,
+    pub font_style: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportRule {
+    pub url: String,
+    pub media: Vec<MediaQuery>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
     pub selectors: Vec<ComplexSelector>,
     pub declarations: Vec<Declaration>,
+    pub media: Vec<Vec<MediaQuery>>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct StyleSheet {
     pub rules: Vec<Rule>,
+    pub font_faces: Vec<FontFaceRule>,
+    pub imports: Vec<ImportRule>,
     pub unsupported: Vec<String>,
 }
 
@@ -1213,7 +1489,10 @@ pub fn resolve_computed_style<D: DocumentView>(
     node_key: NodeKey,
     parent_style: Option<&ComputedStyle>,
     author_sheets: &[&StyleSheet],
+    media_ctx: Option<&MediaContext>,
 ) -> ComputedStyle {
+    let default_ctx = MediaContext::default();
+    let m_ctx = media_ctx.unwrap_or(&default_ctx);
     let mut style = parent_style.map_or_else(ComputedStyle::default, |p| ComputedStyle {
         // Inherited properties:
         custom_properties: p.custom_properties.clone(),
@@ -1244,6 +1523,9 @@ pub fn resolve_computed_style<D: DocumentView>(
     let mut order = 0;
     USER_AGENT.with(|ua| {
         for rule in &ua.rules {
+            if !rule.media.iter().all(|group| matches_media(group, m_ctx)) {
+                continue;
+            }
             for sel in &rule.selectors {
                 if sel.matches(doc, node_key) {
                     let spec = sel.specificity();
@@ -1288,6 +1570,9 @@ pub fn resolve_computed_style<D: DocumentView>(
     // 2. Author Stylesheets
     for sheet in author_sheets {
         for rule in &sheet.rules {
+            if !rule.media.iter().all(|group| matches_media(group, m_ctx)) {
+                continue;
+            }
             for sel in &rule.selectors {
                 if sel.matches(doc, node_key) {
                     let spec = sel.specificity();
@@ -1438,22 +1723,39 @@ pub fn resolve_computed_style<D: DocumentView>(
             apply_declaration(&mut style, &decl.property, &resolved);
         }
     }
+    for (side, hidden) in [
+        &mut style.borders.top,
+        &mut style.borders.right,
+        &mut style.borders.bottom,
+        &mut style.borders.left,
+    ]
+    .into_iter()
+    .zip(style.border_hidden)
+    {
+        if hidden {
+            side.width = 0.0;
+        }
+    }
     if let Some(factor) = style.line_height_factor {
         style.line_height = style.font_size * factor;
     }
     if let Some(el_name) = node.element_name() {
-        let tag = el_name.local.as_ref();
+        let tag = el_name.local;
         if matches!(tag, "img" | "iframe" | "canvas" | "video" | "embed") {
             if style.width == Length::Auto {
                 if let Some(w_attr) = node.attr("width") {
-                    if let Some(l) = Length::parse(w_attr).or_else(|| w_attr.parse::<f64>().ok().map(Length::Px)) {
+                    if let Some(l) =
+                        Length::parse(w_attr).or_else(|| w_attr.parse::<f64>().ok().map(Length::Px))
+                    {
                         style.width = l;
                     }
                 }
             }
             if style.height == Length::Auto {
                 if let Some(h_attr) = node.attr("height") {
-                    if let Some(l) = Length::parse(h_attr).or_else(|| h_attr.parse::<f64>().ok().map(Length::Px)) {
+                    if let Some(l) =
+                        Length::parse(h_attr).or_else(|| h_attr.parse::<f64>().ok().map(Length::Px))
+                    {
                         style.height = l;
                     }
                 }
@@ -1581,6 +1883,19 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 width = 1.0;
             }
             let side = BorderSide { width, color };
+            style.border_hidden = [!val.split_whitespace().any(|p| {
+                matches!(
+                    p,
+                    "solid"
+                        | "dotted"
+                        | "dashed"
+                        | "double"
+                        | "groove"
+                        | "ridge"
+                        | "inset"
+                        | "outset"
+                )
+            }); 4];
             style.borders = Borders {
                 top: side,
                 right: side,
@@ -1602,11 +1917,76 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                     side.width = 0.0;
                 }
             }
+            let index = match prop {
+                "border-top" => 0,
+                "border-right" => 1,
+                "border-bottom" => 2,
+                _ => 3,
+            };
+            style.border_hidden[index] = !val.split_whitespace().any(|p| {
+                matches!(
+                    p,
+                    "solid"
+                        | "dotted"
+                        | "dashed"
+                        | "double"
+                        | "groove"
+                        | "ridge"
+                        | "inset"
+                        | "outset"
+                )
+            });
             match prop {
                 "border-top" => style.borders.top = side,
                 "border-right" => style.borders.right = side,
                 "border-bottom" => style.borders.bottom = side,
                 _ => style.borders.left = side,
+            }
+        }
+        "border-style" => {
+            let p: Vec<_> = val.split_whitespace().collect();
+            if !p.is_empty() {
+                let values = [
+                    p[0],
+                    *p.get(1).unwrap_or(&p[0]),
+                    *p.get(2).unwrap_or(&p[0]),
+                    *p.get(3).or(p.get(1)).unwrap_or(&p[0]),
+                ];
+                style.border_hidden = values.map(|p| matches!(p, "none" | "hidden"));
+            }
+        }
+        p if p.starts_with("border-")
+            && (p.ends_with("-width") || p.ends_with("-color") || p.ends_with("-style")) =>
+        {
+            let (index, side) = if p.starts_with("border-top-") {
+                (0, &mut style.borders.top)
+            } else if p.starts_with("border-right-") {
+                (1, &mut style.borders.right)
+            } else if p.starts_with("border-bottom-") {
+                (2, &mut style.borders.bottom)
+            } else if p.starts_with("border-left-") {
+                (3, &mut style.borders.left)
+            } else {
+                return;
+            };
+            if p.ends_with("-width") {
+                if let Some(w) = Length::parse(val)
+                    .map(|l| l.resolve(0.0, style.font_size, 16.0))
+                    .or(match val {
+                        "thin" => Some(1.0),
+                        "medium" => Some(3.0),
+                        "thick" => Some(5.0),
+                        _ => None,
+                    })
+                {
+                    side.width = w.max(0.0);
+                }
+            } else if p.ends_with("-color") {
+                if let Some(c) = Color::parse(val) {
+                    side.color = c;
+                }
+            } else {
+                style.border_hidden[index] = matches!(val, "none" | "hidden");
             }
         }
         "border-width" => {
@@ -1815,7 +2195,8 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                     if let Some(sp_str) = sec.strip_prefix("span ") {
                         sp_str.trim().parse::<usize>().unwrap_or(1)
                     } else if let Ok(e) = sec.parse::<i32>() {
-                        s.map(|start_val| (e - start_val).max(1) as usize).unwrap_or(1)
+                        s.map(|start_val| (e - start_val).max(1) as usize)
+                            .unwrap_or(1)
                     } else {
                         1
                     }
