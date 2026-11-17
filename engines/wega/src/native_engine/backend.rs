@@ -1,4 +1,24 @@
-//! Native Engine Backend: Backend selector, NativeDocument, and Wega DOM integration.
+
+use wega_protocol::inspector::dom::InspectorNodeId;
+use wega_protocol::inspector::geometry::*;
+use wega_protocol::DocumentContext;
+
+fn to_geom_rect(r: Rect) -> GeomRect {
+    GeomRect { x: r.x, y: r.y, width: r.width, height: r.height }
+}
+fn to_edges(i: Insets) -> Edges {
+    Edges { top: i.top, right: i.right, bottom: i.bottom, left: i.left }
+}
+fn to_box_set(b: BoxModel) -> BoxSet {
+    BoxSet {
+        border_box: to_geom_rect(b.border_box),
+        border: to_edges(b.border),
+        padding: to_edges(b.padding),
+        margin: to_edges(b.margin),
+    }
+}
+
+/// Native Engine Backend: Backend selector, NativeDocument, and Wega DOM integration.
 use super::css::{resolve_computed_style, StyleSheet};
 use super::display_list::DisplayList;
 use super::layout::{build_box_tree, hit_test_node, perform_layout, LayoutBox, LayoutContext};
@@ -222,6 +242,90 @@ impl NativeDocument {
         }
         Ok(())
     }
+    pub fn inspect_geometry_report(
+        &self,
+        document: DocumentContext,
+        key: NodeKey,
+    ) -> wega_protocol::inspector::geometry::GeometryReport {
+        let (state, set) = match self.inspect_geometry(key) {
+            Geometry::Current(b) => (GeometryState::Current, Some(to_box_set(b))),
+            Geometry::Stale(b) => (GeometryState::Stale, Some(to_box_set(b))),
+            Geometry::Pending => (GeometryState::Pending, None),
+            Geometry::NoBoxes => (GeometryState::NoBoxes, None),
+            Geometry::Refused => (GeometryState::Refused, None),
+            Geometry::Invalid => (GeometryState::Invalid, None),
+        };
+        let d = self.doc.borrow();
+        let epoch = wega_dom::MutationClock::mutation_epoch(&*d).as_u64();
+        let node_id = InspectorNodeId {
+            document,
+            key: key.as_u64(),
+        };
+        let viewport = ViewportReport {
+            width: self.viewport.width_px as f64,
+            height: self.viewport.height_px as f64,
+            device_pixel_ratio: self.viewport.scale as f64,
+            scroll_x: self.scroll.x,
+            scroll_y: self.scroll.y,
+        };
+        let label = if let Some(n) = d.node(key) {
+            let tag = n.element_name().map(|e| e.local.to_string()).unwrap_or_default();
+            let id = n.attr("id").unwrap_or_default().to_string();
+            let classes = n.attr("class").unwrap_or_default().to_string();
+            ElementLabel { tag, id, classes }
+        } else {
+            ElementLabel::default()
+        };
+        GeometryReport {
+            document,
+            epoch,
+            node: node_id,
+            state,
+            boxes: set,
+            viewport,
+            paint: wega_protocol::inspector::geometry::PaintMapping::Exact { clip: None },
+            label,
+        }
+    }
+
+    pub fn pick_node_report(
+        &self,
+        document: DocumentContext,
+        point: Point,
+    ) -> Result<PickReport, wega_protocol::inspector::InspectorError> {
+        let hit_key = self.element_at(point)
+            .ok_or_else(|| wega_protocol::inspector::InspectorError::new(
+                wega_protocol::inspector::InspectorErrorCode::Unavailable,
+                "Nothing at that point",
+            ))?;
+        let d = self.doc.borrow();
+        let Some(node) = d.node(hit_key) else {
+            return Err(wega_protocol::inspector::InspectorError::new(
+                wega_protocol::inspector::InspectorErrorCode::StaleNode,
+                "Hit node was dropped",
+            ));
+        };
+        let mut chain = Vec::new();
+        let mut at = node.parent();
+        while let Some(parent) = at {
+            if chain.len() > 32 {
+                chain.clear();
+                break;
+            }
+            chain.push(InspectorNodeId {
+                document,
+                key: parent.as_u64(),
+            });
+            at = d.node(parent).and_then(|n| n.parent());
+        }
+        chain.reverse();
+        drop(d);
+        Ok(PickReport {
+            target: self.inspect_geometry_report(document, hit_key),
+            ancestors: chain,
+        })
+    }
+
 }
 
 fn find_box_in_tree(box_node: &LayoutBox, key: NodeKey) -> Option<&LayoutBox> {

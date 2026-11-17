@@ -2857,6 +2857,12 @@ impl crate::inspector::PagePort for View {
         wega_protocol::inspector::geometry::GeometryReport,
         wega_protocol::inspector::InspectorError,
     > {
+        if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
+            if let Some(native_doc) = &self.native_document {
+                let key = NodeKey::from_u64(node.key);
+                return Ok(native_doc.inspect_geometry_report(document, key));
+            }
+        }
         crate::inspector::geometry::inspect(&*self.document.borrow(), document, node)
     }
     fn pick_node(
@@ -2868,6 +2874,12 @@ impl crate::inspector::PagePort for View {
         wega_protocol::inspector::geometry::PickReport,
         wega_protocol::inspector::InspectorError,
     > {
+        if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
+            if let Some(native_doc) = &self.native_document {
+                let pt = wega_dom::layout::Point { x: x as f64, y: y as f64 };
+                return native_doc.pick_node_report(document, pt);
+            }
+        }
         crate::inspector::geometry::pick(&*self.document.borrow(), document, x, y)
     }
     fn apply_edit(

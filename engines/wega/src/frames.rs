@@ -832,6 +832,14 @@ impl View {
 
     /// The content box of child `index` in parent viewport CSS pixels, if it paints.
     pub(crate) fn frame_box(&self, node: NodeId) -> Option<wega_dom::layout::Rect> {
+        if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
+            if let Some(native_doc) = &self.native_document {
+                if let Some(b) = native_doc.find_box(node.key()) {
+                    let content = b.content_box();
+                    return (content.width >= 1.0 && content.height >= 1.0).then_some(content);
+                }
+            }
+        }
         let doc = self.document.borrow();
         let n = doc.get_node(node)?;
         if n.primary_styles().is_none_or(|style| {
@@ -923,12 +931,19 @@ impl View {
     /// The topmost child under a parent-viewport point, with the point converted into the
     /// child's own viewport. Frames are painted in document order, so the last one wins.
     fn frame_at(&self, x: f32, y: f32) -> Option<(usize, f32, f32)> {
-        use wega_dom::layout::HitTest as _;
-        let doc = self.document.borrow();
-        let hit_key = doc.element_at(wega_dom::layout::Point {
-            x: x as f64,
-            y: y as f64,
-        })?;
+        let hit_key = if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
+            self.native_document.as_ref().and_then(|d| d.element_at(wega_dom::layout::Point {
+                x: x as f64,
+                y: y as f64,
+            }))?
+        } else {
+            use wega_dom::layout::HitTest as _;
+            let doc = self.document.borrow();
+            doc.element_at(wega_dom::layout::Point {
+                x: x as f64,
+                y: y as f64,
+            })?
+        };
         for (index, child) in self.frames.children.iter().enumerate().rev() {
             if child.node.key() != hit_key {
                 continue;

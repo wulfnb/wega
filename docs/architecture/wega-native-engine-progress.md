@@ -6,9 +6,9 @@
 |---|---|---|---|
 | **A: Native Vertical Slice** | **Completed** | `3379fd2` | CSS rules/selectors/specificity/cascade, block/inline layout, display-list, Skia paint adapter, backend selector |
 | **B: Practical Layout Engine** | **Completed** | `5f92bdd` | IFC, text wrapping & line breaking, font metrics, flexbox (row/column/grow/shrink/justify/align), positioning (rel/abs), min/max dimensions, box-sizing, overflow clipping |
-| **C: Advanced Rendering** | **Completed** | Pending | CSS Grid, Table layout, Stacking contexts, z-index paint order, Transforms (translate/scale/rotate), Opacity, Box shadows, Rounded borders, Iframe viewport compositing & paint ordering |
-| **D: Dynamic Integration** | In Progress | Pending | DOM mutations, style/layout invalidation, hit-testing, DevTools geometry |
-| **E: Compatibility & Optimization**| Planned | Pending | WPT subset, regressions, benchmarks, differential testing, final reports |
+| **C: Advanced Rendering** | **Completed** | `7ef6933` | CSS Grid, Table layout, Stacking contexts, z-index paint order, Transforms (translate/scale/rotate), Opacity, Box shadows, Rounded borders, Iframe viewport compositing & paint ordering |
+| **D: Dynamic Integration** | **Completed** | Pending | View integration, dynamic DOM mutations & invalidation, pointer hit testing & routing, DevTools `inspect_geometry` and `pick_node` integration, iframe integrity preservation |
+| **E: Compatibility & Optimization**| In Progress | Pending | WPT subset, regressions, benchmarks, differential testing, final reports |
 
 ## Progress Log
 
@@ -28,7 +28,7 @@
   - Implemented dynamic style invalidation lifecycle (`invalidate()`, `layout_dirty`, `flush_layout()`).
   - Verified with 7 focused integration tests in `native_layout_engine.rs`.
 
-- **Checkpoint C Completed**:
+- **Checkpoint C Completed** (`7ef6933`):
   - Implemented CSS Grid layout engine (`grid-template-columns`, `grid-template-rows`, auto-placement, `grid-column-start`, `grid-row-start`).
   - Implemented Table layout engine (`display: table`, `table-row`, `table-cell`, and section grouping `tbody`/`thead`/`tfoot`).
   - Implemented Stacking Contexts & Z-Index display list sorting (negative z-index < background/borders < normal flow / iframe < positive z-index).
@@ -36,3 +36,11 @@
   - Implemented CSS Box Shadows and rounded border strokes with border-radius.
   - Implemented Iframe viewport composition (`PaintScene::Iframe`) integrated into the native display list at exact stacking and z-index order.
   - Verified with 5 focused integration tests in `native_advanced_rendering.rs`.
+
+- **Checkpoint D Completed**:
+  - Integrated `NativeDocument` directly into `View` lifecycle and `frames.rs` compositing and hit-testing paths.
+  - Implemented dynamic style and layout invalidation upon DOM mutations and inline style alterations.
+  - Implemented DevTools geometry and inspection reports (`inspect_geometry`, `inspect_geometry_report`, `pick_node`, `pick_node_report`) with accurate element label, bounding box, padding, border, and margin sets.
+  - Connected pointer event routing (`pointermove`, `pointerdown`, `pointerup`) with native engine hit-testing.
+  - Verified full iframe regression suite (17/17 iframes tests and 2/2 same-origin DOM tests passing) confirming zero disruption to isolation, sandbox, or broker boundaries.
+  - Verified with 3 integration tests in `native_dynamic_integration.rs`.
