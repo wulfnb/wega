@@ -825,7 +825,7 @@ impl View {
     // ---- compositing ----
 
     /// The content box of child `index` in parent viewport CSS pixels, if it paints.
-    fn frame_box(&self, node: NodeId) -> Option<wega_dom::layout::Rect> {
+    pub(crate) fn frame_box(&self, node: NodeId) -> Option<wega_dom::layout::Rect> {
         let doc = self.document.borrow();
         let n = doc.get_node(node)?;
         if n.primary_styles().is_none_or(|style| {
@@ -844,6 +844,7 @@ impl View {
     }
 
     /// Record every visible child into `scene` at its content box.
+    #[allow(dead_code)]
     pub(crate) fn compose_frames(
         &mut self,
         scene: &mut <BlitzDocument as PaintSource>::Scene,
@@ -916,17 +917,28 @@ impl View {
     /// The topmost child under a parent-viewport point, with the point converted into the
     /// child's own viewport. Frames are painted in document order, so the last one wins.
     fn frame_at(&self, x: f32, y: f32) -> Option<(usize, f32, f32)> {
+        use wega_dom::layout::HitTest as _;
+        let doc = self.document.borrow();
+        let hit_key = doc.element_at(wega_dom::layout::Point {
+            x: x as f64,
+            y: y as f64,
+        })?;
         for (index, child) in self.frames.children.iter().enumerate().rev() {
+            if child.node.key() != hit_key {
+                continue;
+            }
             let Some(content) = self.frame_box(child.node) else {
                 continue;
             };
             let (px, py) = (x as f64, y as f64);
-            if px >= content.x
-                && py >= content.y
-                && px < content.x + content.width
-                && py < content.y + content.height
+            let local_x = px - content.x;
+            let local_y = py - content.y;
+            if local_x >= 0.0
+                && local_y >= 0.0
+                && local_x < content.width
+                && local_y < content.height
             {
-                return Some((index, (px - content.x) as f32, (py - content.y) as f32));
+                return Some((index, local_x as f32, local_y as f32));
             }
         }
         None

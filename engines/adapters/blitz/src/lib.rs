@@ -695,8 +695,20 @@ impl PaintSource for BlitzDocument {
         self.flush_layout(animation_time);
     }
     fn record_scene(&mut self, viewport: &ViewportConfig) -> Self::Scene {
+        self.record_scene_with_children(viewport, Vec::new())
+    }
+    fn record_scene_with_children(
+        &mut self,
+        viewport: &ViewportConfig,
+        children: Vec<(wega_dom::NodeKey, Self::Scene)>,
+    ) -> Self::Scene {
+        use std::collections::HashMap;
+        let mut embedded = HashMap::new();
+        for (key, scene) in children {
+            embedded.insert(key.node_id(), scene);
+        }
         let mut scene = anyrender::Scene::new();
-        blitz_paint::paint_scene(
+        blitz_paint::paint_scene_with_embedded(
             &mut scene,
             &mut self.0,
             (viewport.scale * viewport.zoom) as f64,
@@ -704,6 +716,7 @@ impl PaintSource for BlitzDocument {
             viewport.height_px,
             0,
             0,
+            embedded,
         );
         scene
     }

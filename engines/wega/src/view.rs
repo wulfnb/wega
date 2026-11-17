@@ -2502,10 +2502,50 @@ impl View {
         };
         let mut doc = self.document.borrow_mut();
         doc.flush_layout(self.started.elapsed().as_secs_f64());
-        let mut scene = doc.record_scene(&viewport);
+        drop(doc);
+
+        let device = (viewport.scale * viewport.zoom) as f64;
+        let mut child_scenes = Vec::new();
+        let mut frames_animating = false;
+        let mut boxes = Vec::new();
+        for child in &self.frames.children {
+            boxes.push(self.frame_box(child.node));
+        }
+        for (child, content) in self.frames.children.iter_mut().zip(boxes) {
+            let Some(content) = content else {
+                continue;
+            };
+            let x = content.x * device;
+            let y = content.y * device;
+            let w = (content.width * device).round().max(1.0);
+            let h = (content.height * device).round().max(1.0);
+            if x >= viewport.width_px as f64
+                || y >= viewport.height_px as f64
+                || x + w <= 0.0
+                || y + h <= 0.0
+            {
+                continue;
+            }
+            if w * h > child.view.limits.max_pixels as f64 {
+                continue;
+            }
+            if let Ok(recorded) = child.view.record_paint(
+                w as u32,
+                h as u32,
+                viewport.scale,
+                viewport.zoom,
+                viewport.dark,
+            ) {
+                child_scenes.push((child.node.key(), recorded));
+                frames_animating |= child.view.frame_wants_more();
+            }
+        }
+
+        let mut doc = self.document.borrow_mut();
+        let scene = doc.record_scene_with_children(&viewport, child_scenes);
         let animating = doc.is_animating();
         drop(doc);
-        let frames_animating = self.compose_frames(&mut scene, &viewport);
+
         self.frame
             .recorded(another_frame || animating || frames_animating);
         if self.accessibility_enabled {

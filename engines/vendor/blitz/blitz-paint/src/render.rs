@@ -367,6 +367,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .element_data()
             .and_then(|el| el.text_input_data())
             .is_some();
+        let has_custom_scene = self.custom_widget_scenes.contains_key(&(self.dom.id(), node_id));
         // The root element's overflow is propagated to the viewport (which is clipped by the
         // window/surface bounds), so the root element must not clip its own overflow.
         let is_root_element = self.root_element_id == Some(node_id);
@@ -374,6 +375,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             && (is_image
                 || is_sub_doc
                 || is_text_input
+                || has_custom_scene
                 || contain_paint
                 || !matches!(overflow_x, Overflow::Visible)
                 || !matches!(overflow_y, Overflow::Visible));
@@ -447,10 +449,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         }
 
-        #[cfg(feature = "custom-widget")]
         let custom_widget_scene = self.custom_widget_scenes.get(&(self.dom.id(), node_id));
-        #[cfg(not(feature = "custom-widget"))]
-        let custom_widget_scene = None;
 
         // Apply CSS transform property (where transforms are 2d)
 
@@ -556,7 +555,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         cx.stroke_devtools(scene);
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
-                        let clip = if is_text_input {
+                        let clip = if is_text_input || has_custom_scene {
                             &cx.frame.content_box_path()
                         } else {
                             &cx.frame.padding_box_path()
@@ -585,7 +584,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_image(scene);
                                 #[cfg(feature = "svg")]
                                 cx.draw_svg(scene);
-                                #[cfg(feature = "custom-widget")]
                                 cx.draw_custom_widget(scene);
                                 cx.draw_sub_document(scene);
                                 cx.draw_input(scene);
@@ -734,7 +732,6 @@ struct ElementCx<'dom, 'a> {
     text_input: Option<&'dom TextInputData>,
     list_item: Option<&'dom ListItemLayout>,
     devtools: &'dom DevtoolSettings,
-    #[cfg_attr(not(feature = "custom-widget"), expect(unused))]
     custom_widget_scene: Option<&'a Scene>,
 }
 
@@ -1248,7 +1245,6 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    #[cfg(feature = "custom-widget")]
     fn draw_custom_widget(&self, scene: &mut impl PaintScene) {
         if let Some(widget_scene) = self.custom_widget_scene {
             let x = self.frame.content_box.origin().x;
