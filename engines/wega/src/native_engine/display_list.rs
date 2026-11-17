@@ -1,9 +1,13 @@
-//! Wega Native Display List & Skia Painting Adapter.
-use super::css::Color;
-use super::layout::LayoutBox;
+//! Wega-owned Display List and Painting Adapter.
+//!
+//! Transforms computed `LayoutBox` trees into deterministic 2D drawing
+//! commands (`DisplayItem`) and converts them into Skia / `anyrender::Scene` primitives.
+
+use crate::native_engine::css::Color;
+use crate::native_engine::layout::LayoutBox;
 use anyrender::PaintScene;
-use wega_dom::layout::Rect;
 use wega_dom::NodeKey;
+use wega_dom::layout::Rect;
 
 #[derive(Debug, Clone)]
 pub enum DisplayItem {
@@ -62,17 +66,34 @@ impl DisplayList {
     pub fn render_into(&self, scene: &mut anyrender::Scene) {
         for item in &self.items {
             match item {
-                DisplayItem::FillRect { rect, color, border_radius } => {
+                DisplayItem::FillRect {
+                    rect,
+                    color,
+                    border_radius,
+                } => {
                     if color.a == 0 {
                         continue;
                     }
                     let p_color = peniko::Color::from_rgba8(color.r, color.g, color.b, color.a);
-                    let kurbo_rect = kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
+                    let kurbo_rect =
+                        kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
                     if *border_radius > 0.0 {
                         let rounded = kurbo::RoundedRect::from_rect(kurbo_rect, *border_radius);
-                        scene.fill(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, p_color, None, &rounded);
+                        scene.fill(
+                            peniko::Fill::NonZero,
+                            kurbo::Affine::IDENTITY,
+                            p_color,
+                            None,
+                            &rounded,
+                        );
                     } else {
-                        scene.fill(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, p_color, None, &kurbo_rect);
+                        scene.fill(
+                            peniko::Fill::NonZero,
+                            kurbo::Affine::IDENTITY,
+                            p_color,
+                            None,
+                            &kurbo_rect,
+                        );
                     }
                 }
                 DisplayItem::StrokeRect { rect, color, width } => {
@@ -80,36 +101,76 @@ impl DisplayList {
                         continue;
                     }
                     let p_color = peniko::Color::from_rgba8(color.r, color.g, color.b, color.a);
-                    let kurbo_rect = kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
+                    let kurbo_rect =
+                        kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
                     let stroke = kurbo::Stroke::new(*width);
                     scene.stroke(&stroke, kurbo::Affine::IDENTITY, p_color, None, &kurbo_rect);
                 }
-                DisplayItem::Text { rect, text: _, color, font_size: _ } => {
-                    // Approximate text block rendering using solid color bar for basic vertical slice
-                    // Full text glyph shaping maps here in Checkpoint B
-                    let p_color = peniko::Color::from_rgba8(color.r, color.g, color.b, (color.a as f32 * 0.9) as u8);
+                DisplayItem::Text {
+                    rect,
+                    text: _,
+                    color,
+                    font_size: _,
+                } => {
+                    let p_color = peniko::Color::from_rgba8(
+                        color.r,
+                        color.g,
+                        color.b,
+                        (color.a as f32 * 0.9) as u8,
+                    );
                     let bar_h = (rect.height * 0.7).max(2.0);
                     let bar_y = rect.y + (rect.height - bar_h) / 2.0;
-                    let kurbo_rect = kurbo::Rect::new(rect.x, bar_y, rect.x + rect.width, bar_y + bar_h);
-                    scene.fill(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, p_color, None, &kurbo_rect);
+                    let kurbo_rect =
+                        kurbo::Rect::new(rect.x, bar_y, rect.x + rect.width, bar_y + bar_h);
+                    scene.fill(
+                        peniko::Fill::NonZero,
+                        kurbo::Affine::IDENTITY,
+                        p_color,
+                        None,
+                        &kurbo_rect,
+                    );
                 }
                 DisplayItem::PushClip { rect } => {
-                    let kurbo_rect = kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
-                    scene.push_clip_layer(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, &kurbo_rect);
+                    let kurbo_rect =
+                        kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
+                    scene.push_clip_layer(
+                        peniko::Fill::NonZero,
+                        kurbo::Affine::IDENTITY,
+                        &kurbo_rect,
+                    );
                 }
                 DisplayItem::PopClip => {
                     scene.pop_layer();
                 }
                 DisplayItem::PushOpacity { opacity } => {
-                    scene.push_layer(peniko::Fill::NonZero, peniko::Mix::Normal, *opacity, kurbo::Affine::IDENTITY, &kurbo::Rect::new(-1e9, -1e9, 1e9, 1e9), None, None);
+                    scene.push_layer(
+                        peniko::Fill::NonZero,
+                        peniko::Mix::Normal,
+                        *opacity,
+                        kurbo::Affine::IDENTITY,
+                        &kurbo::Rect::new(-1e9, -1e9, 1e9, 1e9),
+                        None,
+                        None,
+                    );
                 }
                 DisplayItem::PopOpacity => {
                     scene.pop_layer();
                 }
-                DisplayItem::EmbeddedScene { rect, scene: child_scene } => {
-                    let kurbo_rect = kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
-                    scene.push_clip_layer(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, &kurbo_rect);
-                    scene.append_scene(child_scene.clone(), kurbo::Affine::translate((rect.x, rect.y)));
+                DisplayItem::EmbeddedScene {
+                    rect,
+                    scene: child_scene,
+                } => {
+                    let kurbo_rect =
+                        kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
+                    scene.push_clip_layer(
+                        peniko::Fill::NonZero,
+                        kurbo::Affine::IDENTITY,
+                        &kurbo_rect,
+                    );
+                    scene.append_scene(
+                        child_scene.clone(),
+                        kurbo::Affine::translate((rect.x, rect.y)),
+                    );
                     scene.pop_layer();
                 }
             }
@@ -131,7 +192,9 @@ fn paint_box(
 
     let has_opacity = layout_box.style.opacity < 1.0;
     if has_opacity {
-        list.items.push(DisplayItem::PushOpacity { opacity: layout_box.style.opacity });
+        list.items.push(DisplayItem::PushOpacity {
+            opacity: layout_box.style.opacity,
+        });
     }
 
     // 1. Paint background
@@ -172,7 +235,7 @@ fn paint_box(
     let pad_border_y = (layout_box.border.top + layout_box.padding.top) * scale;
 
     for line in &layout_box.lines {
-        for (run_rect, text) in &line.text_runs {
+        for (run_rect, text, run_color, run_fs) in &line.text_runs {
             let mut r = *run_rect;
             r.x = rect.x + pad_border_x + r.x * scale;
             r.y = rect.y + pad_border_y + r.y * scale;
@@ -181,15 +244,32 @@ fn paint_box(
             list.items.push(DisplayItem::Text {
                 rect: r,
                 text: text.clone(),
-                color: layout_box.style.color,
-                font_size: layout_box.style.font_size * scale,
+                color: *run_color,
+                font_size: run_fs * scale,
             });
         }
     }
 
-    // 5. Paint child boxes
+    // 5. Overflow clipping if overflow != visible
+    let has_clip = layout_box.style.overflow_x != crate::native_engine::css::Overflow::Visible
+        || layout_box.style.overflow_y != crate::native_engine::css::Overflow::Visible;
+
+    if has_clip {
+        let mut pbox = layout_box.padding_box();
+        pbox.x *= scale;
+        pbox.y *= scale;
+        pbox.width *= scale;
+        pbox.height *= scale;
+        list.items.push(DisplayItem::PushClip { rect: pbox });
+    }
+
+    // 6. Paint child boxes
     for child in &layout_box.children {
         paint_box(child, list, embedded, scale);
+    }
+
+    if has_clip {
+        list.items.push(DisplayItem::PopClip);
     }
 
     if has_opacity {
