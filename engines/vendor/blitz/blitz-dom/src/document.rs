@@ -1702,16 +1702,30 @@ impl BaseDocument {
     }
 
     pub fn focus_next_node(&mut self) -> Option<NodeId> {
-        let focussed_node_id = self.get_focussed_node_id()?;
-        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        let id = match self.get_focussed_node_id() {
+            Some(curr) => self.next_node(&self.nodes[curr], |node| node.is_focussable())?,
+            None => {
+                let root = self.root_node();
+                if root.is_focussable() {
+                    root.id
+                } else {
+                    self.next_node(root, |node| node.is_focussable())?
+                }
+            }
+        };
         self.set_focus_to(id);
         Some(id)
     }
 
     /// Move focus to the previous focussable node in the document
     pub fn focus_prev_node(&mut self) -> Option<NodeId> {
-        let focussed_node_id = self.get_focussed_node_id()?;
-        let id = self.prev_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        let id = match self.get_focussed_node_id() {
+            Some(curr) => self.prev_node(&self.nodes[curr], |node| node.is_focussable())?,
+            None => {
+                let root = self.root_node();
+                self.prev_node(root, |node| node.is_focussable())?
+            }
+        };
         self.set_focus_to(id);
         Some(id)
     }

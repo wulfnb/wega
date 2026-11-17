@@ -1582,7 +1582,10 @@
       if (this.localName === "select") {
         for (const option of this.options)
           option.selected = option.value === String(value);
-      } else this.setAttribute("value", String(value));
+      } else {
+        this.setAttribute("value", String(value));
+        host("setInputValue", this._id, String(value));
+      }
     }
     get checked() {
       return host("checked", this._id);
@@ -2182,6 +2185,38 @@
   });
   class HTMLInputElement extends HTMLElement {}
   class HTMLTextAreaElement extends HTMLElement {}
+  for (const C of [HTMLInputElement, HTMLTextAreaElement]) {
+    Object.defineProperties(C.prototype, {
+      selectionStart: {
+        get() {
+          return host("selectionRange", this._id)[0];
+        },
+        set(val) {
+          const end = this.selectionEnd;
+          this.setSelectionRange(val, Math.max(val, end));
+        },
+      },
+      selectionEnd: {
+        get() {
+          return host("selectionRange", this._id)[1];
+        },
+        set(val) {
+          const start = this.selectionStart;
+          this.setSelectionRange(Math.min(start, val), val);
+        },
+      },
+      select: {
+        value() {
+          this.setSelectionRange(0, (this.value || "").length);
+        },
+      },
+      setSelectionRange: {
+        value(start, end) {
+          host("setSelectionRange", this._id, String(start), String(end));
+        },
+      },
+    });
+  }
   class HTMLSelectElement extends HTMLElement {}
   class HTMLOptionElement extends HTMLElement {}
   class HTMLButtonElement extends HTMLElement {}

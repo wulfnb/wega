@@ -30,6 +30,25 @@ pub enum BoxType {
     Text,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormControlKind {
+    TextInput { is_password: bool, is_textarea: bool },
+    Checkbox,
+    Radio,
+    Button,
+    Select,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FormState {
+    pub kind: Option<FormControlKind>,
+    pub checked: bool,
+    pub disabled: bool,
+    pub is_focused: bool,
+    pub caret_rect: Option<Rect>,
+    pub selection_rects: Vec<Rect>,
+}
+
 // ---------------------------------------------------------------------------
 // BOX TREE REPRESENTATION
 // ---------------------------------------------------------------------------
@@ -55,6 +74,7 @@ pub struct LayoutBox {
     pub scroll_offset: Point,
     pub scroll_width: f64,
     pub scroll_height: f64,
+    pub form_state: Option<FormState>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +105,7 @@ impl LayoutBox {
             scroll_offset: Point::default(),
             scroll_width: 0.0,
             scroll_height: 0.0,
+            form_state: None,
         }
     }
 
@@ -219,6 +240,58 @@ fn build_box_tree_inner<D: DocumentView>(
             {
                 layout_box.text_content = Some("\n".into());
             }
+            if let Some(el_name) = node.element_name() {
+                let tag: &str = el_name.local.as_ref();
+                if tag.eq_ignore_ascii_case("input") {
+                    let input_type = node.attr("type").unwrap_or("text").to_ascii_lowercase();
+                    if input_type == "checkbox" {
+                        layout_box.form_state = Some(FormState {
+                            kind: Some(FormControlKind::Checkbox),
+                            checked: node.attr("checked").is_some(),
+                            disabled: node.attr("disabled").is_some(),
+                            ..Default::default()
+                        });
+                    } else if input_type == "radio" {
+                        layout_box.form_state = Some(FormState {
+                            kind: Some(FormControlKind::Radio),
+                            checked: node.attr("checked").is_some(),
+                            disabled: node.attr("disabled").is_some(),
+                            ..Default::default()
+                        });
+                    } else if matches!(input_type.as_str(), "submit" | "button" | "reset") {
+                        layout_box.form_state = Some(FormState {
+                            kind: Some(FormControlKind::Button),
+                            disabled: node.attr("disabled").is_some(),
+                            ..Default::default()
+                        });
+                    } else {
+                        let is_password = input_type == "password";
+                        layout_box.form_state = Some(FormState {
+                            kind: Some(FormControlKind::TextInput { is_password, is_textarea: false }),
+                            disabled: node.attr("disabled").is_some(),
+                            ..Default::default()
+                        });
+                    }
+                } else if tag.eq_ignore_ascii_case("textarea") {
+                    layout_box.form_state = Some(FormState {
+                        kind: Some(FormControlKind::TextInput { is_password: false, is_textarea: true }),
+                        disabled: node.attr("disabled").is_some(),
+                        ..Default::default()
+                    });
+                } else if tag.eq_ignore_ascii_case("select") {
+                    layout_box.form_state = Some(FormState {
+                        kind: Some(FormControlKind::Select),
+                        disabled: node.attr("disabled").is_some(),
+                        ..Default::default()
+                    });
+                } else if tag.eq_ignore_ascii_case("button") {
+                    layout_box.form_state = Some(FormState {
+                        kind: Some(FormControlKind::Button),
+                        disabled: node.attr("disabled").is_some(),
+                        ..Default::default()
+                    });
+                }
+            }
             layout_box.table_col_span = node
                 .attr("colspan")
                 .and_then(|s| s.parse::<usize>().ok())
@@ -235,6 +308,70 @@ fn build_box_tree_inner<D: DocumentView>(
                     build_box_tree_inner(doc, child_key, Some(&style), author_sheets)
                 {
                     raw_children.push(child_box);
+                }
+            }
+            if let Some(ref form) = layout_box.form_state {
+                match form.kind {
+                    Some(FormControlKind::TextInput { is_password, is_textarea }) => {
+                        if raw_children.is_empty() {
+                            let val = node.attr("value").unwrap_or("");
+                            let ph = node.attr("placeholder");
+                            let (disp, is_ph) = if !val.is_empty() {
+                                if is_password {
+                                    ("•".repeat(val.chars().count()), false)
+                                } else {
+                                    (val.to_string(), false)
+                                }
+                            } else if let Some(placeholder) = ph {
+                                (placeholder.to_string(), true)
+                            } else {
+                                (String::new(), false)
+                            };
+                            if !disp.is_empty() {
+                                let mut text_style = style.clone();
+                                if is_textarea {
+                                    text_style.white_space = WhiteSpace::PreWrap;
+                                }
+                                if is_ph {
+                                    text_style.color = Color { r: 117, g: 117, b: 117, a: 255 };
+                                }
+                                let mut text_child = LayoutBox::new(Some(node_key), BoxType::Text, text_style);
+                                text_child.text_content = Some(disp);
+                                raw_children.push(text_child);
+                            }
+                        }
+                    }
+                    Some(FormControlKind::Button) => {
+                        if raw_children.is_empty() {
+                            let val = node.attr("value").unwrap_or(if node.attr("type").is_some_and(|t| t.eq_ignore_ascii_case("submit")) { "Submit" } else { "" });
+                            if !val.is_empty() {
+                                let mut btn_text = LayoutBox::new(Some(node_key), BoxType::Text, style.clone());
+                                btn_text.text_content = Some(val.to_string());
+                                raw_children.push(btn_text);
+                            }
+                        }
+                    }
+                    Some(FormControlKind::Select) => {
+                        let mut selected_text = None;
+                        for ck in node.children() {
+                            if let Some(cn) = doc.node(ck) {
+                                if cn.element_name().is_some_and(|e| e.local.eq_ignore_ascii_case("option")) {
+                                    if cn.attr("selected").is_some() || selected_text.is_none() {
+                                        selected_text = cn.text().map(str::to_string).or_else(|| {
+                                            cn.children().next().and_then(|tk| doc.node(tk)).and_then(|t| t.text().map(str::to_string))
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        raw_children.clear();
+                        if let Some(opt_text) = selected_text {
+                            let mut opt_child = LayoutBox::new(Some(node_key), BoxType::Text, style.clone());
+                            opt_child.text_content = Some(opt_text);
+                            raw_children.push(opt_child);
+                        }
+                    }
+                    _ => {}
                 }
             }
 
@@ -584,6 +721,13 @@ fn layout_block_or_flow(
                 / image.height.max(1) as f64;
         }
     }
+    if let Some(ref form) = box_node.form_state {
+        if matches!(form.kind, Some(FormControlKind::Checkbox | FormControlKind::Radio)) {
+            if box_node.style.width == Length::Auto {
+                content_w = 13.0;
+            }
+        }
+    }
     // Apply min-width and max-width constraints
     content_w = clamp_dimension(
         content_w,
@@ -778,7 +922,27 @@ fn layout_block_or_flow(
             }
         }
         Length::Auto => {
-            if is_absolute
+            if let Some(ref form) = box_node.form_state {
+                if matches!(form.kind, Some(FormControlKind::Checkbox | FormControlKind::Radio)) {
+                    13.0
+                } else if is_absolute
+                    && box_node.style.top != Length::Auto
+                    && box_node.style.bottom != Length::Auto
+                {
+                    let top_v = box_node.style.top.resolve(effective_cb.height, fs, rfs);
+                    let bottom_v = box_node.style.bottom.resolve(effective_cb.height, fs, rfs);
+                    (effective_cb.height
+                        - top_v
+                        - bottom_v
+                        - box_node.margin.top
+                        - box_node.margin.bottom
+                        - total_border_h
+                        - total_padding_h)
+                        .max(0.0)
+                } else {
+                    content_h
+                }
+            } else if is_absolute
                 && box_node.style.top != Length::Auto
                 && box_node.style.bottom != Length::Auto
             {
@@ -829,6 +993,23 @@ fn layout_block_or_flow(
 
     let border_box_h = final_content_h + total_border_h + total_padding_h;
     box_node.border_box.height = border_box_h;
+    if let Some(ref form) = box_node.form_state {
+        if matches!(form.kind, Some(FormControlKind::TextInput { is_textarea: false, .. } | FormControlKind::Button | FormControlKind::Select)) {
+            if !box_node.lines.is_empty() {
+                let cb = box_node.content_box();
+                let cb_h = cb.height;
+                let cb_w = cb.width;
+                let is_button = matches!(form.kind, Some(FormControlKind::Button));
+                let line = &mut box_node.lines[0];
+                if cb_h > line.rect.height {
+                    line.rect.y = ((cb_h - line.rect.height) / 2.0).max(0.0);
+                }
+                if is_button && cb_w > line.rect.width {
+                    line.rect.x = ((cb_w - line.rect.width) / 2.0).max(0.0);
+                }
+            }
+        }
+    }
 
     // If absolute element was positioned by bottom only, adjust y now that height is known
     if is_absolute && box_node.style.top == Length::Auto && box_node.style.bottom != Length::Auto {

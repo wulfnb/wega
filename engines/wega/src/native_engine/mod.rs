@@ -11,5 +11,3 @@ pub use css::{
     Color, ComputedStyle, Display, Length, StyleSheet, default_user_agent_stylesheet,
     resolve_computed_style,
 };
-pub use display_list::{DisplayItem, DisplayList};
-pub use layout::{BoxType, LayoutBox, LayoutContext, perform_layout};

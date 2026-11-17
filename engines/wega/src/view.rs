@@ -1421,10 +1421,38 @@ impl View {
         self.frame.invalidate();
     }
     pub fn copy(&mut self) -> Option<String> {
-        let text = self
-            .evaluate_json("window.getSelection()?.toString() || ''")
-            .ok();
-        let text = text.filter(|s| !s.is_empty());
+        let text = {
+            let doc = self.document.borrow();
+            let active = doc.get_focussed_node_id();
+            if let Some(node_id) = active {
+                if let Some(el) = doc.get_node(node_id).and_then(|n| n.element_data()) {
+                    if let Some(input_data) = el.text_input_data() {
+                        let sel = input_data.editor.raw_selection();
+                        let a = sel.anchor().index();
+                        let f = sel.focus().index();
+                        let (min_idx, max_idx) = (a.min(f), a.max(f));
+                        if min_idx < max_idx {
+                            let full_text = input_data.editor.text().to_string();
+                            full_text.get(min_idx..max_idx).map(str::to_string)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        let text = text.or_else(|| {
+            let text = self
+                .evaluate_json("window.getSelection()?.toString() || ''")
+                .ok();
+            text.filter(|s| !s.is_empty())
+        });
         if let Some(ref text) = text {
             self.events
                 .push_back(PageEvent::ClipboardWrite(text.clone()));
@@ -1433,10 +1461,41 @@ impl View {
         text
     }
     pub fn cut(&mut self) -> Option<String> {
-        let text = self
-            .evaluate_json("window.getSelection()?.toString() || ''")
-            .ok();
-        let text = text.filter(|s| !s.is_empty());
+        let text = {
+            let mut doc = self.document.borrow_mut();
+            let active = doc.get_focussed_node_id();
+            if let Some(node_id) = active {
+                if let Some(node) = doc.get_node_mut(node_id) {
+                    if let Some(el) = node.element_data_mut() {
+                        if let Some(input_data) = el.text_input_data_mut() {
+                            let mut font_ctx = parley::FontContext::new();
+                            let mut layout_ctx = parley::LayoutContext::new();
+                            let mut driver = input_data.editor.driver(&mut font_ctx, &mut layout_ctx);
+                            let selected = driver.editor.selected_text().map(str::to_string);
+                            if selected.is_some() {
+                                driver.delete_selection();
+                                node.mark_ancestors_dirty();
+                            }
+                            selected
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        let text = text.or_else(|| {
+            let text = self
+                .evaluate_json("window.getSelection()?.toString() || ''")
+                .ok();
+            text.filter(|s| !s.is_empty())
+        });
         if let Some(ref text) = text {
             self.events
                 .push_back(PageEvent::ClipboardWrite(text.clone()));
@@ -1446,14 +1505,69 @@ impl View {
         text
     }
     pub fn paste(&mut self, text: &str) {
-        let text_json = serde_json::to_string(text).unwrap_or_default();
-        let _ = self.evaluate_json(&format!(
-            "document.execCommand('paste', false, {text_json})"
-        ));
+        let handled = {
+            let mut doc = self.document.borrow_mut();
+            let active = doc.get_focussed_node_id();
+            if let Some(node_id) = active {
+                if let Some(node) = doc.get_node_mut(node_id) {
+                    if let Some(el) = node.element_data_mut() {
+                        if let Some(input_data) = el.text_input_data_mut() {
+                            let mut font_ctx = parley::FontContext::new();
+                            let mut layout_ctx = parley::LayoutContext::new();
+                            let mut driver = input_data.editor.driver(&mut font_ctx, &mut layout_ctx);
+                            driver.insert_or_replace_selection(text);
+                            node.mark_ancestors_dirty();
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if !handled {
+            let text_json = serde_json::to_string(text).unwrap_or_default();
+            let _ = self.evaluate_json(&format!(
+                "document.execCommand('paste', false, {text_json})"
+            ));
+        }
         self.frame.invalidate();
     }
     pub fn select_all(&mut self) {
-        let _ = self.evaluate_json("document.execCommand('selectAll')");
+        let handled = {
+            let mut doc = self.document.borrow_mut();
+            let active = doc.get_focussed_node_id();
+            if let Some(node_id) = active {
+                if let Some(node) = doc.get_node_mut(node_id) {
+                    if let Some(el) = node.element_data_mut() {
+                        if let Some(input_data) = el.text_input_data_mut() {
+                            let mut font_ctx = parley::FontContext::new();
+                            let mut layout_ctx = parley::LayoutContext::new();
+                            input_data.editor.driver(&mut font_ctx, &mut layout_ctx).select_all();
+                            node.mark_ancestors_dirty();
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if !handled {
+            let _ = self.evaluate_json("document.execCommand('selectAll')");
+        }
         self.frame.invalidate();
     }
     pub fn find_in_page(
@@ -2298,6 +2412,25 @@ impl View {
                 }
                 if key.eq_ignore_ascii_case("v") {
                     self.paste("");
+                    return;
+                }
+            }
+            let is_btn = {
+                let doc = self.document.borrow();
+                doc.get_node(target).and_then(|n| n.element_data()).is_some_and(|el| {
+                    el.name.local == LocalName::from("button")
+                        || (el.name.local == LocalName::from("input")
+                            && matches!(
+                                el.attr(LocalName::from("type")).unwrap_or_default().to_ascii_lowercase().as_str(),
+                                "button" | "submit" | "reset"
+                            ))
+                })
+            };
+            if is_btn && (key == " " || key == "Space" || key == "Enter") {
+                let click_ev = self.document.borrow().get_node(target).map(|n| n.synthetic_click_event_data(event.modifiers));
+                if let Some(click_ev) = click_ev {
+                    self.click_event(target, click_ev, None);
+                    self.frame.invalidate();
                     return;
                 }
             }
@@ -3249,6 +3382,26 @@ impl View {
                 if !self.dispatch_pointer("pointermove", target, &pointer, None) {
                     self.dispatch_pointer("mousemove", target, &pointer, None);
                 }
+                if let Some(down) = self.native_down {
+                    if let Some(ref native_doc) = self.native_document {
+                        if let Some(b) = native_doc.borrow().find_box(down) {
+                            let cb = b.content_box();
+                            let rel_x = (pointer.x as f32 - cb.x as f32).max(0.0);
+                            let rel_y = (pointer.y as f32 - cb.y as f32).max(0.0);
+                            let mut doc = self.document.borrow_mut();
+                            if let Some(node) = doc.get_node_mut(down.node_id()) {
+                                if let Some(el) = node.element_data_mut() {
+                                    if let Some(input_data) = el.text_input_data_mut() {
+                                        let mut font_ctx = parley::FontContext::new();
+                                        let mut layout_ctx = parley::LayoutContext::new();
+                                        input_data.editor.driver(&mut font_ctx, &mut layout_ctx).extend_selection_to_point(rel_x, rel_y);
+                                        node.mark_ancestors_dirty();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             PointerKind::Down => {
                 self.activate();
@@ -3263,6 +3416,24 @@ impl View {
                     });
                     if focusable {
                         let _ = self.document.borrow_mut().set_focus(target.key());
+                    }
+                    if let Some(ref native_doc) = self.native_document {
+                        if let Some(b) = native_doc.borrow().find_box(target.key()) {
+                            let cb = b.content_box();
+                            let rel_x = (pointer.x as f32 - cb.x as f32).max(0.0);
+                            let rel_y = (pointer.y as f32 - cb.y as f32).max(0.0);
+                            let mut doc = self.document.borrow_mut();
+                            if let Some(node) = doc.get_node_mut(target) {
+                                if let Some(el) = node.element_data_mut() {
+                                    if let Some(input_data) = el.text_input_data_mut() {
+                                        let mut font_ctx = parley::FontContext::new();
+                                        let mut layout_ctx = parley::LayoutContext::new();
+                                        input_data.editor.driver(&mut font_ctx, &mut layout_ctx).move_to_point(rel_x, rel_y);
+                                        node.mark_ancestors_dirty();
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

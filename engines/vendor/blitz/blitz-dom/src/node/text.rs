@@ -322,21 +322,23 @@ impl TextInputData {
                 return Some(GeneratedTextInputEvent::Select);
             }
             Key::Named(NamedKey::Delete) => {
-                if action_mod {
-                    driver.delete_word()
+                if !driver.editor.raw_selection().is_collapsed() {
+                    driver.delete_selection();
+                } else if action_mod {
+                    driver.delete_word();
                 } else {
-                    driver.delete()
+                    driver.delete();
                 }
                 return Some(GeneratedTextInputEvent::Input);
             }
 
-            // On macOS this is handled by the apple standard keybindings
-            #[cfg(not(target_os = "macos"))]
             Key::Named(NamedKey::Backspace) => {
-                if action_mod {
-                    driver.backdelete_word()
+                if !driver.editor.raw_selection().is_collapsed() {
+                    driver.delete_selection();
+                } else if action_mod {
+                    driver.backdelete_word();
                 } else {
-                    driver.backdelete()
+                    driver.backdelete();
                 }
                 return Some(GeneratedTextInputEvent::Input);
             }

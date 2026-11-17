@@ -1099,7 +1099,7 @@ impl Dom {
                 | "styleSetImportant"
                 | "focus"
                 | "blur"
-                | "setChecked"
+                | "setChecked" | "setInputValue" | "setSelectionRange"
                 | "setText"
                 | "setAttr"
                 | "removeAttr"
@@ -1467,6 +1467,71 @@ impl Dom {
                 json!(changed)
             },
             "inputValue"=>{let target=node_id()?;let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
+            "setInputValue"=>{
+                let target=node_id()?;
+                let val=text(2).to_string();
+                if let Some(node)=doc.get_node_mut(target){
+                    if let Some(element)=node.element_data_mut(){
+                        if let Some(input_data)=element.text_input_data_mut(){
+                            input_data.editor.set_text(&val);
+                        }
+                    }
+                    node.mark_ancestors_dirty();
+                }
+                let _ = wega_dom::mutate(&mut *doc).set_attribute(
+                    target.key(),
+                    QualName::new(None, ns!(), LocalName::from("value")),
+                    &val,
+                );
+                self.invalidate();
+                Value::Null
+            },
+            "selectionRange"=>{
+                let target=node_id()?;
+                let element=doc.get_node(target).unwrap().element_data().ok_or("Input needs an element")?;
+                if let Some(input_data)=element.text_input_data(){
+                    let sel=input_data.editor.raw_selection();
+                    let a=sel.anchor().index();
+                    let f=sel.focus().index();
+                    let (min_idx,max_idx)=(a.min(f),a.max(f));
+                    let text=input_data.editor.text().to_string();
+                    let start=text.get(..min_idx).map(|s|s.encode_utf16().count()).unwrap_or(0);
+                    let end=text.get(..max_idx).map(|s|s.encode_utf16().count()).unwrap_or(0);
+                    json!([start,end])
+                }else{
+                    json!([0,0])
+                }
+            },
+            "setSelectionRange"=>{
+                let target=node_id()?;
+                let start_utf16:usize=text(2).parse().unwrap_or(0);
+                let end_utf16:usize=text(3).parse().unwrap_or(0);
+                if let Some(node)=doc.get_node_mut(target){
+                    if let Some(element)=node.element_data_mut(){
+                        if let Some(input_data)=element.text_input_data_mut(){
+                            let text=input_data.editor.text().to_string();
+                            let mut byte_start=text.len();
+                            let mut byte_end=text.len();
+                            let mut utf16_count=0;
+                            for (byte_idx,ch) in text.char_indices(){
+                                if utf16_count>=start_utf16 && byte_start==text.len(){
+                                    byte_start=byte_idx;
+                                }
+                                if utf16_count>=end_utf16 && byte_end==text.len(){
+                                    byte_end=byte_idx;
+                                }
+                                utf16_count+=ch.len_utf16();
+                            }
+                            let mut font_ctx = parley::FontContext::new();
+                            let mut layout_ctx = parley::LayoutContext::new();
+                            input_data.editor.driver(&mut font_ctx, &mut layout_ctx).select_byte_range(byte_start, byte_end);
+                        }
+                    }
+                    node.mark_ancestors_dirty();
+                }
+                self.invalidate();
+                Value::Null
+            },
             "checked"=>json!(doc.get_node(node_id()?).unwrap().element_data().and_then(|e|e.checkbox_input_checked()).unwrap_or(false)),
             "setChecked"=>{
                 let target=node_id()?;

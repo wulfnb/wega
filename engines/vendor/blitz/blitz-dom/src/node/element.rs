@@ -597,7 +597,15 @@ impl ElementData {
     pub fn checkbox_input_checked(&self) -> Option<bool> {
         match self.special_data {
             SpecialElementData::CheckboxInput(checked) => Some(checked),
-            _ => None,
+            _ => {
+                if self.name.local == local_name!("input") {
+                    let kind = self.attr(local_name!("type")).unwrap_or("text").to_ascii_lowercase();
+                    if matches!(kind.as_str(), "checkbox" | "radio") {
+                        return Some(self.attr(local_name!("checked")).is_some());
+                    }
+                }
+                None
+            }
         }
     }
 
@@ -614,6 +622,8 @@ impl ElementData {
     pub fn set_checkbox_input_checked(&mut self, checked: bool) {
         if let Some(is_checked) = self.checkbox_input_checked_mut() {
             *is_checked = checked;
+        } else {
+            self.special_data = SpecialElementData::CheckboxInput(checked);
         }
         self.element_state.set(ElementState::CHECKED, checked);
     }

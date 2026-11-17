@@ -23,6 +23,11 @@ pub enum DisplayItem {
         path: kurbo::BezPath,
         color: Color,
     },
+    StrokePath {
+        path: kurbo::BezPath,
+        color: Color,
+        width: f64,
+    },
     BoxShadow {
         rect: Rect,
         offset_x: f64,
@@ -143,6 +148,9 @@ impl DisplayList {
                 }
                 DisplayItem::FillPath { path, color: c } => {
                     scene.fill(peniko::Fill::NonZero, current, color(*c), None, path)
+                }
+                DisplayItem::StrokePath { path, color: c, width } => {
+                    scene.stroke(&kurbo::Stroke::new(*width), current, color(*c), None, path);
                 }
                 DisplayItem::BoxShadow {
                     rect,
@@ -458,6 +466,15 @@ fn content(
             image: image.clone(),
         });
     }
+    if let Some(ref form) = b.form_state {
+        for sel in &form.selection_rects {
+            list.items.push(DisplayItem::FillRect {
+                rect: scaled(*sel, s),
+                color: Color { r: 180, g: 213, b: 254, a: 180 },
+                border_radius: 0.0,
+            });
+        }
+    }
     for line in &b.lines {
         for run in &line.text_runs {
             if let Some(node) = run.node {
@@ -478,6 +495,70 @@ fn content(
             list.items.push(DisplayItem::Text {
                 run: run.clone(),
                 transform: Affine::translate((c.x * s, c.y * s)) * Affine::scale(s),
+            });
+        }
+    }
+    if let Some(ref form) = b.form_state {
+        if form.is_focused {
+            if let Some(caret) = form.caret_rect {
+                list.items.push(DisplayItem::FillRect {
+                    rect: scaled(caret, s),
+                    color: b.style.color,
+                    border_radius: 0.0,
+                });
+            }
+        }
+        if matches!(form.kind, Some(super::layout::FormControlKind::Checkbox)) {
+            let rect = scaled(b.content_box(), s);
+            if form.checked {
+                let accent = if form.disabled { Color { r: 200, g: 200, b: 200, a: 255 } } else { Color { r: 0, g: 117, b: 255, a: 255 } };
+                list.items.push(DisplayItem::FillRect {
+                    rect,
+                    color: accent,
+                    border_radius: 2.0 * s,
+                });
+                let mut path = kurbo::BezPath::new();
+                let (x, y, w, h) = (rect.x, rect.y, rect.width, rect.height);
+                path.move_to((x + w * 0.22, y + h * 0.52));
+                path.line_to((x + w * 0.44, y + h * 0.74));
+                path.line_to((x + w * 0.80, y + h * 0.26));
+                list.items.push(DisplayItem::StrokePath {
+                    path,
+                    color: Color::WHITE,
+                    width: 1.8 * s,
+                });
+            }
+        } else if matches!(form.kind, Some(super::layout::FormControlKind::Radio)) {
+            let rect = scaled(b.content_box(), s);
+            let center = kurbo::Point::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+            let radius = (rect.width.min(rect.height) / 2.0).max(1.0);
+            let outer = kurbo::Circle::new(center, radius).to_path(0.1);
+            list.items.push(DisplayItem::StrokePath {
+                path: outer,
+                color: Color { r: 118, g: 118, b: 118, a: 255 },
+                width: 1.0 * s,
+            });
+            if form.checked {
+                let dot_r = radius * 0.5;
+                let inner = kurbo::Circle::new(center, dot_r).to_path(0.1);
+                let accent = if form.disabled { Color { r: 200, g: 200, b: 200, a: 255 } } else { Color { r: 0, g: 117, b: 255, a: 255 } };
+                list.items.push(DisplayItem::FillPath {
+                    path: inner,
+                    color: accent,
+                });
+            }
+        } else if matches!(form.kind, Some(super::layout::FormControlKind::Select)) {
+            let rect = scaled(b.content_box(), s);
+            let arrow_x = rect.right() - 14.0 * s;
+            let arrow_y = rect.y + rect.height / 2.0 - 2.0 * s;
+            let mut arrow = kurbo::BezPath::new();
+            arrow.move_to((arrow_x, arrow_y));
+            arrow.line_to((arrow_x + 8.0 * s, arrow_y));
+            arrow.line_to((arrow_x + 4.0 * s, arrow_y + 5.0 * s));
+            arrow.close_path();
+            list.items.push(DisplayItem::FillPath {
+                path: arrow,
+                color: Color { r: 100, g: 100, b: 100, a: 255 },
             });
         }
     }
