@@ -98,3 +98,16 @@ fn cascade_variables_importance_and_inheritance() {
     let d = parse_declarations("--Size:1px;--size:2px");
     assert_ne!(d[0].property, d[1].property);
 }
+
+#[test]
+fn non_finite_transform_values_are_rejected() {
+    assert!(Transform::parse("rotate(1e309deg)").is_none());
+    assert!(Transform::parse("scale(NaN)").is_none());
+    assert!(Length::parse("1e309px").is_none());
+    assert!(
+        Length::parse("calc(100000000000000000000px * 100000000000000000000)")
+            .unwrap()
+            .resolve(100.0, 16.0, 16.0)
+            .is_finite()
+    );
+}

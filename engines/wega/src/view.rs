@@ -210,14 +210,33 @@ fn destination(url: &Url) -> Destination {
 }
 impl NetProvider for Resources {
     fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
-        // HTTP GET subresources only; no access to local files from web pages.
-        let blocked = request.method != blitz_traits::net::http::Method::GET
-            || (matches!(request.url.scheme(), "http" | "https")
-                && !self
-                    .csp
-                    .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .allows_subresource(&request.url, &self.document));
+        // Resource handlers carry a trusted destination. URL extensions cannot
+        // decide stylesheet/font authority (e.g. a CSS endpoint named /asset).
+        let explicit = request
+            .headers
+            .get("sec-fetch-dest")
+            .and_then(|h| h.to_str().ok());
+        let resource_destination = match explicit {
+            Some("style") => Destination::Style,
+            Some("image") => Destination::Image,
+            Some("font") => Destination::Font,
+            _ => destination(&request.url),
+        };
+        let csp = self
+            .csp
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let permitted = match explicit {
+            Some("style") => csp.allows_url("style-src-elem", &request.url, &self.document, None),
+            Some("image") => csp.allows_url("img-src", &request.url, &self.document, None),
+            Some("font") => csp.allows_url("font-src", &request.url, &self.document, None),
+            _ => {
+                !matches!(request.url.scheme(), "http" | "https")
+                    || csp.allows_subresource(&request.url, &self.document)
+            }
+        };
+        drop(csp);
+        let blocked = request.method != blitz_traits::net::http::Method::GET || !permitted;
         if blocked {
             eprintln!("Wega resource blocked: {}", request.url);
             self.completed
@@ -234,15 +253,6 @@ impl NetProvider for Resources {
         let in_flight = self.in_flight.clone();
         let completed = self.completed.clone();
         let limit = self.limit;
-        let resource_destination = if request
-            .headers
-            .get("sec-fetch-dest")
-            .is_some_and(|h| h == "style")
-        {
-            Destination::Style
-        } else {
-            destination(&request.url)
-        };
         let mut context = FetchContext::subresource(&self.document, resource_destination);
         context.omit_credentials = self.omit_credentials;
         context.referrer_policy = self.referrer_policy.clone();

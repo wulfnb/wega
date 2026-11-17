@@ -113,6 +113,10 @@ fn test_view_pointer_event_routing() {
     view.set_rendering_backend(RenderingBackend::WegaNative);
     view.paint(800, 600, 1.0, 1.0, false).unwrap();
 
+    view.evaluate(
+        "globalThis.clicks=0;document.getElementById('btn').addEventListener('click',()=>clicks++)",
+    )
+    .unwrap();
     // Move pointer over button at (75, 25)
     view.pointer(Pointer {
         kind: PointerKind::Move,
@@ -148,4 +152,5 @@ fn test_view_pointer_event_routing() {
         delta_x: 0.0,
         delta_y: 0.0,
     });
+    assert_eq!(view.evaluate_json("clicks").unwrap(), "1");
 }

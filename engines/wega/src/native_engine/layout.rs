@@ -587,8 +587,22 @@ fn layout_block_or_flow(
     // Apply min-width and max-width constraints
     content_w = clamp_dimension(
         content_w,
-        box_node.style.min_width,
-        box_node.style.max_width,
+        content_constraint(
+            box_node.style.min_width,
+            total_border_w + total_padding_w,
+            box_node.style.box_sizing,
+            effective_cb.width,
+            fs,
+            rfs,
+        ),
+        content_constraint(
+            box_node.style.max_width,
+            total_border_w + total_padding_w,
+            box_node.style.box_sizing,
+            effective_cb.width,
+            fs,
+            rfs,
+        ),
         effective_cb.width,
         fs,
         rfs,
@@ -792,8 +806,22 @@ fn layout_block_or_flow(
     // Apply min-height and max-height constraints
     final_content_h = clamp_dimension(
         final_content_h,
-        box_node.style.min_height,
-        box_node.style.max_height,
+        content_constraint(
+            box_node.style.min_height,
+            total_border_h + total_padding_h,
+            box_node.style.box_sizing,
+            effective_cb.height,
+            fs,
+            rfs,
+        ),
+        content_constraint(
+            box_node.style.max_height,
+            total_border_h + total_padding_h,
+            box_node.style.box_sizing,
+            effective_cb.height,
+            fs,
+            rfs,
+        ),
         effective_cb.height,
         fs,
         rfs,
@@ -1306,6 +1334,7 @@ fn track_sizes(
     }
     if let Some(available) = available {
         let room = (available - gap * count.saturating_sub(1) as f64).max(0.0);
+        let minimums = sizes.clone();
         let mut frozen = vec![false; count];
         for _ in 0..=count {
             let fixed: f64 = (0..count)
@@ -1320,7 +1349,8 @@ fn track_sizes(
             let mut violation = false;
             for i in 0..count {
                 if flex[i] > 0.0 && !frozen[i] {
-                    if unit * flex[i] < sizes[i] {
+                    if unit * flex[i] < minimums[i] {
+                        sizes[i] = minimums[i];
                         frozen[i] = true;
                         violation = true;
                     } else {
@@ -1805,5 +1835,20 @@ fn collapsed_top(b: &LayoutBox, width: f64, ctx: &LayoutContext) -> f64 {
         collapse_margins(own, collapsed_top(child, width, ctx))
     } else {
         own
+    }
+}
+
+fn content_constraint(
+    length: Length,
+    extra: f64,
+    sizing: BoxSizing,
+    parent: f64,
+    fs: f64,
+    rfs: f64,
+) -> Length {
+    if length == Length::Auto || sizing == BoxSizing::ContentBox {
+        length
+    } else {
+        Length::Px((length.resolve(parent, fs, rfs) - extra).max(0.0))
     }
 }

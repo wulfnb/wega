@@ -275,7 +275,7 @@ impl Length {
     }
 
     pub fn resolve(&self, parent_len: f64, font_size: f64, root_font_size: f64) -> f64 {
-        match *self {
+        let value = match *self {
             Self::Px(v) => v,
             Self::Percent(pct) => parent_len * (pct / 100.0),
             Self::Em(em) => em * font_size,
@@ -285,6 +285,11 @@ impl Length {
             }
             Self::Vw(_) | Self::Vh(_) => 0.0, // converted to px before layout
             Self::Auto => 0.0,
+        };
+        if value.is_nan() {
+            0.0
+        } else {
+            value.clamp(-16_777_216.0, 16_777_216.0)
         }
     }
 }
@@ -565,6 +570,14 @@ impl Transform {
     }
 
     pub fn parse(s: &str) -> Option<Self> {
+        let parsed = Self::parse_unchecked(s)?;
+        parsed
+            .matrix
+            .iter()
+            .all(|n| n.is_finite())
+            .then_some(parsed)
+    }
+    fn parse_unchecked(s: &str) -> Option<Self> {
         let s = s.trim();
         if s.starts_with("translate(") && s.ends_with(")") {
             let inner = &s[10..s.len() - 1];
@@ -1099,7 +1112,10 @@ a[href] { color: blue; }
 table { display: table; border-collapse: separate; }
 tr { display: table-row; }
 td, th { display: table-cell; }
-img { display: inline-block; }
+img, button, input, textarea, select { display: inline-block; }
+button { box-sizing: border-box; padding: 2px 6px; border: 2px solid #aaaaaa; background-color: #f0f0f0; }
+input, textarea, select { box-sizing: border-box; width: 185px; height: 24px; border: 1px solid #aaaaaa; background-color: white; }
+textarea { white-space: pre-wrap; height: 60px; }
 iframe { display: inline-block; border: 1px solid black; width: 300px; height: 150px; }
 h1 { margin: 16px 0; font-size: 32px; font-weight: bold; }
 h2 { margin: 14px 0; font-size: 24px; font-weight: bold; }
@@ -1336,7 +1352,9 @@ pub fn resolve_computed_style<D: DocumentView>(
         } else if value == "initial" || value == "unset" {
             copy_property(&mut style, &ComputedStyle::default(), &decl.property);
         } else if decl.property == "font-size" {
-            if let Some(l) = Length::parse(value) {
+            if let Some(l) =
+                Length::parse(value).filter(|l| !matches!(l, Length::Vw(_) | Length::Vh(_)))
+            {
                 let parent_size = parent_style.map(|p| p.font_size).unwrap_or(16.0);
                 let size = l.resolve(parent_size, parent_size, 16.0);
                 if size >= 0.0 && size.is_finite() {
@@ -1547,6 +1565,8 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 "normal" => 400.0,
                 _ => val
                     .parse::<f32>()
+                    .ok()
+                    .filter(|n| n.is_finite())
                     .unwrap_or(style.font_weight)
                     .clamp(1.0, 1000.0),
             };
@@ -1572,7 +1592,9 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 if factor >= 0.0 && factor.is_finite() {
                     style.line_height_factor = Some(factor);
                 }
-            } else if let Some(l) = Length::parse(val) {
+            } else if let Some(l) =
+                Length::parse(val).filter(|l| !matches!(l, Length::Vw(_) | Length::Vh(_)))
+            {
                 let h = l.resolve(style.font_size, style.font_size, 16.0);
                 if h >= 0.0 && h.is_finite() {
                     style.line_height = h;
@@ -1608,7 +1630,9 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
         "z-index" => style.z_index = val.trim().parse::<i32>().ok(),
         "opacity" => {
             if let Ok(op) = val.trim().parse::<f32>() {
-                style.opacity = op.clamp(0.0, 1.0);
+                if op.is_finite() {
+                    style.opacity = op.clamp(0.0, 1.0);
+                }
             }
         }
         "overflow" => {

@@ -87,6 +87,14 @@ pub fn stylesheet(css: &str) -> StyleSheet {
         .collect();
     for rule in &parsed {
         for decl in &rule.declarations {
+            if matches!(decl.property.as_str(), "font-size" | "line-height")
+                && (decl.value.contains("vw") || decl.value.contains("vh"))
+                && rules.unsupported.len() < 256
+            {
+                rules
+                    .unsupported
+                    .push(format!("viewport-relative typography:{}", decl.property));
+            }
             if !super::css::supported_property(&decl.property) && rules.unsupported.len() < 256 {
                 rules
                     .unsupported

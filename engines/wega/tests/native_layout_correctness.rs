@@ -69,3 +69,14 @@ fn table_intrinsic_columns_spanning_and_real_row_height() {
     assert_eq!(rect(&d, "d").width, 300.0);
     assert_eq!(rect(&d, "d").height, 20.0);
 }
+
+#[test]
+fn constrained_fraction_tracks_and_border_box_min_max() {
+    let d = document(
+        "<body style='margin:0'><div style='display:grid;width:200px;grid-template-columns:minmax(150px,1fr) 1fr'><div id=a></div><div id=b></div></div><div id=limited style='box-sizing:border-box;width:300px;height:300px;max-width:200px;max-height:100px;padding:20px;border:5px solid black'></div></body>",
+    );
+    assert_eq!(rect(&d, "a").width, 150.0);
+    assert_eq!(rect(&d, "b").width, 50.0);
+    assert_eq!(rect(&d, "limited").width, 200.0);
+    assert_eq!(rect(&d, "limited").height, 100.0);
+}

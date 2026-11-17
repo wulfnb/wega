@@ -100,3 +100,25 @@ fn native_style_element_csp_nonce_and_media_are_enforced() {
         "30"
     );
 }
+
+#[test]
+fn stylesheet_imports_keep_style_authority_for_extensionless_urls() {
+    let foreign = support::Server::new(|_| support::Reply::ok("text/css", "#target{width:999px}"));
+    let imported = foreign.url("localhost", "/asset");
+    let server = support::Server::new(move |seen| match seen.path.as_str() {
+        "/page" => support::Reply::html("<link rel=stylesheet href=/main><div id=target></div>")
+            .header("Content-Security-Policy", "style-src 'self'; img-src *"),
+        _ => support::Reply::ok(
+            "text/css",
+            format!("@import url('{imported}'); #target{{width:100px}}"),
+        ),
+    });
+    let engine = support::engine();
+    let mut view = support::open(&engine, &server.url("localhost", "/page"));
+    view.set_rendering_backend(RenderingBackend::WegaNative);
+    assert_eq!(width(&mut view), 100.0);
+    assert!(
+        foreign.requests("/asset").is_empty(),
+        "an image permission must never authorize a stylesheet import"
+    );
+}

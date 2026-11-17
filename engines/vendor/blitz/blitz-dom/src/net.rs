@@ -35,6 +35,12 @@ pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request
     req
 }
 
+pub(crate) fn destined_request(url:Url,signal:Option<&AbortSignal>,destination:&'static str)->Request {
+    let mut request=stamped_request(url,signal);
+    request.headers.insert("sec-fetch-dest",destination.parse().unwrap());
+    request
+}
+
 /// Carries `@font-face` descriptors from CSS parsing through to font
 /// registration so `parley::Collection::register_fonts` can alias the bytes
 /// under the `font-family` declared in CSS rather than whatever family name
@@ -226,7 +232,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
         let import = ServoArc::new(lock.wrap(import));
         self.net_provider.fetch(
             self.doc_id,
-            stamped_request(url.as_ref().clone(), self.abort_signal.as_ref()),
+            destined_request(url.as_ref().clone(), self.abort_signal.as_ref(),"style"),
             ResourceHandler::boxed(
                 self.tx.clone(),
                 self.doc_id,
@@ -507,7 +513,7 @@ pub(crate) fn fetch_font_face_rules<'a>(
             if let Some((url, format)) = preferred_source {
                 network_provider.fetch(
                     doc_id,
-                    stamped_request(url, abort_signal),
+                    destined_request(url, abort_signal,"font"),
                     ResourceHandler::boxed(
                         tx.clone(),
                         doc_id,

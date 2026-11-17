@@ -1198,7 +1198,7 @@ impl<'doc> DocumentMutator<'doc> {
 
                 self.doc.net_provider.fetch(
                     self.doc.id(),
-                    self.doc.build_request(src),
+                    crate::net::destined_request(src,self.doc.abort_signal.as_ref(),"image"),
                     ResourceHandler::boxed(
                         self.doc.tx.clone(),
                         self.doc.id(),
