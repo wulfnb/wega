@@ -35,6 +35,8 @@ pub mod permissions;
 mod script;
 mod view;
 pub mod webgl;
+pub mod native_engine;
+pub use native_engine::{RenderingBackend, NativeDocument};
 pub mod workers;
 /// The native stack of the `wega-dom` thread that owns every `View`. `MAX_LAYOUT_DEPTH` is only
 /// valid for this size; tests spawn their engine threads with it.

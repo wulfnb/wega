@@ -357,6 +357,8 @@ pub struct View {
     building_error: bool,
     cursor: String,
     pub status: Option<String>,
+    pub rendering_backend: crate::native_engine::RenderingBackend,
+    pub native_document: Option<crate::native_engine::NativeDocument>,
     pub last_favicon: Option<Url>,
     pub user_script: String,
     pub url: Url,
@@ -452,6 +454,8 @@ impl View {
             building_error: false,
             cursor: String::new(),
             status: None,
+            rendering_backend: crate::native_engine::RenderingBackend::from_env(),
+            native_document: None,
             last_favicon: None,
             user_script: String::new(),
             url: url.clone(),
@@ -475,6 +479,16 @@ impl View {
     }
     /// Answer `alert`, `confirm` and `prompt`; without a handler they return
     /// their default (no) answer immediately.
+    pub fn set_rendering_backend(&mut self, backend: crate::native_engine::RenderingBackend) {
+        self.rendering_backend = backend;
+        if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative && self.native_document.is_none() {
+            self.native_document = Some(crate::native_engine::NativeDocument::new(self.document.clone()));
+        }
+        self.frame.invalidate();
+    }
+    pub fn rendering_backend(&self) -> crate::native_engine::RenderingBackend {
+        self.rendering_backend
+    }
     pub fn set_dialog_handler(&mut self, mut handler: crate::dom::DialogHandler) {
         self.set_document_dialog_handler(Box::new(move |_, _, _, kind, message, default| {
             handler(kind, message, default)
@@ -2541,10 +2555,19 @@ impl View {
             }
         }
 
-        let mut doc = self.document.borrow_mut();
-        let scene = doc.record_scene_with_children(&viewport, child_scenes);
-        let animating = doc.is_animating();
-        drop(doc);
+        let (scene, animating) = if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
+            let native_doc = self.native_document.get_or_insert_with(|| {
+                crate::native_engine::NativeDocument::new(self.document.clone())
+            });
+            native_doc.viewport = viewport;
+            let scene = native_doc.record_scene_with_children(&viewport, child_scenes);
+            (scene, false)
+        } else {
+            let mut doc = self.document.borrow_mut();
+            let scene = doc.record_scene_with_children(&viewport, child_scenes);
+            let animating = doc.is_animating();
+            (scene, animating)
+        };
 
         self.frame
             .recorded(another_frame || animating || frames_animating);

@@ -6890,6 +6890,8 @@ name = "wega-engine"
 version = "0.1.0"
 dependencies = [
  "accesskit",
+ "anyrender",
+ "anyrender_skia",
  "base64 0.23.1",
  "blitz-dom",
  "blitz-traits",
@@ -6898,6 +6900,8 @@ dependencies = [
  "encoding_rs",
  "html5ever",
  "keyboard-types",
+ "kurbo",
+ "peniko",
  "reqwest",
  "selectors 0.42.0",
  "serde",
