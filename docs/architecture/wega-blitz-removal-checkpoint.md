@@ -13,3 +13,17 @@
   release measurements; safe removal; final full checks and reports.
 - Do not push. Do not edit DevTools D4/inspector. Never delete Blitz before
   native-only runtime gates. Preserve budgets, CSP and exact 32-frame assertion.
+
+## Owner storage milestone
+
+- Implemented independent `wega-dom::Document`, consumed directly by the existing
+  html5ever parser in tests; no runtime view constructs a second tree.
+- Verified: `cargo test --manifest-path engines/Cargo.toml -p wega-dom -p
+  wega-html --offline`: 19 passed (15 new owner/parser cases, 4 boundaries).
+- Independent DOM/parser graph passes; actual browser graph fails independence
+  with DOM/HTML/paint/traits/adapter still production dependencies. Recorded by
+  `scripts/check-blitz-independence.py`; no runtime independence claim.
+- Public layout implementation is still being validated in the worktree.
+  Eight reduced Chrome fixtures; latest log `/private/tmp/wega-public-layout-strut.log`.
+- Next: finish line-strut validation/public captures, checkpoint layout changes;
+  remove native pipeline's bridge coupling; run full mandatory gates sequentially.
