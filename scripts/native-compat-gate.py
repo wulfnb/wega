@@ -25,7 +25,7 @@ def main():
                WEGA_NATIVE_EVIDENCE_DIR=str(output))
     command = ['cargo', 'test', '--manifest-path', 'engines/Cargo.toml',
                '-p', 'wega-engine', '--offline']
-    for suite in ['native_chrome_compatibility', 'native_graphics_acceptance',
+    for suite in ['native_public_layout', 'native_chrome_compatibility', 'native_graphics_acceptance',
                   'native_forms_editing', 'native_css_layout_acceptance',
                   'native_css_at_rules_acceptance', 'native_browser_behavior',
                   'wpt', 'iframe_wpt', 'native_visual_corpus']:

@@ -174,6 +174,22 @@ fn text_style(
     }
 }
 
+fn last_baseline(b: &LayoutBox) -> Option<f64> {
+    if let Some(line) = b.lines.last() {
+        return Some(b.content_box().y + line.baseline);
+    }
+    b.children
+        .iter()
+        .rev()
+        .filter(|c| {
+            !matches!(
+                c.style.position,
+                super::css::Position::Absolute | super::css::Position::Fixed
+            )
+        })
+        .find_map(last_baseline)
+}
+
 fn append_inline(
     builder: &mut parley::TreeBuilder<'_, TextBrush>,
     b: &LayoutBox,
@@ -189,6 +205,7 @@ fn append_inline(
     if b.box_type == super::layout::BoxType::InlineBlock
         || b.form_state.is_some()
         || b.image.is_some()
+        || b.svg.is_some()
     {
         let id = b.node.map(|k| k.as_u64()).unwrap_or(0);
         let vertical_align = match b.style.vertical_align {
@@ -225,7 +242,14 @@ fn append_inline(
             width: (b.border_box.width + b.margin.left + b.margin.right) as f32,
             height: (b.border_box.height + b.margin.top + b.margin.bottom) as f32,
             kind: parley::InlineBoxKind::InFlow,
-            baseline: None,
+            baseline: if b.box_type == super::layout::BoxType::InlineBlock
+                && b.style.overflow_x == super::css::Overflow::Visible
+                && b.style.overflow_y == super::css::Overflow::Visible
+            {
+                last_baseline(b).map(|y| (b.margin.top + y - b.border_box.y) as f32)
+            } else {
+                None
+            },
             vertical_align,
         });
         return;
@@ -260,25 +284,48 @@ pub fn shaping_nanos() -> u128 {
     SHAPING_NANOS.with(Cell::get)
 }
 pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec<LineBox> {
+    shape_inline_with_style(children, width, align, None)
+}
+pub fn shape_inline_with_style(
+    children: &[LayoutBox],
+    width: f64,
+    align: TextAlign,
+    style: Option<&ComputedStyle>,
+) -> Vec<LineBox> {
     let start = std::time::Instant::now();
     if FONT_SOURCE.with(|s| s.borrow().is_none()) {
         configure_fonts(None);
     }
     let result = TEXT.with(|cx| {
         let (fonts, layouts) = &mut *cx.borrow_mut();
-        let root = TextStyle::<TextBrush>::default();
+        // The line strut uses the owning block's font/line-height, including
+        // image-only lines. A library default gives different descent metrics.
+        let mut root = TextStyle::<TextBrush>::default();
+        if let Some(s) = style {
+            root.font_family =
+                parley::FontFamily::Source(std::borrow::Cow::Owned(s.font_family.clone()));
+            root.font_size = s.font_size as f32;
+            root.font_weight = parley::FontWeight::new(s.font_weight);
+            root.font_style = if s.font_italic {
+                parley::FontStyle::Italic
+            } else {
+                parley::FontStyle::Normal
+            };
+            root.line_height = parley::LineHeight::Absolute(s.line_height as f32);
+        }
         let mut builder = layouts.tree_builder(fonts, 1.0, true, &root);
         for child in children {
             append_inline(&mut builder, child, None, 1.0);
         }
         let (mut shaped, text) = builder.build();
-        if text.is_empty()
-            && !children.iter().any(|c| {
-                c.box_type == super::layout::BoxType::InlineBlock
-                    || c.form_state.is_some()
-                    || c.image.is_some()
-            })
-        {
+        fn has_atomic(b: &LayoutBox) -> bool {
+            b.box_type == super::layout::BoxType::InlineBlock
+                || b.form_state.is_some()
+                || b.image.is_some()
+                || b.svg.is_some()
+                || b.children.iter().any(has_atomic)
+        }
+        if text.is_empty() && !children.iter().any(has_atomic) {
             return Vec::new();
         }
         shaped.break_all_lines(Some(width.max(0.0) as f32));
@@ -352,6 +399,7 @@ pub fn shape_inline(children: &[LayoutBox], width: f64, align: TextAlign) -> Vec
                     }
                 }
                 LineBox {
+                    baseline: m.baseline as f64,
                     rect: Rect {
                         x: m.offset as f64,
                         y: m.block_min_coord as f64,

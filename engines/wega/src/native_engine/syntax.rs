@@ -809,7 +809,36 @@ fn track_list(p: &mut Parser<'_>, depth: usize) -> Result<Vec<GridTrack>, Error>
     Ok(out)
 }
 
-fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
+pub(super) fn shorthand_properties(property: &str) -> &'static [&'static str] {
+    match property {
+        "flex" => &["flex-grow", "flex-shrink", "flex-basis"],
+        "font" => &[
+            "font-weight",
+            "font-style",
+            "font-size",
+            "line-height",
+            "font-family",
+        ],
+        _ => &[],
+    }
+}
+pub(super) fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
+    let names = shorthand_properties(&decl.property);
+    if names.is_empty() || decl.value.contains("var(") {
+        // Substitution precedes shorthand parsing. Keep the pending shorthand
+        // at its authored cascade position until custom properties are known.
+        return vec![decl];
+    }
+    if matches!(decl.value.trim(), "initial" | "inherit" | "unset") {
+        return names
+            .iter()
+            .map(|p| Declaration {
+                property: (*p).into(),
+                value: decl.value.clone(),
+                important: decl.important,
+            })
+            .collect();
+    }
     let properties = if decl.property == "font" {
         font_shorthand(&decl.value)
     } else if decl.property == "flex" {

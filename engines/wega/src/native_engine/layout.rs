@@ -92,6 +92,8 @@ pub struct PositionedInlineBox {
 #[derive(Debug, Clone)]
 pub struct LineBox {
     pub rect: Rect,
+    /// Baseline measured from the owning content box's top.
+    pub baseline: f64,
     pub text_runs: Vec<super::text::GlyphRun>,
     pub inline_boxes: Vec<PositionedInlineBox>,
 }
@@ -816,10 +818,13 @@ fn layout_block_or_flow(
                     .max(intrinsic_width(box_node, true))
             }
         }
-        Length::Em(em) => em * fs,
-        Length::Rem(rem) => rem * rfs,
-        Length::Calc(_) | Length::Vw(_) | Length::Vh(_) => {
-            box_node.style.width.resolve(cb_w, fs, rfs)
+        Length::Em(_) | Length::Rem(_) | Length::Calc(_) | Length::Vw(_) | Length::Vh(_) => {
+            let width = box_node.style.width.resolve(cb_w, fs, rfs);
+            if box_node.style.box_sizing == BoxSizing::BorderBox {
+                (width - total_border_w - total_padding_w).max(0.0)
+            } else {
+                width
+            }
         }
     };
 
@@ -968,21 +973,23 @@ fn layout_block_or_flow(
             width: content_w,
             height: 0.0,
         };
-        for child in &mut box_node.children {
-            if child.box_type == BoxType::InlineBlock
-                || child.form_state.is_some()
-                || child.replaced_size().is_some()
+        fn prepare_inline(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
+            if b.box_type == BoxType::InlineBlock
+                || b.form_state.is_some()
+                || b.replaced_size().is_some()
             {
-                layout_box(child, inner_cb, next_positioned_cb, ctx);
+                layout_box(b, cb, positioned, ctx);
+            } else {
+                for child in &mut b.children {
+                    prepare_inline(child, cb, positioned, ctx);
+                }
             }
         }
-        let lines = layout_inline_formatting_context(
-            &mut box_node.children,
-            content_w,
-            fs,
-            box_node.style.line_height,
-            box_node.style.text_align,
-        );
+        for child in &mut box_node.children {
+            prepare_inline(child, inner_cb, next_positioned_cb, ctx);
+        }
+        let lines =
+            layout_inline_formatting_context(&mut box_node.children, content_w, &box_node.style);
         content_h = lines.iter().map(|l| l.rect.height).sum();
         box_node.lines = lines;
         assign_inline_geometry(&mut box_node.children, &box_node.lines, inner_x, inner_y);
@@ -1093,10 +1100,13 @@ fn layout_block_or_flow(
                 content_h
             }
         }
-        Length::Em(em) => em * fs,
-        Length::Rem(rem) => rem * rfs,
-        Length::Calc(_) | Length::Vw(_) | Length::Vh(_) => {
-            box_node.style.height.resolve(cb_h, fs, rfs)
+        Length::Em(_) | Length::Rem(_) | Length::Calc(_) | Length::Vw(_) | Length::Vh(_) => {
+            let height = box_node.style.height.resolve(cb_h, fs, rfs);
+            if box_node.style.box_sizing == BoxSizing::BorderBox {
+                (height - total_border_h - total_padding_h).max(0.0)
+            } else {
+                height
+            }
         }
     };
 
@@ -1210,11 +1220,9 @@ fn layout_block_or_flow(
 fn layout_inline_formatting_context(
     children: &mut [LayoutBox],
     avail_w: f64,
-    _font_size: f64,
-    _line_height: f64,
-    align: TextAlign,
+    style: &ComputedStyle,
 ) -> Vec<LineBox> {
-    super::text::shape_inline(children, avail_w, align)
+    super::text::shape_inline_with_style(children, avail_w, style.text_align, Some(style))
 }
 
 // ---------------------------------------------------------------------------
@@ -1257,8 +1265,15 @@ fn intrinsic_width(b: &LayoutBox, min: bool) -> f64 {
         return iw;
     }
     // Shape with Unicode break opportunities, rather than counting characters.
+    // An inline-block is atomic only in its parent's inline formatting
+    // context. Measuring that atom before its own layout reads a zero/stale
+    // width; measure its contents for shrink-to-fit instead.
     let runs = super::text::shape_inline(
-        std::slice::from_ref(b),
+        if b.box_type == BoxType::InlineBlock {
+            &b.children
+        } else {
+            std::slice::from_ref(b)
+        },
         if min { 0.0 } else { 1e7 },
         TextAlign::Left,
     );
@@ -1279,10 +1294,40 @@ fn border_main_limit(
     };
     if length == Length::Auto {
         return if min {
-            if is_row {
-                intrinsic_width(b, true)
-            } else {
+            // Flexbox 4.5: scrollable computed overflow has a zero auto
+            // minimum. A definite preferred size also caps the content minimum.
+            // Otherwise a sidebar's unbreakable text can displace the main page.
+            if matches!(
+                b.style.overflow_x,
+                Overflow::Hidden | Overflow::Auto | Overflow::Scroll
+            ) || matches!(
+                b.style.overflow_y,
+                Overflow::Hidden | Overflow::Auto | Overflow::Scroll
+            ) {
                 0.0
+            } else if is_row {
+                let content = intrinsic_width(b, true)
+                    + b.padding.left
+                    + b.padding.right
+                    + b.border.left
+                    + b.border.right;
+                if b.style.width != Length::Auto {
+                    let extra = if b.style.box_sizing == BoxSizing::BorderBox {
+                        0.0
+                    } else {
+                        b.padding.left + b.padding.right + b.border.left + b.border.right
+                    };
+                    content.min(
+                        b.style
+                            .width
+                            .resolve(main, b.style.font_size, ctx.font_size_root)
+                            + extra,
+                    )
+                } else {
+                    content
+                }
+            } else {
+                b.border_box.height
             }
         } else {
             f64::INFINITY
@@ -1381,17 +1426,46 @@ fn layout_flex(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContex
             continue;
         }
         let natural = if is_row && c.style.width == Length::Auto {
-            Some(intrinsic_width(c, false))
+            let padding = resolve_insets(
+                &c.style.padding,
+                inner.width,
+                c.style.font_size,
+                ctx.font_size_root,
+            );
+            Some(
+                intrinsic_width(c, false)
+                    + padding.left
+                    + padding.right
+                    + c.style.borders.left.width
+                    + c.style.borders.right.width,
+            )
         } else {
             None
         };
         forced_size(c, inner, positioned, ctx, natural, None);
-        let base = if c.style.flex_basis != Length::Auto {
+        // Percentage bases resolve to content when the container main size
+        // is indefinite (including 0% from flex:1). Resolving against zero
+        // collapses nested auto-height columns and overlaps following content.
+        let indefinite_basis = !main_available.is_finite()
+            && match c.style.flex_basis {
+                Length::Percent(_) => true,
+                Length::Calc(v) => v[1] != 0.0,
+                _ => false,
+            };
+        let base = if c.style.flex_basis != Length::Auto && !indefinite_basis {
             c.style.flex_basis.resolve(
                 if is_row { inner.width } else { inner.height },
                 c.style.font_size,
                 ctx.font_size_root,
-            )
+            ) + if c.style.box_sizing == BoxSizing::ContentBox {
+                if is_row {
+                    c.padding.left + c.padding.right + c.border.left + c.border.right
+                } else {
+                    c.padding.top + c.padding.bottom + c.border.top + c.border.bottom
+                }
+            } else {
+                0.0
+            }
         } else if is_row {
             c.border_box.width
         } else {

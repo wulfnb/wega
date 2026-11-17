@@ -53,6 +53,15 @@ fn controlled_public_native_compatibility() {
             800,
             600,
         );
+        let geometry = view.evaluate_json("Array.from(document.querySelectorAll('body,header,nav,main,section,article,footer,.container,.content,.sidebar,#main-content')).map(e=>{let r=e.getBoundingClientRect();let s=getComputedStyle(e);return {tag:e.tagName,id:e.id,cls:e.className,rect:[r.x,r.y,r.width,r.height],display:s.display,position:s.position,width:s.width,height:s.height,margin:s.margin,padding:s.padding,flex:s.flex,grid:s.gridTemplateColumns}})").unwrap();
+        std::fs::write(dir.join(format!("public-{name}-geometry.json")), &geometry).unwrap();
+        let html: String = serde_json::from_str(
+            &view
+                .evaluate_json("document.documentElement.outerHTML")
+                .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(dir.join(format!("public-{name}.html")), html).unwrap();
         let (glyphs, notdef, height, unsupported) = {
             let n = view.native_document.as_ref().unwrap().borrow();
             let mut stack = n.layout_tree.iter().collect::<Vec<_>>();

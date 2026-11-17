@@ -284,7 +284,11 @@ impl NativeDocument {
                     / (self.viewport.scale * self.viewport.zoom) as f64,
                 viewport_height: self.viewport.height_px as f64
                     / (self.viewport.scale * self.viewport.zoom) as f64,
-                font_size_root: 16.0,
+                font_size_root: box_tree
+                    .children
+                    .iter()
+                    .find(|b| b.is_root)
+                    .map_or(16.0, |b| b.style.font_size),
             };
             perform_layout(&mut box_tree, &ctx);
             compute_form_decorations(&mut box_tree, &d);

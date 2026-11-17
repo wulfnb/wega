@@ -793,6 +793,8 @@ pub struct ComputedStyle {
     pub custom_properties: std::collections::BTreeMap<String, String>,
     pub line_height_factor: Option<f64>,
     pub font_size: f64,
+    /// Computed root font metric for rem units; propagated with style context.
+    pub root_font_size: f64,
     pub line_height: f64,
     pub text_align: TextAlign,
     pub font_family: String,
@@ -860,6 +862,7 @@ impl Default for ComputedStyle {
             custom_properties: Default::default(),
             line_height_factor: Some(1.25),
             font_size: 16.0,
+            root_font_size: 16.0,
             line_height: 20.0,
             text_align: TextAlign::Left,
             font_family: "sans-serif".into(),
@@ -1553,6 +1556,7 @@ pub fn resolve_computed_style<D: DocumentView>(
         visible: p.visible,
         pointer_events: p.pointer_events,
         font_size: p.font_size,
+        root_font_size: p.root_font_size,
         line_height: p.line_height,
         text_align: p.text_align,
         font_family: p.font_family.clone(),
@@ -1569,6 +1573,10 @@ pub fn resolve_computed_style<D: DocumentView>(
         return style;
     };
 
+    let is_document_element = node
+        .parent()
+        .and_then(|p| doc.node(p))
+        .is_some_and(|n| n.kind() == NodeKind::Document);
     let mut matched: Vec<MatchedDecl> = Vec::new();
 
     // 1. UA Stylesheet
@@ -1712,6 +1720,44 @@ pub fn resolve_computed_style<D: DocumentView>(
         }
     }
     style.custom_properties = super::syntax::resolve_variables(&style.custom_properties);
+    // Pending variable shorthands participate in the cascade as their
+    // longhands. Expand only after substitution, retaining the original rank.
+    // Invalid-at-computed-value shorthands reset their longhands (CSS Variables
+    // 3.1); an earlier declaration must not silently become the winner.
+    let mut matched: Vec<MatchedDecl> = matched
+        .into_iter()
+        .flat_map(|d| {
+            let names = super::syntax::shorthand_properties(&d.property);
+            if names.is_empty() {
+                return vec![d];
+            }
+            let value = super::syntax::substitute(&d.value, &style.custom_properties)
+                .unwrap_or_else(|| "unset".into());
+            let mut expanded = super::syntax::expand_shorthand(Declaration {
+                property: d.property.clone(),
+                value,
+                important: d.important,
+            });
+            if expanded.is_empty() {
+                expanded = names
+                    .iter()
+                    .map(|p| Declaration {
+                        property: (*p).into(),
+                        value: "unset".into(),
+                        important: d.important,
+                    })
+                    .collect();
+            }
+            expanded
+                .into_iter()
+                .map(|e| MatchedDecl {
+                    property: e.property,
+                    value: e.value,
+                    ..d.clone()
+                })
+                .collect()
+        })
+        .collect();
     // Font-relative computed values and currentColor use the winning font and
     // color, regardless of declaration order or selector specificity.
     matched.sort_by_key(|d| match d.property.as_str() {
@@ -1753,9 +1799,20 @@ pub fn resolve_computed_style<D: DocumentView>(
                 Length::parse(value).filter(|l| !matches!(l, Length::Vw(_) | Length::Vh(_)))
             {
                 let parent_size = parent_style.map(|p| p.font_size).unwrap_or(16.0);
-                let size = l.resolve(parent_size, parent_size, 16.0);
+                let size = l.resolve(
+                    parent_size,
+                    parent_size,
+                    if is_document_element {
+                        16.0
+                    } else {
+                        style.root_font_size
+                    },
+                );
                 if size >= 0.0 && size.is_finite() {
                     style.font_size = size;
+                    if is_document_element {
+                        style.root_font_size = size;
+                    }
                 }
             }
         } else if decl.property == "color" && value.eq_ignore_ascii_case("currentcolor") {
@@ -2031,7 +2088,7 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
             };
             if p.ends_with("-width") {
                 if let Some(w) = Length::parse(val)
-                    .map(|l| l.resolve(0.0, style.font_size, 16.0))
+                    .map(|l| l.resolve(0.0, style.font_size, style.root_font_size))
                     .or(match val {
                         "thin" => Some(1.0),
                         "medium" => Some(3.0),
@@ -2067,7 +2124,9 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
         }
         "border-spacing" => {
             if let Some(l) = Length::parse(val) {
-                style.border_spacing = l.resolve(0.0, style.font_size, 16.0).max(0.0);
+                style.border_spacing = l
+                    .resolve(0.0, style.font_size, style.root_font_size)
+                    .max(0.0);
             }
         }
         "border-radius" => {
@@ -2129,7 +2188,7 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
         }
         "font-size" => {
             if let Some(l) = Length::parse(val) {
-                let size = l.resolve(style.font_size, style.font_size, 16.0);
+                let size = l.resolve(style.font_size, style.font_size, style.root_font_size);
                 if size >= 0.0 && size.is_finite() {
                     style.font_size = size.min(4096.0);
                 }
@@ -2145,7 +2204,7 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
             } else if let Some(l) =
                 Length::parse(val).filter(|l| !matches!(l, Length::Vw(_) | Length::Vh(_)))
             {
-                let h = l.resolve(style.font_size, style.font_size, 16.0);
+                let h = l.resolve(style.font_size, style.font_size, style.root_font_size);
                 if h >= 0.0 && h.is_finite() {
                     style.line_height = h;
                     style.line_height_factor = None;
@@ -2238,22 +2297,28 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 .filter_map(Length::parse)
                 .collect();
             if let Some(v) = values.first() {
-                style.row_gap = v.resolve(0.0, style.font_size, 16.0).max(0.0);
+                style.row_gap = v
+                    .resolve(0.0, style.font_size, style.root_font_size)
+                    .max(0.0);
                 style.column_gap = values
                     .get(1)
                     .unwrap_or(v)
-                    .resolve(0.0, style.font_size, 16.0)
+                    .resolve(0.0, style.font_size, style.root_font_size)
                     .max(0.0);
             }
         }
         "row-gap" => {
             if let Some(v) = Length::parse(val) {
-                style.row_gap = v.resolve(0.0, style.font_size, 16.0).max(0.0);
+                style.row_gap = v
+                    .resolve(0.0, style.font_size, style.root_font_size)
+                    .max(0.0);
             }
         }
         "column-gap" => {
             if let Some(v) = Length::parse(val) {
-                style.column_gap = v.resolve(0.0, style.font_size, 16.0).max(0.0);
+                style.column_gap = v
+                    .resolve(0.0, style.font_size, style.root_font_size)
+                    .max(0.0);
             }
         }
         "grid-template-columns" => {
