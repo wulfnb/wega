@@ -760,6 +760,24 @@ impl From<&crate::ProtocolError> for InspectorError {
     }
 }
 
+/// One row of the inspector's frame tree.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FrameDescription {
+    /// Stable frame identity (never reused in this tab). The top-level document is not listed.
+    pub key: u64,
+    /// The embedding frame;  for children of the top-level document.
+    pub parent: Option<u64>,
+    pub url: String,
+    /// The committed principal: a tuple origin or .
+    pub origin: String,
+    pub name: String,
+    pub sandboxed: bool,
+    /// The active document's revision (changes on every navigation of this frame).
+    pub revision: u64,
+}
+
+
+
 #[cfg(test)]
 #[path = "inspector_tests.rs"]
 mod tests;

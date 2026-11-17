@@ -999,21 +999,7 @@ impl View {
     }
 }
 
-/// One row of the inspector's frame tree.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FrameDescription {
-    /// Stable frame identity (never reused in this tab). The top-level document is not listed.
-    pub key: u64,
-    /// The embedding frame; `None` for children of the top-level document.
-    pub parent: Option<u64>,
-    pub url: String,
-    /// The committed principal: a tuple origin or `null`.
-    pub origin: String,
-    pub name: String,
-    pub sandboxed: bool,
-    /// The active document's revision (changes on every navigation of this frame).
-    pub revision: u64,
-}
+pub use wega_protocol::inspector::FrameDescription;
 /// A frame as a D3 inspector target: its own document stamp and the page port to serve it.
 /// The stamp's document id is the frame key, so node handles minted for one frame can never be
 /// accepted by another, and the revision invalidates them when the frame navigates.

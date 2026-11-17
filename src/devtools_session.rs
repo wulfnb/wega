@@ -64,6 +64,19 @@ pub(crate) trait InspectorPort {
     fn revoke_evaluation(&self, session: InspectorSessionId);
     fn evaluate(&self, session: InspectorSessionId, expression: &str)
     -> Result<(), InspectorError>;
+    fn request_args_for_frame(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+        frame: Option<wega::engine_protocol::identity::FrameId>,
+    ) -> Result<(), InspectorError> {
+        let _ = frame;
+        self.request_args(session, command, args)
+    }
+    fn frames(&self) -> Vec<wega::engine_protocol::inspector::FrameDescription> {
+        Vec::new()
+    }
     /// Mint and send a **mutation** grant (a trusted user action only).
     fn grant_mutation(
         &self,
@@ -75,6 +88,15 @@ pub(crate) trait InspectorPort {
             InspectorErrorCode::Unavailable,
             "Editing unavailable",
         ))
+    }
+    fn grant_mutation_for_frame(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+        frame: Option<wega::engine_protocol::identity::FrameId>,
+    ) -> Result<(), InspectorError> {
+        let _ = frame;
+        self.grant_mutation(session, opaque_override)
     }
     fn revoke_mutation(&self, session: InspectorSessionId) {
         let _ = session;
@@ -91,6 +113,17 @@ pub(crate) trait InspectorPort {
             InspectorErrorCode::Unavailable,
             "Editing unavailable",
         ))
+    }
+    fn mutate_for_frame(
+        &self,
+        session: InspectorSessionId,
+        node: wega::engine_protocol::inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: wega::engine_protocol::inspector::edit::MutationOp,
+        frame: Option<wega::engine_protocol::identity::FrameId>,
+    ) -> Result<(), InspectorError> {
+        let _ = frame;
+        self.mutate(session, node, epoch, op)
     }
 }
 
@@ -158,6 +191,36 @@ impl InspectorPort for crate::wega_page::Page {
     ) -> Result<(), InspectorError> {
         self.inspector_mutate(session, node, epoch, op)
     }
+    fn request_args_for_frame(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+        frame: Option<wega::engine_protocol::identity::FrameId>,
+    ) -> Result<(), InspectorError> {
+        self.inspector_request_args_for_frame(session, command, args, frame)
+    }
+    fn frames(&self) -> Vec<wega::engine_protocol::inspector::FrameDescription> {
+        self.frame_tree()
+    }
+    fn grant_mutation_for_frame(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+        frame: Option<wega::engine_protocol::identity::FrameId>,
+    ) -> Result<(), InspectorError> {
+        self.inspector_grant_mutation_for_frame(session, opaque_override, frame)
+    }
+    fn mutate_for_frame(
+        &self,
+        session: InspectorSessionId,
+        node: wega::engine_protocol::inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: wega::engine_protocol::inspector::edit::MutationOp,
+        frame: Option<wega::engine_protocol::identity::FrameId>,
+    ) -> Result<(), InspectorError> {
+        self.inspector_mutate_for_frame(session, node, epoch, op, frame)
+    }
 }
 
 /// What a tab key resolves to right now.
@@ -217,6 +280,8 @@ pub(crate) struct DevtoolsView {
     pub(crate) styles: crate::devtools_styles::StyleView,
     pub(crate) geometry: GeometryView,
     pub(crate) edit: EditView,
+    pub(crate) target_frame: Option<wega::engine_protocol::identity::FrameId>,
+    pub(crate) frames_cache: Vec<wega::engine_protocol::inspector::FrameDescription>,
 }
 
 impl Default for DevtoolsView {
@@ -235,6 +300,8 @@ impl Default for DevtoolsView {
             styles: Default::default(),
             geometry: Default::default(),
             edit: Default::default(),
+            target_frame: None,
+            frames_cache: Vec::new(),
         }
     }
 }
@@ -290,6 +357,8 @@ impl DevtoolsView {
         self.release(resolve);
         self.open = false;
         self.target_tab = None;
+        self.target_frame = None;
+        self.frames_cache.clear();
         self.state = ViewState::Idle;
         self.dropped_events = 0;
         self.next_open = None;
@@ -305,6 +374,8 @@ impl DevtoolsView {
             self.geometry.reset();
             self.edit.reset();
             self.snapshot = None;
+            self.target_frame = None;
+            self.frames_cache.clear();
             self.state = ViewState::TargetClosed;
         }
     }
@@ -339,6 +410,29 @@ impl DevtoolsView {
 
     /// The user's explicit action: authorise **editing** for the current document of the bound
     /// tab. Separate from evaluation; the opaque override is a separate confirmation too.
+    pub(crate) fn select_frame<'a>(
+        &mut self,
+        frame: Option<wega::engine_protocol::identity::FrameId>,
+        resolve: &dyn Fn(u64) -> Resolved<'a>,
+    ) {
+        if self.target_frame == frame {
+            return;
+        }
+        self.revoke_editing(resolve);
+        self.elements.reset();
+        self.styles.reset();
+        self.geometry.reset();
+        self.target_frame = frame;
+        if let Some((page, session)) = self.live_page(resolve) {
+            let _ = page.request_args_for_frame(
+                session,
+                InspectorCommand::GetDomRoot,
+                InspectorArgs::None,
+                self.target_frame,
+            );
+        }
+    }
+
     pub(crate) fn enable_editing<'a>(
         &mut self,
         opaque_override: bool,
@@ -348,7 +442,7 @@ impl DevtoolsView {
             self.edit.notice = "The page is not connected.".into();
             return;
         };
-        if let Err(error) = page.grant_mutation(session, opaque_override) {
+        if let Err(error) = page.grant_mutation_for_frame(session, opaque_override, self.target_frame) {
             self.edit.notice = format!("Editing was not enabled: {}", error.message);
         }
     }
@@ -525,6 +619,12 @@ impl DevtoolsView {
                 }
             }
         }
+        self.frames_cache = page.frames();
+        if let Some(target_frame) = self.target_frame {
+            if !self.frames_cache.iter().any(|f| f.key == target_frame.0) {
+                self.select_frame(None, resolve);
+            }
+        }
         let Some(live) = self.live.as_mut() else {
             return;
         };
@@ -670,7 +770,7 @@ impl DevtoolsView {
         if self.elements_active && self.state == ViewState::Attached {
             if let Some(read) = self.elements.next() {
                 let (command, args) = read.request();
-                match page.request_args(session, command, args) {
+                match page.request_args_for_frame(session, command, args, self.target_frame) {
                     Ok(()) => self.elements.begin(read, now),
                     Err(error) if error.code == InspectorErrorCode::Busy => {}
                     Err(error) => self.elements.notice = error.message,
@@ -683,7 +783,7 @@ impl DevtoolsView {
                 self.geometry
                     .next(now, self.elements.selected, self.elements.epoch)
             {
-                match page.request_args(session, command, args) {
+                match page.request_args_for_frame(session, command, args, self.target_frame) {
                     Ok(()) => {}
                     Err(error) => self.geometry.complete(command, Err(error)),
                 }
@@ -692,7 +792,7 @@ impl DevtoolsView {
             if let Some(epoch) = self.elements.epoch
                 && let Some(queued) = self.edit.next(now)
             {
-                if let Err(error) = page.mutate(session, queued.node, epoch, queued.op.clone()) {
+                if let Err(error) = page.mutate_for_frame(session, queued.node, epoch, queued.op.clone(), self.target_frame) {
                     self.edit.unsent(error);
                 }
             }
@@ -707,12 +807,13 @@ impl DevtoolsView {
                     epoch,
                     self.elements.selected,
                 ) {
-                    match page.request_args(
+                    match page.request_args_for_frame(
                         session,
                         InspectorCommand::InspectStyle,
                         InspectorArgs::Style {
                             query: query.clone(),
                         },
+                        self.target_frame,
                     ) {
                         Ok(()) => self.styles.begin(query, now),
                         Err(error) if error.code == InspectorErrorCode::Busy => {}

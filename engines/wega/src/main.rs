@@ -369,6 +369,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut inspector = identity.map(|identity| {
         wega_engine::inspector::Backend::new(protocol::inspector::TargetId::of(&identity), version)
     });
+    let mut frame_inspectors: std::collections::BTreeMap<protocol::identity::FrameId, wega_engine::inspector::Backend> = std::collections::BTreeMap::new();
     let output = Rc::new(RefCell::new(std::io::stdout().lock()));
     let event_output = output.clone();
     let write = move |event: &Event| {
@@ -593,6 +594,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 })?;
             }
         }
+        if version >= 22 {
+            for (frame_id, frame_backend) in &mut frame_inspectors {
+                if let Some(target) = view.frame_target(frame_id.0) {
+                    for (session, seq, event) in frame_backend.observe(target.context, target.loading, target.port) {
+                        write(&Event::InspectorEvent {
+                            context: target.context,
+                            session,
+                            seq,
+                            event,
+                        })?;
+                    }
+                }
+            }
+        }
         if let Some(reason) = view.take_script_failure() {
             write(&protocol::content_event(
                 version,
@@ -669,9 +684,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     })?;
                 }
                 PageEvent::FrameDetached { frame } => {
+                    frame_inspectors.remove(&frame);
                     write(&Event::FrameDetached { frame })?;
                 }
                 PageEvent::FrameNavigated { frame, url, origin } => {
+                    frame_inspectors.remove(&frame);
                     write(&Event::FrameNavigated { frame, url, origin })?;
                 }
                 PageEvent::FramePostMessage {
@@ -1012,30 +1029,62 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         })?,
                         Ok(request) => {
                             let session = request.session;
-                            let current = (document_context(&view, serial, version), view.loading);
-                            let sampled = wega_engine::inspector::Sampled {
-                                nodes: metrics.0 as u64,
-                                js_heap_bytes: metrics.1 as u64,
-                                // The viewport the browser last requested (applied at the next
-                                // paint), in CSS pixels. No layout is consulted.
-                                viewport: {
-                                    let (w, h, scale, zoom, _) = viewport;
-                                    let dpr = f64::from(scale) * f64::from(zoom);
-                                    (dpr.is_finite() && dpr > 0.0 && w > 0 && h > 0)
-                                        .then(|| (f64::from(w) / dpr, f64::from(h) / dpr, dpr))
-                                },
-                            };
-                            let result = backend.handle(&request, current, sampled, &mut view);
-                            write(&Event::InspectorResponse {
-                                context,
-                                session,
-                                result,
-                            })?;
+                            let is_top = identity.as_ref().map_or(true, |id| request.target.frame == id.frame);
+                            if is_top {
+                                let current = (document_context(&view, serial, version), view.loading);
+                                let sampled = wega_engine::inspector::Sampled {
+                                    nodes: metrics.0 as u64,
+                                    js_heap_bytes: metrics.1 as u64,
+                                    viewport: {
+                                        let (w, h, scale, zoom, _) = viewport;
+                                        let dpr = f64::from(scale) * f64::from(zoom);
+                                        (dpr.is_finite() && dpr > 0.0 && w > 0 && h > 0)
+                                            .then(|| (f64::from(w) / dpr, f64::from(h) / dpr, dpr))
+                                    },
+                                };
+                                let result = backend.handle(&request, current, sampled, &mut view);
+                                write(&Event::InspectorResponse {
+                                    context,
+                                    session,
+                                    result,
+                                })?;
+                            } else {
+                                let frame_key = request.target.frame.0;
+                                if let Some(target) = view.frame_target(frame_key) {
+                                    let frame_backend = frame_inspectors.entry(request.target.frame).or_insert_with(|| {
+                                        wega_engine::inspector::Backend::new(request.target, version)
+                                    });
+                                    let current = (target.context, target.loading);
+                                    let sampled = wega_engine::inspector::Sampled {
+                                        nodes: 0,
+                                        js_heap_bytes: 0,
+                                        viewport: None,
+                                    };
+                                    let result = frame_backend.handle(&request, current, sampled, target.port);
+                                    write(&Event::InspectorResponse {
+                                        context,
+                                        session,
+                                        result,
+                                    })?;
+                                } else {
+                                    write(&Event::InspectorResponse {
+                                        context,
+                                        session,
+                                        result: Err(protocol::inspector::InspectorError::new(
+                                            protocol::inspector::InspectorErrorCode::UnknownTarget,
+                                            "Frame target not found",
+                                        )),
+                                    })?;
+                                }
+                            }
                         }
                     }
                 }
                 Command::InspectorDetach { session } => {
                     if let Some(backend) = &mut inspector {
+                        backend.detach(session);
+                    }
+                    for backend in frame_inspectors.values_mut() {
                         backend.detach(session);
                     }
                 }

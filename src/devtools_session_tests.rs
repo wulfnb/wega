@@ -35,6 +35,9 @@ struct Inner {
     mutations: Vec<(u64, u64, wega::engine_protocol::inspector::edit::MutationOp)>,
     mutate_error: Option<InspectorErrorCode>,
     args: Vec<(InspectorCommand, InspectorArgs)>,
+    frames: Vec<wega::engine_protocol::inspector::FrameDescription>,
+    frame_requests: Vec<(InspectorSessionId, InspectorCommand, Option<FrameId>)>,
+    frame_mutations: Vec<(Option<FrameId>, u64, u64, wega::engine_protocol::inspector::edit::MutationOp)>,
 }
 
 /// A scripted page: it enforces session liveness exactly like the real registry does.
@@ -204,6 +207,46 @@ impl InspectorPort for Fake {
         inner.requests.push((session, InspectorCommand::Mutate));
         inner.pending.push(InspectorCommand::Mutate);
         Ok(())
+    }
+    fn frames(&self) -> Vec<wega::engine_protocol::inspector::FrameDescription> {
+        self.inner.borrow().frames.clone()
+    }
+    fn request_args_for_frame(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+        frame: Option<FrameId>,
+    ) -> Result<(), InspectorError> {
+        let mut inner = self.inner.borrow_mut();
+        inner.calls += 1;
+        if inner.live != Some(session) {
+            return Err(InspectorError::new(InspectorErrorCode::StaleSession, "stale"));
+        }
+        inner.frame_requests.push((session, command, frame));
+        inner.args.push((command, args));
+        inner.pending.push(command);
+        inner.requests.push((session, command));
+        Ok(())
+    }
+    fn grant_mutation_for_frame(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+        _frame: Option<FrameId>,
+    ) -> Result<(), InspectorError> {
+        self.grant_mutation(session, opaque_override)
+    }
+    fn mutate_for_frame(
+        &self,
+        session: InspectorSessionId,
+        node: wega::engine_protocol::inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: wega::engine_protocol::inspector::edit::MutationOp,
+        frame: Option<FrameId>,
+    ) -> Result<(), InspectorError> {
+        self.inner.borrow_mut().frame_mutations.push((frame, node.key, epoch, op.clone()));
+        self.mutate(session, node, epoch, op)
     }
     fn target(&self) -> Option<TargetId> {
         Some(*self.target.borrow())
@@ -1417,4 +1460,115 @@ fn an_edit_refused_as_unauthorised_or_stale_is_reported_and_never_retried_blindl
         "{}",
         view.edit.notice
     );
+}
+
+
+#[test]
+fn devtools_frame_selector_and_navigation_between_parent_and_child() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = DevtoolsView::default();
+    attach(&mut view, &tabs, &clock, 1, false);
+
+    // Provide two child frames in the tab's frame tree
+    tabs.pages[&1].inner.borrow_mut().frames = vec![
+        wega::engine_protocol::inspector::FrameDescription {
+            key: 2,
+            parent: None,
+            url: "https://example.test/child1".into(),
+            origin: "https://example.test".into(),
+            name: "child1".into(),
+            sandboxed: false,
+            revision: 1,
+        },
+        wega::engine_protocol::inspector::FrameDescription {
+            key: 3,
+            parent: Some(2),
+            url: "https://other.test/nested".into(),
+            origin: "https://other.test".into(),
+            name: "nested".into(),
+            sandboxed: true,
+            revision: 1,
+        },
+    ];
+
+    run(&mut view, &tabs, &clock, 100, 1, false);
+    assert_eq!(view.frames_cache.len(), 2);
+    assert_eq!(view.target_frame, None, "initially top-level frame");
+
+    // Select child frame 2
+    view.select_frame(Some(FrameId(2)), &|k| tabs.resolve(k));
+    assert_eq!(view.target_frame, Some(FrameId(2)));
+
+    // Running tick should send requests targeted to FrameId(2)
+    run(&mut view, &tabs, &clock, 110, 1, false);
+    let reqs = tabs.pages[&1].inner.borrow().frame_requests.clone();
+    assert!(reqs.iter().any(|(_, cmd, f)| *cmd == InspectorCommand::GetDomRoot && *f == Some(FrameId(2))));
+
+    // Select nested child frame 3
+    view.select_frame(Some(FrameId(3)), &|k| tabs.resolve(k));
+    assert_eq!(view.target_frame, Some(FrameId(3)));
+
+    // Navigate back to parent (frame 2)
+    let parent = view.frames_cache.iter().find(|f| f.key == 3).and_then(|f| f.parent);
+    assert_eq!(parent, Some(2));
+    view.select_frame(parent.map(FrameId), &|k| tabs.resolve(k));
+    assert_eq!(view.target_frame, Some(FrameId(2)));
+
+    // Navigate to top-level
+    view.select_frame(None, &|k| tabs.resolve(k));
+    assert_eq!(view.target_frame, None);
+}
+
+#[test]
+fn devtools_frame_specific_mutation_and_revocation_on_detachment() {
+    let tabs = Tabs::new(&[1]);
+    let clock = Clock(Instant::now());
+    let mut view = DevtoolsView::default();
+    attach(&mut view, &tabs, &clock, 1, false);
+
+    tabs.pages[&1].inner.borrow_mut().frames = vec![
+        wega::engine_protocol::inspector::FrameDescription {
+            key: 5,
+            parent: None,
+            url: "https://example.test/frame5".into(),
+            origin: "https://example.test".into(),
+            name: "frame5".into(),
+            sandboxed: false,
+            revision: 1,
+        },
+    ];
+    run(&mut view, &tabs, &clock, 100, 1, false);
+
+    // Select frame 5
+    view.select_frame(Some(FrameId(5)), &|k| tabs.resolve(k));
+    view.elements.epoch = Some(10);
+    run(&mut view, &tabs, &clock, 110, 1, false);
+
+    // Enable editing for frame 5
+    view.enable_editing(false, &|k| tabs.resolve(k));
+    run(&mut view, &tabs, &clock, 120, 1, false);
+    assert!(view.edit.is_enabled());
+
+    view.elements.epoch = Some(10);
+    let node = node_key(&view);
+    let op = wega::engine_protocol::inspector::edit::MutationOp::SetAttribute {
+        name: "data-test".into(),
+        value: "passed".into(),
+    };
+    assert!(view.edit.submit(node, op.clone()));
+    run(&mut view, &tabs, &clock, 130, 1, false);
+    run(&mut view, &tabs, &clock, 140, 1, false);
+
+    let frame_muts = tabs.pages[&1].inner.borrow().frame_mutations.clone();
+    assert_eq!(frame_muts.len(), 1);
+    assert_eq!(frame_muts[0].0, Some(FrameId(5)), "mutation sent to frame 5");
+
+    // Frame 5 detaches (disappears from frames_cache)
+    tabs.pages[&1].inner.borrow_mut().frames.clear();
+    run(&mut view, &tabs, &clock, 150, 1, false);
+
+    // Must have automatically revoked editing and reset target_frame to None
+    assert_eq!(view.target_frame, None);
+    assert!(!view.edit.is_enabled());
 }

@@ -472,6 +472,19 @@ impl Snapshot {
 
     /// The grant decision: from the committed principal, with the user's explicit override only
     /// for an opaque one. Returns what to record and what to send.
+    fn frame_principal(&self, frame: Option<FrameId>) -> Option<(DocumentContext, protocol::authority::Principal)> {
+        match frame {
+            None => self.current_principal(),
+            Some(f) => {
+                if let Some(auth) = self.authorities.get(&f) {
+                    auth.current()
+                } else {
+                    self.current_principal()
+                }
+            }
+        }
+    }
+
     fn evaluation_scope(
         &self,
         opaque_override: bool,
@@ -483,7 +496,22 @@ impl Snapshot {
         ),
         InspectorError,
     > {
-        let current = self.current_principal();
+        self.evaluation_scope_for_frame(opaque_override, None)
+    }
+
+    fn evaluation_scope_for_frame(
+        &self,
+        opaque_override: bool,
+        frame: Option<FrameId>,
+    ) -> Result<
+        (
+            DocumentContext,
+            protocol::authority::Principal,
+            policy::GrantScope,
+        ),
+        InspectorError,
+    > {
+        let current = self.frame_principal(frame);
         let scope = policy::authorise(
             current.as_ref().map(|(_, principal)| principal),
             opaque_override,
@@ -492,6 +520,13 @@ impl Snapshot {
             InspectorError::new(InspectorErrorCode::PolicyDenied, "No committed principal")
         })?;
         Ok((context, principal, scope))
+    }
+
+    fn mutation_token_for_frame(&self, session: InspectorSessionId, frame: Option<FrameId>) -> Option<GrantToken> {
+        let (context, principal) = self.frame_principal(frame)?;
+        self.inspector
+            .as_ref()?
+            .mutation_grant_for(session, context, &principal)
     }
 
     /// The token to send for an evaluation, only if the grant was issued for this session, this
@@ -506,10 +541,7 @@ impl Snapshot {
 
     /// Like [`Self::evaluation_token`], for the separate mutation grant.
     fn mutation_token(&self, session: InspectorSessionId) -> Option<GrantToken> {
-        let (context, principal) = self.current_principal()?;
-        self.inspector
-            .as_ref()?
-            .mutation_grant_for(session, context, &principal)
+        self.mutation_token_for_frame(session, None)
     }
 
     /// The process is gone: nothing may ever be authorised against it again.
@@ -1517,6 +1549,29 @@ impl Page {
     }
 
     /// The target this page's sessions are scoped to (tab, frame, process).
+    pub fn frame_tree(&self) -> Vec<protocol::inspector::FrameDescription> {
+        let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(tree) = &state.frame_tree else {
+            return Vec::new();
+        };
+        let mut list = Vec::new();
+        for (id, ctx) in tree.all_contexts() {
+            if *id == tree.root() {
+                continue;
+            }
+            list.push(protocol::inspector::FrameDescription {
+                key: id.0,
+                parent: ctx.parent.map(|p| p.0),
+                url: ctx.url.to_string(),
+                origin: ctx.origin.serialized().to_string(),
+                name: String::new(),
+                sandboxed: ctx.sandbox.enabled,
+                revision: ctx.key.document.revision.0,
+            });
+        }
+        list
+    }
+
     pub fn inspector_target(&self) -> Option<TargetId> {
         self.state
             .lock()
@@ -1697,6 +1752,15 @@ impl Page {
         session: InspectorSessionId,
         opaque_override: bool,
     ) -> Result<(), InspectorError> {
+        self.inspector_grant_mutation_for_frame(session, opaque_override, None)
+    }
+
+    pub fn inspector_grant_mutation_for_frame(
+        &self,
+        session: InspectorSessionId,
+        opaque_override: bool,
+        frame: Option<FrameId>,
+    ) -> Result<(), InspectorError> {
         let mut bytes = [0u8; 16];
         getrandom::fill(&mut bytes).map_err(|_| {
             Self::inspector_error(InspectorErrorCode::Unavailable, "No secure random source")
@@ -1707,7 +1771,7 @@ impl Page {
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let (document, principal, scope) = state.evaluation_scope(opaque_override)?;
+            let (document, principal, scope) = state.evaluation_scope_for_frame(opaque_override, frame)?;
             state
                 .inspector
                 .as_mut()
@@ -1726,6 +1790,7 @@ impl Page {
                 origin: scope.origin,
             },
             true,
+            frame,
         );
         if sent.is_err()
             && let Some(sessions) = self
@@ -1763,11 +1828,22 @@ impl Page {
         epoch: u64,
         op: inspector::edit::MutationOp,
     ) -> Result<(), InspectorError> {
+        self.inspector_mutate_for_frame(session, node, epoch, op, None)
+    }
+
+    pub fn inspector_mutate_for_frame(
+        &self,
+        session: InspectorSessionId,
+        node: inspector::dom::InspectorNodeId,
+        epoch: u64,
+        op: inspector::edit::MutationOp,
+        frame: Option<FrameId>,
+    ) -> Result<(), InspectorError> {
         let token = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .mutation_token(session);
+            .mutation_token_for_frame(session, frame);
         let Some(grant) = token else {
             return Err(Self::inspector_error(
                 InspectorErrorCode::Unauthorized,
@@ -1784,6 +1860,7 @@ impl Page {
                 op,
             },
             true,
+            frame,
         )
     }
 
@@ -1795,7 +1872,17 @@ impl Page {
         command: InspectorCommand,
         args: InspectorArgs,
     ) -> Result<(), InspectorError> {
-        self.inspector_send(session, command, args, false)
+        self.inspector_send(session, command, args, false, None)
+    }
+
+    pub(crate) fn inspector_request_args_for_frame(
+        &self,
+        session: InspectorSessionId,
+        command: InspectorCommand,
+        args: InspectorArgs,
+        frame: Option<FrameId>,
+    ) -> Result<(), InspectorError> {
+        self.inspector_send(session, command, args, false, frame)
     }
 
     fn inspector_send(
@@ -1804,6 +1891,7 @@ impl Page {
         command: InspectorCommand,
         args: InspectorArgs,
         privileged: bool,
+        frame: Option<FrameId>,
     ) -> Result<(), InspectorError> {
         if !privileged
             && matches!(
@@ -1832,7 +1920,10 @@ impl Page {
                 let sessions = state.inspector.as_ref().ok_or_else(|| {
                     Self::inspector_error(InspectorErrorCode::Unavailable, "No inspector")
                 })?;
-                let target = sessions.registry().target();
+                let mut target = sessions.registry().target();
+                if let Some(f) = frame {
+                    target.frame = f;
+                }
                 sessions.registry().authorize(session, target)?;
                 target
             };

@@ -85,6 +85,53 @@ impl Browser {
                 if pinned { " · pinned" } else { "" }
             ));
         }
+        if !self.devtools.frames_cache.is_empty() {
+            let frames = self.devtools.frames_cache.clone();
+            ui.horizontal(|ui| {
+                ui.label("Frame:");
+                let current_frame = self.devtools.target_frame;
+                let current_label = match current_frame {
+                    None => "Top-level frame".to_string(),
+                    Some(id) => frames.iter().find(|f| f.key == id.0).map_or_else(
+                        || format!("Frame {}", id.0),
+                        |f| {
+                            let origin = if f.sandboxed { "opaque (sandboxed)" } else { &f.origin };
+                            if f.name.is_empty() {
+                                format!("Frame {} ({})", f.key, origin)
+                            } else {
+                                format!("\"{}\" ({})", f.name, origin)
+                            }
+                        },
+                    ),
+                };
+                egui::ComboBox::from_id_salt("devtools_frame_selector")
+                    .selected_text(current_label)
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_label(current_frame.is_none(), "Top-level frame").clicked() {
+                            self.devtools_select_frame(None);
+                        }
+                        for frame in &frames {
+                            let is_selected = current_frame == Some(wega::engine_protocol::identity::FrameId(frame.key));
+                            let origin = if frame.sandboxed { "opaque" } else { &frame.origin };
+                            let label = if frame.name.is_empty() {
+                                format!("Frame {} [{}]", frame.key, origin)
+                            } else {
+                                format!("\"{}\" [{}]", frame.name, origin)
+                            };
+                            if ui.selectable_label(is_selected, label).clicked() {
+                                self.devtools_select_frame(Some(wega::engine_protocol::identity::FrameId(frame.key)));
+                            }
+                        }
+                    });
+
+                if let Some(current_id) = current_frame {
+                    let parent = frames.iter().find(|f| f.key == current_id.0).and_then(|f| f.parent);
+                    if ui.button("↑ Parent Frame").clicked() {
+                        self.devtools_select_frame(parent.map(wega::engine_protocol::identity::FrameId));
+                    }
+                }
+            });
+        }
         ui.horizontal(|ui| {
             if ui
                 .selectable_label(self.tools.elements_tab, "Elements")

@@ -83,6 +83,9 @@ impl FrameAuthority {
     pub fn session(&self) -> SessionIdentity {
         self.session
     }
+    pub fn current(&self) -> Option<(DocumentContext, Principal)> {
+        self.current.clone()
+    }
     /// Called only with a principal resolved by the host/service, never a page-provided origin.
     pub fn bind(&mut self, context: DocumentContext, principal: Principal) {
         if self
