@@ -1,13 +1,22 @@
-
+use wega_protocol::DocumentContext;
 use wega_protocol::inspector::dom::InspectorNodeId;
 use wega_protocol::inspector::geometry::*;
-use wega_protocol::DocumentContext;
 
 fn to_geom_rect(r: Rect) -> GeomRect {
-    GeomRect { x: r.x, y: r.y, width: r.width, height: r.height }
+    GeomRect {
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+    }
 }
 fn to_edges(i: Insets) -> Edges {
-    Edges { top: i.top, right: i.right, bottom: i.bottom, left: i.left }
+    Edges {
+        top: i.top,
+        right: i.right,
+        bottom: i.bottom,
+        left: i.left,
+    }
 }
 fn to_box_set(b: BoxModel) -> BoxSet {
     BoxSet {
@@ -19,9 +28,9 @@ fn to_box_set(b: BoxModel) -> BoxSet {
 }
 
 /// Native Engine Backend: Backend selector, NativeDocument, and Wega DOM integration.
-use super::css::{resolve_computed_style, StyleSheet};
+use super::css::{StyleSheet, resolve_computed_style};
 use super::display_list::DisplayList;
-use super::layout::{build_box_tree, hit_test_node, perform_layout, LayoutBox, LayoutContext};
+use super::layout::{LayoutBox, LayoutContext, build_box_tree, hit_test_node, perform_layout};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wega_adapter_blitz::BlitzDocument;
@@ -119,8 +128,10 @@ impl NativeDocument {
 
         if let Some(mut box_tree) = build_box_tree(&*d, root_key, None, &sheets_ref) {
             let ctx = LayoutContext {
-                viewport_width: self.viewport.width_px as f64 / (self.viewport.scale * self.viewport.zoom) as f64,
-                viewport_height: self.viewport.height_px as f64 / (self.viewport.scale * self.viewport.zoom) as f64,
+                viewport_width: self.viewport.width_px as f64
+                    / (self.viewport.scale * self.viewport.zoom) as f64,
+                viewport_height: self.viewport.height_px as f64
+                    / (self.viewport.scale * self.viewport.zoom) as f64,
                 font_size_root: 16.0,
             };
             perform_layout(&mut box_tree, &ctx);
@@ -132,7 +143,9 @@ impl NativeDocument {
     }
 
     pub fn find_box(&self, key: NodeKey) -> Option<&LayoutBox> {
-        self.layout_tree.as_ref().and_then(|tree| find_box_in_tree(tree, key))
+        self.layout_tree
+            .as_ref()
+            .and_then(|tree| find_box_in_tree(tree, key))
     }
 
     pub fn bounding_rect(&self, key: NodeKey) -> Result<Rect, LayoutError> {
@@ -194,7 +207,9 @@ impl NativeDocument {
             x: point.x + self.scroll.x,
             y: point.y + self.scroll.y,
         };
-        self.layout_tree.as_ref().and_then(|tree| hit_test_node(tree, doc_point))
+        self.layout_tree
+            .as_ref()
+            .and_then(|tree| hit_test_node(tree, doc_point))
     }
 
     pub fn record_scene(&mut self, viewport: &ViewportConfig) -> anyrender::Scene {
@@ -232,10 +247,24 @@ impl NativeDocument {
         match property {
             "display" => out.push_str(&format!("{:?}", computed.display).to_lowercase()),
             "position" => out.push_str(&format!("{:?}", computed.position).to_lowercase()),
-            "width" => out.push_str(&format!("{:.1}px", self.find_box(key).map_or(0.0, |b| b.border_box.width))),
-            "height" => out.push_str(&format!("{:.1}px", self.find_box(key).map_or(0.0, |b| b.border_box.height))),
-            "color" => out.push_str(&format!("rgb({}, {}, {})", computed.color.r, computed.color.g, computed.color.b)),
-            "background-color" => out.push_str(&format!("rgb({}, {}, {})", computed.background_color.r, computed.background_color.g, computed.background_color.b)),
+            "width" => out.push_str(&format!(
+                "{:.1}px",
+                self.find_box(key).map_or(0.0, |b| b.border_box.width)
+            )),
+            "height" => out.push_str(&format!(
+                "{:.1}px",
+                self.find_box(key).map_or(0.0, |b| b.border_box.height)
+            )),
+            "color" => out.push_str(&format!(
+                "rgb({}, {}, {})",
+                computed.color.r, computed.color.g, computed.color.b
+            )),
+            "background-color" => out.push_str(&format!(
+                "rgb({}, {}, {})",
+                computed.background_color.r,
+                computed.background_color.g,
+                computed.background_color.b
+            )),
             "font-size" => out.push_str(&format!("{:.0}px", computed.font_size)),
             "line-height" => out.push_str(&format!("{:.0}px", computed.line_height)),
             _ => {}
@@ -269,7 +298,10 @@ impl NativeDocument {
             scroll_y: self.scroll.y,
         };
         let label = if let Some(n) = d.node(key) {
-            let tag = n.element_name().map(|e| e.local.to_string()).unwrap_or_default();
+            let tag = n
+                .element_name()
+                .map(|e| e.local.to_string())
+                .unwrap_or_default();
             let id = n.attr("id").unwrap_or_default().to_string();
             let classes = n.attr("class").unwrap_or_default().to_string();
             ElementLabel { tag, id, classes }
@@ -293,11 +325,12 @@ impl NativeDocument {
         document: DocumentContext,
         point: Point,
     ) -> Result<PickReport, wega_protocol::inspector::InspectorError> {
-        let hit_key = self.element_at(point)
-            .ok_or_else(|| wega_protocol::inspector::InspectorError::new(
+        let hit_key = self.element_at(point).ok_or_else(|| {
+            wega_protocol::inspector::InspectorError::new(
                 wega_protocol::inspector::InspectorErrorCode::Unavailable,
                 "Nothing at that point",
-            ))?;
+            )
+        })?;
         let d = self.doc.borrow();
         let Some(node) = d.node(hit_key) else {
             return Err(wega_protocol::inspector::InspectorError::new(
@@ -325,7 +358,6 @@ impl NativeDocument {
             ancestors: chain,
         })
     }
-
 }
 
 fn find_box_in_tree(box_node: &LayoutBox, key: NodeKey) -> Option<&LayoutBox> {

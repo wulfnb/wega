@@ -1,10 +1,13 @@
 //! Wega Native Rendering Engine: progressive replacement for Blitz, Stylo and Taffy.
-pub mod css;
-pub mod layout;
-pub mod display_list;
 pub mod backend;
+pub mod css;
+pub mod display_list;
+pub mod layout;
 
-pub use css::{ComputedStyle, Color, Display, Length, StyleSheet, default_user_agent_stylesheet, resolve_computed_style};
-pub use layout::{LayoutBox, BoxType, perform_layout, LayoutContext};
-pub use display_list::{DisplayList, DisplayItem};
-pub use backend::{RenderingBackend, NativeDocument};
+pub use backend::{NativeDocument, RenderingBackend};
+pub use css::{
+    Color, ComputedStyle, Display, Length, StyleSheet, default_user_agent_stylesheet,
+    resolve_computed_style,
+};
+pub use display_list::{DisplayItem, DisplayList};
+pub use layout::{BoxType, LayoutBox, LayoutContext, perform_layout};

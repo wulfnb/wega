@@ -931,19 +931,22 @@ impl View {
     /// The topmost child under a parent-viewport point, with the point converted into the
     /// child's own viewport. Frames are painted in document order, so the last one wins.
     fn frame_at(&self, x: f32, y: f32) -> Option<(usize, f32, f32)> {
-        let hit_key = if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
-            self.native_document.as_ref().and_then(|d| d.element_at(wega_dom::layout::Point {
-                x: x as f64,
-                y: y as f64,
-            }))?
-        } else {
-            use wega_dom::layout::HitTest as _;
-            let doc = self.document.borrow();
-            doc.element_at(wega_dom::layout::Point {
-                x: x as f64,
-                y: y as f64,
-            })?
-        };
+        let hit_key =
+            if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
+                self.native_document.as_ref().and_then(|d| {
+                    d.element_at(wega_dom::layout::Point {
+                        x: x as f64,
+                        y: y as f64,
+                    })
+                })?
+            } else {
+                use wega_dom::layout::HitTest as _;
+                let doc = self.document.borrow();
+                doc.element_at(wega_dom::layout::Point {
+                    x: x as f64,
+                    y: y as f64,
+                })?
+            };
         for (index, child) in self.frames.children.iter().enumerate().rev() {
             if child.node.key() != hit_key {
                 continue;

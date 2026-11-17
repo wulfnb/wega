@@ -140,8 +140,8 @@ impl LayoutBox {
 // BOX TREE GENERATOR
 // ---------------------------------------------------------------------------
 
-pub fn build_box_tree<'a, D: DocumentView>(
-    doc: &'a D,
+pub fn build_box_tree<D: DocumentView>(
+    doc: &D,
     node_key: NodeKey,
     parent_style: Option<&ComputedStyle>,
     author_sheets: &[&StyleSheet],
@@ -663,7 +663,10 @@ fn layout_inline_formatting_context(
 
             // Wrap line if word overflows current line
             if current_x + word_w > avail_w && current_x > 0.0 {
-                let line_w = current_runs.last().map(|(r, ..)| r.x + r.width).unwrap_or(0.0);
+                let line_w = current_runs
+                    .last()
+                    .map(|(r, ..)| r.x + r.width)
+                    .unwrap_or(0.0);
                 let line_rect = Rect {
                     x: 0.0,
                     y: current_y,
@@ -690,7 +693,10 @@ fn layout_inline_formatting_context(
     }
 
     if !current_runs.is_empty() {
-        let line_w = current_runs.last().map(|(r, ..)| r.x + r.width).unwrap_or(0.0);
+        let line_w = current_runs
+            .last()
+            .map(|(r, ..)| r.x + r.width)
+            .unwrap_or(0.0);
         let line_rect = Rect {
             x: 0.0,
             y: current_y,
@@ -815,7 +821,12 @@ fn layout_flex(
         if child.style.position == Position::Absolute || child.style.position == Position::Fixed {
             layout_box(
                 child,
-                Rect { x: 0.0, y: 0.0, width: inner_w, height: 0.0 },
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: inner_w,
+                    height: 0.0,
+                },
                 next_positioned_cb,
                 ctx,
             );
@@ -1078,7 +1089,10 @@ fn layout_grid(
                 total
             }
         }
-        _ => (cb_w - box_node.margin.left - box_node.margin.right - total_border_w - total_padding_w).max(0.0),
+        _ => {
+            (cb_w - box_node.margin.left - box_node.margin.right - total_border_w - total_padding_w)
+                .max(0.0)
+        }
     };
 
     box_node.border_box.x = containing_block.x + box_node.margin.left;
@@ -1116,7 +1130,11 @@ fn layout_grid(
     }
 
     let remaining_w = (inner_w - fixed_sum).max(0.0);
-    let auto_w = if auto_count > 0 { remaining_w / auto_count as f64 } else { 0.0 };
+    let auto_w = if auto_count > 0 {
+        remaining_w / auto_count as f64
+    } else {
+        0.0
+    };
 
     for (c, len) in box_node.style.grid_template_columns.iter().enumerate() {
         if matches!(len, Length::Auto | Length::Em(_) | Length::Rem(_)) {
@@ -1142,13 +1160,29 @@ fn layout_grid(
 
     for child in &mut box_node.children {
         if child.style.position == Position::Absolute || child.style.position == Position::Fixed {
-            layout_box(child, Rect { x: 0.0, y: 0.0, width: inner_w, height: 0.0 }, next_positioned_cb, ctx);
+            layout_box(
+                child,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: inner_w,
+                    height: 0.0,
+                },
+                next_positioned_cb,
+                ctx,
+            );
             continue;
         }
 
         let (col_idx, row_idx) = match (child.style.grid_column_start, child.style.grid_row_start) {
-            (Some(c), Some(r)) => (((c - 1).max(0) as usize).min(num_cols.saturating_sub(1)), (r - 1).max(0) as usize),
-            (Some(c), None) => (((c - 1).max(0) as usize).min(num_cols.saturating_sub(1)), auto_row),
+            (Some(c), Some(r)) => (
+                ((c - 1).max(0) as usize).min(num_cols.saturating_sub(1)),
+                (r - 1).max(0) as usize,
+            ),
+            (Some(c), None) => (
+                ((c - 1).max(0) as usize).min(num_cols.saturating_sub(1)),
+                auto_row,
+            ),
             (None, Some(r)) => (auto_col, (r - 1).max(0) as usize),
             (None, None) => {
                 let c = auto_col;
@@ -1169,7 +1203,12 @@ fn layout_grid(
         let cell_w = col_widths.get(col_idx).copied().unwrap_or(inner_w);
         let cell_h = default_row_h;
 
-        let cell_cb = Rect { x: cell_x, y: cell_y, width: cell_w, height: cell_h };
+        let cell_cb = Rect {
+            x: cell_x,
+            y: cell_y,
+            width: cell_w,
+            height: cell_h,
+        };
         layout_box(child, cell_cb, next_positioned_cb, ctx);
 
         child.border_box.x = cell_x;
@@ -1229,7 +1268,10 @@ fn layout_table(
     let inner_w = (container_w - total_border_w - total_padding_w).max(0.0);
 
     // Collect all table rows whether directly under <table> or inside <tbody>/<thead>/<tfoot>
-    let has_direct_rows = box_node.children.iter().any(|c| c.box_type == BoxType::TableRow);
+    let has_direct_rows = box_node
+        .children
+        .iter()
+        .any(|c| c.box_type == BoxType::TableRow);
     let mut num_cols = 1;
 
     if has_direct_rows {
@@ -1248,13 +1290,27 @@ fn layout_table(
         }
     }
 
-    let col_w = if num_cols > 0 { inner_w / num_cols as f64 } else { inner_w };
+    let col_w = if num_cols > 0 {
+        inner_w / num_cols as f64
+    } else {
+        inner_w
+    };
     let mut cursor_y = inner_origin_y;
 
     if has_direct_rows {
         for row in &mut box_node.children {
-            if row.box_type != BoxType::TableRow { continue; }
-            layout_single_table_row(row, inner_origin_x, &mut cursor_y, inner_w, col_w, positioned_cb, ctx);
+            if row.box_type != BoxType::TableRow {
+                continue;
+            }
+            layout_single_table_row(
+                row,
+                inner_origin_x,
+                &mut cursor_y,
+                inner_w,
+                col_w,
+                positioned_cb,
+                ctx,
+            );
         }
     } else {
         for section in &mut box_node.children {
@@ -1264,8 +1320,18 @@ fn layout_table(
             let section_start_y = cursor_y;
 
             for row in &mut section.children {
-                if row.box_type != BoxType::TableRow { continue; }
-                layout_single_table_row(row, inner_origin_x, &mut cursor_y, inner_w, col_w, positioned_cb, ctx);
+                if row.box_type != BoxType::TableRow {
+                    continue;
+                }
+                layout_single_table_row(
+                    row,
+                    inner_origin_x,
+                    &mut cursor_y,
+                    inner_w,
+                    col_w,
+                    positioned_cb,
+                    ctx,
+                );
             }
             section.border_box.height = cursor_y - section_start_y;
         }
@@ -1292,7 +1358,12 @@ fn layout_single_table_row(
     let mut cursor_x = inner_origin_x;
 
     for cell in &mut row.children {
-        let cell_cb = Rect { x: cursor_x, y: *cursor_y, width: col_w, height: 0.0 };
+        let cell_cb = Rect {
+            x: cursor_x,
+            y: *cursor_y,
+            width: col_w,
+            height: 0.0,
+        };
         layout_box(cell, cell_cb, positioned_cb, ctx);
         cell.border_box.x = cursor_x;
         cell.border_box.y = *cursor_y;

@@ -481,8 +481,12 @@ impl View {
     /// their default (no) answer immediately.
     pub fn set_rendering_backend(&mut self, backend: crate::native_engine::RenderingBackend) {
         self.rendering_backend = backend;
-        if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative && self.native_document.is_none() {
-            self.native_document = Some(crate::native_engine::NativeDocument::new(self.document.clone()));
+        if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative
+            && self.native_document.is_none()
+        {
+            self.native_document = Some(crate::native_engine::NativeDocument::new(
+                self.document.clone(),
+            ));
         }
         self.frame.invalidate();
     }
@@ -2555,19 +2559,20 @@ impl View {
             }
         }
 
-        let (scene, animating) = if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
-            let native_doc = self.native_document.get_or_insert_with(|| {
-                crate::native_engine::NativeDocument::new(self.document.clone())
-            });
-            native_doc.viewport = viewport;
-            let scene = native_doc.record_scene_with_children(&viewport, child_scenes);
-            (scene, false)
-        } else {
-            let mut doc = self.document.borrow_mut();
-            let scene = doc.record_scene_with_children(&viewport, child_scenes);
-            let animating = doc.is_animating();
-            (scene, animating)
-        };
+        let (scene, animating) =
+            if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
+                let native_doc = self.native_document.get_or_insert_with(|| {
+                    crate::native_engine::NativeDocument::new(self.document.clone())
+                });
+                native_doc.viewport = viewport;
+                let scene = native_doc.record_scene_with_children(&viewport, child_scenes);
+                (scene, false)
+            } else {
+                let mut doc = self.document.borrow_mut();
+                let scene = doc.record_scene_with_children(&viewport, child_scenes);
+                let animating = doc.is_animating();
+                (scene, animating)
+            };
 
         self.frame
             .recorded(another_frame || animating || frames_animating);
@@ -2876,7 +2881,10 @@ impl crate::inspector::PagePort for View {
     > {
         if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
             if let Some(native_doc) = &self.native_document {
-                let pt = wega_dom::layout::Point { x: x as f64, y: y as f64 };
+                let pt = wega_dom::layout::Point {
+                    x: x as f64,
+                    y: y as f64,
+                };
                 return native_doc.pick_node_report(document, pt);
             }
         }

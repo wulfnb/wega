@@ -10,9 +10,24 @@ pub struct Color {
 }
 
 impl Color {
-    pub const TRANSPARENT: Self = Self { r: 0, g: 0, b: 0, a: 0 };
-    pub const BLACK: Self = Self { r: 0, g: 0, b: 0, a: 255 };
-    pub const WHITE: Self = Self { r: 255, g: 255, b: 255, a: 255 };
+    pub const TRANSPARENT: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    };
+    pub const BLACK: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+    pub const WHITE: Self = Self {
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255,
+    };
 
     pub fn parse(s: &str) -> Option<Self> {
         let s = s.trim().to_ascii_lowercase();
@@ -22,22 +37,102 @@ impl Color {
         if let Some(c) = match s.as_str() {
             "black" => Some(Self::BLACK),
             "white" => Some(Self::WHITE),
-            "red" => Some(Self { r: 255, g: 0, b: 0, a: 255 }),
-            "green" => Some(Self { r: 0, g: 128, b: 0, a: 255 }),
-            "blue" => Some(Self { r: 0, g: 0, b: 255, a: 255 }),
-            "yellow" => Some(Self { r: 255, g: 255, b: 0, a: 255 }),
-            "cyan" => Some(Self { r: 0, g: 255, b: 255, a: 255 }),
-            "magenta" => Some(Self { r: 255, g: 0, b: 255, a: 255 }),
-            "gray" | "grey" => Some(Self { r: 128, g: 128, b: 128, a: 255 }),
-            "lightgray" | "lightgrey" => Some(Self { r: 211, g: 211, b: 211, a: 255 }),
-            "darkgray" | "darkgrey" => Some(Self { r: 169, g: 169, b: 169, a: 255 }),
-            "silver" => Some(Self { r: 192, g: 192, b: 192, a: 255 }),
-            "maroon" => Some(Self { r: 128, g: 0, b: 0, a: 255 }),
-            "navy" => Some(Self { r: 0, g: 0, b: 128, a: 255 }),
-            "olive" => Some(Self { r: 128, g: 128, b: 0, a: 255 }),
-            "purple" => Some(Self { r: 128, g: 0, b: 128, a: 255 }),
-            "teal" => Some(Self { r: 0, g: 128, b: 128, a: 255 }),
-            "orange" => Some(Self { r: 255, g: 165, b: 0, a: 255 }),
+            "red" => Some(Self {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }),
+            "green" => Some(Self {
+                r: 0,
+                g: 128,
+                b: 0,
+                a: 255,
+            }),
+            "blue" => Some(Self {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 255,
+            }),
+            "yellow" => Some(Self {
+                r: 255,
+                g: 255,
+                b: 0,
+                a: 255,
+            }),
+            "cyan" => Some(Self {
+                r: 0,
+                g: 255,
+                b: 255,
+                a: 255,
+            }),
+            "magenta" => Some(Self {
+                r: 255,
+                g: 0,
+                b: 255,
+                a: 255,
+            }),
+            "gray" | "grey" => Some(Self {
+                r: 128,
+                g: 128,
+                b: 128,
+                a: 255,
+            }),
+            "lightgray" | "lightgrey" => Some(Self {
+                r: 211,
+                g: 211,
+                b: 211,
+                a: 255,
+            }),
+            "darkgray" | "darkgrey" => Some(Self {
+                r: 169,
+                g: 169,
+                b: 169,
+                a: 255,
+            }),
+            "silver" => Some(Self {
+                r: 192,
+                g: 192,
+                b: 192,
+                a: 255,
+            }),
+            "maroon" => Some(Self {
+                r: 128,
+                g: 0,
+                b: 0,
+                a: 255,
+            }),
+            "navy" => Some(Self {
+                r: 0,
+                g: 0,
+                b: 128,
+                a: 255,
+            }),
+            "olive" => Some(Self {
+                r: 128,
+                g: 128,
+                b: 0,
+                a: 255,
+            }),
+            "purple" => Some(Self {
+                r: 128,
+                g: 0,
+                b: 128,
+                a: 255,
+            }),
+            "teal" => Some(Self {
+                r: 0,
+                g: 128,
+                b: 128,
+                a: 255,
+            }),
+            "orange" => Some(Self {
+                r: 255,
+                g: 165,
+                b: 0,
+                a: 255,
+            }),
             _ => None,
         } {
             return Some(c);
@@ -102,19 +197,16 @@ impl Color {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum Length {
     Px(f64),
     Percent(f64),
     Em(f64),
     Rem(f64),
+    #[default]
     Auto,
 }
 
-impl Default for Length {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 impl Length {
     pub fn parse(s: &str) -> Option<Self> {
@@ -349,25 +441,45 @@ impl RectLengths {
         match parts.len() {
             1 => {
                 let v = Length::parse(parts[0]).unwrap_or_default();
-                Self { top: v, right: v, bottom: v, left: v }
+                Self {
+                    top: v,
+                    right: v,
+                    bottom: v,
+                    left: v,
+                }
             }
             2 => {
                 let tb = Length::parse(parts[0]).unwrap_or_default();
                 let lr = Length::parse(parts[1]).unwrap_or_default();
-                Self { top: tb, right: lr, bottom: tb, left: lr }
+                Self {
+                    top: tb,
+                    right: lr,
+                    bottom: tb,
+                    left: lr,
+                }
             }
             3 => {
                 let top = Length::parse(parts[0]).unwrap_or_default();
                 let lr = Length::parse(parts[1]).unwrap_or_default();
                 let bottom = Length::parse(parts[2]).unwrap_or_default();
-                Self { top, right: lr, bottom, left: lr }
+                Self {
+                    top,
+                    right: lr,
+                    bottom,
+                    left: lr,
+                }
             }
             4.. => {
                 let top = Length::parse(parts[0]).unwrap_or_default();
                 let right = Length::parse(parts[1]).unwrap_or_default();
                 let bottom = Length::parse(parts[2]).unwrap_or_default();
                 let left = Length::parse(parts[3]).unwrap_or_default();
-                Self { top, right, bottom, left }
+                Self {
+                    top,
+                    right,
+                    bottom,
+                    left,
+                }
             }
             _ => Self::default(),
         }
@@ -387,7 +499,9 @@ pub struct Transform {
 
 impl Transform {
     pub fn identity() -> Self {
-        Self { matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] }
+        Self {
+            matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        }
     }
 
     pub fn to_kurbo(&self) -> kurbo::Affine {
@@ -405,7 +519,9 @@ impl Transform {
             } else {
                 0.0
             };
-            return Some(Self { matrix: [1.0, 0.0, 0.0, 1.0, tx, ty] });
+            return Some(Self {
+                matrix: [1.0, 0.0, 0.0, 1.0, tx, ty],
+            });
         }
         if s.starts_with("scale(") && s.ends_with(")") {
             let inner = &s[6..s.len() - 1];
@@ -416,7 +532,9 @@ impl Transform {
             } else {
                 sx
             };
-            return Some(Self { matrix: [sx, 0.0, 0.0, sy, 0.0, 0.0] });
+            return Some(Self {
+                matrix: [sx, 0.0, 0.0, sy, 0.0, 0.0],
+            });
         }
         if s.starts_with("rotate(") && s.ends_with(")") {
             let inner = s[7..s.len() - 1].trim();
@@ -424,7 +542,9 @@ impl Transform {
             let rad = deg.to_radians();
             let cos = rad.cos();
             let sin = rad.sin();
-            return Some(Self { matrix: [cos, sin, -sin, cos, 0.0, 0.0] });
+            return Some(Self {
+                matrix: [cos, sin, -sin, cos, 0.0, 0.0],
+            });
         }
         None
     }
@@ -446,7 +566,10 @@ impl BoxShadow {
             let oy = parts[1].trim_end_matches("px").parse::<f64>().ok()?;
             let mut blur = 0.0;
             let color_str = if parts.len() >= 4 {
-                blur = parts[2].trim_end_matches("px").parse::<f64>().unwrap_or(0.0);
+                blur = parts[2]
+                    .trim_end_matches("px")
+                    .parse::<f64>()
+                    .unwrap_or(0.0);
                 parts[3..].join(" ")
             } else {
                 parts[2..].join(" ")
@@ -594,7 +717,9 @@ impl CompoundSelector {
         for c in &self.components {
             match c {
                 SimpleSelector::Id(_) => ids += 1,
-                SimpleSelector::Class(_) | SimpleSelector::AttrPresent(_) | SimpleSelector::AttrEquals(_, _) => classes += 1,
+                SimpleSelector::Class(_)
+                | SimpleSelector::AttrPresent(_)
+                | SimpleSelector::AttrEquals(_, _) => classes += 1,
                 SimpleSelector::Type(_) => types += 1,
                 SimpleSelector::Universal => {}
             }
@@ -602,34 +727,47 @@ impl CompoundSelector {
         (ids, classes, types)
     }
 
-    pub fn matches<'a, D: DocumentView>(
-        &self,
-        doc: &'a D,
-        node_key: NodeKey,
-    ) -> bool {
-        let Some(node) = doc.node(node_key) else { return false };
-        if node.kind() != NodeKind::Element { return false };
-        let tag = node.element_name().map(|e| e.local.to_ascii_lowercase()).unwrap_or_default();
+    pub fn matches<D: DocumentView>(&self, doc: &D, node_key: NodeKey) -> bool {
+        let Some(node) = doc.node(node_key) else {
+            return false;
+        };
+        if node.kind() != NodeKind::Element {
+            return false;
+        };
+        let tag = node
+            .element_name()
+            .map(|e| e.local.to_ascii_lowercase())
+            .unwrap_or_default();
 
         for comp in &self.components {
             match comp {
                 SimpleSelector::Universal => {}
                 SimpleSelector::Type(name) => {
-                    if !name.eq_ignore_ascii_case(&tag) { return false; }
+                    if !name.eq_ignore_ascii_case(&tag) {
+                        return false;
+                    }
                 }
                 SimpleSelector::Class(name) => {
                     let class_attr = node.attr("class").unwrap_or_default();
                     let has_class = class_attr.split_whitespace().any(|c| c == name);
-                    if !has_class { return false; }
+                    if !has_class {
+                        return false;
+                    }
                 }
                 SimpleSelector::Id(name) => {
-                    if node.attr("id") != Some(name.as_str()) { return false; }
+                    if node.attr("id") != Some(name.as_str()) {
+                        return false;
+                    }
                 }
                 SimpleSelector::AttrPresent(name) => {
-                    if node.attr(name.as_str()).is_none() { return false; }
+                    if node.attr(name.as_str()).is_none() {
+                        return false;
+                    }
                 }
                 SimpleSelector::AttrEquals(name, val) => {
-                    if node.attr(name.as_str()) != Some(val.as_str()) { return false; }
+                    if node.attr(name.as_str()) != Some(val.as_str()) {
+                        return false;
+                    }
                 }
             }
         }
@@ -654,12 +792,10 @@ impl ComplexSelector {
         total
     }
 
-    pub fn matches<'a, D: DocumentView>(
-        &self,
-        doc: &'a D,
-        node_key: NodeKey,
-    ) -> bool {
-        if self.items.is_empty() { return false; }
+    pub fn matches<D: DocumentView>(&self, doc: &D, node_key: NodeKey) -> bool {
+        if self.items.is_empty() {
+            return false;
+        }
         let (last_compound, _) = self.items.last().unwrap();
         if !last_compound.matches(doc, node_key) {
             return false;
@@ -677,7 +813,9 @@ impl ComplexSelector {
             match combinator {
                 Some(Combinator::Child) => {
                     let parent = doc.node(curr_node).and_then(NodeView::parent);
-                    let Some(p) = parent else { return false; };
+                    let Some(p) = parent else {
+                        return false;
+                    };
                     if !target_compound.matches(doc, p) {
                         return false;
                     }
@@ -745,7 +883,10 @@ impl StyleSheet {
             let selectors = parse_selector_list(selector_str);
             let declarations = parse_declarations(body);
             if !selectors.is_empty() && !declarations.is_empty() {
-                sheet.rules.push(Rule { selectors, declarations });
+                sheet.rules.push(Rule {
+                    selectors,
+                    declarations,
+                });
             }
         }
         sheet
@@ -756,7 +897,9 @@ pub fn parse_declarations(s: &str) -> Vec<Declaration> {
     let mut declarations = Vec::new();
     for item in s.split(';') {
         let item = item.trim();
-        if item.is_empty() { continue; }
+        if item.is_empty() {
+            continue;
+        }
         if let Some((prop, val)) = item.split_once(':') {
             let prop = prop.trim().to_ascii_lowercase();
             let mut val = val.trim();
@@ -776,16 +919,19 @@ pub fn parse_declarations(s: &str) -> Vec<Declaration> {
 }
 
 pub fn parse_selector_list(s: &str) -> Vec<ComplexSelector> {
-    s.split(',').filter_map(|part| parse_complex_selector(part.trim())).collect()
+    s.split(',')
+        .filter_map(|part| parse_complex_selector(part.trim()))
+        .collect()
 }
 
 pub fn parse_complex_selector(s: &str) -> Option<ComplexSelector> {
-    if s.is_empty() { return None; }
+    if s.is_empty() {
+        return None;
+    }
     let mut tokens = Vec::new();
     let mut curr = String::new();
-    let mut chars = s.chars().peekable();
 
-    while let Some(c) = chars.next() {
+    for c in s.chars() {
         if c == '>' {
             if !curr.trim().is_empty() {
                 tokens.push(curr.trim().to_string());
@@ -805,7 +951,9 @@ pub fn parse_complex_selector(s: &str) -> Option<ComplexSelector> {
         tokens.push(curr.trim().to_string());
     }
 
-    if tokens.is_empty() { return None; }
+    if tokens.is_empty() {
+        return None;
+    }
 
     let mut items = Vec::new();
     let mut i = 0;
@@ -872,8 +1020,10 @@ pub fn parse_compound_selector(s: &str) -> Option<CompoundSelector> {
             '[' => {
                 chars.next();
                 let mut attr = String::new();
-                while let Some(ch) = chars.next() {
-                    if ch == ']' { break; }
+                for ch in chars.by_ref() {
+                    if ch == ']' {
+                        break;
+                    }
                     attr.push(ch);
                 }
                 if let Some((k, v)) = attr.split_once('=') {
@@ -897,11 +1047,17 @@ pub fn parse_compound_selector(s: &str) -> Option<CompoundSelector> {
                     components.push(SimpleSelector::Type(tag.to_ascii_lowercase()));
                 }
             }
-            _ => { chars.next(); }
+            _ => {
+                chars.next();
+            }
         }
     }
 
-    if components.is_empty() { None } else { Some(CompoundSelector { components }) }
+    if components.is_empty() {
+        None
+    } else {
+        Some(CompoundSelector { components })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -909,7 +1065,8 @@ pub fn parse_compound_selector(s: &str) -> Option<CompoundSelector> {
 // ---------------------------------------------------------------------------
 
 pub fn default_user_agent_stylesheet() -> StyleSheet {
-    StyleSheet::parse(r#"
+    StyleSheet::parse(
+        r#"
 html { display: block; }
 body { display: block; margin: 8px; font-size: 16px; line-height: 20px; color: black; background-color: white; }
 div, p, h1, h2, h3, h4, h5, h6, ul, ol, li, header, footer, nav, section, article, main { display: block; }
@@ -925,7 +1082,8 @@ p { margin: 12px 0; }
 ul, ol { margin: 12px 0; padding-left: 40px; }
 li { display: block; }
 b, strong { font-weight: bold; }
-"#)
+"#,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -942,25 +1100,28 @@ struct MatchedDecl {
     source_order: usize,
 }
 
-pub fn resolve_computed_style<'a, D: DocumentView>(
-    doc: &'a D,
+pub fn resolve_computed_style<D: DocumentView>(
+    doc: &D,
     node_key: NodeKey,
     parent_style: Option<&ComputedStyle>,
     author_sheets: &[&StyleSheet],
 ) -> ComputedStyle {
-    let mut style = parent_style.map_or_else(ComputedStyle::default, |p| {
-        let mut s = ComputedStyle::default();
+    let mut style = parent_style.map_or_else(ComputedStyle::default, |p| ComputedStyle {
         // Inherited properties:
-        s.color = p.color;
-        s.font_size = p.font_size;
-        s.line_height = p.line_height;
-        s.text_align = p.text_align;
-        s.font_family = p.font_family.clone();
-        s
+        color: p.color,
+        font_size: p.font_size,
+        line_height: p.line_height,
+        text_align: p.text_align,
+        font_family: p.font_family.clone(),
+        ..Default::default()
     });
 
-    let Some(node) = doc.node(node_key) else { return style };
-    if node.kind() != NodeKind::Element { return style };
+    let Some(node) = doc.node(node_key) else {
+        return style;
+    };
+    if node.kind() != NodeKind::Element {
+        return style;
+    };
 
     let mut matched: Vec<MatchedDecl> = Vec::new();
     let ua = default_user_agent_stylesheet();
@@ -1056,34 +1217,110 @@ pub fn resolve_computed_style<'a, D: DocumentView>(
 
 fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
     match prop {
-        "display" => if let Some(d) = Display::parse(val) { style.display = d; },
-        "position" => if let Some(p) = Position::parse(val) { style.position = p; },
-        "box-sizing" => if let Some(b) = BoxSizing::parse(val) { style.box_sizing = b; },
-        "width" => if let Some(l) = Length::parse(val) { style.width = l; },
-        "height" => if let Some(l) = Length::parse(val) { style.height = l; },
-        "min-width" => if let Some(l) = Length::parse(val) { style.min_width = l; },
-        "max-width" => if let Some(l) = Length::parse(val) { style.max_width = l; },
-        "min-height" => if let Some(l) = Length::parse(val) { style.min_height = l; },
-        "max-height" => if let Some(l) = Length::parse(val) { style.max_height = l; },
+        "display" => {
+            if let Some(d) = Display::parse(val) {
+                style.display = d;
+            }
+        }
+        "position" => {
+            if let Some(p) = Position::parse(val) {
+                style.position = p;
+            }
+        }
+        "box-sizing" => {
+            if let Some(b) = BoxSizing::parse(val) {
+                style.box_sizing = b;
+            }
+        }
+        "width" => {
+            if let Some(l) = Length::parse(val) {
+                style.width = l;
+            }
+        }
+        "height" => {
+            if let Some(l) = Length::parse(val) {
+                style.height = l;
+            }
+        }
+        "min-width" => {
+            if let Some(l) = Length::parse(val) {
+                style.min_width = l;
+            }
+        }
+        "max-width" => {
+            if let Some(l) = Length::parse(val) {
+                style.max_width = l;
+            }
+        }
+        "min-height" => {
+            if let Some(l) = Length::parse(val) {
+                style.min_height = l;
+            }
+        }
+        "max-height" => {
+            if let Some(l) = Length::parse(val) {
+                style.max_height = l;
+            }
+        }
         "margin" => style.margin = RectLengths::parse_quad(val),
-        "margin-top" => if let Some(l) = Length::parse(val) { style.margin.top = l; },
-        "margin-right" => if let Some(l) = Length::parse(val) { style.margin.right = l; },
-        "margin-bottom" => if let Some(l) = Length::parse(val) { style.margin.bottom = l; },
-        "margin-left" => if let Some(l) = Length::parse(val) { style.margin.left = l; },
+        "margin-top" => {
+            if let Some(l) = Length::parse(val) {
+                style.margin.top = l;
+            }
+        }
+        "margin-right" => {
+            if let Some(l) = Length::parse(val) {
+                style.margin.right = l;
+            }
+        }
+        "margin-bottom" => {
+            if let Some(l) = Length::parse(val) {
+                style.margin.bottom = l;
+            }
+        }
+        "margin-left" => {
+            if let Some(l) = Length::parse(val) {
+                style.margin.left = l;
+            }
+        }
         "padding" => style.padding = RectLengths::parse_quad(val),
-        "padding-top" => if let Some(l) = Length::parse(val) { style.padding.top = l; },
-        "padding-right" => if let Some(l) = Length::parse(val) { style.padding.right = l; },
-        "padding-bottom" => if let Some(l) = Length::parse(val) { style.padding.bottom = l; },
-        "padding-left" => if let Some(l) = Length::parse(val) { style.padding.left = l; },
+        "padding-top" => {
+            if let Some(l) = Length::parse(val) {
+                style.padding.top = l;
+            }
+        }
+        "padding-right" => {
+            if let Some(l) = Length::parse(val) {
+                style.padding.right = l;
+            }
+        }
+        "padding-bottom" => {
+            if let Some(l) = Length::parse(val) {
+                style.padding.bottom = l;
+            }
+        }
+        "padding-left" => {
+            if let Some(l) = Length::parse(val) {
+                style.padding.left = l;
+            }
+        }
         "border" => {
             let mut width = 1.0;
             let mut color = Color::BLACK;
             for part in val.split_whitespace() {
-                if let Some(Length::Px(w)) = Length::parse(part) { width = w; }
-                else if let Some(c) = Color::parse(part) { color = c; }
+                if let Some(Length::Px(w)) = Length::parse(part) {
+                    width = w;
+                } else if let Some(c) = Color::parse(part) {
+                    color = c;
+                }
             }
             let side = BorderSide { width, color };
-            style.borders = Borders { top: side, right: side, bottom: side, left: side };
+            style.borders = Borders {
+                top: side,
+                right: side,
+                bottom: side,
+                left: side,
+            };
         }
         "border-width" => {
             if let Some(Length::Px(w)) = Length::parse(val) {
@@ -1101,33 +1338,116 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 style.borders.left.color = c;
             }
         }
-        "border-radius" => if let Some(Length::Px(r)) = Length::parse(val) { style.border_radius = r; },
-        "color" => if let Some(c) = Color::parse(val) { style.color = c; },
-        "background" | "background-color" => if let Some(c) = Color::parse(val) { style.background_color = c; },
-        "font-size" => if let Some(Length::Px(s)) = Length::parse(val) { style.font_size = s; style.line_height = s * 1.25; },
-        "line-height" => if let Some(Length::Px(h)) = Length::parse(val) { style.line_height = h; },
-        "text-align" => if let Some(a) = TextAlign::parse(val) { style.text_align = a; },
-        "top" => if let Some(l) = Length::parse(val) { style.top = l; },
-        "right" => if let Some(l) = Length::parse(val) { style.right = l; },
-        "bottom" => if let Some(l) = Length::parse(val) { style.bottom = l; },
-        "left" => if let Some(l) = Length::parse(val) { style.left = l; },
+        "border-radius" => {
+            if let Some(Length::Px(r)) = Length::parse(val) {
+                style.border_radius = r;
+            }
+        }
+        "color" => {
+            if let Some(c) = Color::parse(val) {
+                style.color = c;
+            }
+        }
+        "background" | "background-color" => {
+            if let Some(c) = Color::parse(val) {
+                style.background_color = c;
+            }
+        }
+        "font-size" => {
+            if let Some(Length::Px(s)) = Length::parse(val) {
+                style.font_size = s;
+                style.line_height = s * 1.25;
+            }
+        }
+        "line-height" => {
+            if let Some(Length::Px(h)) = Length::parse(val) {
+                style.line_height = h;
+            }
+        }
+        "text-align" => {
+            if let Some(a) = TextAlign::parse(val) {
+                style.text_align = a;
+            }
+        }
+        "top" => {
+            if let Some(l) = Length::parse(val) {
+                style.top = l;
+            }
+        }
+        "right" => {
+            if let Some(l) = Length::parse(val) {
+                style.right = l;
+            }
+        }
+        "bottom" => {
+            if let Some(l) = Length::parse(val) {
+                style.bottom = l;
+            }
+        }
+        "left" => {
+            if let Some(l) = Length::parse(val) {
+                style.left = l;
+            }
+        }
         "z-index" => style.z_index = val.trim().parse::<i32>().ok(),
-        "opacity" => if let Ok(op) = val.trim().parse::<f32>() { style.opacity = op.clamp(0.0, 1.0); },
-        "overflow" => if let Some(o) = Overflow::parse(val) { style.overflow_x = o; style.overflow_y = o; },
-        "overflow-x" => if let Some(o) = Overflow::parse(val) { style.overflow_x = o; },
-        "overflow-y" => if let Some(o) = Overflow::parse(val) { style.overflow_y = o; },
-        "flex-direction" => if let Some(fd) = FlexDirection::parse(val) { style.flex_direction = fd; },
-        "justify-content" => if let Some(jc) = JustifyContent::parse(val) { style.justify_content = jc; },
-        "align-items" => if let Some(ai) = AlignItems::parse(val) { style.align_items = ai; },
-        "flex-grow" => if let Ok(g) = val.trim().parse::<f64>() { style.flex_grow = g; },
-        "flex-shrink" => if let Ok(s) = val.trim().parse::<f64>() { style.flex_shrink = s; },
-        "flex-basis" => if let Some(l) = Length::parse(val) { style.flex_basis = l; },
+        "opacity" => {
+            if let Ok(op) = val.trim().parse::<f32>() {
+                style.opacity = op.clamp(0.0, 1.0);
+            }
+        }
+        "overflow" => {
+            if let Some(o) = Overflow::parse(val) {
+                style.overflow_x = o;
+                style.overflow_y = o;
+            }
+        }
+        "overflow-x" => {
+            if let Some(o) = Overflow::parse(val) {
+                style.overflow_x = o;
+            }
+        }
+        "overflow-y" => {
+            if let Some(o) = Overflow::parse(val) {
+                style.overflow_y = o;
+            }
+        }
+        "flex-direction" => {
+            if let Some(fd) = FlexDirection::parse(val) {
+                style.flex_direction = fd;
+            }
+        }
+        "justify-content" => {
+            if let Some(jc) = JustifyContent::parse(val) {
+                style.justify_content = jc;
+            }
+        }
+        "align-items" => {
+            if let Some(ai) = AlignItems::parse(val) {
+                style.align_items = ai;
+            }
+        }
+        "flex-grow" => {
+            if let Ok(g) = val.trim().parse::<f64>() {
+                style.flex_grow = g;
+            }
+        }
+        "flex-shrink" => {
+            if let Ok(s) = val.trim().parse::<f64>() {
+                style.flex_shrink = s;
+            }
+        }
+        "flex-basis" => {
+            if let Some(l) = Length::parse(val) {
+                style.flex_basis = l;
+            }
+        }
         "grid-template-columns" => {
-            style.grid_template_columns = val.split_whitespace().filter_map(Length::parse).collect();
-        },
+            style.grid_template_columns =
+                val.split_whitespace().filter_map(Length::parse).collect();
+        }
         "grid-template-rows" => {
             style.grid_template_rows = val.split_whitespace().filter_map(Length::parse).collect();
-        },
+        }
         "grid-column-start" => style.grid_column_start = val.trim().parse::<i32>().ok(),
         "grid-row-start" => style.grid_row_start = val.trim().parse::<i32>().ok(),
         "transform" => style.transform = Transform::parse(val),
