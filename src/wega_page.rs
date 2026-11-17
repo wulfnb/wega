@@ -71,6 +71,7 @@ pub(crate) struct Snapshot {
     /// Resource and containment failures require an explicit restart, not automatic fallback.
     pub recovery_reason: Option<String>,
     pub authority: Option<FrameAuthority>,
+    pub authorities: std::collections::BTreeMap<protocol::identity::FrameId, protocol::authority::FrameAuthority>,
     pub grants: std::collections::BTreeSet<protocol::permissions::PermissionFeature>,
     pub lifecycle: Lifecycle,
     pub native: std::collections::VecDeque<(TrustedRequest, ContentEvent)>,
@@ -194,8 +195,17 @@ impl Snapshot {
                     document: self.requests.document(),
                     revision,
                 },
-                principal,
+                principal.clone(),
             );
+            if let Some(root_auth) = self.authorities.get_mut(&protocol::identity::FrameId(1)) {
+                root_auth.bind(
+                    DocumentContext {
+                        document: self.requests.document(),
+                        revision,
+                    },
+                    principal,
+                );
+            }
             if let Ok(parsed_url) = url::Url::parse(&self.url) {
                 let context_key = protocol::browsing::ContextKey {
                     session: authority.session(),
@@ -775,6 +785,11 @@ impl Page {
         let state = Arc::new(Mutex::new(Snapshot {
             inspector: Some(HostSessions::new(TargetId::of(&identity))),
             authority: Some(FrameAuthority::new(identity)),
+            authorities: {
+                let mut map = std::collections::BTreeMap::new();
+                map.insert(FrameId(1), FrameAuthority::new(identity));
+                map
+            },
             url: url.to_string(),
             notices: if development {
                 ["Explicit unsandboxed development worker".to_string()].into()
@@ -1305,6 +1320,11 @@ impl Page {
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let child_ident = SessionIdentity {
+                                frame,
+                                ..identity
+                            };
+                            state.authorities.insert(frame, FrameAuthority::new(child_ident));
                             let doc_context = DocumentContext {
                                 document: state.requests.document(),
                                 revision: state.requests.revision(),
@@ -1324,9 +1344,11 @@ impl Page {
                             }
                         }
                         Event::FrameDetached { frame } => {
+                            reader_broker.detach_frame(frame.0);
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            state.authorities.remove(&frame);
                             let doc_context = DocumentContext {
                                 document: state.requests.document(),
                                 revision: state.requests.revision(),
@@ -1344,19 +1366,28 @@ impl Page {
                             url: nav_url,
                             origin: _,
                         } => {
+                            let committed = reader_broker.take_frame_committed_principal(frame.0, Some(&nav_url));
                             let mut state = shared
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner);
                             let next_rev = state.requests.revision();
+                            let child_context = DocumentContext {
+                                document: protocol::DocumentId(frame.0),
+                                revision: next_rev,
+                            };
+                            if let Some(auth) = state.authorities.get_mut(&frame) {
+                                auth.bind(child_context, committed);
+                            } else {
+                                let mut auth = FrameAuthority::new(SessionIdentity { frame, ..identity });
+                                auth.bind(child_context, committed);
+                                state.authorities.insert(frame, auth);
+                            }
                             if let Some(tree) = &mut state.frame_tree
                                 && let Ok(parsed) = url::Url::parse(&nav_url)
                             {
                                 let child_key = protocol::browsing::ContextKey {
                                     session: SessionIdentity { frame, ..identity },
-                                    document: DocumentContext {
-                                        document: protocol::DocumentId(frame.0),
-                                        revision: next_rev,
-                                    },
+                                    document: child_context,
                                 };
                                 let _ = tree.commit(frame, parsed, child_key);
                             }

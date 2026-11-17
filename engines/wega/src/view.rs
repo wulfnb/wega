@@ -721,6 +721,7 @@ impl View {
                 console: self.console.clone(),
                 restrictions: self.restrictions(),
                 frames: self.frame_shared.clone(),
+                frame_id: self.role.as_ref().map(|r| r.frame_id),
             },
             &self.limits,
             html.len(),
@@ -1007,6 +1008,8 @@ impl View {
             bypass_cache: false,
             bypass_service_worker: false,
             omit_credentials: false,
+            frame: self.role.as_ref().map(|r| r.frame_id),
+            parent_frame: self.role.as_ref().and_then(|r| r.parent_frame_id),
         };
         if let Err(error) = self.load_request(options.url, context) {
             self.notice(error);

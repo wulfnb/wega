@@ -29,6 +29,11 @@ impl Client {
             Self::Remote(remote) => remote.fetch(request),
         }
     }
+    pub fn detach_frame(&self, frame: u64) {
+        if let Self::Remote(remote) = self {
+            let _ = remote.detach_frame(frame);
+        }
+    }
 }
 
 /// What a request is for; documents are top-level navigations.
@@ -62,6 +67,8 @@ pub(crate) struct FetchContext {
     pub bypass_service_worker: bool,
     /// Never send or store cookies and other ambient credentials (opaque-origin documents).
     pub omit_credentials: bool,
+    pub frame: Option<u64>,
+    pub parent_frame: Option<u64>,
 }
 impl Default for FetchContext {
     fn default() -> Self {
@@ -75,6 +82,8 @@ impl Default for FetchContext {
             bypass_cache: false,
             bypass_service_worker: false,
             omit_credentials: false,
+            frame: None,
+            parent_frame: None,
         }
     }
 }
@@ -299,6 +308,9 @@ impl Network {
             client: detached_client,
             detached: Default::default(),
         })
+    }
+    pub fn detach_frame(&self, frame: u64) {
+        self.client.detach_frame(frame);
     }
     pub fn spawn(&self, task: impl FnOnce(&Client) + Send + 'static) -> Result<(), String> {
         self.jobs
@@ -555,20 +567,34 @@ impl Network {
             if mixed_content(context.initiator.as_ref(), &url, top_level) {
                 return Err(format!("Mixed content blocked: {url}"));
             }
-            let mut request = wega_network::Request::get(&url, limit);
+            let mut request = if context.destination == Destination::Frame {
+                let parent_url = context.initiator.as_ref().unwrap_or(&url);
+                wega_network::Request::iframe(
+                    &url,
+                    parent_url,
+                    context.frame.unwrap_or(2),
+                    context.parent_frame,
+                    limit,
+                )
+            } else {
+                wega_network::Request::get(&url, limit)
+            };
             request.method = method.to_string();
             request.body = body.clone().unwrap_or_default();
             request.initiator = context.initiator.clone();
             request.top_level = top_level;
-            request.origin = context
-                .initiator
-                .as_ref()
-                .map(|url| url.origin().ascii_serialization())
-                .unwrap_or_else(|| "null".into());
+            request.frame = context.frame;
+            request.parent_frame = context.parent_frame;
+            if context.destination != Destination::Frame {
+                request.origin = context
+                    .initiator
+                    .as_ref()
+                    .map(|url| url.origin().ascii_serialization())
+                    .unwrap_or_else(|| "null".into());
+            }
             request.destination = match context.destination {
-                Destination::Document | Destination::Frame => {
-                    wega_network::ResourceDestination::Document
-                }
+                Destination::Document => wega_network::ResourceDestination::Document,
+                Destination::Frame => wega_network::ResourceDestination::Iframe,
                 Destination::Module => wega_network::ResourceDestination::Module,
                 Destination::Script => wega_network::ResourceDestination::Script,
                 Destination::Style => wega_network::ResourceDestination::Style,

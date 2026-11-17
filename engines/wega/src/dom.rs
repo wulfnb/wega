@@ -63,6 +63,7 @@ pub(crate) struct Dom {
     pub dialog: Rc<RefCell<Option<DocumentDialogHandler>>>,
     pub restrictions: crate::view::frames::Restrictions,
     pub frames: Rc<RefCell<crate::view::frames::FrameShared>>,
+    pub frame_id: Option<u64>,
     pub document_generation: Rc<Cell<u64>>,
     pub document_revision: u64,
     /// Transient user activation, for popups.
@@ -129,6 +130,7 @@ impl Dom {
             dialog: context.dialog,
             restrictions: context.restrictions,
             frames: context.frames,
+            frame_id: context.frame_id,
             document_generation: context.document_generation,
             document_revision: context.document_revision,
             activation: context.activation,
@@ -1242,8 +1244,8 @@ impl Dom {
                 let nodes = self.assigned_nodes(&doc, node_id()?, text(2) == "true", &mut HashSet::new());
                 json!(nodes.into_iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>())
             },
-            "cookie"=>if self.restrictions.opaque{json!("")}else{json!(self.network.cookies.get(doc.url(),true,crate::cookies::SiteContext::SameSite))},
-            "setCookie"=>{if !self.restrictions.opaque{self.network.cookies.set(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite);}Value::Null},
+            "cookie"=>if self.restrictions.opaque{json!("")}else{json!(self.network.cookies.get_frame(doc.url(),true,crate::cookies::SiteContext::SameSite,self.frame_id))},
+            "setCookie"=>{if !self.restrictions.opaque{self.network.cookies.set_frame(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite,self.frame_id);}Value::Null},
             "templateContent"=>{let target=node_id()?;let content=wega_dom::mutate(&mut *doc).template_contents(target.key()).map_err(Self::mutation_error)?;json!(content.node_id().as_u64().to_string())},
             "viewport"=>{let viewport=doc.viewport();json!({"width":viewport.size.width,"height":viewport.size.height,"dpr":viewport.device_pixel_ratio,"scrollX":viewport.scroll.x,"scrollY":viewport.scroll.y})},
             "scroll"=>{let offset=doc.scroll_offset(node_id()?.key()).map_err(Self::layout_error)?;json!({"x":offset.x,"y":offset.y})},

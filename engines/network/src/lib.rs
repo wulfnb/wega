@@ -72,6 +72,7 @@ pub enum ResourceDestination {
     #[default]
     Empty,
     Document,
+    Iframe,
     Script,
     Style,
     Image,
@@ -269,6 +270,10 @@ pub struct Request {
     pub initiator: Option<Url>,
     #[serde(default)]
     pub top_level: bool,
+    #[serde(default)]
+    pub frame: Option<u64>,
+    #[serde(default)]
+    pub parent_frame: Option<u64>,
     pub credentials: String,
     pub redirect: String,
     pub cache: String,
@@ -288,6 +293,8 @@ impl Request {
             origin: url.origin().ascii_serialization(),
             initiator: None,
             top_level: true,
+            frame: None,
+            parent_frame: None,
             credentials: "include".into(),
             redirect: "follow".into(),
             cache: "default".into(),
@@ -305,11 +312,32 @@ impl Request {
             origin: url.origin().ascii_serialization(),
             initiator: Some(url.clone()),
             top_level: false,
+            frame: None,
+            parent_frame: None,
             credentials: "include".into(),
             redirect: "follow".into(),
             cache: "default".into(),
             destination,
             mode: "cors".into(),
+            limit,
+        }
+    }
+    pub fn iframe(url: &Url, parent_url: &Url, frame: u64, parent_frame: Option<u64>, limit: usize) -> Self {
+        Self {
+            url: url.to_string(),
+            method: "GET".into(),
+            headers: vec![],
+            body: vec![],
+            origin: parent_url.origin().ascii_serialization(),
+            initiator: Some(parent_url.clone()),
+            top_level: false,
+            frame: Some(frame),
+            parent_frame,
+            credentials: "include".into(),
+            redirect: "manual".into(),
+            cache: "default".into(),
+            destination: ResourceDestination::Iframe,
+            mode: "navigate".into(),
             limit,
         }
     }
@@ -748,7 +776,18 @@ impl LocalClient {
     }
 }
 
-struct Session {
+#[derive(Clone, Debug)]
+pub struct FrameState {
+    pub parent: Option<u64>,
+    pub committed: Option<Url>,
+    pub allowed: Vec<Url>,
+    pub last: Option<Url>,
+    pub opaque: bool,
+    pub depth: usize,
+    pub detached: bool,
+}
+
+pub struct Session {
     policy: RwLock<Policy>,
     cookies: Arc<Cookies>,
     scope: String,
@@ -758,43 +797,103 @@ struct Session {
     #[cfg(any(unix, windows))]
     channels: Mutex<Vec<Arc<wega_platform::ipc::Channel>>>,
     revoked: AtomicBool,
-    navigation: Mutex<NavigationReceipt>,
+    pub navigation: Mutex<NavigationReceipt>,
+    pub frames: Mutex<HashMap<u64, FrameState>>,
 }
 
 impl Session {
-    fn document(&self) -> Option<Url> {
-        let receipt = self
-            .navigation
+    fn document_for_frame(&self, frame: Option<u64>) -> Option<Url> {
+        let frame_id = frame.unwrap_or(1);
+        if frame_id == 1 {
+            let receipt = self
+                .navigation
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            return receipt
+                .committed
+                .clone()
+                .or_else(|| receipt.last.clone())
+                .or_else(|| {
+                    receipt
+                        .allowed
+                        .first()
+                        .filter(|url| !matches!(url.scheme(), "http" | "https"))
+                        .cloned()
+                });
+        }
+        let frames = self
+            .frames
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        receipt
-            .committed
+        let f = frames.get(&frame_id)?;
+        if f.detached || f.opaque {
+            return None;
+        }
+        f.committed
             .clone()
-            .or_else(|| receipt.last.clone())
+            .or_else(|| f.last.clone())
             .or_else(|| {
-                receipt
-                    .allowed
+                f.allowed
                     .first()
                     .filter(|url| !matches!(url.scheme(), "http" | "https"))
                     .cloned()
             })
     }
-    fn script_cookie_scope(&self, url: &Url) -> Result<(), String> {
+    fn document(&self) -> Option<Url> {
+        self.document_for_frame(None)
+    }
+    fn script_cookie_scope(&self, url: &Url, frame: Option<u64>) -> Result<(), String> {
         if !self.bound {
             return Ok(());
         }
-        let document = self.document().ok_or("No document cookie authority")?;
+        let frame_id = frame.unwrap_or(1);
+        if frame_id != 1 {
+            let frames = self
+                .frames
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let f = frames.get(&frame_id).ok_or("Unknown frame capability")?;
+            if f.detached || f.opaque {
+                return Err("Frame is detached or sandboxed opaque".into());
+            }
+        }
+        let document = self.document_for_frame(frame).ok_or("No document cookie authority")?;
         if !matches!(document.scheme(), "http" | "https") || document.origin() != url.origin() {
             return Err("Cookie document origin mismatch".into());
         }
         Ok(())
     }
+    fn detach_frame(&self, frame_id: u64) {
+        let mut frames = self
+            .frames
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut to_remove = vec![frame_id];
+        let mut i = 0;
+        while i < to_remove.len() {
+            let parent_id = to_remove[i];
+            for (id, state) in frames.iter() {
+                if state.parent == Some(parent_id) && !to_remove.contains(id) {
+                    to_remove.push(*id);
+                }
+            }
+            i += 1;
+        }
+        for id in to_remove {
+            if let Some(f) = frames.get_mut(&id) {
+                f.detached = true;
+                f.committed = None;
+                f.last = None;
+                f.allowed.clear();
+            }
+        }
+    }
 }
 
 #[derive(Default)]
-struct NavigationReceipt {
-    allowed: Vec<Url>,
-    committed: Option<Url>,
+pub struct NavigationReceipt {
+    pub allowed: Vec<Url>,
+    pub committed: Option<Url>,
     last: Option<Url>,
 }
 
@@ -824,7 +923,7 @@ fn nonce() -> Result<[u8; 16], String> {
 }
 pub struct SessionHandle {
     broker: Arc<Broker>,
-    session: Arc<Session>,
+    pub session: Arc<Session>,
     token: String,
 }
 impl SessionHandle {
@@ -860,7 +959,63 @@ impl SessionHandle {
         }
         receipt.last = None;
         receipt.allowed = vec![url.clone()];
-        receipt.committed = committed;
+        receipt.committed = committed.clone();
+
+        let mut frames = self
+            .session
+            .frames
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        frames.clear();
+        frames.insert(1, FrameState {
+            parent: None,
+            committed,
+            allowed: vec![url.clone()],
+            last: None,
+            opaque: false,
+            depth: 0,
+            detached: false,
+        });
+    }
+    pub fn detach_frame(&self, frame: u64) {
+        self.session.detach_frame(frame);
+    }
+    pub fn take_frame_committed_principal(&self, frame: u64, claimed: Option<&str>) -> Principal {
+        if frame == 1 {
+            return self.take_committed_principal(claimed);
+        }
+        let mut frames = self
+            .session
+            .frames
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(f) = frames.get_mut(&frame) else {
+            return Principal {
+                origin: Origin::Opaque,
+                top_level_site: None,
+            };
+        };
+        if f.detached || f.opaque {
+            return Principal {
+                origin: Origin::Opaque,
+                top_level_site: None,
+            };
+        }
+        let observed = f.committed.take().filter(|observed| {
+            claimed
+                .and_then(|url| Url::parse(url).ok())
+                .is_some_and(|url| url.origin() == observed.origin())
+        });
+        if let Some(url) = observed {
+            let principal = principal(&url);
+            f.last = Some(url);
+            principal
+        } else {
+            Principal {
+                origin: Origin::Opaque,
+                top_level_site: None,
+            }
+        }
     }
     /// Host-only attribution from a browser-approved navigation and broker-observed response.
     pub fn take_committed_principal(&self, claimed: Option<&str>) -> Principal {
@@ -876,7 +1031,15 @@ impl SessionHandle {
         });
         if let Some(url) = observed {
             let principal = principal(&url);
-            receipt.last = Some(url);
+            receipt.last = Some(url.clone());
+            let mut frames = self
+                .session
+                .frames
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(f) = frames.get_mut(&1) {
+                f.last = Some(url);
+            }
             principal
         } else {
             Principal {
@@ -1270,6 +1433,7 @@ impl Broker {
             channels: Mutex::new(Vec::new()),
             revoked: AtomicBool::new(false),
             navigation: Mutex::new(NavigationReceipt::default()),
+            frames: Mutex::new(HashMap::new()),
             policy: RwLock::new(policy),
             cookies,
             scope: directory.to_string_lossy().into_owned(),
@@ -1297,7 +1461,8 @@ impl Broker {
             WireRequest::Fetch { token, .. }
             | WireRequest::CookieGet { token, .. }
             | WireRequest::CookieSet { token, .. }
-            | WireRequest::Resource { token, .. } => token,
+            | WireRequest::Resource { token, .. }
+            | WireRequest::FrameDetach { token, .. } => token,
         };
         let session = self
             .sessions
@@ -1318,13 +1483,21 @@ impl Broker {
             WireRequest::Fetch { identity, .. }
             | WireRequest::CookieGet { identity, .. }
             | WireRequest::CookieSet { identity, .. }
-            | WireRequest::Resource { identity, .. } => identity,
+            | WireRequest::Resource { identity, .. }
+            | WireRequest::FrameDetach { identity, .. } => identity,
         };
         if session.bound && *identity != Some(session.identity) {
             return Err("Broker service/partition mismatch".into());
         }
         match request {
-            WireRequest::Resource { request, .. } => {
+            WireRequest::FrameDetach { frame, .. } => {
+                if bytes != 0 {
+                    return Err("Invalid frame detach packet".into());
+                }
+                session.detach_frame(frame);
+                write_packet(stream, &Reply::Done, &[]).map(|_| None)
+            }
+            WireRequest::Resource { request, frame, .. } => {
                 if !session.bound {
                     return Err("Resources require a bound service".into());
                 }
@@ -1341,7 +1514,7 @@ impl Broker {
                         if stream.read_exact(&mut body).is_err() {
                             return;
                         }
-                        let result = broker.resource(&session, request, body);
+                        let result = broker.resource(&session, request, body, frame);
                         let result = if session.revoked.load(Ordering::Acquire) {
                             Err("Revoked resource response".into())
                         } else {
@@ -1362,6 +1535,7 @@ impl Broker {
                 script,
                 context,
                 netscape,
+                frame,
                 ..
             } => {
                 if bytes != 0 {
@@ -1371,7 +1545,7 @@ impl Broker {
                     return write_packet(stream, &Reply::Cookie(String::new()), &[]).map(|_| None);
                 }
                 let url = Url::parse(&url).map_err(|e| e.to_string())?;
-                session.script_cookie_scope(&url)?;
+                session.script_cookie_scope(&url, frame)?;
                 let context = if session.bound {
                     SiteContext::SameSite
                 } else {
@@ -1409,6 +1583,7 @@ impl Broker {
                 value,
                 script,
                 context,
+                frame,
                 ..
             } => {
                 if bytes != 0 || value.len() > 4096 {
@@ -1418,7 +1593,7 @@ impl Broker {
                     return write_packet(stream, &Reply::Done, &[]).map(|_| None);
                 }
                 let url = Url::parse(&url).map_err(|e| e.to_string())?;
-                session.script_cookie_scope(&url)?;
+                session.script_cookie_scope(&url, frame)?;
                 let context = if session.bound {
                     SiteContext::SameSite
                 } else {
@@ -1443,7 +1618,6 @@ impl Broker {
                     return Err("Upload exceeds its size limit".into());
                 };
                 if session.bound {
-                    let document = session.document();
                     if request.top_level {
                         let receipt = session
                             .navigation
@@ -1463,8 +1637,72 @@ impl Broker {
                             .map_err(|error| error.to_string())?
                             .origin()
                             .ascii_serialization();
+                    } else if request.destination == ResourceDestination::Iframe {
+                        let frame_id = request.frame.ok_or("Iframe request missing frame id")?;
+                        if frame_id == 1 {
+                            return Err("Frame id 1 is reserved for top-level document".into());
+                        }
+                        let parent_id = request.parent_frame.unwrap_or(1);
+                        let parent_doc = session
+                            .document_for_frame(Some(parent_id))
+                            .ok_or("Parent frame has no committed document")?;
+                        let (parent_depth, live_count) = {
+                            let frames = session
+                                .frames
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            let parent_depth = if parent_id == 1 {
+                                0
+                            } else {
+                                frames
+                                    .get(&parent_id)
+                                    .map(|f| f.depth)
+                                    .ok_or("Parent frame not found in broker")?
+                            };
+                            let live_count = frames.len();
+                            (parent_depth, live_count)
+                        };
+                        if parent_depth + 1 > 8 {
+                            return Err("Frame depth limit exceeded".into());
+                        }
+                        if live_count >= 32 {
+                            return Err("Live frame limit exceeded".into());
+                        }
+                        let initiator = request
+                            .initiator
+                            .as_ref()
+                            .ok_or("Iframe navigation missing initiator")?;
+                        if initiator.origin() != parent_doc.origin() {
+                            return Err("Iframe initiator does not match parent origin".into());
+                        }
+                        let target = Url::parse(&request.url).map_err(|e| e.to_string())?;
+                        session
+                            .policy
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .permits_request(&request, &target)?;
+                        request.origin = parent_doc.origin().ascii_serialization();
+                        request.initiator = Some(parent_doc);
+                        let mut frames = session
+                            .frames
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        let state = frames.entry(frame_id).or_insert_with(|| FrameState {
+                            parent: Some(parent_id),
+                            committed: None,
+                            allowed: Vec::new(),
+                            last: None,
+                            opaque: false,
+                            depth: parent_depth + 1,
+                            detached: false,
+                        });
+                        state.detached = false;
+                        state.allowed = vec![target];
                     } else {
-                        let document = document.ok_or("No document fetch authority")?;
+                        let frame_id = request.frame.unwrap_or(1);
+                        let document = session
+                            .document_for_frame(Some(frame_id))
+                            .ok_or("No document fetch authority")?;
                         let origin = document.origin().ascii_serialization();
                         if request.origin != origin {
                             return Err(format!(
@@ -1574,6 +1812,74 @@ impl Broker {
                                         }
                                     } else {
                                         receipt.committed = Url::parse(&response.url).ok();
+                                    }
+                                }
+                            } else if request.destination == ResourceDestination::Iframe {
+                                if let Some(frame_id) = request.frame {
+                                    let mut frames = session
+                                        .frames
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                    let f_parent = frames.get(&frame_id).and_then(|f| f.parent);
+                                    let mut ancestors = Vec::new();
+                                    let mut cur = f_parent;
+                                    while let Some(pid) = cur {
+                                        if pid == 1 {
+                                            let receipt = session
+                                                .navigation
+                                                .lock()
+                                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                            if let Some(u) = receipt.committed.as_ref().or(receipt.last.as_ref()) {
+                                                ancestors.push(u.clone());
+                                            }
+                                            break;
+                                        } else if let Some(parent_frame) = frames.get(&pid) {
+                                            if let Some(u) = parent_frame.committed.as_ref().or(parent_frame.last.as_ref()) {
+                                                ancestors.push(u.clone());
+                                            }
+                                            cur = parent_frame.parent;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    if let Some(f) = frames.get_mut(&frame_id) {
+                                        if (300..400).contains(&response.status) {
+                                            if let Some(next) = response
+                                                .headers
+                                                .iter()
+                                                .find(|(name, _)| name.eq_ignore_ascii_case("location"))
+                                                .and_then(|(_, location)| {
+                                                    Url::parse(&response.url).ok()?.join(location).ok()
+                                                })
+                                                && f.allowed.len() < 10
+                                            {
+                                                f.allowed.push(next);
+                                            }
+                                        } else {
+                                            let response_url = Url::parse(&response.url).ok();
+                                            if let Some(ref r_url) = response_url {
+                                                let ancestor_refs: Vec<&Url> = ancestors.iter().collect();
+                                                let xfo_values: Vec<&str> = response
+                                                    .headers
+                                                    .iter()
+                                                    .filter(|(n, _)| n.eq_ignore_ascii_case("x-frame-options"))
+                                                    .map(|(_, v)| v.as_str())
+                                                    .collect();
+                                                if !wega_security::csp::x_frame_options_allows(&xfo_values, &ancestor_refs, r_url) {
+                                                    return Err("X-Frame-Options forbids embedding".into());
+                                                }
+                                                let mut csp = wega_security::csp::Csp::default();
+                                                for (n, v) in &response.headers {
+                                                    if n.eq_ignore_ascii_case("content-security-policy") {
+                                                        csp.add(v);
+                                                    }
+                                                }
+                                                if !csp.allows_ancestors(&ancestor_refs, r_url) {
+                                                    return Err("Content Security Policy frame-ancestors forbids embedding".into());
+                                                }
+                                            }
+                                            f.committed = response_url;
+                                        }
                                     }
                                 }
                             }
@@ -1693,11 +1999,20 @@ impl Remote {
         Ok((reply, body))
     }
     pub fn resource(&self, request: ResourceRequest, body: &[u8]) -> Result<Vec<u8>, String> {
+        self.resource_frame(request, body, None)
+    }
+    pub fn resource_frame(
+        &self,
+        request: ResourceRequest,
+        body: &[u8],
+        frame: Option<u64>,
+    ) -> Result<Vec<u8>, String> {
         let (reply, body) = self.call(
             WireRequest::Resource {
                 identity: self.identity,
                 token: self.token.clone(),
                 request,
+                frame,
             },
             body,
         )?;
@@ -1705,6 +2020,21 @@ impl Remote {
             Ok(body)
         } else {
             Err("Invalid resource reply".into())
+        }
+    }
+    pub fn detach_frame(&self, frame: u64) -> Result<(), String> {
+        let (reply, _) = self.call(
+            WireRequest::FrameDetach {
+                identity: self.identity,
+                token: self.token.clone(),
+                frame,
+            },
+            &[],
+        )?;
+        if matches!(reply, Reply::Done) {
+            Ok(())
+        } else {
+            Err("Invalid detach reply".into())
         }
     }
 
@@ -1738,6 +2068,16 @@ impl Remote {
         context: SiteContext,
         netscape: bool,
     ) -> Result<String, String> {
+        self.cookie_read_frame(url, script, context, netscape, None)
+    }
+    pub fn cookie_read_frame(
+        &self,
+        url: &Url,
+        script: bool,
+        context: SiteContext,
+        netscape: bool,
+        frame: Option<u64>,
+    ) -> Result<String, String> {
         let (reply, body) = self.call(
             WireRequest::CookieGet {
                 identity: self.identity,
@@ -1746,6 +2086,7 @@ impl Remote {
                 script,
                 context,
                 netscape,
+                frame,
             },
             &[],
         )?;
@@ -1769,6 +2110,16 @@ impl Remote {
         script: bool,
         context: SiteContext,
     ) -> Result<(), String> {
+        self.cookie_write_frame(url, value, script, context, None)
+    }
+    pub fn cookie_write_frame(
+        &self,
+        url: &Url,
+        value: &str,
+        script: bool,
+        context: SiteContext,
+        frame: Option<u64>,
+    ) -> Result<(), String> {
         let (reply, _) = self.call(
             WireRequest::CookieSet {
                 identity: self.identity,
@@ -1777,6 +2128,7 @@ impl Remote {
                 value: value.into(),
                 script,
                 context,
+                frame,
             },
             &[],
         )?;
@@ -1801,6 +2153,8 @@ enum WireRequest {
         identity: Option<ServiceIdentity>,
         token: String,
         request: ResourceRequest,
+        #[serde(default)]
+        frame: Option<u64>,
     },
     Fetch {
         #[serde(default)]
@@ -1816,6 +2170,8 @@ enum WireRequest {
         script: bool,
         context: SiteContext,
         netscape: bool,
+        #[serde(default)]
+        frame: Option<u64>,
     },
     CookieSet {
         #[serde(default)]
@@ -1825,6 +2181,14 @@ enum WireRequest {
         value: String,
         script: bool,
         context: SiteContext,
+        #[serde(default)]
+        frame: Option<u64>,
+    },
+    FrameDetach {
+        #[serde(default)]
+        identity: Option<ServiceIdentity>,
+        token: String,
+        frame: u64,
     },
 }
 #[derive(Serialize, Deserialize)]

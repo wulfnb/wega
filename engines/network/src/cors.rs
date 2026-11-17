@@ -200,7 +200,10 @@ impl Broker {
         response.headers.retain(|(name, _)| {
             !name.eq_ignore_ascii_case("set-cookie") && !name.eq_ignore_ascii_case("set-cookie2")
         });
-        if request.top_level {
+        if request.top_level
+            || request.destination == ResourceDestination::Document
+            || request.destination == ResourceDestination::Iframe
+        {
             return Ok(());
         }
         let target = Url::parse(&response.url).map_err(|error| error.to_string())?;

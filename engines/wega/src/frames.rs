@@ -86,6 +86,8 @@ impl Sandbox {
 
 /// What a child view knows about itself. Set once, before its first document exists.
 pub(crate) struct FrameRole {
+    pub frame_id: u64,
+    pub parent_frame_id: Option<u64>,
     pub depth: usize,
     pub sandbox: Sandbox,
     pub opaque: bool,
@@ -298,9 +300,21 @@ impl View {
         // Detach frames whose element left the document (removed, replaced, or its parent
         // re-created). Dropping the child tears down its realm, timers and requests.
         let before = self.frames.children.len();
-        self.frames
-            .children
-            .retain(|child| nodes.contains(&child.node));
+        let mut removed = Vec::new();
+        self.frames.children.retain(|child| {
+            if nodes.contains(&child.node) {
+                true
+            } else {
+                removed.push(child.key);
+                false
+            }
+        });
+        for key in removed {
+            self.network.detach_frame(key);
+            self.events.push_back(PageEvent::FrameDetached {
+                frame: wega_protocol::identity::FrameId(key),
+            });
+        }
         if self.frames.children.len() != before {
             if let Some(focused) = self.frames.focused
                 && !self.frames.children.iter().any(|c| c.key == focused)
@@ -342,13 +356,15 @@ impl View {
         self.frames.refused.insert((node, signature));
     }
 
-    fn frame_role(&self, sandbox: Sandbox, opaque: bool, inherits: bool) -> FrameRole {
+    fn frame_role(&self, frame_id: u64, sandbox: Sandbox, opaque: bool, inherits: bool) -> FrameRole {
         let own = self.role.as_ref();
         let mut ancestors = vec![self.document.borrow().url().clone()];
         if let Some(role) = own {
             ancestors.extend(role.ancestors.iter().cloned());
         }
         FrameRole {
+            frame_id,
+            parent_frame_id: own.map(|r| r.frame_id).or(Some(1)),
             depth: own.map_or(0, |role| role.depth) + 1,
             sandbox,
             opaque,
@@ -394,7 +410,7 @@ impl View {
             Err(reason) => return self.refuse(node, signature, &reason),
         };
         let opaque = sandbox.opaque() || self.role.as_ref().is_some_and(|r| r.opaque && inherits);
-        let role = self.frame_role(sandbox, opaque, inherits);
+        let role = self.frame_role(key, sandbox, opaque, inherits);
         let mut limits = self.limits.clone();
         limits.js_heap_bytes = limits.js_heap_bytes.min(64 * 1024 * 1024);
         let view = View::build(
@@ -418,7 +434,16 @@ impl View {
             loaded_epoch: 0,
             live,
         };
+        let child_key = child.key;
+        let child_sandbox = child.signature.sandbox.clone();
         self.start_frame_navigation(&mut child, signature, content);
+        self.events.push_back(PageEvent::FrameAttached {
+            parent: wega_protocol::identity::FrameId(self.role.as_ref().map_or(1, |r| r.frame_id)),
+            frame: wega_protocol::identity::FrameId(child_key),
+            url: child.view.document.borrow().url().to_string(),
+            name: None,
+            sandbox: child_sandbox,
+        });
         self.frames.children.push(child);
     }
 
@@ -475,7 +500,7 @@ impl View {
         // The sandbox and inherited-origin class can change with the attribute: rebuild the
         // role so a new document is judged against the *new* flags, never the old ones.
         let opaque = sandbox.opaque() || self.role.as_ref().is_some_and(|r| r.opaque && inherits);
-        let role = self.frame_role(sandbox, opaque, inherits);
+        let role = self.frame_role(child.key, sandbox, opaque, inherits);
         child.view.role = Some(role);
         self.start_frame_navigation(&mut child, signature, content);
         self.frames.children.insert(index, child);
@@ -518,11 +543,15 @@ impl View {
         referrer_policy: Option<String>,
     ) -> Result<(), String> {
         let opaque = self.role.as_ref().is_some_and(|role| role.opaque);
+        let frame_id = self.role.as_ref().map(|r| r.frame_id);
+        let parent_frame_id = self.role.as_ref().and_then(|r| r.parent_frame_id);
         let context = FetchContext {
             destination: Destination::Frame,
             initiator: Some(initiator.clone()),
             referrer_policy,
             omit_credentials: opaque,
+            frame: frame_id,
+            parent_frame: parent_frame_id,
             ..Default::default()
         };
         self.load_request(url, context)
