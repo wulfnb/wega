@@ -279,11 +279,7 @@ impl Policy {
     }
 }
 
-pub fn compute_referrer(
-    referrer_url: &Url,
-    target_url: &Url,
-    policy: &str,
-) -> Option<String> {
+pub fn compute_referrer(referrer_url: &Url, target_url: &Url, policy: &str) -> Option<String> {
     let policy = policy.trim().to_ascii_lowercase();
     let is_downgrade = referrer_url.scheme() == "https" && target_url.scheme() == "http";
     let is_same_origin = referrer_url.origin() == target_url.origin();
@@ -300,17 +296,33 @@ pub fn compute_referrer(
     match policy.as_str() {
         "no-referrer" => None,
         "no-referrer-when-downgrade" => {
-            if is_downgrade { None } else { Some(clean_str) }
+            if is_downgrade {
+                None
+            } else {
+                Some(clean_str)
+            }
         }
         "same-origin" => {
-            if is_same_origin { Some(clean_str) } else { None }
+            if is_same_origin {
+                Some(clean_str)
+            } else {
+                None
+            }
         }
         "origin" => Some(origin_str),
         "strict-origin" => {
-            if is_downgrade { None } else { Some(origin_str) }
+            if is_downgrade {
+                None
+            } else {
+                Some(origin_str)
+            }
         }
         "origin-when-cross-origin" => {
-            if is_same_origin { Some(clean_str) } else { Some(origin_str) }
+            if is_same_origin {
+                Some(clean_str)
+            } else {
+                Some(origin_str)
+            }
         }
         "strict-origin-when-cross-origin" | "" => {
             if is_same_origin {
@@ -796,12 +808,10 @@ impl LocalClient {
                             headers.retain(|(name, _)| !name.eq_ignore_ascii_case("origin"));
                         }
                     }
-                    if status == 303 || ((status == 301 || status == 302) && method == "POST") {
-                        if status == 303 && method != "HEAD" {
-                            method = "GET".into();
-                        } else if status == 301 || status == 302 {
-                            method = "GET".into();
-                        }
+                    if (status == 303 && method != "HEAD")
+                        || ((status == 301 || status == 302) && method == "POST")
+                    {
+                        method = "GET".into();
                         body.clear();
                         headers.retain(|(name, _)| {
                             !name.eq_ignore_ascii_case("content-type")

@@ -417,7 +417,10 @@ impl<D: NativeResources> NativeDocument<D> {
 
     pub fn offset_box(&self, key: NodeKey) -> Result<OffsetBox, LayoutError> {
         let Some(b) = self.find_box(key) else {
-            return Ok(OffsetBox { rect: Rect::ZERO, parent: None });
+            return Ok(OffsetBox {
+                rect: Rect::ZERO,
+                parent: None,
+            });
         };
         if b.style.position == super::css::Position::Fixed {
             return Ok(OffsetBox {
@@ -429,16 +432,23 @@ impl<D: NativeResources> NativeDocument<D> {
         let mut at = d.node(key).and_then(NodeView::parent);
         while let Some(parent) = at {
             if let Some(p) = self.find_box(parent) {
-                let is_body = d.node(parent)
+                let is_body = d
+                    .node(parent)
                     .and_then(NodeView::element_name)
                     .is_some_and(|n| n.local == "body");
                 if p.style.position != super::css::Position::Static || is_body {
                     let (px, py) = if is_body {
                         (p.border_box.x, p.border_box.y)
                     } else {
-                        (p.border_box.x + p.border.left, p.border_box.y + p.border.top)
+                        (
+                            p.border_box.x + p.border.left,
+                            p.border_box.y + p.border.top,
+                        )
                     };
-                    let (ox, oy) = (b.border_box.x - px, b.border_box.y - py + if is_body { b.margin.top } else { 0.0 });
+                    let (ox, oy) = (
+                        b.border_box.x - px,
+                        b.border_box.y - py + if is_body { b.margin.top } else { 0.0 },
+                    );
                     return Ok(OffsetBox {
                         rect: Rect {
                             x: ox,

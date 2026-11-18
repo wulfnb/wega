@@ -326,9 +326,9 @@ impl Csp {
             .any(|directive| self.allows_url(directive, url, document, None))
     }
     pub fn report_uri(&self) -> Option<String> {
-        self.policies.iter().find_map(|p| {
-            p.get("report-uri").and_then(|uris| uris.first().cloned())
-        })
+        self.policies
+            .iter()
+            .find_map(|p| p.get("report-uri").and_then(|uris| uris.first().cloned()))
     }
 
     pub fn build_violation_report(
@@ -404,15 +404,20 @@ mod tests {
         let mut csp = Csp::default();
         csp.add("default-src 'self'; report-uri /csp-report");
         assert_eq!(csp.report_uri(), Some("/csp-report".into()));
-        let report = csp.build_violation_report(
-            "https://app.example/page",
-            "https://app.example/",
-            "script-src",
-            "https://evil.example/malicious.js",
-        ).expect("report generated");
+        let report = csp
+            .build_violation_report(
+                "https://app.example/page",
+                "https://app.example/",
+                "script-src",
+                "https://evil.example/malicious.js",
+            )
+            .expect("report generated");
         assert_eq!(report.report.document_uri, "https://app.example/page");
         assert_eq!(report.report.violated_directive, "script-src");
-        assert_eq!(report.report.blocked_uri, "https://evil.example/malicious.js");
+        assert_eq!(
+            report.report.blocked_uri,
+            "https://evil.example/malicious.js"
+        );
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("csp-report"));
         assert!(json.contains("violated-directive"));

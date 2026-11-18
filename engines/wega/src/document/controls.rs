@@ -410,6 +410,17 @@ impl WegaDocument {
                 if node.attr("disabled").is_some() || node.attr("hidden").is_some() {
                     return None;
                 }
+                let mut p = Some(key);
+                while let Some(pk) = p {
+                    if let Some(pn) = self.node(pk) {
+                        if pn.attr("inert").is_some() {
+                            return None;
+                        }
+                        p = pn.parent();
+                    } else {
+                        break;
+                    }
+                }
                 let index = node.attr("tabindex").and_then(|v| v.parse::<i32>().ok());
                 if index.is_some_and(|n| n < 0) {
                     return None;

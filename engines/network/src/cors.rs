@@ -272,10 +272,8 @@ impl Broker {
                 if !is_js {
                     return Err(format!("Script MIME type '{}' blocked by nosniff", mime));
                 }
-            } else if request.destination == ResourceDestination::Style {
-                if mime != "text/css" {
-                    return Err(format!("Style MIME type '{}' blocked by nosniff", mime));
-                }
+            } else if request.destination == ResourceDestination::Style && mime != "text/css" {
+                return Err(format!("Style MIME type '{}' blocked by nosniff", mime));
             }
         }
         Ok(())

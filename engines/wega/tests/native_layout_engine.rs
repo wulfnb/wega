@@ -3,8 +3,8 @@ mod support;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use wega_engine::document::{DocumentSetup, WegaDocument};
 use wega_dom::DocumentView;
+use wega_engine::document::{DocumentSetup, WegaDocument};
 use wega_engine::native_engine::*;
 
 #[test]

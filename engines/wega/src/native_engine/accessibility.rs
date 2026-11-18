@@ -38,6 +38,38 @@ fn role(tag: &str, kind: &str, aria: Option<&str>) -> Role {
             "listitem" => Some(Role::ListItem),
             "navigation" => Some(Role::Navigation),
             "main" => Some(Role::Main),
+            "dialog" => Some(Role::Dialog),
+            "alert" => Some(Role::Alert),
+            "alertdialog" => Some(Role::AlertDialog),
+            "banner" => Some(Role::Banner),
+            "contentinfo" => Some(Role::ContentInfo),
+            "complementary" => Some(Role::Complementary),
+            "region" => Some(Role::Region),
+            "article" => Some(Role::Article),
+            "search" => Some(Role::Search),
+            "tab" => Some(Role::Tab),
+            "tablist" => Some(Role::TabList),
+            "tabpanel" => Some(Role::TabPanel),
+            "menu" => Some(Role::Menu),
+            "menubar" => Some(Role::MenuBar),
+            "menuitem" => Some(Role::MenuItem),
+            "menuitemcheckbox" => Some(Role::MenuItemCheckBox),
+            "menuitemradio" => Some(Role::MenuItemRadio),
+            "progressbar" => Some(Role::ProgressIndicator),
+            "status" => Some(Role::Status),
+            "slider" => Some(Role::Slider),
+            "spinbutton" => Some(Role::SpinButton),
+            "switch" => Some(Role::Switch),
+            "tree" => Some(Role::Tree),
+            "treeitem" => Some(Role::TreeItem),
+            "treegrid" => Some(Role::TreeGrid),
+            "grid" => Some(Role::Grid),
+            "gridcell" => Some(Role::GridCell),
+            "toolbar" => Some(Role::Toolbar),
+            "tooltip" => Some(Role::Tooltip),
+            "form" => Some(Role::Form),
+            "timer" => Some(Role::Timer),
+            "log" => Some(Role::Log),
             "none" | "presentation" => Some(Role::GenericContainer),
             _ => None,
         })
@@ -53,6 +85,11 @@ fn role(tag: &str, kind: &str, aria: Option<&str>) -> Role {
             "email" => Role::EmailInput,
             "search" => Role::SearchInput,
             "number" => Role::NumberInput,
+            "range" => Role::Slider,
+            "date" => Role::DateInput,
+            "time" => Role::TimeInput,
+            "url" => Role::UrlInput,
+            "tel" => Role::PhoneNumberInput,
             _ => Role::TextInput,
         },
         "textarea" => Role::MultilineTextInput,
@@ -75,6 +112,20 @@ fn role(tag: &str, kind: &str, aria: Option<&str>) -> Role {
         "nav" => Role::Navigation,
         "main" => Role::Main,
         "form" => Role::Form,
+        "dialog" => Role::Dialog,
+        "header" => Role::Header,
+        "footer" => Role::Footer,
+        "aside" => Role::Complementary,
+        "section" => Role::Region,
+        "article" => Role::Article,
+        "progress" => Role::ProgressIndicator,
+        "meter" => Role::Meter,
+        "details" => Role::Details,
+        "summary" => Role::Button,
+        "figure" => Role::Figure,
+        "figcaption" => Role::FigureCaption,
+        "blockquote" => Role::Blockquote,
+        "code" => Role::Code,
         _ => Role::GenericContainer,
     }
 }
@@ -119,7 +170,10 @@ pub fn build<D: wega_native::resources::NativeResources>(
         let Some(n) = doc.node(key) else {
             continue;
         };
-        if n.attr("aria-hidden") == Some("true") || n.attr("hidden").is_some() {
+        if n.attr("aria-hidden") == Some("true")
+            || n.attr("hidden").is_some()
+            || n.attr("inert").is_some()
+        {
             continue;
         }
         let Some(style) = styles.get(&key) else {
@@ -162,7 +216,7 @@ pub fn build<D: wega_native::resources::NativeResources>(
                     let Some(p) = doc.node(k) else {
                         break;
                     };
-                    if p.element_name().is_some_and(|n| n.local == "label") {
+                    if p.element_name().is_some_and(|p| p.local == "label") {
                         label = Some(text(doc, k));
                         break;
                     }
@@ -183,9 +237,126 @@ pub fn build<D: wega_native::resources::NativeResources>(
             if let Some(label) = label {
                 node.set_label(label);
             }
+
+            // Description: aria-describedby or aria-description
+            let described = n.attr("aria-describedby").map(|ids| {
+                ids.split_whitespace()
+                    .take(32)
+                    .filter_map(|id| doc.element_by_id(id))
+                    .map(|k| text(doc, k))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            });
+            let description = described
+                .filter(|s| !s.is_empty())
+                .or_else(|| n.attr("aria-description").map(str::to_owned));
+            if let Some(desc) = description {
+                node.set_description(desc);
+            }
+
+            // Heading level
+            if r == Role::Heading {
+                let heading_level =
+                    if let Some(lvl) = n.attr("aria-level").and_then(|v| v.parse::<usize>().ok()) {
+                        Some(lvl.saturating_sub(1))
+                    } else {
+                        match tag {
+                            "h1" => Some(0),
+                            "h2" => Some(1),
+                            "h3" => Some(2),
+                            "h4" => Some(3),
+                            "h5" => Some(4),
+                            "h6" => Some(5),
+                            _ => None,
+                        }
+                    };
+                if let Some(lvl) = heading_level {
+                    node.set_level(lvl);
+                }
+            }
+
+            // Disabled
             if n.attr("disabled").is_some() || n.attr("aria-disabled") == Some("true") {
                 node.set_disabled();
             }
+
+            // Required
+            if n.attr("required").is_some() || n.attr("aria-required") == Some("true") {
+                node.set_required();
+            }
+
+            // ReadOnly
+            if n.attr("readonly").is_some() || n.attr("aria-readonly") == Some("true") {
+                node.set_read_only();
+            }
+
+            // Expanded
+            match n.attr("aria-expanded") {
+                Some("true") => node.set_expanded(true),
+                Some("false") => node.set_expanded(false),
+                _ => {}
+            }
+
+            // Selected
+            match n.attr("aria-selected") {
+                Some("true") => node.set_selected(true),
+                Some("false") => node.set_selected(false),
+                _ => {}
+            }
+
+            // Modal
+            if n.attr("aria-modal") == Some("true") {
+                node.set_modal();
+            }
+
+            // Multiselectable
+            if n.attr("aria-multiselectable") == Some("true") {
+                node.set_multiselectable();
+            }
+
+            // Invalid
+            if let Some(inv) = n.attr("aria-invalid") {
+                match inv {
+                    "true" => node.set_invalid(accesskit::Invalid::True),
+                    "spelling" => node.set_invalid(accesskit::Invalid::Spelling),
+                    "grammar" => node.set_invalid(accesskit::Invalid::Grammar),
+                    _ => {}
+                }
+            }
+
+            // Live region
+            if let Some(live) = n.attr("aria-live") {
+                match live {
+                    "polite" => node.set_live(accesskit::Live::Polite),
+                    "assertive" => node.set_live(accesskit::Live::Assertive),
+                    "off" => node.set_live(accesskit::Live::Off),
+                    _ => {}
+                }
+            }
+
+            // Numeric values for range / progress / meter / slider
+            if let Some(val) = n
+                .attr("aria-valuenow")
+                .and_then(|v| v.parse::<f64>().ok())
+                .or_else(|| n.attr("value").and_then(|v| v.parse::<f64>().ok()))
+            {
+                node.set_numeric_value(val);
+            }
+            if let Some(min) = n
+                .attr("aria-valuemin")
+                .and_then(|v| v.parse::<f64>().ok())
+                .or_else(|| n.attr("min").and_then(|v| v.parse::<f64>().ok()))
+            {
+                node.set_min_numeric_value(min);
+            }
+            if let Some(max) = n
+                .attr("aria-valuemax")
+                .and_then(|v| v.parse::<f64>().ok())
+                .or_else(|| n.attr("max").and_then(|v| v.parse::<f64>().ok()))
+            {
+                node.set_max_numeric_value(max);
+            }
+
             if matches!(tag, "input" | "textarea" | "select") {
                 let value = if tag == "select" {
                     let mut options = Vec::new();
@@ -227,7 +398,7 @@ pub fn build<D: wega_native::resources::NativeResources>(
                     value
                 });
             }
-            if matches!(r, Role::CheckBox | Role::RadioButton) {
+            if matches!(r, Role::CheckBox | Role::RadioButton | Role::Switch) {
                 node.set_toggled(accesskit::Toggled::from(
                     checked
                         .get(&key)
@@ -238,7 +409,15 @@ pub fn build<D: wega_native::resources::NativeResources>(
             }
             if matches!(
                 r,
-                Role::Button | Role::Link | Role::CheckBox | Role::RadioButton
+                Role::Button
+                    | Role::Link
+                    | Role::CheckBox
+                    | Role::RadioButton
+                    | Role::Switch
+                    | Role::MenuItem
+                    | Role::MenuItemCheckBox
+                    | Role::MenuItemRadio
+                    | Role::Tab
             ) {
                 node.add_action(Action::Click);
             }

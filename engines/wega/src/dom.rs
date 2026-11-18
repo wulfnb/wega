@@ -2374,11 +2374,19 @@ impl Dom {
                 match command {
                     "rect" => return Ok(rjson(Rect::ZERO)),
                     "clientRects" => return Ok(json!([])),
-                    "clientBox" => return Ok(json!({"left":0.0,"top":0.0,"width":0.0,"height":0.0})),
-                    "offsetBox" => return Ok(json!({"x":0.0,"y":0.0,"width":0.0,"height":0.0,"parent":null})),
+                    "clientBox" => {
+                        return Ok(json!({"left":0.0,"top":0.0,"width":0.0,"height":0.0}));
+                    }
+                    "offsetBox" => {
+                        return Ok(json!({"x":0.0,"y":0.0,"width":0.0,"height":0.0,"parent":null}));
+                    }
                     "scrollSize" => return Ok(json!({"width":0.0,"height":0.0})),
                     "scroll" => return Ok(json!({"x":0.0,"y":0.0})),
-                    "box" => return Ok(json!({"offsetWidth":0.0,"offsetHeight":0.0,"contentWidth":0.0,"contentHeight":0.0,"paddingLeft":0.0,"paddingTop":0.0})),
+                    "box" => {
+                        return Ok(
+                            json!({"offsetWidth":0.0,"offsetHeight":0.0,"contentWidth":0.0,"contentHeight":0.0,"paddingLeft":0.0,"paddingTop":0.0}),
+                        );
+                    }
                     _ => return Err("Node no longer exists".into()),
                 }
             }

@@ -462,37 +462,101 @@ mod tests {
 
         // __Secure- prefix rules:
         // 1. Rejected if non-HTTPS
-        jar.set(&http_url, "__Secure-token=123; Secure", false, SiteContext::SameSite);
-        assert!(!jar.get(&http_url, false, SiteContext::SameSite).contains("__Secure-token"));
+        jar.set(
+            &http_url,
+            "__Secure-token=123; Secure",
+            false,
+            SiteContext::SameSite,
+        );
+        assert!(
+            !jar.get(&http_url, false, SiteContext::SameSite)
+                .contains("__Secure-token")
+        );
 
         // 2. Rejected if HTTPS but missing Secure
-        jar.set(&https_url, "__Secure-token=123; Path=/", false, SiteContext::SameSite);
-        assert!(!jar.get(&https_url, false, SiteContext::SameSite).contains("__Secure-token"));
+        jar.set(
+            &https_url,
+            "__Secure-token=123; Path=/",
+            false,
+            SiteContext::SameSite,
+        );
+        assert!(
+            !jar.get(&https_url, false, SiteContext::SameSite)
+                .contains("__Secure-token")
+        );
 
         // 3. Accepted if HTTPS with Secure
-        jar.set(&https_url, "__Secure-token=123; Secure; Path=/", false, SiteContext::SameSite);
-        assert!(jar.get(&https_url, false, SiteContext::SameSite).contains("__Secure-token=123"));
+        jar.set(
+            &https_url,
+            "__Secure-token=123; Secure; Path=/",
+            false,
+            SiteContext::SameSite,
+        );
+        assert!(
+            jar.get(&https_url, false, SiteContext::SameSite)
+                .contains("__Secure-token=123")
+        );
 
         // __Host- prefix rules:
         // 1. Rejected if non-HTTPS
-        jar.set(&http_url, "__Host-id=456; Secure; Path=/", false, SiteContext::SameSite);
-        assert!(!jar.get(&http_url, false, SiteContext::SameSite).contains("__Host-id"));
+        jar.set(
+            &http_url,
+            "__Host-id=456; Secure; Path=/",
+            false,
+            SiteContext::SameSite,
+        );
+        assert!(
+            !jar.get(&http_url, false, SiteContext::SameSite)
+                .contains("__Host-id")
+        );
 
         // 2. Rejected if missing Secure
-        jar.set(&https_url, "__Host-id=456; Path=/", false, SiteContext::SameSite);
-        assert!(!jar.get(&https_url, false, SiteContext::SameSite).contains("__Host-id"));
+        jar.set(
+            &https_url,
+            "__Host-id=456; Path=/",
+            false,
+            SiteContext::SameSite,
+        );
+        assert!(
+            !jar.get(&https_url, false, SiteContext::SameSite)
+                .contains("__Host-id")
+        );
 
         // 3. Rejected if Path is not /
-        jar.set(&https_url, "__Host-id=456; Secure; Path=/app", false, SiteContext::SameSite);
-        assert!(!jar.get(&https_url, false, SiteContext::SameSite).contains("__Host-id"));
+        jar.set(
+            &https_url,
+            "__Host-id=456; Secure; Path=/app",
+            false,
+            SiteContext::SameSite,
+        );
+        assert!(
+            !jar.get(&https_url, false, SiteContext::SameSite)
+                .contains("__Host-id")
+        );
 
         // 4. Rejected if Domain attribute is present
-        jar.set(&https_url, "__Host-id=456; Secure; Path=/; Domain=example.com", false, SiteContext::SameSite);
-        assert!(!jar.get(&https_url, false, SiteContext::SameSite).contains("__Host-id"));
+        jar.set(
+            &https_url,
+            "__Host-id=456; Secure; Path=/; Domain=example.com",
+            false,
+            SiteContext::SameSite,
+        );
+        assert!(
+            !jar.get(&https_url, false, SiteContext::SameSite)
+                .contains("__Host-id")
+        );
 
         // 5. Accepted if HTTPS + Secure + Path=/ + no Domain
-        jar.set(&https_url, "__Host-id=456; Secure; Path=/", false, SiteContext::SameSite);
-        assert!(jar.get(&https_url, false, SiteContext::SameSite).contains("__Host-id=456"));
+        jar.set(
+            &https_url,
+            "__Host-id=456; Secure; Path=/",
+            false,
+            SiteContext::SameSite,
+        );
+        assert!(
+            jar.get(&https_url, false, SiteContext::SameSite)
+                .contains("__Host-id=456")
+        );
     }
 
     #[test]

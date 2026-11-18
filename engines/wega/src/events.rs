@@ -1,6 +1,6 @@
 //! Wega input values. Node targeting and dispatch use Wega keys in the runtime.
 // Input value definitions retain the prior public field contract (MIT OR Apache-2.0).
-use keyboard_types::{Code, Key, Location, Modifiers};
+pub use keyboard_types::{Code, Key, Location, Modifiers, NamedKey};
 use smol_str::SmolStr;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum KeyState {
@@ -24,6 +24,26 @@ pub struct KeyEvent {
     pub is_composing: bool,
     pub state: KeyState,
     pub text: Option<SmolStr>,
+}
+
+impl KeyEvent {
+    pub fn new(key: Key, code: Code, state: KeyState) -> Self {
+        Self {
+            key,
+            code,
+            modifiers: Modifiers::empty(),
+            location: Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state,
+            text: None,
+        }
+    }
+
+    pub fn with_modifiers(mut self, modifiers: Modifiers) -> Self {
+        self.modifiers = modifiers;
+        self
+    }
 }
 
 /// Copy of Winit IME event to avoid lower-level Blitz crates depending on winit

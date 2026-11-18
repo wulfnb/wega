@@ -363,7 +363,10 @@ fn parallel_style_threshold_preserves_updates_on_large_documents() {
     {
         let pool = style::global_style_data::STYLE_THREAD_POOL.pool();
         assert!(
-            pool.as_ref().map(|pool| pool.current_num_threads()).unwrap_or(0) >= 2,
+            pool.as_ref()
+                .map(|pool| pool.current_num_threads())
+                .unwrap_or(0)
+                >= 2,
             "expected parallel style thread pool to have at least 2 threads"
         );
     }
