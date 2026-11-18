@@ -73,6 +73,17 @@ impl Document {
             dirty: Invalidations::default(),
         }
     }
+    /// Update the committed document URL (history policy is enforced by the host).
+    pub fn set_base_url(&mut self, url: Url) {
+        self.url = url;
+    }
+    /// The owner edge is separate from observable DOM parentage.
+    pub fn template_owner(&self, key: NodeKey) -> Option<NodeKey> {
+        self.nodes.get(&key)?.owner
+    }
+    pub fn template_contents_key(&self, key: NodeKey) -> Option<NodeKey> {
+        self.nodes.get(&key)?.template
+    }
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
@@ -175,6 +186,13 @@ impl Document {
 }
 #[derive(Clone, Copy)]
 pub struct DocumentNode<'a>(&'a Node);
+impl<'a> DocumentNode<'a> {
+    /// An opaque token tied to this immutable document borrow. A matcher may
+    /// compare node identity without forging pointers from integer keys.
+    pub fn identity_token(self) -> &'a impl Sized {
+        self.0
+    }
+}
 impl<'a> NodeView<'a> for DocumentNode<'a> {
     fn kind(self) -> NodeKind {
         match self.0.data {

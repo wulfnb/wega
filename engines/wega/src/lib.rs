@@ -21,6 +21,7 @@ mod cookies;
 mod csp;
 #[path = "../../../src/diagnostic_event.rs"]
 pub mod diagnostics;
+pub mod document;
 mod dom;
 mod dom_host;
 mod encoding;

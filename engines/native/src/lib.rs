@@ -10,3 +10,5 @@ pub mod layout;
 pub mod resources;
 mod syntax;
 pub mod text;
+
+pub mod controls;

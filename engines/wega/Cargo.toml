@@ -45,7 +45,10 @@ sha2 = "0.11"
 
 style = {package="stylo",version="=0.22.0"}
 
-selectors = "=0.42.0"
+style_config = { package="stylo_static_prefs", version="=0.22.0" }
+style_traits = {package="stylo_traits", version="=0.22.0"}
+wuff = "=0.2.9"
+selectors = "=0.41.0"
 style_dom = {package="stylo_dom",version="=0.22.0"}
 
 keyboard-types = "=0.8.3"

@@ -49,40 +49,7 @@ pub fn configure_fonts(source: FontSource) {
         if same {
             return;
         }
-        let fonts = if let Some(bytes) = &source {
-            use parley::fontique::{
-                Blob, Collection, CollectionOptions, GenericFamily, SourceCache,
-            };
-            let mut fonts = FontContext {
-                collection: Collection::new(CollectionOptions {
-                    shared: false,
-                    system_fonts: false,
-                }),
-                source_cache: SourceCache::new_shared(),
-            };
-            for (index, font) in bytes.iter().enumerate() {
-                let registered = fonts
-                    .collection
-                    .register_fonts(Blob::new(std::sync::Arc::new(font.clone()) as _), None);
-                let ids: Vec<_> = registered.iter().map(|(id, _)| *id).collect();
-                let generic = match index {
-                    0 => GenericFamily::SansSerif,
-                    1 => GenericFamily::Serif,
-                    _ => GenericFamily::Monospace,
-                };
-                fonts
-                    .collection
-                    .append_generic_families(generic, ids.iter().copied());
-                if index == 0 {
-                    fonts
-                        .collection
-                        .append_generic_families(GenericFamily::SystemUi, ids.iter().copied());
-                }
-            }
-            fonts
-        } else {
-            FontContext::new()
-        };
+        let fonts = font_context(source.as_deref().map(Vec::as_slice));
         TEXT.with(|cx| *cx.borrow_mut() = (fonts, LayoutContext::new()));
         *active.borrow_mut() = Some(source);
     });
@@ -414,4 +381,41 @@ pub fn shape_inline_with_style(
     });
     SHAPING_NANOS.with(|n| n.set(n.get() + start.elapsed().as_nanos()));
     result
+}
+
+/// Construct only the supplied broker fonts; system discovery is used solely
+/// when the embedding browser explicitly supplies no broker font source.
+pub fn font_context(source: Option<&[Vec<u8>]>) -> FontContext {
+    if let Some(bytes) = source {
+        use parley::fontique::{Blob, Collection, CollectionOptions, GenericFamily, SourceCache};
+        let mut fonts = FontContext {
+            collection: Collection::new(CollectionOptions {
+                shared: false,
+                system_fonts: false,
+            }),
+            source_cache: SourceCache::new_shared(),
+        };
+        for (index, font) in bytes.iter().enumerate() {
+            let registered = fonts
+                .collection
+                .register_fonts(Blob::new(std::sync::Arc::new(font.clone()) as _), None);
+            let ids: Vec<_> = registered.iter().map(|(id, _)| *id).collect();
+            let generic = match index {
+                0 => GenericFamily::SansSerif,
+                1 => GenericFamily::Serif,
+                _ => GenericFamily::Monospace,
+            };
+            fonts
+                .collection
+                .append_generic_families(generic, ids.iter().copied());
+            if index == 0 {
+                fonts
+                    .collection
+                    .append_generic_families(GenericFamily::SystemUi, ids.iter().copied());
+            }
+        }
+        fonts
+    } else {
+        FontContext::new()
+    }
 }

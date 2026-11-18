@@ -2,6 +2,28 @@
 
 ## Continuation from `2d067b2` (2026-11-18)
 
+### Runtime owner integration checkpoint
+
+- Added `WegaDocument` runtime services around exactly one existing
+  `wega_dom::Document`, with Wega keys for stylesheet/editor/image state. There
+  is no reference tree inside this owner. The existing native pipeline now runs
+  on it directly in runtime-owner integration tests.
+- Adapted the existing Stylo CSSOM operations/selector matcher to borrowed Wega
+  nodes. Stylesheets belong to the Wega owner. Inline writes validate through
+  the existing declaration parser and preserve declaration order/importance.
+  Preserved parser feature initialization; both owners still reject `:has()`.
+- Resource handlers use only the supplied authorized provider, stamp trusted
+  destinations and cancellation signals, separate requested/final URLs, reject
+  stale link completions, use final URLs for imports, and retain import depth 8.
+  Raster/SVG decoders are the same process-budgeted Wega implementations.
+- Native control presentation is shared by reference and owned owners; no
+  independent duplicate layout or decoration algorithm was introduced. Broker
+  font construction is shared with the native text context.
+- Verification: 5 owned-owner integration checks plus 12 production
+  stylesheet/image/form/accessibility/redirect regressions passed, strict
+  library/new-test Clippy passed. This is preparation for the owner switch:
+  View/V8/frames still own BlitzDocument, and M1-M5 remain incomplete.
+
 ### Native owner boundary checkpoint
 
 - `NativeDocument<D>` now consumes `NativeResources` with the existing document,

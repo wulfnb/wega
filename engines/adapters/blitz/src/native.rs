@@ -1,6 +1,6 @@
 //! Reference-owner mapping onto Wega native resource/control contracts.
 use crate::{BlitzDocument, ToNodeId};
-use wega_dom::{DocumentView, NodeKind, NodeView, layout::Rect};
+use wega_dom::{DocumentView, NodeKind, NodeView};
 use wega_native::{
     css::{StyleSheet, parse_media_query_list},
     graphics::{SvgGraphic, decode_svg},
@@ -12,10 +12,10 @@ impl NativeResources for BlitzDocument {
         ensure_form_control_data(self);
     }
     fn sync_controls(&self, root: &mut LayoutBox) {
-        sync_form_state(root, self);
+        wega_native::controls::sync(root, &|key| control(self, key));
     }
     fn decorate_controls(&self, root: &mut LayoutBox) {
-        compute_form_decorations(root, self);
+        wega_native::controls::decorate(root, &|key| control(self, key));
     }
 
     fn native_generations(&self) -> (u64, u64) {
@@ -205,168 +205,23 @@ fn ensure_form_control_data(doc: &mut BlitzDocument) {
     }
 }
 
-fn sync_form_state(b: &mut LayoutBox, doc: &BlitzDocument) {
-    use wega_native::layout::FormControlKind;
-    if let Some(node_key) = b.node
-        && let Some(node) = doc.get_node(node_key.node_id())
-        && let Some(el) = node.element_data()
-    {
-        let is_focused = doc.get_focussed_node_id() == Some(node_key.node_id());
-        if let Some(ref mut form) = b.form_state {
-            form.is_focused = is_focused;
-            if let Some(checked) = el.checkbox_input_checked() {
-                form.checked = checked;
-            }
-            if let Some(input_data) = el.text_input_data() {
-                let editor_text = input_data.editor.text().to_string();
-                let is_pwd = matches!(
-                    form.kind,
-                    Some(FormControlKind::TextInput {
-                        is_password: true,
-                        ..
-                    })
-                );
-                let ph = node.attr(blitz_dom::local_name!("placeholder"));
-                let (disp, is_ph) = if !editor_text.is_empty() {
-                    if is_pwd {
-                        ("•".repeat(editor_text.chars().count()), false)
-                    } else {
-                        (editor_text.clone(), false)
-                    }
-                } else if let Some(placeholder) = ph {
-                    (placeholder.to_string(), true)
-                } else {
-                    (String::new(), false)
-                };
-                b.children.clear();
-                if !disp.is_empty() {
-                    let mut child_style = b.style.clone();
-                    if is_ph {
-                        child_style.color = wega_native::css::Color {
-                            r: 117,
-                            g: 117,
-                            b: 117,
-                            a: 255,
-                        };
-                    }
-                    let mut text_child = LayoutBox::new(
-                        Some(node_key),
-                        wega_native::layout::BoxType::Text,
-                        child_style,
-                    );
-                    text_child.text_content = Some(disp);
-                    b.children.push(text_child);
-                }
-            }
-        }
-    }
-    for child in &mut b.children {
-        sync_form_state(child, doc);
-    }
-}
-
-fn compute_form_decorations(b: &mut LayoutBox, doc: &BlitzDocument) {
-    use wega_native::layout::FormControlKind;
-    if let Some(node_key) = b.node
-        && let Some(node) = doc.get_node(node_key.node_id())
-        && let Some(el) = node.element_data()
-        && let Some(input_data) = el.text_input_data()
-    {
-        let (is_pwd, is_focused) = if let Some(ref form) = b.form_state {
-            (
-                matches!(
-                    form.kind,
-                    Some(FormControlKind::TextInput {
-                        is_password: true,
-                        ..
-                    })
-                ),
-                form.is_focused,
-            )
-        } else {
-            (false, false)
-        };
-        if b.form_state.is_some() {
-            let sel = input_data.editor.raw_selection();
-            let (a, f) = (sel.anchor().index(), sel.focus().index());
-            let (sel_min, sel_max) = (a.min(f), a.max(f));
-            let cb = b.content_box();
-            let mut caret_rect = None;
-            let mut selection_rects = Vec::new();
-
-            if b.lines.is_empty() {
-                if is_focused {
-                    let h = (16.0_f64).min(cb.height);
-                    caret_rect = Some(Rect {
-                        x: cb.x + 2.0,
-                        y: cb.y + ((cb.height - h) / 2.0).max(0.0),
-                        width: 1.5,
-                        height: h,
-                    });
-                }
-            } else {
-                let line = &b.lines[0];
-                let get_x = |idx: usize| -> f64 {
-                    if line.text_runs.is_empty() {
-                        return cb.x;
-                    }
-                    let run = &line.text_runs[0];
-                    if idx >= run.glyphs.len() {
-                        cb.x + run.rect.x + run.rect.width
-                    } else {
-                        cb.x + run.rect.x + run.glyphs[idx].x as f64
-                    }
-                };
-                let full_text = input_data.editor.text().to_string();
-                let sel_min_char = if is_pwd {
-                    full_text
-                        .get(..sel_min)
-                        .map(|s| s.chars().count())
-                        .unwrap_or(0)
-                } else {
-                    sel_min
-                };
-                let sel_max_char = if is_pwd {
-                    full_text
-                        .get(..sel_max)
-                        .map(|s| s.chars().count())
-                        .unwrap_or(0)
-                } else {
-                    sel_max
-                };
-                let focus_char = if is_pwd {
-                    full_text.get(..f).map(|s| s.chars().count()).unwrap_or(0)
-                } else {
-                    f
-                };
-                if is_focused {
-                    let cx = get_x(focus_char);
-                    caret_rect = Some(Rect {
-                        x: cx,
-                        y: cb.y + line.rect.y,
-                        width: 1.5,
-                        height: line.rect.height,
-                    });
-                }
-                if sel_min_char < sel_max_char {
-                    let x0 = get_x(sel_min_char);
-                    let x1 = get_x(sel_max_char);
-                    selection_rects.push(Rect {
-                        x: x0,
-                        y: cb.y + line.rect.y,
-                        width: (x1 - x0).max(1.0),
-                        height: line.rect.height,
-                    });
-                }
-            }
-
-            if let Some(ref mut form) = b.form_state {
-                form.caret_rect = caret_rect;
-                form.selection_rects = selection_rects;
-            }
-        }
-    }
-    for child in &mut b.children {
-        compute_form_decorations(child, doc);
-    }
+fn control(
+    doc: &BlitzDocument,
+    key: wega_dom::NodeKey,
+) -> Option<wega_native::controls::ControlView<'_>> {
+    let element = doc.get_node(key.node_id())?.element_data()?;
+    let input = element.text_input_data();
+    let selection = input
+        .map(|input| {
+            let selection = input.editor.raw_selection();
+            (selection.anchor().index(), selection.focus().index())
+        })
+        .unwrap_or_default();
+    Some(wega_native::controls::ControlView {
+        value: input.map(|input| input.editor.text().to_string().into()),
+        selection,
+        checked: element.checkbox_input_checked(),
+        focused: doc.get_focussed_node_id() == Some(key.node_id()),
+        placeholder: element.attr(blitz_dom::local_name!("placeholder")),
+    })
 }
