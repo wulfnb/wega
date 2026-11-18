@@ -1,5 +1,6 @@
 //! Checked operations over the view's single document, used by the V8 host.
 use crate::Limits;
+use crate::document::WegaDocument;
 use html5ever::{LocalName, QualName, ns};
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
@@ -8,10 +9,8 @@ use std::{
     rc::Rc,
     time::{Duration, Instant},
 };
-use wega_adapter_blitz::BlitzDocument;
-use wega_adapter_blitz::ToNodeId;
-use wega_dom::layout::{GeometryAccess, LayoutControl, LayoutError, Point, Rect};
-use wega_dom::style::{StyleAccess, StyleControl, StyleError};
+use wega_dom::layout::{LayoutError, Point, Rect};
+use wega_dom::style::StyleError;
 use wega_dom::{DocumentView, Mutator, NodeKey, NodeKind, NodeView};
 
 /// A `<script>` element that script inserted into the document.
@@ -52,7 +51,7 @@ pub(crate) const MAX_EDIT_DEPTH: usize = 121;
 pub(crate) struct Dom {
     pub network: crate::network::Network,
     pub hubs: crate::workers::Hubs,
-    pub document: Rc<RefCell<BlitzDocument>>,
+    pub document: Rc<RefCell<WegaDocument>>,
     pub native_document: RefCell<Option<Rc<RefCell<crate::native_engine::NativeDocument>>>>,
     pub limits: Limits,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
@@ -287,11 +286,6 @@ impl Dom {
     fn invalidate(&self) {
         self.revision.set(self.revision.get().wrapping_add(1));
         self.layout_dirty.set(true);
-    }
-    fn resolve(&self, doc: &mut BlitzDocument) {
-        if self.layout_dirty.replace(false) && self.native_document.borrow().is_none() {
-            doc.flush_layout(self.start.elapsed().as_secs_f64());
-        }
     }
     pub fn call(&self, args: &[Value]) -> Result<Value, String> {
         let text = |index: usize| args.get(index).and_then(Value::as_str).unwrap_or_default();
@@ -1317,51 +1311,46 @@ impl Dom {
                 let mut stack = vec![root];
                 while let Some(key) = stack.pop() {
                     if let Some(node) = doc.node(key) {
-                        if doc.node_has_stylesheet(key.node_id()) { owners.push(key.to_string()); }
+                        if doc.node_has_stylesheet(key) { owners.push(key.to_string()); }
                         stack.extend(node.children().rev());
                     }
                 }
                 json!(owners)
             },
-            "elementFromPoint"=> {
-                self.resolve(&mut doc);
-                let x=text(2).parse::<f64>().map_err(|_|"Invalid coordinate")?;let y=text(3).parse::<f64>().map_err(|_|"Invalid coordinate")?;
-                json!(wega_dom::layout::HitTest::element_at(&*doc,Point{x,y}).map(|k|k.to_string()))
-            },
-            "sheetHas" => json!(doc.node_has_stylesheet(node_id()?.node_id())),
-            "sheetDisabled" => json!(doc.stylesheet_disabled(node_id()?.node_id())),
+            "sheetHas" => json!(doc.node_has_stylesheet(node_id()?)),
+            "sheetDisabled" => json!(doc.stylesheet_disabled(node_id()?)),
             "sheetDisabledSet" => {
                 let target = node_id()?;
-                doc.set_stylesheet_disabled(target.node_id(), text(2) == "true");
+                doc.set_stylesheet_disabled(target, text(2) == "true");
                 Value::Null
             },
             "sheetRules" | "sheetInsert" | "sheetDelete" => {
                 let target = node_id()?;
-                let sheet_url = doc.stylesheet_url(target.node_id()).ok_or("NotFoundError: stylesheet removed")?;
+                let sheet_url = doc.stylesheet_url(target).ok_or("NotFoundError: stylesheet removed")?;
                 if doc.node(target).and_then(NodeView::element_name).is_some_and(|n| n.local == "link")
                     && (sheet_url.origin() != doc.url().origin() || self.restrictions.opaque) {
                     return Err("SecurityError: stylesheet is not origin-clean".into());
                 }
                 match text(0) {
                     "sheetRules" => {
-                        let count = doc.stylesheet_rule_count(target.node_id(), &[]).unwrap_or(0);
+                        let count = doc.stylesheet_rule_count(target, &[]).unwrap_or(0);
                         let rules: Vec<_> = (0..count).filter_map(|index| {
-                            let info = doc.stylesheet_rule_info(target.node_id(), &[index])?;
+                            let info = doc.stylesheet_rule_info(target, &[index])?;
                             Some(json!({"cssText":info.css_text,"type":info.rule_type}))
                         }).collect();
                         json!(rules)
                     },
                     "sheetInsert" => {
-                        if doc.stylesheet_rule_count(target.node_id(), &[]).unwrap_or(0) >= 16384 {
+                        if doc.stylesheet_rule_count(target, &[]).unwrap_or(0) >= 16384 {
                             return Err("QuotaExceededError: stylesheet rule budget".into());
                         }
                         let index = text(3).parse::<usize>().map_err(|_| "IndexSizeError: invalid rule index")?;
-                        json!(doc.stylesheet_insert_rule(target.node_id(), &[], text(2), index)
+                        json!(doc.stylesheet_insert_rule(target, &[], text(2), index)
                             .map_err(|e| format!("{}: insertRule",e.dom_exception_name()))?)
                     },
                     _ => {
                         let index = text(2).parse::<usize>().map_err(|_| "IndexSizeError: invalid rule index")?;
-                        doc.stylesheet_delete_rule(target.node_id(), &[], index)
+                        doc.stylesheet_delete_rule(target, &[], index)
                             .map_err(|e| format!("{}: deleteRule",e.dom_exception_name()))?;
                         Value::Null
                     }
@@ -1465,14 +1454,9 @@ impl Dom {
             "cookie"=>if self.restrictions.opaque{json!("")}else{json!(self.network.cookies.get_frame(doc.url(),true,crate::cookies::SiteContext::SameSite,self.frame_id))},
             "setCookie"=>{if !self.restrictions.opaque{self.network.cookies.set_frame(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite,self.frame_id);}Value::Null},
             "templateContent"=>{let target=node_id()?;let content=wega_dom::mutate(&mut *doc).template_contents(target).map_err(Self::mutation_error)?;json!(content.as_u64().to_string())},
-            "viewport"=>{let viewport=doc.viewport();json!({"width":viewport.size.width,"height":viewport.size.height,"dpr":viewport.device_pixel_ratio,"scrollX":viewport.scroll.x,"scrollY":viewport.scroll.y})},
-            "scroll"=>{let offset=doc.scroll_offset(node_id()?).map_err(Self::layout_error)?;json!({"x":offset.x,"y":offset.y})},
-            "scrollViewport"=>{let x=text(1).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.set_viewport_scroll(Point{x,y});}Value::Null},
-            "scrollNode"=>{let target=node_id()?;let x=text(2).parse::<f64>().map_err(|_|"Invalid scroll offset")?;let y=text(3).parse::<f64>().map_err(|_|"Invalid scroll offset")?;if x.is_finite()&&y.is_finite(){doc.scroll_node_to(target,Point{x,y}).map_err(Self::layout_error)?;}Value::Null},
-            "scrollIntoView"=>{let target=node_id()?;doc.scroll_node_into_view(target).map_err(Self::layout_error)?;Value::Null},
             "active"=>json!(wega_dom::input::FocusState::focused(&*doc).map(|key|key.to_string())),
-            "history"=>{let url=doc.url().join(text(1)).map_err(|e|e.to_string())?;if url.origin()!=doc.url().origin()||!matches!(url.scheme(),"http"|"https"){return Err("SecurityError: history URL must have the same tuple origin".into());}doc.set_base_url(url.as_str());Value::Null},
-            "media"=>json!(StyleControl::media_matches(&mut *doc,text(1))),
+            "history"=>{let url=doc.url().join(text(1)).map_err(|e|e.to_string())?;if url.origin()!=doc.url().origin()||!matches!(url.scheme(),"http"|"https"){return Err("SecurityError: history URL must have the same tuple origin".into());}doc.set_base_url(url);Value::Null},
+
             "subtree"=>json!(self.component_subtree(&*doc,node_id()?).iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
             "documentDomain"=>{
                 if doc.url().origin().is_tuple() { Value::Null }
@@ -1487,10 +1471,10 @@ impl Dom {
                 json!({"nodeType":info.node_type,"nodeName":info.node_name,"localName":info.local_name,"namespaceURI":info.namespace,"prefix":info.prefix})
             },
             "attributes"=>json!(doc.node(node_id()?).into_iter().flat_map(NodeView::attributes).map(|(name,value)|json!({"name":name.prefix.as_ref().map_or_else(||name.local.to_string(),|p|format!("{p}:{}",name.local)),"localName":name.local.to_string(),"namespaceURI":if name.ns==ns!(){None}else{Some(name.ns.to_string())},"value":value})).collect::<Vec<_>>()),
-            "queryIn"=>json!(doc.query_selector_in(node_id()?.node_id(),text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
-            "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?.node_id(),text(2)).map_err(|_|"Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
-            "matches"=>json!(doc.matches_selector(node_id()?.node_id(),text(2)).map_err(|_|"Invalid selector")?),
-            "closest"=>json!(doc.closest(node_id()?.node_id(),text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
+            "queryIn"=>json!(doc.query_selector_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
+            "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
+            "matches"=>json!(doc.matches_selector(node_id()?,text(2)).map_err(|_|"Invalid selector")?),
+            "closest"=>json!(doc.closest(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
             "getById" => {
                 let id_str = text(1);
                 let target_scope = text(2).parse::<u64>().ok().map(NodeKey::from_u64);
@@ -1512,15 +1496,15 @@ impl Dom {
                 };
                 json!(found.map(|key| key.to_string()))
             },
-            "outerHTML"=>json!(doc.get_node(node_id()?.node_id()).unwrap().outer_html()),
+            "outerHTML"=>{let mut html=String::new();Self::serialize(&*doc,node_id()?,&mut html);json!(html)},
             "innerHTML" | "contextualFragment"=>{
                 let mut target=node_id()?;
                 if doc.node(target).and_then(NodeView::element_name).is_some_and(|name|name.local=="template") { target=wega_dom::mutate(&mut *doc).template_contents(target).map_err(Self::mutation_error)?; }
                 if text(2).len()>self.limits.html_bytes{return Err("HTML fragment exceeds the size limit".into());}
                 // Parse into a detached same-context element first; reject budgets before
                 // replacing live children, and retain removed nodes held by JS wrappers.
-                let element=doc.node(target).and_then(NodeView::qual_name).ok_or("innerHTML needs an element")?;
-                let name=if &*element.local=="#document-fragment" {QualName::new(None,ns!(html),LocalName::from("div"))} else {element.clone()};let staging:NodeKey=wega_dom::mutate(&mut *doc).create_element(name,[]);
+                let node=doc.node(target).ok_or("Node no longer exists")?;
+                let name=if node.is_fragment() {QualName::new(None,ns!(html),LocalName::from("div"))} else {node.qual_name().ok_or("innerHTML needs an element")?.clone()};let staging:NodeKey=wega_dom::mutate(&mut *doc).create_element(name,[]);
                 let remaining=self.limits.dom_nodes.saturating_sub(self.allocated.get()).saturating_add(2);
                 if wega_html::parse_fragment(&mut *doc,staging,remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=wega_dom::mutate(&mut *doc).remove_and_drop(staging);return Err("DOM node limit exceeded".into());}
                 let parsed=Self::subtree(&*doc,staging);
@@ -1543,7 +1527,7 @@ impl Dom {
             "clone"=>{
                 let source=node_id()?;let deep=text(2)=="true";let count=if deep{Self::subtree(&*doc,source).len()}else{1};
                 self.reserve_nodes(count)?;
-                let bytes=doc.get_node(source.node_id()).unwrap().outer_html().len();
+                let mut serialized=String::new();Self::serialize(&*doc,source,&mut serialized);let bytes=serialized.len();
                 if self.used.get().saturating_add(bytes)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}
                 let cloned=wega_dom::mutate(&mut *doc).clone_node(source,deep).map_err(|error|match error{wega_dom::MutationError::NotCloneable(_)=>"This node cannot be cloned".to_string(),other=>Self::mutation_error(other)})?;
                 self.allocated.set(self.allocated.get()+count);self.used.set(self.used.get()+bytes);json!(cloned.as_u64().to_string())
@@ -1552,7 +1536,7 @@ impl Dom {
                 let parent=node_id()?;let child=id(2)?;
                 if doc.node(child).is_none(){return Err("Node no longer exists".into());}
                 let anchor=if text(3).is_empty(){None}else{Some(id(3)?)};
-                if anchor.is_some_and(|id|doc.get_node(id.node_id()).is_none_or(|n|n.parent!=Some(parent.node_id()))){return Err("NotFoundError: reference is not a child".into());}
+                if anchor.is_some_and(|id|doc.node(id).is_none_or(|n|n.parent()!=Some(parent))){return Err("NotFoundError: reference is not a child".into());}
                 let mut ancestor=Some(parent);while let Some(id)=ancestor {if id==child{return Err("HierarchyRequestError: DOM cycle".into());}ancestor=doc.node(id).and_then(NodeView::parent).or_else(||self.shadows.borrow().host(id.as_u64()).map(NodeKey::from_u64));}
                 if anchor==Some(child){return Ok(json!(child.as_u64().to_string()));}
                 {let mut mutation=wega_dom::mutate(&mut *doc);if let Some(anchor)=anchor{mutation.insert_before(anchor,&[child]).map_err(Self::mutation_error)?;}else{mutation.append_children(parent,&[child]).map_err(Self::mutation_error)?;}}
@@ -1589,95 +1573,15 @@ impl Dom {
                 if changed{let new=Self::attribute(&*doc,target,"style");self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),new.as_deref(),None);}
                 json!(changed)
             },
-            "inputValue"=>{let target=node_id()?;let element=doc.get_node(target.node_id()).unwrap().element_data().ok_or("Input needs an element")?;json!(element.text_input_data().map(|data|data.editor.text().to_string()).or_else(||element.attr(LocalName::from("value")).map(str::to_owned)).unwrap_or_default())},
-            "setInputValue"=>{
-                let target=node_id()?;
-                let val=text(2).to_string();
-                if let Some(node)=doc.get_node_mut(target.node_id()){
-                    if let Some(element)=node.element_data_mut(){
-                        if let Some(input_data)=element.text_input_data_mut(){
-                            input_data.editor.set_text(&val);
-                        }
-                    }
-                    node.mark_ancestors_dirty();
-                }
-                let _ = wega_dom::mutate(&mut *doc).set_attribute(
-                    target,
-                    QualName::new(None, ns!(), LocalName::from("value")),
-                    &val,
-                );
-                self.invalidate();
-                Value::Null
-            },
-            "selectionRange"=>{
-                let target=node_id()?;
-                let element=doc.get_node(target.node_id()).unwrap().element_data().ok_or("Input needs an element")?;
-                if let Some(input_data)=element.text_input_data(){
-                    let sel=input_data.editor.raw_selection();
-                    let a=sel.anchor().index();
-                    let f=sel.focus().index();
-                    let (min_idx,max_idx)=(a.min(f),a.max(f));
-                    let text=input_data.editor.text().to_string();
-                    let start=text.get(..min_idx).map(|s|s.encode_utf16().count()).unwrap_or(0);
-                    let end=text.get(..max_idx).map(|s|s.encode_utf16().count()).unwrap_or(0);
-                    json!([start,end])
-                }else{
-                    json!([0,0])
-                }
-            },
-            "setSelectionRange"=>{
-                let target=node_id()?;
-                let start_utf16:usize=text(2).parse().unwrap_or(0);
-                let end_utf16:usize=text(3).parse().unwrap_or(0);
-                if let Some(node)=doc.get_node_mut(target.node_id()){
-                    if let Some(element)=node.element_data_mut(){
-                        if let Some(input_data)=element.text_input_data_mut(){
-                            let text=input_data.editor.text().to_string();
-                            let mut byte_start=text.len();
-                            let mut byte_end=text.len();
-                            let mut utf16_count=0;
-                            for (byte_idx,ch) in text.char_indices(){
-                                if utf16_count>=start_utf16 && byte_start==text.len(){
-                                    byte_start=byte_idx;
-                                }
-                                if utf16_count>=end_utf16 && byte_end==text.len(){
-                                    byte_end=byte_idx;
-                                }
-                                utf16_count+=ch.len_utf16();
-                            }
-                            let mut font_ctx = parley::FontContext::new();
-                            let mut layout_ctx = parley::LayoutContext::new();
-                            input_data.editor.driver(&mut font_ctx, &mut layout_ctx).select_byte_range(byte_start, byte_end);
-                        }
-                    }
-                    node.mark_ancestors_dirty();
-                }
-                doc.record_external_mutation();
-                self.invalidate();
-                Value::Null
-            },
-            "checked"=>json!(doc.get_node(node_id()?.node_id()).unwrap().element_data().and_then(|e|e.checkbox_input_checked()).unwrap_or(false)),
-            "setChecked"=>{
-                let target=node_id()?;
-                self.resolve(&mut doc);
-                let checked=text(2)=="true";
-                doc.snapshot_node_and(target.node_id(),style_dom::ElementState::CHECKED,|node|{
-                    if let Some(element)=node.element_data_mut(){element.set_checkbox_input_checked(checked);}
-                    node.mark_ancestors_dirty();
-                });
-                doc.record_external_mutation();
-                Value::Null
-            },
-            // Blitz creates native text editors during layout. Initialize a
-            // newly inserted input before focus so immediate key/IME commands
-            // cannot be silently dropped while waiting for the next paint.
-            "focus"=>{let target=node_id()?;self.resolve(&mut doc);let _=wega_dom::input::InputControl::set_focus(&mut *doc,target);self.invalidate();Value::Null},
-            "blur"=>{wega_dom::input::InputControl::clear_focus(&mut *doc);self.invalidate();Value::Null},
+            "inputValue"=>json!(doc.input_value(node_id()?).ok_or("Input needs an element")?),
+            "setInputValue"=>{let target=node_id()?;doc.set_input_value(target,text(2))?;self.invalidate();Value::Null},
+            "selectionRange"=>{let range=doc.selection_range(node_id()?);json!([range.0,range.1])},
+            "setSelectionRange"=>{let target=node_id()?;doc.set_selection_range(target,text(2).parse().unwrap_or(0),text(3).parse().unwrap_or(0));self.invalidate();Value::Null},
+            "checked"=>json!(doc.checked(node_id()?)),
+            "setChecked"=>{let target=node_id()?;doc.set_checked(target,text(2)=="true");Value::Null},
+            "focus"=>{let target=node_id()?;let _=doc.set_focus(target);self.invalidate();Value::Null},
+            "blur"=>{doc.clear_focus();self.invalidate();Value::Null},
             "serialize"=>{let mut html=String::new();Self::serialize(&*doc,node_id()?,&mut html);json!(html)},
-            "computed"=>{
-                let target=node_id()?;self.resolve(&mut doc);
-                let mut css=String::new();Self::style_text(doc.resolved_value(target,text(2),&mut css),css)?
-            },
             "limits" => json!({"resourceBytes":self.limits.resource_bytes}),
             "windowNamed" => json!(wega_dom::preorder(&*doc, doc.root()).filter(|id| {
                 doc.node(*id).is_some_and(|node| node.element_name().is_some_and(|element| {
@@ -1722,34 +1626,6 @@ impl Dom {
             ),
             "parent" => json!(doc.node(node_id()?).and_then(NodeView::parent).map(|key| key.to_string())),
             // ResizeObserver: the border box and the content box.
-            "box"=>{
-                let target=node_id()?;self.resolve(&mut doc);
-                let offset=doc.offset_box(target).map_err(Self::layout_error)?.rect;let content=doc.content_box(target).map_err(Self::layout_error)?;
-                json!({"offsetWidth":offset.width,"offsetHeight":offset.height,"contentWidth":content.size.width,"contentHeight":content.size.height,"paddingLeft":content.padding_left,"paddingTop":content.padding_top})
-            },
-            "clientBox"=>{
-                let target=node_id()?;self.resolve(&mut doc);
-                let b=doc.client_box(target).map_err(Self::layout_error)?;json!({"left":b.left,"top":b.top,"width":b.width,"height":b.height})
-            },
-            "offsetBox"=>{
-                let target=node_id()?;self.resolve(&mut doc);
-                let b=doc.offset_box(target).map_err(Self::layout_error)?;
-                json!({"x":b.rect.x,"y":b.rect.y,"width":b.rect.width,"height":b.rect.height,"parent":b.parent.map(|key|key.to_string())})
-            },
-            "scrollSize"=>{
-                let target=node_id()?;self.resolve(&mut doc);
-                let size=doc.scroll_size(target).map_err(Self::layout_error)?;json!({"width":size.width,"height":size.height})
-            },
-            "clientRects"=>{
-                let target=node_id()?;self.resolve(&mut doc);
-                let mut rects=Vec::new();doc.client_rects(target,&mut rects).map_err(Self::layout_error)?;
-                json!(rects.into_iter().map(|r|json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height})).collect::<Vec<_>>())
-            },
-            "rect" => {
-                let target=node_id()?;self.resolve(&mut doc);
-                let r:Rect=doc.bounding_rect(target).map_err(Self::layout_error)?;
-                json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height,"left":r.x,"top":r.y,"right":r.right(),"bottom":r.bottom()})
-            }
             "attr" => json!(wega_dom::attribute(&*doc, node_id()?, text(2))),
             "setText" => {
                 let id = node_id()?;
@@ -1764,7 +1640,7 @@ impl Dom {
                         wega_dom::mutate(&mut *doc).set_comment(id, text(2)).map_err(Self::mutation_error)?;
                         return Ok(Value::Null);
                     }
-                    NodeKind::Document => return Ok(Value::Null),
+                    NodeKind::Document if !node.is_fragment() => return Ok(Value::Null),
                     NodeKind::Text => {
                         credit(node.text().map_or(0, str::len));
                         wega_dom::mutate(&mut *doc).set_text(id, text(2)).map_err(Self::mutation_error)?;
@@ -1921,25 +1797,6 @@ impl Dom {
                 requests.opened.push(url);
                 json!(true)
             }
-            "fragment" => {
-                let url = doc.url().join(text(1)).map_err(|e| e.to_string())?;
-                let mut without = url.clone();
-                without.set_fragment(None);
-                let mut current = doc.url().clone();
-                current.set_fragment(None);
-                if without != current {
-                    return Err("Fragment navigation must stay in the document".into());
-                }
-                doc.set_base_url(url.as_str());
-                let fragment = url.fragment().unwrap_or_default().to_owned();
-                self.resolve(&mut doc);
-                if fragment.is_empty() {
-                    doc.set_viewport_scroll(Point { x: 0.0, y: 0.0 });
-                } else {
-                    doc.scroll_to_fragment(&fragment);
-                }
-                Value::Null
-            }
             "formEntries" => {
                 let form = node_id()?;
                 let submitter = if text(2).is_empty() { None } else { Some(id(2)?) };
@@ -1952,13 +1809,13 @@ impl Dom {
                     return Err("Node no longer exists".into());
                 }
                 if !self.restrictions.forms_blocked {
-                    doc.submit_form(form.node_id(), submitter.node_id());
+                    doc.submit_form(form, submitter);
                 }
                 Value::Null
             }
             "resetForm" => {
                 let form = node_id()?;
-                self.resolve(&mut doc);
+
                 Self::reset_form_controls(&mut doc, form);
                 Value::Null
             }
@@ -2040,6 +1897,7 @@ impl Dom {
             };
             nodes.push(id);
             pending.extend(node.children().rev());
+            pending.extend(doc.owned_fragment(id));
             if let Some(root) = self.shadows.borrow().root(id.as_u64(), true)
                 && let Ok(root) = root.root.parse()
             {
@@ -2141,7 +1999,7 @@ impl Dom {
     }
     fn collect_detached<D: wega_dom::DocumentMutation>(&self, doc: &mut D, id: NodeKey) {
         let mut root = id;
-        while let Some(parent) = doc.node(root).and_then(NodeView::parent).or_else(|| {
+        while let Some(parent) = doc.ownership_parent(root).or_else(|| {
             self.shadows
                 .borrow()
                 .host(root.as_u64())
@@ -2195,131 +2053,19 @@ impl Dom {
         wega_dom::content::form_owner(doc, control)
     }
     /// Resets all controls owned by `form` to their default state (defaultValue / defaultChecked).
-    pub fn reset_form_controls(doc: &mut BlitzDocument, form: NodeKey) {
-        let controls: Vec<NodeKey> = wega_dom::preorder(doc, doc.root())
-            .filter(|id| Self::form_owner(doc, *id) == Some(form))
-            .collect();
-        for id in controls {
-            if let Some(node) = doc.get_node_mut(id.node_id()) {
-                if let Some(element) = node.element_data_mut() {
-                    let tag = &*element.name.local;
-                    if tag == "input" {
-                        let kind = element
-                            .attr(LocalName::from("type"))
-                            .unwrap_or("text")
-                            .to_ascii_lowercase();
-                        if matches!(kind.as_str(), "checkbox" | "radio") {
-                            let default_checked =
-                                element.attr(LocalName::from("checked")).is_some();
-                            element.set_checkbox_input_checked(default_checked);
-                        } else {
-                            let default_value = element
-                                .attr(LocalName::from("value"))
-                                .unwrap_or_default()
-                                .to_string();
-                            if let Some(text_input) = element.text_input_data_mut() {
-                                text_input.editor.set_text(&default_value);
-                            }
-                        }
-                    } else if tag == "textarea" {
-                        let default_value = element
-                            .attr(LocalName::from("value"))
-                            .unwrap_or_default()
-                            .to_string();
-                        if let Some(text_input) = element.text_input_data_mut() {
-                            text_input.editor.set_text(&default_value);
-                        }
-                    }
-                }
-                node.mark_ancestors_dirty();
-            }
-        }
+    pub fn reset_form_controls(doc: &mut WegaDocument, form: NodeKey) {
+        doc.reset_form(form);
     }
-    /// The form data set of a form (HTML "constructing the entry list"), for
-    /// `new FormData(form)`. File inputs contribute empty entries.
     fn form_entries(
-        doc: &BlitzDocument,
+        doc: &WegaDocument,
         form: NodeKey,
         submitter: Option<NodeKey>,
     ) -> Vec<(String, String)> {
-        let mut entries = Vec::new();
-        for id in wega_dom::preorder(doc, doc.root()) {
-            let Some(element) = doc.get_node(id.node_id()).and_then(|n| n.element_data()) else {
-                continue;
-            };
-            let tag = &*element.name.local;
-            if !matches!(tag, "input" | "select" | "textarea" | "button")
-                || Self::form_owner(doc, id) != Some(form)
-                || element.attr(LocalName::from("disabled")).is_some()
-            {
-                continue;
-            }
-            let Some(name) = element
-                .attr(LocalName::from("name"))
-                .filter(|n| !n.is_empty())
-            else {
-                continue;
-            };
-            let kind = element
-                .attr(LocalName::from("type"))
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            let value = || {
-                element
-                    .text_input_data()
-                    .map(|data| data.editor.text().to_string())
-                    .or_else(|| element.attr(LocalName::from("value")).map(str::to_owned))
-                    .unwrap_or_default()
-            };
-            match tag {
-                "button" => {
-                    if Some(id) == submitter {
-                        entries.push((name.to_owned(), value()));
-                    }
-                }
-                "select" => {
-                    for option in Self::subtree(doc, id).into_iter().rev() {
-                        let Some(option) = doc.get_node(option.node_id()) else {
-                            continue;
-                        };
-                        if option.element_data().is_some_and(|e| {
-                            &*e.name.local == "option"
-                                && e.attr(LocalName::from("selected")).is_some()
-                        }) {
-                            let value = option
-                                .element_data()
-                                .and_then(|e| e.attr(LocalName::from("value")).map(str::to_owned))
-                                .unwrap_or_else(|| option.text_content().trim().to_owned());
-                            entries.push((name.to_owned(), value));
-                        }
-                    }
-                }
-                "textarea" => entries.push((name.to_owned(), value())),
-                _ => match kind.as_str() {
-                    "submit" | "image" | "button" | "reset" => {
-                        if Some(id) == submitter && kind == "submit" {
-                            entries.push((name.to_owned(), value()));
-                        }
-                    }
-                    "checkbox" | "radio" => {
-                        // Blitz creates checkbox state at layout; before that, use the attribute.
-                        let checked = element
-                            .checkbox_input_checked()
-                            .unwrap_or_else(|| element.attr(LocalName::from("checked")).is_some());
-                        if checked {
-                            let value = element
-                                .attr(LocalName::from("value"))
-                                .unwrap_or("on")
-                                .to_owned();
-                            entries.push((name.to_owned(), value));
-                        }
-                    }
-                    "file" => entries.push((name.to_owned(), String::new())),
-                    _ => entries.push((name.to_owned(), value())),
-                },
-            }
-        }
-        entries
+        doc.form_data(form, submitter)
+            .0
+            .into_iter()
+            .map(|entry| (entry.name, entry.value.as_ref().to_owned()))
+            .collect()
     }
     fn serialize<D: DocumentView>(doc: &D, id: NodeKey, out: &mut String) {
         wega_dom::content::serialize(doc, id, out);
@@ -2502,6 +2248,8 @@ impl Dom {
         if !matches!(
             command,
             "elementFromPoint"
+                | "media"
+                | "fragment"
                 | "computed"
                 | "box"
                 | "clientBox"
@@ -2517,10 +2265,54 @@ impl Dom {
         ) {
             return None;
         }
-        let shared = self.native_document.borrow().clone()?;
+        let Some(shared) = self.native_document.borrow().clone() else {
+            return Some(Err("InvalidStateError: native layout is unavailable".into()));
+        };
         Some((|| {
             let mut native = shared.borrow_mut();
             native.ensure_layout();
+            if command == "media" {
+                return Ok(json!(wega_native::css::matches_media(
+                    &wega_native::css::parse_media_query_list(text(1)),
+                    &native.media_context()
+                )));
+            }
+            if command == "fragment" {
+                let (fragment, target) = {
+                    let mut doc = self.document.borrow_mut();
+                    let url = doc.url().join(text(1)).map_err(|e| e.to_string())?;
+                    let mut without = url.clone();
+                    without.set_fragment(None);
+                    let mut current = doc.url().clone();
+                    current.set_fragment(None);
+                    if without != current {
+                        return Err("Fragment navigation must stay in the document".into());
+                    }
+                    let fragment = url.fragment().unwrap_or_default().to_owned();
+                    let target = doc.element_by_id(&fragment).or_else(|| {
+                        doc.query_selector_all("a[name]")
+                            .ok()?
+                            .into_iter()
+                            .find(|key| {
+                                doc.node(*key).and_then(|n| n.attr("name"))
+                                    == Some(fragment.as_str())
+                            })
+                    });
+                    doc.set_base_url(url);
+                    (fragment, target)
+                };
+                if fragment.is_empty() {
+                    native.scroll_viewport_to(Point::default());
+                } else if let Some(target) = target {
+                    let r = native.bounding_rect(target).map_err(Self::layout_error)?;
+                    let scroll = native.scroll;
+                    native.scroll_viewport_to(Point {
+                        x: scroll.x + r.x,
+                        y: scroll.y + r.y,
+                    });
+                }
+                return Ok(Value::Null);
+            }
             if command == "viewport" {
                 let v = native.viewport;
                 let scale = (v.scale * v.zoom) as f64;

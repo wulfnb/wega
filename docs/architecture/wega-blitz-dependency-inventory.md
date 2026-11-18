@@ -2,20 +2,24 @@
 
 ## 2026-11-18 continuation
 
-Production `blitz-html` has moved to reference-parser oracle tests. Blank and
-XML construction use the generic Wega parser; XML node budgets now apply during
-construction. V8 retention/script/meta identities use `NodeKey`, and tree-only
-host operations use document contracts. Production raster/SVG payloads, bounded
-decoders and the single admission budget now live in `wega-native::images`.
+Production now owns `WegaDocument`: one existing `wega_dom::Document` with
+resource/editor side tables keyed by Wega identities. View, V8, navigation,
+HTML/XML parsing, lifecycle and frame references use that owner. Native rendering
+is mandatory; no reference DOM or reference-rendering fallback exists in View.
+The first 53 targeted owner/lifecycle/resource checks pass; complete acceptance
+and security validation for this owner remains outstanding.
 
-The actual browser graph still contains **four** reference packages: `blitz-dom`,
-`blitz-paint`, `blitz-traits`, `wega-adapter-blitz`. Their ownership barriers in
-the table below remain applicable. `View`, `Dom`, `NativeDocument`, frame access
-contexts and the parser's production type still share `BlitzDocument`; V8 queries,
-CSSOM, control state, focus/default actions and resource/frame lifecycle require
-further migration. Component independence is not production independence.
+The actual normal browser graph still contains **four** reference packages:
+`blitz-dom`, `blitz-paint`, `blitz-traits`, `wega-adapter-blitz`. The direct adapter
+and DOM edges have not yet moved to dev-dependencies. The only remaining direct
+`blitz-dom` production call installs the old SVG broker font database; networking
+and form/navigation payloads still name `blitz-traits`. Component independence
+is not production independence. Reference comparison harnesses must be adapted
+to explicit dev-only oracles before those manifest edges are removed.
 
-The original inventory and five-package evidence below describe the prior head.
+## Historical inventory before the owner transition
+
+The table and original five-package evidence below describe the prior heads.
 
 Start: `feature/dom-rounds-9-12`, clean `8523150487a953394920e69459ad7f374e57297c`.
 No pushes authorized. DevTools D4 and inspector implementation excluded.

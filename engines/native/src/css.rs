@@ -783,6 +783,7 @@ pub struct ComputedStyle {
     pub opacity: f32,
     pub visible: bool,
     pub pointer_events: bool,
+    pub cursor: String,
     pub color: Color,
     pub background_color: Color,
     pub background_image: Option<String>,
@@ -852,6 +853,7 @@ impl Default for ComputedStyle {
             opacity: 1.0,
             visible: true,
             pointer_events: true,
+            cursor: "auto".into(),
             color: Color::BLACK,
             background_color: Color::TRANSPARENT,
             background_image: None,
@@ -910,6 +912,14 @@ pub enum SimpleSelector {
     AttrEquals(String, String),
     AttrMatch(String, String, char, bool),
     Root,
+    Hover,
+    Focus,
+    FocusWithin,
+    Active,
+    Checked,
+    Disabled,
+    Enabled,
+    Link,
     Empty,
     FirstChild,
     LastChild,
@@ -1035,6 +1045,33 @@ impl CompoundSelector {
                 }
                 SimpleSelector::Not(list) => {
                     if list.iter().any(|s| s.matches(doc, node_key)) {
+                        return false;
+                    }
+                }
+                SimpleSelector::Hover
+                | SimpleSelector::Focus
+                | SimpleSelector::FocusWithin
+                | SimpleSelector::Active
+                | SimpleSelector::Checked
+                | SimpleSelector::Disabled
+                | SimpleSelector::Enabled => {
+                    let state = doc.element_state(node_key);
+                    let matches = match comp {
+                        SimpleSelector::Hover => state.hovered,
+                        SimpleSelector::Focus => state.focused,
+                        SimpleSelector::FocusWithin => state.focus_within,
+                        SimpleSelector::Active => state.active,
+                        SimpleSelector::Checked => state.checked,
+                        SimpleSelector::Disabled => state.disabled,
+                        SimpleSelector::Enabled => state.enabled,
+                        _ => unreachable!(),
+                    };
+                    if !matches {
+                        return false;
+                    }
+                }
+                SimpleSelector::Link => {
+                    if !matches!(tag.as_str(), "a" | "area") || node.attr("href").is_none() {
                         return false;
                     }
                 }
@@ -1555,6 +1592,7 @@ pub fn resolve_computed_style<D: DocumentView>(
         color: p.color,
         visible: p.visible,
         pointer_events: p.pointer_events,
+        cursor: p.cursor.clone(),
         font_size: p.font_size,
         root_font_size: p.root_font_size,
         line_height: p.line_height,
@@ -1775,6 +1813,7 @@ pub fn resolve_computed_style<D: DocumentView>(
             "color"
                 | "visibility"
                 | "pointer-events"
+                | "cursor"
                 | "font-size"
                 | "font-family"
                 | "font-weight"
@@ -2163,6 +2202,49 @@ fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
                 style.background_color = c;
             }
         }
+        "cursor" => {
+            if matches!(
+                val,
+                "auto"
+                    | "default"
+                    | "none"
+                    | "context-menu"
+                    | "help"
+                    | "pointer"
+                    | "progress"
+                    | "wait"
+                    | "cell"
+                    | "crosshair"
+                    | "text"
+                    | "vertical-text"
+                    | "alias"
+                    | "copy"
+                    | "move"
+                    | "no-drop"
+                    | "not-allowed"
+                    | "grab"
+                    | "grabbing"
+                    | "all-scroll"
+                    | "col-resize"
+                    | "row-resize"
+                    | "n-resize"
+                    | "e-resize"
+                    | "s-resize"
+                    | "w-resize"
+                    | "ne-resize"
+                    | "nw-resize"
+                    | "se-resize"
+                    | "sw-resize"
+                    | "ew-resize"
+                    | "ns-resize"
+                    | "nesw-resize"
+                    | "nwse-resize"
+                    | "zoom-in"
+                    | "zoom-out"
+            ) {
+                style.cursor = val.into();
+            }
+        }
         "font-family" => style.font_family = val.to_owned(),
         "font-weight" => {
             style.font_weight = match val {
@@ -2441,7 +2523,7 @@ fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, prop: &str)
     "width"=>width,"height"=>height,"min-width"=>min_width,"max-width"=>max_width,"min-height"=>min_height,"max-height"=>max_height,
     "margin"=>margin,"padding"=>padding,"border"=>borders,"font-size"=>font_size,"font-family"=>font_family,
     "font-weight"=>font_weight,"font-style"=>font_italic,"white-space"=>white_space,"text-align"=>text_align,
-    "opacity"=>opacity,"visibility"=>visible,"pointer-events"=>pointer_events,"top"=>top,"right"=>right,"bottom"=>bottom,"left"=>left,"z-index"=>z_index,
+    "opacity"=>opacity,"visibility"=>visible,"pointer-events"=>pointer_events,"cursor"=>cursor,"top"=>top,"right"=>right,"bottom"=>bottom,"left"=>left,"z-index"=>z_index,
     "transform"=>transform,"box-shadow"=>box_shadow,"border-radius"=>border_radius,
     "overflow-x"=>overflow_x,"overflow-y"=>overflow_y,"flex-direction"=>flex_direction,
     "flex-grow"=>flex_grow,"flex-shrink"=>flex_shrink,"flex-basis"=>flex_basis,"align-items"=>align_items,"justify-content"=>justify_content,"object-fit"=>object_fit,"object-position"=>object_position,"vertical-align"=>vertical_align }
@@ -2459,8 +2541,10 @@ pub enum GridTrack {
 }
 
 pub(super) fn supported_property(property: &str) -> bool {
-    matches!(property, "visibility" | "pointer-events" | "vertical-align")
-        || property.starts_with("--")
+    matches!(
+        property,
+        "visibility" | "pointer-events" | "vertical-align" | "cursor"
+    ) || property.starts_with("--")
         || matches!(
             property,
             "align-items"

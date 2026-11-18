@@ -4,6 +4,9 @@ use crate::{css::StyleSheet, layout::LayoutBox};
 pub use parley::FontContext;
 use wega_dom::{DocumentView, MutationClock, input::FocusState};
 pub trait NativeResources: DocumentView + MutationClock + FocusState {
+    fn native_state_generation(&self) -> u64 {
+        0
+    }
     fn native_generations(&self) -> (u64, u64);
     fn native_fonts(&self) -> std::sync::Arc<std::sync::Mutex<FontContext>>;
     fn native_stylesheets(

@@ -67,3 +67,15 @@ pub fn element_chain<D: DocumentView>(doc: &D, key: NodeKey) -> Vec<NodeKey> {
     }
     chain
 }
+
+/// Live state consumed by selectors; the document supplies the authoritative values.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ElementState {
+    pub hovered: bool,
+    pub focused: bool,
+    pub focus_within: bool,
+    pub active: bool,
+    pub checked: bool,
+    pub disabled: bool,
+    pub enabled: bool,
+}

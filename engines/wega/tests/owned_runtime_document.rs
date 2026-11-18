@@ -241,3 +241,40 @@ fn owned_stylesheet_loader_keeps_the_eight_level_import_limit() {
         "a ninth nested import must be refused"
     );
 }
+
+#[test]
+fn production_view_uses_the_owned_arena_and_never_converts_its_keys() {
+    let engine =
+        wega_engine::Engine::new(Default::default(), Default::default(), Arc::new(|| {})).unwrap();
+    let mut view = engine
+        .create_view(url::Url::parse("about:blank").unwrap())
+        .unwrap();
+    view.set_html("<p id=target>first</p><template id=t><b>retained</b></template>")
+        .unwrap();
+    view.poll();
+    let key = view.node_id("#target").unwrap();
+    let owner: Rc<RefCell<WegaDocument>> =
+        view.native_document.as_ref().unwrap().borrow().doc.clone();
+    assert_eq!(owner.borrow().element_by_id("target"), Some(key));
+    view.evaluate("document.getElementById('target').setAttribute('data-owned','yes')")
+        .unwrap();
+    assert_eq!(
+        owner.borrow().node(key).unwrap().attr("data-owned"),
+        Some("yes")
+    );
+    assert_eq!(
+        view.evaluate_json(
+            "(()=>{const t=document.getElementById('t');return [t.content.nodeType,t.content.firstChild.textContent,t.outerHTML.includes('retained')]})()"
+        )
+        .unwrap(),
+        "[11,\"retained\",true]"
+    );
+    view.set_html("<p id=target>replacement</p>").unwrap();
+    view.poll();
+    let replacement = view.node_id("#target").unwrap();
+    assert_ne!(key, replacement);
+    let current = view.native_document.as_ref().unwrap().borrow().doc.clone();
+    assert!(!Rc::ptr_eq(&owner, &current));
+    assert!(current.borrow().node(key).is_none());
+    assert!(owner.borrow().node(replacement).is_none());
+}

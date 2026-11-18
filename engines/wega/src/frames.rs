@@ -127,7 +127,7 @@ pub(crate) const OPAQUE_LOCKDOWN: &str = r#"(() => {
 /// One row of the table a document's script host reads.
 #[derive(Clone, Debug)]
 pub(crate) struct Entry {
-    pub node: NodeId,
+    pub node: NodeKey,
     pub key: u64,
     pub same_origin: bool,
     pub name: String,
@@ -155,10 +155,10 @@ pub(crate) struct Outgoing {
 #[derive(Clone)]
 pub(crate) struct ChildRef {
     pub key: u64,
-    pub node: NodeId,
+    pub node: NodeKey,
     pub origin: String,
     pub opaque: bool,
-    pub document: Rc<RefCell<BlitzDocument>>,
+    pub document: Rc<RefCell<WegaDocument>>,
     pub dom: Option<Rc<crate::dom::Dom>>,
     pub document_generation: Rc<Cell<u64>>,
 }
@@ -167,8 +167,8 @@ pub(crate) struct ChildRef {
 pub(crate) struct ParentRef {
     pub origin: String,
     pub opaque: bool,
-    pub frame_node: NodeId,
-    pub document: std::rc::Weak<RefCell<BlitzDocument>>,
+    pub frame_node: NodeKey,
+    pub document: std::rc::Weak<RefCell<WegaDocument>>,
     pub dom: std::rc::Weak<crate::dom::Dom>,
     pub document_generation: std::rc::Weak<Cell<u64>>,
 }
@@ -193,7 +193,7 @@ struct Signature {
 
 pub(crate) struct ChildFrame {
     pub key: u64,
-    pub node: NodeId,
+    pub node: NodeKey,
     pub view: Box<View>,
     signature: Signature,
     /// Navigation epoch: bumped by every navigation of this frame; a commit for an older epoch
@@ -214,7 +214,7 @@ pub(crate) struct FrameHost {
     /// Elements still waiting for their context (creation is rate limited).
     creation_deferred: bool,
     /// Iframe elements that were refused (limits, policy); not retried until they change.
-    refused: HashSet<(NodeId, Signature)>,
+    refused: HashSet<(NodeKey, Signature)>,
     /// The frame that has keyboard focus (never more than one).
     pub focused: Option<u64>,
     hovered: Option<u64>,
@@ -271,12 +271,11 @@ impl View {
         count(self)
     }
 
-    fn read_signature(&self, node: NodeId) -> Signature {
+    fn read_signature(&self, node: NodeKey) -> Signature {
         let doc = self.document.borrow();
         let attr = |name: &str| {
-            doc.get_node(node)
-                .and_then(|node| node.element_data())
-                .and_then(|element| element.attr(LocalName::from(name)).map(str::to_owned))
+            doc.node(node)
+                .and_then(|element| element.attr(name).map(str::to_owned))
         };
         Signature {
             src: attr("src"),
@@ -314,7 +313,7 @@ impl View {
     }
 
     fn reconcile_frames(&mut self) {
-        let nodes: Vec<NodeId> = self
+        let nodes: Vec<NodeKey> = self
             .document
             .borrow()
             .query_selector_all("iframe")
@@ -374,7 +373,7 @@ impl View {
         }
     }
 
-    fn refuse(&mut self, node: NodeId, signature: Signature, reason: &str) {
+    fn refuse(&mut self, node: NodeKey, signature: Signature, reason: &str) {
         self.notice(format!("iframe not loaded: {reason}"));
         self.frames.refused.insert((node, signature));
     }
@@ -411,7 +410,7 @@ impl View {
         self.frame_counters.1.clone()
     }
 
-    fn create_frame(&mut self, node: NodeId, signature: Signature) {
+    fn create_frame(&mut self, node: NodeKey, signature: Signature) {
         let depth = self.role.as_ref().map_or(0, |role| role.depth);
         if depth + 1 > MAX_DEPTH {
             return self.refuse(node, signature, "frame nesting limit reached");
@@ -719,11 +718,10 @@ impl View {
         shared.depth = self.role.as_ref().map_or(0, |role| role.depth);
         shared.has_parent = self.role.is_some();
     }
-    fn frame_name_hint(&self, parent: &Rc<RefCell<BlitzDocument>>, node: NodeId) -> String {
+    fn frame_name_hint(&self, parent: &Rc<RefCell<WegaDocument>>, node: NodeKey) -> String {
         let doc = parent.borrow();
-        doc.get_node(node)
-            .and_then(|node| node.element_data())
-            .and_then(|element| element.attr(LocalName::from("name")).map(str::to_owned))
+        doc.node(node)
+            .and_then(|element| element.attr("name").map(str::to_owned))
             .unwrap_or_default()
     }
 
@@ -832,90 +830,14 @@ impl View {
     // ---- compositing ----
 
     /// The content box of child `index` in parent viewport CSS pixels, if it paints.
-    pub(crate) fn frame_box(&self, node: NodeId) -> Option<wega_dom::layout::Rect> {
-        if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
-            if let Some(native_doc) = &self.native_document {
-                let mut native_doc = native_doc.borrow_mut();
-                native_doc.ensure_layout();
-                if let Some(b) = native_doc.find_box(node.key()) {
-                    let content = b.content_box();
-                    return (content.width >= 1.0 && content.height >= 1.0).then_some(content);
-                }
-            }
-            return None;
-        }
-        let doc = self.document.borrow();
-        let n = doc.get_node(node)?;
-        if n.primary_styles().is_none_or(|style| {
-            style.clone_visibility() != style::computed_values::visibility::T::Visible
-        }) {
-            return None;
-        }
-        match doc.inspect_geometry(node.key()) {
-            wega_dom::layout::Geometry::Current(boxes)
-            | wega_dom::layout::Geometry::Stale(boxes) => {
-                let content = boxes.content_box();
-                (content.width >= 1.0 && content.height >= 1.0).then_some(content)
-            }
-            _ => None,
-        }
+    pub(crate) fn frame_box(&self, node: NodeKey) -> Option<wega_dom::layout::Rect> {
+        let mut native = self.native_document.as_ref()?.borrow_mut();
+        native.ensure_layout();
+        let b = native.find_box(node)?;
+        let content = b.content_box();
+        (b.style.visible && content.width >= 1.0 && content.height >= 1.0).then_some(content)
     }
 
-    /// Record every visible child into `scene` at its content box.
-    #[allow(dead_code)]
-    pub(crate) fn compose_frames(
-        &mut self,
-        scene: &mut <BlitzDocument as PaintSource>::Scene,
-        viewport: &ViewportConfig,
-    ) -> bool {
-        let mut another = false;
-        let device = (viewport.scale * viewport.zoom) as f64;
-        let mut boxes = Vec::new();
-        for child in &self.frames.children {
-            boxes.push(self.frame_box(child.node));
-        }
-        for (child, content) in self.frames.children.iter_mut().zip(boxes) {
-            let Some(content) = content else {
-                continue;
-            };
-            let x = content.x * device;
-            let y = content.y * device;
-            let w = (content.width * device).round().max(1.0);
-            let h = (content.height * device).round().max(1.0);
-            // Cull frames wholly outside the viewport.
-            if x >= viewport.width_px as f64
-                || y >= viewport.height_px as f64
-                || x + w <= 0.0
-                || y + h <= 0.0
-            {
-                continue;
-            }
-            if w * h > child.view.limits.max_pixels as f64 {
-                continue;
-            }
-            let Ok(recorded) = child.view.record_paint(
-                w as u32,
-                h as u32,
-                viewport.scale,
-                viewport.zoom,
-                viewport.dark,
-            ) else {
-                continue;
-            };
-            <BlitzDocument as PaintSource>::compose_child(
-                scene,
-                recorded,
-                wega_dom::render::DeviceRect {
-                    x,
-                    y,
-                    width: w,
-                    height: h,
-                },
-            );
-            another |= child.view.frame_wants_more();
-        }
-        another
-    }
     pub(crate) fn frame_wants_more(&self) -> bool {
         self.frame.needs_paint(self.frozen)
     }
@@ -935,26 +857,16 @@ impl View {
     /// The topmost child under a parent-viewport point, with the point converted into the
     /// child's own viewport. Frames are painted in document order, so the last one wins.
     fn frame_at(&self, x: f32, y: f32) -> Option<(usize, f32, f32)> {
-        let hit_key =
-            if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
-                self.native_document.as_ref().and_then(|d| {
-                    let mut d = d.borrow_mut();
-                    d.ensure_layout();
-                    d.element_at(wega_dom::layout::Point {
-                        x: x as f64,
-                        y: y as f64,
-                    })
-                })?
-            } else {
-                use wega_dom::layout::HitTest as _;
-                let doc = self.document.borrow();
-                doc.element_at(wega_dom::layout::Point {
-                    x: x as f64,
-                    y: y as f64,
-                })?
-            };
+        let hit_key = {
+            let mut native = self.native_document.as_ref()?.borrow_mut();
+            native.ensure_layout();
+            native.element_at(Point {
+                x: x as f64,
+                y: y as f64,
+            })?
+        };
         for (index, child) in self.frames.children.iter().enumerate().rev() {
-            if child.node.key() != hit_key {
+            if child.node != hit_key {
                 continue;
             }
             let Some(content) = self.frame_box(child.node) else {
@@ -962,7 +874,7 @@ impl View {
             };
             let local = if let Some(native) = &self.native_document {
                 native.borrow().point_in_content(
-                    child.node.key(),
+                    child.node,
                     wega_dom::layout::Point {
                         x: x as f64,
                         y: y as f64,
@@ -1145,14 +1057,14 @@ impl crate::dom::Dom {
                 }
                 if text(1).starts_with("p:") {
                     // Frame element in child referencing its own document
-                    let root_id = self.document.borrow().root_node().id.as_u64();
+                    let root_id = self.document.borrow().root().as_u64();
                     json!(root_id.to_string())
                 } else {
                     let node: u64 = text(1).parse().map_err(|_| "Invalid node identity")?;
                     if let Some(child) = shared.children.iter().find(|c| c.node.as_u64() == node) {
                         if !child.opaque && child.origin != "null" && child.origin == caller_origin
                         {
-                            let root_id = child.document.borrow().root_node().id.as_u64();
+                            let root_id = child.document.borrow().root().as_u64();
                             let generation = child.document_generation.get();
                             json!(format!("f:{}:{}:{}", child.key, generation, root_id))
                         } else {
@@ -1171,7 +1083,7 @@ impl crate::dom::Dom {
                 }
                 if let Some(child) = shared.children.iter().find(|c| c.key == key) {
                     if !child.opaque && child.origin != "null" && child.origin == caller_origin {
-                        let root_id = child.document.borrow().root_node().id.as_u64();
+                        let root_id = child.document.borrow().root().as_u64();
                         let generation = child.document_generation.get();
                         json!(format!("f:{}:{}:{}", child.key, generation, root_id))
                     } else {
@@ -1196,7 +1108,7 @@ impl crate::dom::Dom {
                             .document_generation
                             .upgrade()
                             .ok_or("Parent document detached")?;
-                        let root_id = doc.borrow().root_node().id.as_u64();
+                        let root_id = doc.borrow().root().as_u64();
                         json!(format!("p:{}:{}", gen_rc.get(), root_id))
                     } else {
                         Value::Null

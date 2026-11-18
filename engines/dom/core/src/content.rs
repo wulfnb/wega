@@ -6,7 +6,7 @@ use crate::{DocumentView, NodeKey, NodeKind, NodeView};
 pub fn text_content<D: DocumentView>(doc: &D, key: NodeKey) -> Option<String> {
     let node = doc.node(key)?;
     match node.kind() {
-        NodeKind::Document => return None,
+        NodeKind::Document if !node.is_fragment() => return None,
         NodeKind::Text | NodeKind::Comment => return Some(node.text().unwrap_or("").into()),
         _ => {}
     }
@@ -138,7 +138,11 @@ pub fn serialize<D: DocumentView>(doc: &D, key: NodeKey, out: &mut String) {
                     );
                 if !void {
                     stack.push(Work::Close(qualified));
-                    stack.extend(node.children().rev().map(Work::Node));
+                    if let Some(contents) = doc.owned_fragment(key) {
+                        stack.push(Work::Node(contents));
+                    } else {
+                        stack.extend(node.children().rev().map(Work::Node));
+                    }
                 }
             }
         }

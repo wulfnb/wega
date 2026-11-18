@@ -1,0 +1,30 @@
+{
+  "milestone": "M1 production owner transition",
+  "base_commit": "fa19bdb",
+  "source_scope": "Working implementation preserved by the following M1 recovery commit; no push.",
+  "production_owner": "WegaDocument(wega_dom::Document + resource/editor state)",
+  "commands": [
+    {
+      "command": "cargo test -p wega-engine --offline --no-fail-fast --test dom --test dom_identity --test documents --test document_host -- --test-threads=1",
+      "log": "wega-production-owned-dom-tests-final.log",
+      "exit_code": 0,
+      "passed": 47
+    },
+    {
+      "command": "cargo test -p wega-engine --offline --test owned_runtime_document -- --test-threads=1",
+      "log": "wega-production-owner-proof.log",
+      "exit_code": 0,
+      "passed": 6
+    },
+    {
+      "command": "cargo clippy -p wega-engine -p wega-native -p wega-dom --lib --test owned_runtime_document --offline -- -D warnings",
+      "log": "wega-production-owner-clippy.log",
+      "exit_code": 0
+    }
+  ],
+  "historical_failed_runs_preserved": [
+    "wega-production-owned-dom-tests.log",
+    "wega-production-owned-dom-tests-retry.log"
+  ],
+  "full_campaign_complete": false
+}

@@ -31,9 +31,9 @@ fn to_box_set(b: BoxModel) -> BoxSet {
 use super::css::{MediaContext, StyleSheet, resolve_computed_style};
 use super::display_list::DisplayList;
 use super::layout::{LayoutBox, LayoutContext, build_box_tree, perform_layout};
+use crate::document::WegaDocument;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wega_adapter_blitz::BlitzDocument;
 use wega_dom::layout::*;
 use wega_dom::style::StyleError;
 use wega_dom::{NodeKey, NodeKind, NodeView};
@@ -42,16 +42,12 @@ use wega_native::resources::NativeResources;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RenderingBackend {
     #[default]
-    Blitz,
     WegaNative,
 }
 
 impl RenderingBackend {
     pub fn from_env() -> Self {
-        match std::env::var("WEGA_RENDER_BACKEND").as_deref() {
-            Ok("native") | Ok("WegaNative") | Ok("wega") => Self::WegaNative,
-            _ => Self::Blitz,
-        }
+        Self::WegaNative
     }
 }
 
@@ -78,7 +74,7 @@ struct GeometryCache {
     rects: std::collections::HashMap<NodeKey, Vec<Rect>>,
     transforms: std::collections::HashMap<NodeKey, kurbo::Affine>,
 }
-pub struct NativeDocument<D: NativeResources = BlitzDocument> {
+pub struct NativeDocument<D: NativeResources = WegaDocument> {
     pub doc: Rc<RefCell<D>>,
     pub layout_tree: Option<LayoutBox>,
     pub author_sheets: Vec<StyleSheet>,
@@ -88,6 +84,7 @@ pub struct NativeDocument<D: NativeResources = BlitzDocument> {
     pub layout_refused: bool,
     seen_epoch: Option<u64>,
     seen_resources: u64,
+    seen_state: u64,
     seen_viewport: Option<(u32, u32, u32, u32, bool)>,
     pub layout_generation: u64,
     pub timings: NativeTimings,
@@ -161,6 +158,7 @@ impl<D: NativeResources> NativeDocument<D> {
             layout_refused: false,
             seen_epoch: None,
             seen_resources: 0,
+            seen_state: 0,
             seen_viewport: None,
             layout_generation: 0,
             timings: NativeTimings::default(),
@@ -237,6 +235,7 @@ impl<D: NativeResources> NativeDocument<D> {
     }
     pub fn is_dirty(&self) -> bool {
         self.layout_dirty
+            || self.seen_state != self.doc.borrow().native_state_generation()
             || self.seen_focus != wega_dom::input::FocusState::focused(&*self.doc.borrow())
             || self.seen_resources != self.doc.borrow().native_generations().1
             || self.seen_policy_generation != self.policy_generation()
@@ -319,6 +318,7 @@ impl<D: NativeResources> NativeDocument<D> {
         }
         self.seen_focus = wega_dom::input::FocusState::focused(&*d);
         self.seen_resources = d.native_generations().1;
+        self.seen_state = d.native_state_generation();
         self.seen_epoch = Some(wega_dom::MutationClock::mutation_epoch(&*d).as_u64());
         self.seen_viewport = Some(self.viewport_key());
         self.layout_generation = self.layout_generation.wrapping_add(1);
@@ -595,30 +595,36 @@ impl<D: NativeResources> NativeDocument<D> {
             }
             parent.unwrap_or_default()
         };
-        match property {
-            "display" => out.push_str(&format!("{:?}", computed.display).to_lowercase()),
-            "position" => out.push_str(&format!("{:?}", computed.position).to_lowercase()),
-            "width" => out.push_str(&format!(
-                "{:.1}px",
-                self.find_box(key).map_or(0.0, |b| b.border_box.width)
+        let used = self.find_box(key);
+        let value = match (property, used) {
+            ("width", Some(b)) => Some(format!(
+                "{}px",
+                if computed.box_sizing == super::css::BoxSizing::BorderBox {
+                    b.border_box.width
+                } else {
+                    b.content_box().width
+                }
             )),
-            "height" => out.push_str(&format!(
-                "{:.1}px",
-                self.find_box(key).map_or(0.0, |b| b.border_box.height)
+            ("height", Some(b)) => Some(format!(
+                "{}px",
+                if computed.box_sizing == super::css::BoxSizing::BorderBox {
+                    b.border_box.height
+                } else {
+                    b.content_box().height
+                }
             )),
-            "color" => out.push_str(&format!(
-                "rgb({}, {}, {})",
-                computed.color.r, computed.color.g, computed.color.b
-            )),
-            "background-color" => out.push_str(&format!(
-                "rgb({}, {}, {})",
-                computed.background_color.r,
-                computed.background_color.g,
-                computed.background_color.b
-            )),
-            "font-size" => out.push_str(&format!("{:.0}px", computed.font_size)),
-            "line-height" => out.push_str(&format!("{:.0}px", computed.line_height)),
-            _ => {}
+            ("padding-top", Some(b)) => Some(format!("{}px", b.padding.top)),
+            ("padding-right", Some(b)) => Some(format!("{}px", b.padding.right)),
+            ("padding-bottom", Some(b)) => Some(format!("{}px", b.padding.bottom)),
+            ("padding-left", Some(b)) => Some(format!("{}px", b.padding.left)),
+            ("margin-top", Some(b)) => Some(format!("{}px", b.margin.top)),
+            ("margin-right", Some(b)) => Some(format!("{}px", b.margin.right)),
+            ("margin-bottom", Some(b)) => Some(format!("{}px", b.margin.bottom)),
+            ("margin-left", Some(b)) => Some(format!("{}px", b.margin.left)),
+            _ => wega_native::computed::scalar(&computed, property),
+        };
+        if let Some(value) = value {
+            out.push_str(&value);
         }
         Ok(())
     }

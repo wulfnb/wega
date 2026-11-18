@@ -2,6 +2,35 @@
 
 ## Continuation from `2d067b2` (2026-11-18)
 
+### M1: production owner switched
+
+- Production `View`, `Dom`, V8 `HostContext`, navigation parser and all frame
+  strong/weak document references now hold `WegaDocument`, containing exactly
+  the existing `wega_dom::Document`. No reference document is constructed by
+  these paths, no reference IDs are normalized from Wega keys, and there is no
+  hidden mirror or runtime reference-rendering fallback. Native is the default.
+- Live input/focus/checked state drives the existing native selector/cascade.
+  Wega owns Parley editors, form entries, radio groups and file state. Cached
+  style inspection maps borrowed owned/native state with the same limits and
+  deadlines; no inspector/D4 implementation files changed.
+- Production used style dimensions now serialize actual content/border boxes and
+  used margins/padding. Replacements retain the prior unconfigured viewport
+  lifecycle until paint, preserving media-query change events.
+- Verified: all 47 production DOM/identity/document/lifecycle tests pass; all
+  6 owned runtime/resource tests pass, including an explicit production arena
+  type/key/replacement proof. Strict engine/native/DOM library and owned-test
+  Clippy and rustfmt pass. The initial failed transition logs are retained;
+  missing dispatch arms and initial viewport semantics were repaired, without
+  relaxing tests. This is targeted M1 evidence, not full M5 validation.
+- Remaining: M2 broader event/form/selection/GC and frame/security validation;
+  template quota audit; M3 replace remaining resource/navigation trait ownership
+  and the global reference SVG font hook; M4 move reference dependencies to dev
+  and adapt reference harnesses (their obsolete production backend selector no
+  longer exists); M5 full native-only build/runtime, visual, security, sandbox
+  and release gates. Actual normal graph still contains four reference packages.
+- Continue automatically from this source. Do not push, mark the campaign
+  complete or reuse the historical green acceptance result for this owner.
+
 ### Runtime owner integration checkpoint
 
 - Added `WegaDocument` runtime services around exactly one existing

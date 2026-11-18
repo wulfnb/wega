@@ -1,0 +1,155 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-dom v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/dom/core)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+   Compiling wega-native v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/native)
+   Compiling wega-html v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/html/parser)
+   Compiling blitz-dom v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-dom)
+   Compiling blitz-paint v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint)
+   Compiling wega-adapter-blitz v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/adapters/blitz)
+    Finished `test` profile [unoptimized] target(s) in 24.70s
+     Running tests/document_host.rs (engines/target/debug/deps/document_host-596e2f64c27d518d)
+
+running 6 tests
+test explicit_document_replacement_cancels_a_pending_navigation ... ok
+test hostile_to_json_is_terminated_and_requires_explicit_recovery ... ok
+test insecure_crypto_is_restricted_on_the_instance_and_its_prototype ... ok
+test ordinary_script_failure_does_not_disable_the_following_script_or_timer ... ok
+test parser_checkpoints_run_microtasks_without_dispatching_timer_tasks ... ok
+test provisional_navigation_suspends_the_old_realm_and_replacement_drops_it ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.60s
+
+     Running tests/documents.rs (engines/target/debug/deps/documents-b333b7093c3640c3)
+
+running 6 tests
+test document_revisions_change_on_replacement_but_not_mutation_or_fragments ... ok
+test navigation_generation_is_bound_at_commit_or_explicit_retention ... ok
+test refresh_headers_navigate_after_load ... ok
+test text_images_and_error_statuses_are_shown_and_files_are_downloads ... ok
+test transport_meta_and_bom_charsets_decode_documents ... ok
+test xhtml_navigation_uses_namespaced_xml_and_runs_scripts_after_construction ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.50s
+
+     Running tests/dom.rs (engines/target/debug/deps/dom-641799e7042f16b2)
+
+running 30 tests
+test adjacent_html_uses_the_insertion_position_and_namespace_context ... ok
+test box_metrics_distinguish_content_padding_borders_and_scroll_overflow ... ok
+test canvas_and_screen_support_speedtest_and_lottie ... ok
+test capture_bubble_inline_handlers_and_mutation_observers ... ok
+test computed_style_returns_used_auto_and_percentage_sizes_for_layout_consumers ... ok
+test computed_styles_inside_display_none_do_not_panic_the_worker ... ok
+test contextual_fragment_scripts_run_once_while_inner_html_scripts_stay_inert ... ok
+test detached_wrappers_and_listeners_release_the_native_node_budget ... ok
+test document_location_html_document_and_live_names_support_trak_scripts ... ok
+test document_scripts_is_a_live_collection_for_ad_loader_inspection ... ok
+test fragment_parsing_covers_contexts_foreign_content_and_budgets ... ok
+test frame_callbacks_observers_media_and_layout_come_from_blitz ... FAILED
+test generated_bindings_enforce_brands_conversions_and_survive_reentrancy ... ok
+test history_is_same_origin_and_delivers_popstate ... ok
+test html_document_creation_keeps_mutations_separate_from_the_active_page ... ok
+test inline_geometry_uses_line_fragments_and_dom_rect_objects ... ok
+test live_collection_caches_do_not_keep_removed_nodes_charged ... ok
+test live_collections_refresh_when_the_parser_adds_nodes_between_scripts ... ok
+test live_query_collections_finish_in_budget_and_invalidate_after_mutation ... ok
+test mutations_namespaces_collections_and_native_style_share_one_tree ... ok
+test native_keyboard_and_ime_edit_parley_and_deliver_cancelable_input ... ok
+test newly_inserted_focused_input_accepts_ime_before_paint ... ok
+test newly_inserted_focused_input_accepts_keyboard_before_paint ... ok
+test range_fragment_limits_preserve_existing_dom_and_boundary_points ... ok
+test range_insertion_removal_validation_and_document_ownership ... ok
+test ranges_parse_contextual_html_svg_and_keep_live_boundary_points ... ok
+test repeated_style_and_geometry_reads_share_layout_until_a_mutation ... ok
+test visibility_tracks_freezing_and_domain_never_relaxes_profile_origin ... ok
+test wide_dom_traversal_and_live_child_lists_finish_within_the_script_budget ... ok
+test window_named_elements_are_live_and_do_not_override_own_globals ... ok
+
+failures:
+
+---- frame_callbacks_observers_media_and_layout_come_from_blitz stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+
+thread 'frame_callbacks_observers_media_and_layout_come_from_blitz' (3649846) panicked at wega/tests/dom.rs:98:5:
+assertion `left == right` failed
+  left: "[[80,120],[false],false]"
+ right: "[[80,120],[true,false],false]"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    frame_callbacks_observers_media_and_layout_come_from_blitz
+
+test result: FAILED. 29 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.68s
+
+error: test failed, to rerun pass `-p wega-engine --test dom`
+     Running tests/dom_identity.rs (engines/target/debug/deps/dom_identity-a7911daef8146f0b)
+
+running 5 tests
+test comment_writes_preserve_identity_and_step_the_authoritative_mutation_clock ... ok
+test each_document_gets_a_fresh_identity_space ... ok
+test node_info_matches_the_dom_interface ... ok
+test removed_nodes_stay_usable_until_dropped_and_ids_resolve_by_current_state ... ok
+test wrappers_keep_their_identity_across_mutation_and_reparenting ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+error: 1 target failed:
+    `-p wega-engine --test dom`

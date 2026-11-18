@@ -15,7 +15,7 @@ use style::{
 use style_traits::{CssStringWriter, ParsingMode};
 use wega_dom::style::StyleError;
 impl WegaDocument {
-    fn parse_style_attr_block(&self, style_attr: &str) -> PropertyDeclarationBlock {
+    pub(super) fn parse_style_attr_block(&self, style_attr: &str) -> PropertyDeclarationBlock {
         parse_style_attribute(
             style_attr,
             &self.url().clone().into(),

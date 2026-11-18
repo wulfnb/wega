@@ -1,6 +1,6 @@
 //! The engine's consumer of HTML parser warnings: parse diagnostics become `Html`
 //! warnings with the document URL and line, emitted as they occur.
-use wega_adapter_blitz::BlitzDocument;
+use crate::document::WegaDocument;
 use wega_html::{HtmlDiagnostic, ParseReport};
 
 pub(crate) struct HtmlReport;
@@ -18,7 +18,7 @@ impl ParseReport for HtmlReport {
 }
 
 /// The incremental parser as the engine uses it.
-pub(crate) type Parser = wega_html::Parser<BlitzDocument, HtmlReport>;
+pub(crate) type Parser = wega_html::Parser<WegaDocument, HtmlReport>;
 
 /// Construction can discover resources before the XML budget is exceeded. The
 /// view has not installed this controller yet, so cancel it here on rejection.
@@ -40,13 +40,13 @@ pub(crate) fn parse_xml_document<D: wega_dom::DocumentMutation>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::document::DocumentSetup;
     use blitz_traits::net::{AbortController, AbortSignal, NetHandler, NetProvider, Request};
     use std::{
         cell::RefCell,
         rc::Rc,
         sync::{Arc, Mutex},
     };
-    use wega_adapter_blitz::DocumentSetup;
 
     #[derive(Default)]
     struct ResourceProbe(Mutex<Vec<AbortSignal>>);
@@ -64,7 +64,7 @@ mod tests {
             let probe = Arc::new(ResourceProbe::default());
             let abort = AbortController::default();
             let signal = abort.signal.clone();
-            let document = Rc::new(RefCell::new(BlitzDocument::empty(DocumentSetup {
+            let document = Rc::new(RefCell::new(WegaDocument::empty(DocumentSetup {
                 base_url: Some("https://wega.test/document.xhtml".into()),
                 abort_signal: Some(signal.clone()),
                 net_provider: Some(probe.clone()),

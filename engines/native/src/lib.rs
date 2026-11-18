@@ -12,3 +12,5 @@ mod syntax;
 pub mod text;
 
 pub mod controls;
+
+pub mod computed;

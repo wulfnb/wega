@@ -10,7 +10,7 @@
 )]
 //! Owned page orchestration on Blitz, independent of Servo and SpiderMonkey.
 #![deny(unsafe_code)]
-pub use blitz_traits::events;
+pub mod events;
 pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
 

@@ -52,6 +52,8 @@ selectors = "=0.41.0"
 style_dom = {package="stylo_dom",version="=0.22.0"}
 
 keyboard-types = "=0.8.3"
+smol_str = "0.3"
+percent-encoding = "2"
 
 [build-dependencies]
 sha2 = "0.11"

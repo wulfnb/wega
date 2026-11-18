@@ -255,6 +255,7 @@ impl WegaDocument {
             }
         } else if name.local == "img" {
             if let Some(url) = node.attr("src").and_then(|v| self.url().join(v).ok()) {
+                self.image_users.insert(key, url.clone());
                 self.image(url);
             }
         }
@@ -297,6 +298,25 @@ impl WegaDocument {
             );
         }
         None
+    }
+    pub fn release_image_cache(&mut self) {
+        self.image_users.retain(|key, url| {
+            self.tree
+                .node(*key)
+                .and_then(|n| n.attr("src"))
+                .and_then(|v| self.tree.base_url().join(v).ok())
+                .as_ref()
+                == Some(url)
+        });
+        self.background_users
+            .retain(|key, _| self.tree.node(*key).is_some());
+        let used: HashSet<_> = self
+            .image_users
+            .values()
+            .chain(self.background_users.values())
+            .collect();
+        self.images
+            .retain(|url, image| image.is_none() || used.contains(url));
     }
     pub fn handle_messages(&mut self) {
         while let Ok(message) = self.rx.try_recv() {
@@ -411,9 +431,13 @@ impl WegaDocument {
             .background_image
             .as_ref()
             .and_then(|v| self.url().join(v).ok())
-            && let Some(image) = self.image(url)
         {
-            set(b, image, true);
+            if let Some(key) = b.node {
+                self.background_users.insert(key, url.clone());
+            }
+            if let Some(image) = self.image(url) {
+                set(b, image, true);
+            }
         }
         for child in &mut b.children {
             self.attach_images(child);

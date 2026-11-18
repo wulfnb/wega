@@ -1,16 +1,16 @@
 //! Script host contract. Fatal limits tear down a host; ordinary exceptions do not.
+use crate::document::WegaDocument;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     time::Instant,
 };
-use wega_adapter_blitz::BlitzDocument;
 use wega_adapter_v8::{HostConfig, RuntimeLimits, ScriptError, ScriptHost, V8Host};
 use wega_dom::NodeKey;
 /// Everything a script host shares with its view.
 #[derive(Clone)]
 pub(crate) struct HostContext {
-    pub document: Rc<RefCell<BlitzDocument>>,
+    pub document: Rc<RefCell<WegaDocument>>,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
     pub network: crate::network::Network,
     pub hubs: crate::workers::Hubs,

@@ -194,7 +194,7 @@ impl View {
                     .ok()
                     .into_iter()
                     .flatten()
-                    .filter_map(|id| doc.node(id.key()))
+                    .filter_map(|id| doc.node(id))
                     .find(|node| {
                         node.attr("http-equiv")
                             .is_some_and(|v| v.eq_ignore_ascii_case("refresh"))
@@ -214,7 +214,6 @@ impl View {
                 .ok()
                 .into_iter()
                 .flatten()
-                .map(ToKey::key)
                 .filter(|id| !self.host.applied_meta.contains(id))
                 .filter_map(|id| {
                     let element = doc.node(id)?;
@@ -522,25 +521,9 @@ impl View {
         let focus_before =
             (!requests.activate.is_empty()).then(|| self.document.borrow().focused());
         for node in requests.activate {
-            let node = node.node_id();
-            // element.click(): script already saw the event; run the defaults.
-            if self.default_click(node) {
-                continue;
-            }
-            let event = self
-                .document
-                .borrow()
-                .get_node(node)
-                .map(|n| n.synthetic_click_event_data(Modifiers::empty()));
-            if let Some(event) = event {
-                let generated = {
-                    let mut generated = Vec::new();
-                    let mut doc = self.document.borrow_mut();
-                    let mut dom_event = DomEvent::new(node, DomEventData::Click(event));
-                    doc.handle_dom_event(&mut dom_event, |event| generated.push(event));
-                    generated
-                };
-                self.generated_events(generated, serde_json::json!({}), None);
+            // Script already dispatched element.click(); run only native activation.
+            if !self.default_click(node) {
+                self.control_click(node);
             }
         }
         if let Some(before) = focus_before {

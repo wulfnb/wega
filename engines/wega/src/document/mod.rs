@@ -1,7 +1,11 @@
 //! Runtime services attached to Wega's single authoritative flat tree.
 //! Side tables contain resource/editor state, never parent/child/name copies.
+mod controls;
+pub(crate) use controls::EditEvent;
 mod cssom;
+mod forms;
 mod inline;
+pub(crate) mod inspection;
 mod resources;
 mod selectors;
 use blitz_traits::net::{AbortSignal, NetProvider};
@@ -29,6 +33,7 @@ pub struct DocumentSetup {
     pub fonts: Option<Arc<Vec<Vec<u8>>>>,
     pub abort_signal: Option<AbortSignal>,
     pub net_provider: Option<Arc<dyn NetProvider>>,
+    pub navigation_provider: Option<Arc<dyn blitz_traits::navigation::NavigationProvider>>,
 }
 
 pub struct TextInput {
@@ -54,17 +59,21 @@ pub struct WegaDocument {
     focused: Option<NodeKey>,
     hovered: Option<NodeKey>,
     active: Option<NodeKey>,
+    interaction_generation: u64,
     controls: HashMap<NodeKey, TextInput>,
     checked: HashMap<NodeKey, bool>,
     files: HashMap<NodeKey, Vec<std::path::PathBuf>>,
     guard: SharedRwLock,
-    nodes_to_stylesheet: HashMap<NodeKey, DocumentStyleSheet>,
+    nodes_to_stylesheet: std::collections::BTreeMap<NodeKey, DocumentStyleSheet>,
     inline_sources: HashMap<NodeKey, (String, u64)>,
     stylesheet_requests: HashMap<NodeKey, String>,
     stylesheet_generation: u64,
     resource_generation: u64,
     external_epoch: u64,
     images: HashMap<Url, Option<Image>>,
+    image_users: HashMap<NodeKey, Url>,
+    background_users: HashMap<NodeKey, Url>,
+    navigation: Option<Arc<dyn blitz_traits::navigation::NavigationProvider>>,
     net: Option<Arc<dyn NetProvider>>,
     signal: Option<AbortSignal>,
     tx: mpsc::Sender<Message>,
@@ -86,22 +95,42 @@ impl WegaDocument {
             focused: None,
             hovered: None,
             active: None,
+            interaction_generation: 0,
             controls: HashMap::new(),
             checked: HashMap::new(),
             files: HashMap::new(),
             guard: SharedRwLock::new(),
-            nodes_to_stylesheet: HashMap::new(),
+            nodes_to_stylesheet: std::collections::BTreeMap::new(),
             inline_sources: HashMap::new(),
             stylesheet_requests: HashMap::new(),
             stylesheet_generation: 0,
             resource_generation: 0,
             external_epoch: 0,
             images: HashMap::new(),
+            image_users: HashMap::new(),
+            background_users: HashMap::new(),
+            navigation: setup.navigation_provider,
             net: setup.net_provider,
             signal: setup.abort_signal,
             tx,
             rx,
         }
+    }
+    pub fn from_html(source: &str, setup: DocumentSetup) -> Self {
+        let document = std::rc::Rc::new(std::cell::RefCell::new(Self::empty(setup)));
+        {
+            let mut parser = wega_html::Parser::new(
+                document.clone(),
+                source,
+                usize::MAX,
+                crate::html_report::HtmlReport,
+            );
+            while matches!(parser.step(), wega_html::Step::Script(_)) {}
+        }
+        std::rc::Rc::try_unwrap(document)
+            .ok()
+            .expect("parser released its document")
+            .into_inner()
     }
     pub fn url(&self) -> &Url {
         self.base_url()
@@ -144,6 +173,9 @@ impl WegaDocument {
     pub fn set_hover(&mut self, key: Option<NodeKey>) -> HoverChange {
         let previous = self.hovered();
         self.hovered = key.filter(|k| self.node(*k).is_some());
+        if self.hovered != previous {
+            self.interaction_generation = self.interaction_generation.wrapping_add(1);
+        }
         HoverChange {
             previous,
             current: self.hovered,
@@ -261,6 +293,44 @@ impl DocumentView for WegaDocument {
     fn element_by_id(&self, id: &str) -> Option<NodeKey> {
         self.tree.element_by_id(id)
     }
+    fn ownership_parent(&self, key: NodeKey) -> Option<NodeKey> {
+        self.tree.ownership_parent(key)
+    }
+    fn owned_fragment(&self, key: NodeKey) -> Option<NodeKey> {
+        self.tree.owned_fragment(key)
+    }
+    fn element_state(&self, key: NodeKey) -> wega_dom::input::ElementState {
+        let ancestor_of = |mut at: Option<NodeKey>| {
+            while let Some(current) = at {
+                if key == current {
+                    return true;
+                }
+                at = self.node(current).and_then(NodeView::parent);
+            }
+            false
+        };
+        let node = self.node(key);
+        let control = node.and_then(NodeView::element_name).is_some_and(|n| {
+            matches!(
+                n.local,
+                "input" | "button" | "select" | "textarea" | "option" | "optgroup" | "fieldset"
+            )
+        });
+        let disabled = node.is_some_and(|n| n.attr("disabled").is_some());
+        wega_dom::input::ElementState {
+            hovered: ancestor_of(self.hovered()),
+            focused: self.focused() == Some(key),
+            focus_within: ancestor_of(self.focused()),
+            active: ancestor_of(self.active),
+            checked: self.checked(key)
+                || node.is_some_and(|n| {
+                    n.element_name().is_some_and(|n| n.local == "option")
+                        && n.attr("selected").is_some()
+                }),
+            disabled: control && disabled,
+            enabled: control && !disabled,
+        }
+    }
     fn root(&self) -> NodeKey {
         self.tree.root()
     }
@@ -307,13 +377,28 @@ impl WegaDocument {
         self.ensure_control(at);
         let changed = self.focused != Some(at);
         self.focused = Some(at);
+        if changed {
+            self.interaction_generation = self.interaction_generation.wrapping_add(1);
+        }
         Ok(changed)
     }
     pub fn clear_focus(&mut self) {
-        self.focused = None;
+        if self.focused.take().is_some() {
+            self.interaction_generation = self.interaction_generation.wrapping_add(1);
+        }
+    }
+    pub fn set_active(&mut self, key: Option<NodeKey>) {
+        let next = key.filter(|key| self.node(*key).is_some());
+        if next != self.active {
+            self.active = next;
+            self.interaction_generation = self.interaction_generation.wrapping_add(1);
+        }
     }
 }
 impl NativeResources for WegaDocument {
+    fn native_state_generation(&self) -> u64 {
+        self.interaction_generation
+    }
     fn native_generations(&self) -> (u64, u64) {
         (self.stylesheet_generation, self.resource_generation)
     }

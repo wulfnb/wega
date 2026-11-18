@@ -194,6 +194,9 @@ impl<'a> DocumentNode<'a> {
     }
 }
 impl<'a> NodeView<'a> for DocumentNode<'a> {
+    fn is_fragment(self) -> bool {
+        matches!(self.0.data, Data::Fragment)
+    }
     fn kind(self) -> NodeKind {
         match self.0.data {
             // The current engine-neutral contract represents fragment containers
@@ -255,6 +258,13 @@ impl DocumentView for Document {
     }
     fn base_url(&self) -> &Url {
         &self.url
+    }
+    fn ownership_parent(&self, key: NodeKey) -> Option<NodeKey> {
+        let node = self.nodes.get(&key)?;
+        node.parent.or(node.owner)
+    }
+    fn owned_fragment(&self, key: NodeKey) -> Option<NodeKey> {
+        self.template_contents_key(key)
     }
     fn element_by_id(&self, id: &str) -> Option<NodeKey> {
         let mut stack = vec![self.root];

@@ -1,3 +1,4 @@
+use crate::document::{DocumentSetup, WegaDocument};
 use crate::frame::FrameState;
 use crate::{
     Limits,
@@ -7,12 +8,7 @@ use crate::{
     network::{Destination, FetchContext, Network, Response},
     script::{DynScriptHost, HostContext},
 };
-use blitz_dom::NodeId;
 use blitz_traits::{
-    events::{
-        BlitzPointerEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
-        PointerCoords,
-    },
     navigation::{NavigationOptions, NavigationProvider},
     net::{AbortController, AbortSignal, Body, Bytes, NetHandler, NetProvider, Request},
 };
@@ -31,16 +27,11 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
-use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
-use wega_adapter_blitz::{ToKey, ToNodeId};
 use wega_adapter_skia::{FrameRequest, FrameTarget};
 use wega_dom::Mutator as _;
 use wega_dom::NodeKey;
-use wega_dom::input::{FocusState as _, InputControl as _, element_chain};
-use wega_dom::layout::{
-    GeometryAccess as _, HitTest as _, LayoutControl as _, Point, ViewportConfig,
-};
-use wega_dom::render::PaintSource;
+use wega_dom::input::{FocusState as _, element_chain};
+use wega_dom::layout::{Point, ViewportConfig};
 use wega_dom::{DocumentView, NodeView};
 use wega_protocol::identity::FrameId;
 
@@ -164,20 +155,6 @@ impl Pointer {
             delta_x: 0.0,
             delta_y: 0.0,
         }
-    }
-    fn modifiers(&self) -> Modifiers {
-        let mut flags = Modifiers::empty();
-        for (bit, flag) in [
-            (1, Modifiers::SHIFT),
-            (2, Modifiers::CONTROL),
-            (4, Modifiers::ALT),
-            (8, Modifiers::META),
-        ] {
-            if self.modifiers & bit != 0 {
-                flags.insert(flag);
-            }
-        }
-        flags
     }
 }
 
@@ -357,7 +334,7 @@ use wega_html::Step;
 pub struct View {
     host: document_host::DocumentHost,
     scheduler: crate::event_loop::Scheduler,
-    document: Rc<RefCell<BlitzDocument>>,
+    document: Rc<RefCell<WegaDocument>>,
     document_revision: u64,
     navigation_generation: u64,
     document_generation: Rc<Cell<u64>>,
@@ -397,6 +374,8 @@ pub struct View {
     pub native_document: Option<Rc<RefCell<crate::native_engine::NativeDocument>>>,
     native_hover: Option<NodeKey>,
     native_down: Option<NodeKey>,
+    last_down: Option<(Instant, f32, f32)>,
+    click_count: u32,
     pub last_favicon: Option<Url>,
     pub user_script: String,
     pub url: Url,
@@ -405,8 +384,8 @@ pub struct View {
     pub events: VecDeque<PageEvent>,
     pub accessibility_enabled: bool,
     pub next_dialog_id: u64,
-    pub pending_file_dialog: Option<(u64, NodeId)>,
-    pub selected_files: std::collections::HashMap<NodeId, Vec<String>>,
+    pub pending_file_dialog: Option<(u64, NodeKey)>,
+    pub selected_files: std::collections::HashMap<NodeKey, Vec<String>>,
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
     pub fullscreen: bool,
     console: Rc<RefCell<crate::console::ConsoleLog>>,
@@ -442,13 +421,25 @@ impl View {
         limits: Limits,
         role: Option<frames::FrameRole>,
     ) -> Result<Self, String> {
-        let document = BlitzDocument::from_html(
+        let document = WegaDocument::from_html(
             "<!doctype html><title>Wega</title>",
             DocumentSetup {
                 fonts: network.fonts.clone(),
                 ..Default::default()
             },
         );
+        let document = Rc::new(RefCell::new(document));
+        let native_document = Some(Rc::new(RefCell::new(
+            crate::native_engine::NativeDocument::with_font_source(
+                document.clone(),
+                network.fonts.clone(),
+            ),
+        )));
+        if let Some(native) = &native_document {
+            let mut native = native.borrow_mut();
+            native.viewport.width_px = 0;
+            native.viewport.height_px = 0;
+        }
         let (_tx, navigation_rx) = mpsc::channel();
         let raster = if role.is_none() {
             Some(wega_adapter_skia::Raster::new(network.wake.clone())?)
@@ -459,7 +450,7 @@ impl View {
         let view = Self {
             host: document_host::DocumentHost::default(),
             scheduler: crate::event_loop::Scheduler::default(),
-            document: Rc::new(RefCell::new(document)),
+            document,
             document_revision: 0,
             navigation_generation: 0,
             document_generation: Rc::new(Cell::new(0)),
@@ -493,9 +484,11 @@ impl View {
             cursor: String::new(),
             status: None,
             rendering_backend: crate::native_engine::RenderingBackend::from_env(),
-            native_document: None,
+            native_document,
             native_hover: None,
             native_down: None,
+            last_down: None,
+            click_count: 0,
             last_favicon: None,
             user_script: String::new(),
             url: url.clone(),
@@ -521,11 +514,6 @@ impl View {
     /// their default (no) answer immediately.
     pub fn set_rendering_backend(&mut self, backend: crate::native_engine::RenderingBackend) {
         self.rendering_backend = backend;
-        if backend == crate::native_engine::RenderingBackend::Blitz {
-            self.native_document = None;
-            self.native_hover = None;
-            self.native_down = None;
-        }
         if backend == crate::native_engine::RenderingBackend::WegaNative
             && self.native_document.is_none()
         {
@@ -749,7 +737,7 @@ impl View {
             })),
             navigation_provider: Some(Arc::new(Navigation(sender, self.network.wake.clone()))),
         };
-        let document = Rc::new(RefCell::new(BlitzDocument::empty(setup)));
+        let document = Rc::new(RefCell::new(WegaDocument::empty(setup)));
         let abort = if xml {
             crate::html_report::parse_xml_document(
                 document.clone(),
@@ -781,6 +769,8 @@ impl View {
         self.host.encoding = encoding;
         self.native_hover = None;
         self.native_down = None;
+        self.last_down = None;
+        self.click_count = 0;
         self.document = document;
         self.native_document =
             if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
@@ -794,7 +784,10 @@ impl View {
                 None
             };
         if let Some(native) = &self.native_document {
-            native.borrow_mut().csp = Some(self.csp.clone());
+            let mut native = native.borrow_mut();
+            native.csp = Some(self.csp.clone());
+            native.viewport.width_px = 0;
+            native.viewport.height_px = 0;
         }
         self.script_failure = None;
         self.document_revision = document_revision;
@@ -861,7 +854,7 @@ impl View {
                 .map(|ids| ids.to_vec())
                 .unwrap_or_default();
             for node in scripts {
-                self.prepare_script(node.key(), true, true);
+                self.prepare_script(node, true, true);
             }
         } else {
             self.host.parser = Some(Parser::new(
@@ -1331,55 +1324,30 @@ impl View {
             ))
             .ok();
         }
-        self.document
-            .borrow_mut()
-            .flush_layout(self.started.elapsed().as_secs_f64());
-        let doc = self.document.borrow();
-        let update = doc.build_accessibility_tree();
-        serde_json::to_string(&update).ok()
+        None
     }
     pub fn accessibility_action(&mut self, action: &str, target: u64, data: Option<&str>) {
-        let target_node = NodeId::from_u64(target);
+        let target_node = NodeKey::from_u64(target);
         match action.to_ascii_lowercase().as_str() {
             "focus" => {
                 let before = self.document.borrow().focused();
-                let _ = self.document.borrow_mut().set_focus(target_node.key());
+                let _ = self.document.borrow_mut().set_focus(target_node);
                 self.focus_transition(before);
                 self.frame.invalidate();
             }
             "default" | "click" => {
                 self.activate();
-                let event = self
-                    .document
-                    .borrow()
-                    .get_node(target_node)
-                    .map(|n| n.synthetic_click_event_data(Modifiers::empty()));
-                if let Some(event) = event {
-                    self.click_event(target_node, event, None);
-                }
+                self.click_event(target_node, None);
             }
             "set_value" | "setvalue" => {
                 if let Some(val) = data {
                     let mut doc = self.document.borrow_mut();
-                    if let Some(node) = doc.get_node_mut(target_node) {
-                        if let Some(elem) = node.element_data_mut() {
-                            if let Some(text_input) = elem.text_input_data_mut() {
-                                text_input.editor.set_text(val);
-                            }
-                        }
-                        node.mark_ancestors_dirty();
-                    }
-                    // The element can only vanish between the click and now; nothing to update then.
-                    let _ = wega_dom::mutate(&mut *doc).set_attribute(
-                        target_node.key(),
-                        QualName::new(None, ns!(), LocalName::from("value")),
-                        val,
-                    );
+                    let _ = doc.set_input_value(target_node, val);
                     drop(doc);
                     let init = serde_json::json!({"data": val});
                     let source = script_all(&[
-                        NativeEvent::new("input", target_node.key()).init(init.clone()),
-                        NativeEvent::new("change", target_node.key()).init(init),
+                        NativeEvent::new("input", target_node).init(init.clone()),
+                        NativeEvent::new("change", target_node).init(init),
                     ]);
                     self.run(&source, "wega:accessibility-action");
                     self.frame.invalidate();
@@ -1410,16 +1378,10 @@ impl View {
                 let display_val = file_names.first().cloned().unwrap_or_default();
                 {
                     let mut doc = self.document.borrow_mut();
-                    if let Some(node) = doc.get_node_mut(target) {
-                        if let Some(el) = node.element_data_mut() {
-                            el.special_data =
-                                blitz_dom::node::SpecialElementData::FileInput(path_bufs.into());
-                        }
-                        node.mark_ancestors_dirty();
-                    }
+                    doc.set_selected_files(target, path_bufs);
                     let val = format!("C:\\fakepath\\{display_val}");
                     let _ = wega_dom::mutate(&mut *doc).set_attribute(
-                        target.key(),
+                        target,
                         QualName::new(None, ns!(), LocalName::from("value")),
                         &val,
                     );
@@ -1435,37 +1397,15 @@ impl View {
             }
         }
     }
-    pub fn reset_form(&mut self, form: NodeId) {
+    pub fn reset_form(&mut self, form: NodeKey) {
         let mut doc = self.document.borrow_mut();
-        crate::dom::Dom::reset_form_controls(&mut doc, form.key());
+        crate::dom::Dom::reset_form_controls(&mut doc, form);
         self.frame.invalidate();
     }
     pub fn copy(&mut self) -> Option<String> {
         let text = {
             let doc = self.document.borrow();
-            let active = doc.get_focussed_node_id();
-            if let Some(node_id) = active {
-                if let Some(el) = doc.get_node(node_id).and_then(|n| n.element_data()) {
-                    if let Some(input_data) = el.text_input_data() {
-                        let sel = input_data.editor.raw_selection();
-                        let a = sel.anchor().index();
-                        let f = sel.focus().index();
-                        let (min_idx, max_idx) = (a.min(f), a.max(f));
-                        if min_idx < max_idx {
-                            let full_text = input_data.editor.text().to_string();
-                            full_text.get(min_idx..max_idx).map(str::to_string)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+            doc.focused().and_then(|key| doc.selected_text(key))
         };
         let text = text.or_else(|| {
             let text = self
@@ -1483,33 +1423,19 @@ impl View {
     pub fn cut(&mut self) -> Option<String> {
         let text = {
             let mut doc = self.document.borrow_mut();
-            let active = doc.get_focussed_node_id();
-            if let Some(node_id) = active {
-                if let Some(node) = doc.get_node_mut(node_id) {
-                    if let Some(el) = node.element_data_mut() {
-                        if let Some(input_data) = el.text_input_data_mut() {
-                            let mut font_ctx = parley::FontContext::new();
-                            let mut layout_ctx = parley::LayoutContext::new();
-                            let mut driver =
-                                input_data.editor.driver(&mut font_ctx, &mut layout_ctx);
-                            let selected = driver.editor.selected_text().map(str::to_string);
-                            if selected.is_some() {
-                                driver.delete_selection();
-                                node.mark_ancestors_dirty();
-                            }
-                            selected
-                        } else {
-                            None
+            doc.focused()
+                .and_then(|key| {
+                    doc.with_editor(key, |editor, fonts| {
+                        let selected = editor.selected_text().map(str::to_owned);
+                        if selected.is_some() {
+                            editor
+                                .driver(fonts, &mut parley::LayoutContext::new())
+                                .delete_selection();
                         }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+                        selected
+                    })
+                })
+                .flatten()
         };
         let text = text.or_else(|| {
             let text = self
@@ -1528,30 +1454,15 @@ impl View {
     pub fn paste(&mut self, text: &str) {
         let handled = {
             let mut doc = self.document.borrow_mut();
-            let active = doc.get_focussed_node_id();
-            if let Some(node_id) = active {
-                if let Some(node) = doc.get_node_mut(node_id) {
-                    if let Some(el) = node.element_data_mut() {
-                        if let Some(input_data) = el.text_input_data_mut() {
-                            let mut font_ctx = parley::FontContext::new();
-                            let mut layout_ctx = parley::LayoutContext::new();
-                            let mut driver =
-                                input_data.editor.driver(&mut font_ctx, &mut layout_ctx);
-                            driver.insert_or_replace_selection(text);
-                            node.mark_ancestors_dirty();
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
+            doc.focused()
+                .and_then(|key| {
+                    doc.with_editor(key, |editor, fonts| {
+                        let mut layout = parley::LayoutContext::new();
+                        let mut driver = editor.driver(fonts, &mut layout);
+                        driver.insert_or_replace_selection(text);
+                    })
+                })
+                .is_some()
         };
         if !handled {
             let text_json = serde_json::to_string(text).unwrap_or_default();
@@ -1564,31 +1475,15 @@ impl View {
     pub fn select_all(&mut self) {
         let handled = {
             let mut doc = self.document.borrow_mut();
-            let active = doc.get_focussed_node_id();
-            if let Some(node_id) = active {
-                if let Some(node) = doc.get_node_mut(node_id) {
-                    if let Some(el) = node.element_data_mut() {
-                        if let Some(input_data) = el.text_input_data_mut() {
-                            let mut font_ctx = parley::FontContext::new();
-                            let mut layout_ctx = parley::LayoutContext::new();
-                            input_data
-                                .editor
-                                .driver(&mut font_ctx, &mut layout_ctx)
-                                .select_all();
-                            node.mark_ancestors_dirty();
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
+            doc.focused()
+                .and_then(|key| {
+                    doc.with_editor(key, |editor, fonts| {
+                        let mut layout = parley::LayoutContext::new();
+                        let mut driver = editor.driver(fonts, &mut layout);
+                        driver.select_all();
+                    })
+                })
+                .is_some()
         };
         if !handled {
             let _ = self.evaluate_json("document.execCommand('selectAll')");
@@ -1675,9 +1570,10 @@ impl View {
             "link[rel='icon']",
         ] {
             if let Ok(Some(id)) = doc.query_selector(selector) {
-                if let Some(node) = doc.get_node(id) {
-                    if let Some(elem) = node.element_data() {
-                        if let Some(href) = elem.attr(LocalName::from("href")) {
+                if let Some(node) = doc.node(id) {
+                    if node.element_name().is_some() {
+                        let elem = node;
+                        if let Some(href) = elem.attr("href") {
                             if let Ok(url) = self.url.join(href) {
                                 return Some(url);
                             } else if let Ok(url) = Url::parse(href) {
@@ -1710,13 +1606,8 @@ impl View {
         doc.query_selector("title")
             .ok()
             .flatten()
-            .and_then(|id| doc.get_node(id))
-            .map(|n| {
-                n.text_content()
-                    .split_ascii_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            })
+            .and_then(|id| wega_dom::content::text_content(&*doc, id))
+            .map(|text| text.split_ascii_whitespace().collect::<Vec<_>>().join(" "))
             .unwrap_or_default()
     }
     pub fn next_navigation(&mut self) -> Option<Url> {
@@ -1797,12 +1688,13 @@ impl View {
     }
     /// Whether geometry currently reflects an older layout (or none). Never flushes.
     pub fn layout_pending(&self) -> bool {
-        use wega_dom::layout::GeometryAccess as _;
-        self.document.borrow().layout_pending()
+        self.native_document
+            .as_ref()
+            .is_none_or(|native| native.borrow().is_dirty())
     }
     pub fn node_count(&self) -> usize {
         let doc = self.document.borrow();
-        wega_dom::preorder(&*doc, doc.root()).count()
+        doc.node_count()
     }
     /// Script-created nodes and charged text bytes, for budget diagnostics.
     pub fn dom_budget(&self) -> Option<(usize, usize)> {
@@ -1864,72 +1756,17 @@ impl View {
         self.frame.invalidate();
     }
     /// Where keyboard input goes: the focused node, else the document's fallback target.
-    fn keyboard_target(&self) -> NodeId {
+    fn keyboard_target(&self) -> NodeKey {
         let doc = self.document.borrow();
-        doc.keyboard_target()
-            .map_or(doc.root_node().id, ToNodeId::node_id)
-    }
-    fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
-        let scroll = self
-            .native_document
-            .as_ref()
-            .map(|n| n.borrow().scroll)
-            .unwrap_or_else(|| self.document.borrow().viewport().scroll);
-        (x + scroll.x as f32, y + scroll.y as f32)
-    }
-    fn pointer_event(&self, target: NodeId, pointer: &Pointer) -> Option<BlitzPointerEvent> {
-        let doc = self.document.borrow();
-        let mut event = if self.native_document.is_some() {
-            doc.get_node(target)?;
-            BlitzPointerEvent {
-                id: blitz_traits::events::BlitzPointerId::Mouse,
-                is_primary: true,
-                coords: PointerCoords {
-                    page_x: 0.0,
-                    page_y: 0.0,
-                    screen_x: 0.0,
-                    screen_y: 0.0,
-                    client_x: 0.0,
-                    client_y: 0.0,
-                },
-                button: Default::default(),
-                buttons: Default::default(),
-                mods: pointer.modifiers(),
-                details: Default::default(),
-                element: Default::default(),
-                active_pointers: Default::default(),
-            }
-        } else {
-            doc.get_node(target)?
-                .synthetic_click_event_data(pointer.modifiers())
-        };
-        let (page_x, page_y) = self.page_point(pointer.x, pointer.y);
-        event.coords = PointerCoords {
-            page_x,
-            page_y,
-            screen_x: pointer.x,
-            screen_y: pointer.y,
-            client_x: pointer.x,
-            client_y: pointer.y,
-        };
-        event.button = match pointer.button {
-            1 => MouseEventButton::Auxiliary,
-            2 => MouseEventButton::Secondary,
-            3 => MouseEventButton::Fourth,
-            4 => MouseEventButton::Fifth,
-            _ => MouseEventButton::Main,
-        };
-        event.buttons = MouseEventButtons::from_bits_truncate(pointer.buttons);
-        event.mods = pointer.modifiers();
-        Some(event)
+        doc.keyboard_target().unwrap_or_else(|| doc.root())
     }
     /// Dispatch a mouse/pointer event to script; true when it was cancelled.
     fn dispatch_pointer(
         &mut self,
         kind: &str,
-        target: NodeId,
+        target: NodeKey,
         pointer: &Pointer,
-        related: Option<NodeId>,
+        related: Option<NodeKey>,
     ) -> bool {
         let init = serde_json::json!({
             "clientX": pointer.x, "clientY": pointer.y,
@@ -1939,9 +1776,9 @@ impl View {
             "altKey": pointer.modifiers & 4 != 0, "metaKey": pointer.modifiers & 8 != 0,
             "deltaX": pointer.delta_x, "deltaY": pointer.delta_y,
         });
-        let event = NativeEvent::new(kind.to_owned(), target.key())
+        let event = NativeEvent::new(kind.to_owned(), target)
             .init(init)
-            .related(related.map(ToKey::key));
+            .related(related);
         self.send(&event)
     }
     /// Dispatch one native event to script; true when it was cancelled.
@@ -1962,117 +1799,25 @@ impl View {
         self.focus_transition(before);
     }
     fn pointer_input(&mut self, pointer: Pointer) {
-        if self.native_document.is_some() {
-            self.native_pointer_input(pointer);
-            return;
-        }
-        if self.frozen || !self.scheduler.script_allowed() {
-            return;
-        }
-        // Hit testing needs current layout (scrolling and script change it).
-        self.document
-            .borrow_mut()
-            .flush_layout(self.started.elapsed().as_secs_f64());
-        // The contract takes viewport coordinates and converts to document space itself.
-        let change = if pointer.kind == PointerKind::Leave {
-            self.document.borrow_mut().pointer_left()
-        } else {
-            self.document
-                .borrow_mut()
-                .pointer_moved(pointer.x, pointer.y)
-        };
-        let previous = change.previous.map(ToNodeId::node_id);
-        let hovered = change.current.map(ToNodeId::node_id);
-        if change.changed() {
-            // Restyle for :hover so the cursor below reflects it.
-            self.document
-                .borrow_mut()
-                .flush_layout(self.started.elapsed().as_secs_f64());
-            self.hover_changed(previous, hovered, &pointer);
-        }
-        let target = hovered.or_else(|| {
-            self.document
-                .borrow()
-                .try_root_element()
-                .map(|root| root.id)
-        });
-        let Some(target) = target else { return };
-        match pointer.kind {
-            PointerKind::Leave => {}
-            PointerKind::Move => {
-                let cancelled = self.dispatch_pointer("pointermove", target, &pointer, None);
-                if !cancelled {
-                    self.dispatch_pointer("mousemove", target, &pointer, None);
-                }
-                self.blitz_pointer(target, &pointer, DomEventData::PointerMove);
-            }
-            PointerKind::Down => {
-                self.activate();
-                let cancelled = self.dispatch_pointer("pointerdown", target, &pointer, None);
-                let cancelled =
-                    cancelled || self.dispatch_pointer("mousedown", target, &pointer, None);
-                {
-                    let mut doc = self.document.borrow_mut();
-                    doc.active_node();
-                    doc.set_mousedown_node_id(Some(target));
-                }
-                if !cancelled {
-                    self.blitz_pointer(target, &pointer, DomEventData::PointerDown);
-                }
-            }
-            PointerKind::Up => {
-                self.activate();
-                self.dispatch_pointer("pointerup", target, &pointer, None);
-                self.dispatch_pointer("mouseup", target, &pointer, None);
-                self.document.borrow_mut().unactive_node();
-                // Blitz generates the click (or contextmenu) unless this was a drag.
-                self.blitz_pointer(target, &pointer, DomEventData::PointerUp);
-            }
-            PointerKind::Wheel => {
-                let cancelled = self.dispatch_pointer("wheel", target, &pointer, None);
-                if !cancelled {
-                    let mut doc = self.document.borrow_mut();
-                    // Blitz scrolls with winit's sign; DOM deltas are positive downwards.
-                    doc.scroll_node_by(target, -pointer.delta_x, -pointer.delta_y, |_| {});
-                    drop(doc);
-                    self.run("window.dispatchEvent(new Event('scroll'))", "wega:scroll");
-                }
-            }
-        }
-        let cursor = self
-            .document
-            .borrow()
-            .get_cursor()
-            .map(|cursor| cursor.name().to_owned())
-            .unwrap_or_else(|| "default".into());
-        if cursor != self.cursor {
-            self.cursor = cursor.clone();
-            self.events.push_back(PageEvent::Cursor(cursor));
-        }
-        self.frame.invalidate();
+        self.native_pointer_input(pointer);
     }
     fn hover_changed(
         &mut self,
-        previous: Option<NodeId>,
-        hovered: Option<NodeId>,
+        previous: Option<NodeKey>,
+        hovered: Option<NodeKey>,
         pointer: &Pointer,
     ) {
         let (old_chain, new_chain) = {
             let doc = self.document.borrow();
-            let chain = |id: Option<NodeId>| {
-                id.map(|id| {
-                    element_chain(&*doc, id.key())
-                        .into_iter()
-                        .map(ToNodeId::node_id)
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default()
+            let chain = |id: Option<NodeKey>| {
+                id.map(|id| element_chain(&*doc, id).into_iter().collect::<Vec<_>>())
+                    .unwrap_or_default()
             };
             (chain(previous), chain(hovered))
         };
-        if let Some(target) = previous.filter(|id| {
-            wega_dom::DocumentView::node(&*self.document.borrow(), (*id).key()).is_some()
-        }) {
+        if let Some(target) = previous
+            .filter(|id| wega_dom::DocumentView::node(&*self.document.borrow(), *id).is_some())
+        {
             self.dispatch_pointer("pointerout", target, pointer, hovered);
             self.dispatch_pointer("mouseout", target, pointer, hovered);
             for node in old_chain.iter().filter(|n| !new_chain.contains(n)) {
@@ -2088,13 +1833,29 @@ impl View {
                 self.dispatch_pointer("mouseenter", *node, pointer, previous);
             }
         }
+        let cursor = self
+            .native_document
+            .as_ref()
+            .and_then(|n| {
+                let mut native = n.borrow_mut();
+                native.ensure_layout();
+                hovered
+                    .and_then(|key| native.find_box(key))
+                    .map(|b| b.style.cursor.clone())
+            })
+            .unwrap_or_else(|| "default".into());
+        if cursor != self.cursor {
+            self.cursor = cursor.clone();
+            self.events.push_back(PageEvent::Cursor(cursor));
+        }
         let link_status = {
             let doc = self.document.borrow();
             new_chain.iter().find_map(|node_id| {
-                let node = doc.get_node(*node_id)?;
-                let elem = node.element_data()?;
-                if elem.name.local == LocalName::from("a") {
-                    let href = elem.attr(LocalName::from("href"))?;
+                let node = doc.node(*node_id)?;
+                node.element_name()?;
+                let elem = node;
+                if elem.element_name().is_some_and(|n| n.local == "a") {
+                    let href = elem.attr("href")?;
                     self.url.join(href).ok().map(|u| u.to_string())
                 } else {
                     None
@@ -2106,25 +1867,6 @@ impl View {
             self.events.push_back(PageEvent::Status(link_status));
         }
     }
-    /// Run Blitz's default action for a pointer event and handle what it generates.
-    fn blitz_pointer(
-        &mut self,
-        target: NodeId,
-        pointer: &Pointer,
-        make: fn(BlitzPointerEvent) -> DomEventData,
-    ) {
-        let Some(event) = self.pointer_event(target, pointer) else {
-            return;
-        };
-        let generated = {
-            let mut generated = Vec::new();
-            let mut doc = self.document.borrow_mut();
-            let mut event = DomEvent::new(target, make(event));
-            doc.handle_dom_event(&mut event, |event| generated.push(event));
-            generated
-        };
-        self.generated_events(generated, serde_json::json!({}), Some(pointer));
-    }
     /// A primary click at viewport coordinates: down, up and the click it generates.
     pub fn click(&mut self, x: f32, y: f32) {
         if self.frozen || !self.scheduler.script_allowed() {
@@ -2132,10 +1874,6 @@ impl View {
         }
         if let Some(native) = &self.native_document {
             native.borrow_mut().ensure_layout();
-        } else {
-            self.document
-                .borrow_mut()
-                .flush_layout(self.started.elapsed().as_secs_f64());
         }
         for kind in [PointerKind::Move, PointerKind::Down, PointerKind::Up] {
             let mut pointer = Pointer::new(kind, x, y);
@@ -2147,31 +1885,23 @@ impl View {
     }
     /// A click event: script listeners, then Wega's defaults (form submission
     /// events, new windows, fragment links), then Blitz's.
-    fn click_event(&mut self, target: NodeId, event: BlitzPointerEvent, pointer: Option<&Pointer>) {
-        let fallback = Pointer::new(
-            PointerKind::Up,
-            event.coords.client_x,
-            event.coords.client_y,
-        );
-        let pointer = *pointer.unwrap_or(&fallback);
+    fn click_event(&mut self, target: NodeKey, pointer: Option<&Pointer>) {
+        let pointer = pointer
+            .copied()
+            .unwrap_or_else(|| Pointer::new(PointerKind::Up, 0.0, 0.0));
         let disabled = {
             let doc = self.document.borrow();
-            let mut cur = Some(target);
-            let mut dis = false;
-            while let Some(id) = cur {
-                if let Some(node) = doc.get_node(id) {
-                    if let Some(el) = node.element_data() {
-                        if el.attr(LocalName::from("disabled")).is_some() {
-                            dis = true;
-                            break;
-                        }
-                    }
-                    cur = node.parent;
-                } else {
+            let mut current = Some(target);
+            let mut disabled = false;
+            while let Some(key) = current {
+                let Some(node) = doc.node(key) else { break };
+                if node.attr("disabled").is_some() {
+                    disabled = true;
                     break;
                 }
+                current = node.parent();
             }
-            dis
+            disabled
         };
         if disabled {
             return;
@@ -2180,25 +1910,43 @@ impl View {
         if self.dispatch_pointer("click", target, &pointer, None) {
             return;
         }
-        if self.default_click(target) {
+        if !self.default_click(target) {
+            self.control_click(target);
+        }
+    }
+    fn control_click(&mut self, target: NodeKey) {
+        let (kind, checked) = {
+            let doc = self.document.borrow();
+            let Some(node) = doc.node(target) else { return };
+            if !node.element_name().is_some_and(|n| n.local == "input") {
+                return;
+            }
+            (
+                node.attr("type").unwrap_or_default().to_ascii_lowercase(),
+                doc.checked(target),
+            )
+        };
+        if kind == "checkbox" {
+            self.document.borrow_mut().set_checked(target, !checked);
+        } else if kind == "radio" && !checked {
+            self.document.borrow_mut().toggle_radio(target);
+        } else {
             return;
         }
-        let generated = {
-            let mut generated = Vec::new();
-            let mut doc = self.document.borrow_mut();
-            let mut dom_event = DomEvent::new(target, DomEventData::Click(event));
-            doc.handle_dom_event(&mut dom_event, |event| generated.push(event));
-            generated
-        };
-        self.generated_events(generated, serde_json::json!({}), Some(&pointer));
+        let source = script_all(&[
+            NativeEvent::new("input", target),
+            NativeEvent::new("change", target),
+        ]);
+        self.run(&source, "wega:native-toggle");
     }
     /// Wega's own click defaults; true when the click was fully handled.
-    fn default_click(&mut self, target: NodeId) -> bool {
+    fn default_click(&mut self, target: NodeKey) -> bool {
         enum Action {
-            Submit(NodeId, NodeId),
-            Reset(NodeId),
-            FileDialog(NodeId, bool, Vec<String>),
+            Submit(NodeKey, NodeKey),
+            Reset(NodeKey),
+            FileDialog(NodeKey, bool, Vec<String>),
             NewWindow(Url),
+            Navigate(Url),
             Fragment(Url),
         }
         let action = {
@@ -2206,25 +1954,24 @@ impl View {
             let mut current = Some(target);
             let mut action = None;
             while let Some(id) = current {
-                let Some(node) = doc.get_node(id) else { break };
-                if let Some(element) = node.element_data() {
-                    if element.attr(LocalName::from("disabled")).is_some() {
+                let Some(node) = doc.node(id) else { break };
+                if let Some(name) = node.element_name() {
+                    let element = node;
+                    if element.attr("disabled").is_some() {
                         return true;
                     }
-                    let tag = &*element.name.local;
-                    let kind = element.attr(LocalName::from("type")).unwrap_or_default();
+                    let tag = name.local;
+                    let kind = element.attr("type").unwrap_or_default();
                     if matches!(tag, "input" | "button") && kind.eq_ignore_ascii_case("reset") {
-                        if let Some(form) =
-                            crate::dom::Dom::form_owner(&*doc, id.key()).map(ToNodeId::node_id)
-                        {
+                        if let Some(form) = crate::dom::Dom::form_owner(&*doc, id) {
                             action = Some(Action::Reset(form));
                             break;
                         }
                     }
                     if tag == "input" && kind.eq_ignore_ascii_case("file") {
-                        let multiple = element.attr(LocalName::from("multiple")).is_some();
+                        let multiple = element.attr("multiple").is_some();
                         let accept = element
-                            .attr(LocalName::from("accept"))
+                            .attr("accept")
                             .map(|a| {
                                 a.split(",")
                                     .map(|s| s.trim().to_string())
@@ -2236,21 +1983,20 @@ impl View {
                         break;
                     }
                     if matches!(tag, "input" | "button")
-                        && (element.is_submit_button()
+                        && (tag == "button" && !matches!(kind, "button" | "reset")
                             || kind.eq_ignore_ascii_case("submit")
                             || (tag == "input" && kind.eq_ignore_ascii_case("image")))
                     {
-                        action = crate::dom::Dom::form_owner(&*doc, id.key())
-                            .map(ToNodeId::node_id)
+                        action = crate::dom::Dom::form_owner(&*doc, id)
                             .map(|form| Action::Submit(form, id));
                         break;
                     }
                     if tag == "a"
-                        && let Some(href) = element.attr(LocalName::from("href"))
+                        && let Some(href) = element.attr("href")
                         && let Ok(url) = doc.url().join(href.trim())
                     {
                         let target_name = element
-                            .attr(LocalName::from("target"))
+                            .attr("target")
                             .unwrap_or_default()
                             .to_ascii_lowercase();
                         if !target_name.is_empty()
@@ -2259,18 +2005,20 @@ impl View {
                             action = Some(Action::NewWindow(url));
                         } else if self.same_document(&url) {
                             action = Some(Action::Fragment(url));
+                        } else {
+                            action = Some(Action::Navigate(url));
                         }
                         break;
                     }
                 }
-                current = node.parent;
+                current = node.parent();
             }
             action
         };
         match action {
             None => false,
             Some(Action::Reset(form)) => {
-                let cancelled = self.send(&NativeEvent::new("reset", form.key()));
+                let cancelled = self.send(&NativeEvent::new("reset", form));
                 if !cancelled {
                     self.reset_form(form);
                 }
@@ -2301,6 +2049,12 @@ impl View {
                 }
                 true
             }
+            Some(Action::Navigate(url)) => {
+                if self.navigate.borrow().len() < 8 {
+                    self.navigate.borrow_mut().push(url);
+                }
+                true
+            }
             Some(Action::NewWindow(url)) => {
                 if matches!(url.scheme(), "http" | "https") && !self.restrictions().popups_blocked {
                     self.events.push_back(PageEvent::OpenWindow(url));
@@ -2313,74 +2067,25 @@ impl View {
             }
         }
     }
-    fn generated_events(
+    fn edited(
         &mut self,
-        events: Vec<DomEvent>,
+        target: NodeKey,
+        event: Option<crate::document::EditEvent>,
         input_options: serde_json::Value,
-        pointer: Option<&Pointer>,
     ) {
-        for event in events {
-            let target = event.target;
-            match event.data {
-                DomEventData::Click(click) => {
-                    self.click_event(target, click, pointer);
-                    continue;
-                }
-                // Blitz counts clicks for double clicks.
-                DomEventData::DoubleClick(_) => {
-                    if let Some(pointer) = pointer {
-                        self.dispatch_pointer("dblclick", target, pointer, None);
-                    }
-                    continue;
-                }
-                DomEventData::ContextMenu(_) => {
-                    if let Some(pointer) = pointer {
-                        self.dispatch_pointer("contextmenu", target, pointer, None);
-                    }
-                    continue;
-                }
-                _ => {}
-            }
-            let event_type = event.data.name();
-            if matches!(event_type, "focus" | "blur" | "focusin" | "focusout") {
-                continue;
-            }
-            let init = if event_type == "input" {
-                input_options.clone()
-            } else {
-                serde_json::json!({})
-            };
-            let source = NativeEvent::new(event_type, target.key())
-                .init(init)
-                .script();
-            self.run(&source, "wega:native-event");
-            if event_type == "input" {
-                let is_checkable = {
-                    let doc = self.document.borrow();
-                    doc.get_node(target)
-                        .and_then(|n| n.element_data())
-                        .is_some_and(|el| {
-                            el.name.local == LocalName::from("input")
-                                && matches!(
-                                    el.attr(LocalName::from("type"))
-                                        .unwrap_or_default()
-                                        .to_ascii_lowercase()
-                                        .as_str(),
-                                    "checkbox" | "radio"
-                                )
-                        })
-                };
-                if is_checkable {
-                    let source = NativeEvent::new("change", target.key())
-                        .init(input_options.clone())
-                        .script();
-                    self.run(&source, "wega:native-event");
-                }
-            }
-        }
+        let kind = match event {
+            Some(crate::document::EditEvent::Input) => "input",
+            Some(crate::document::EditEvent::Select) => "select",
+            _ => return,
+        };
+        let event = NativeEvent::new(kind, target).init(if kind == "input" {
+            input_options
+        } else {
+            serde_json::json!({})
+        });
+        self.run(&event.script(), "wega:native-event");
     }
-    /// Native editing goes through Blitz/Parley after cancelable DOM events.
-    pub fn key(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+    pub fn key(&mut self, event: crate::events::KeyEvent) {
         if let Some(child) = self.focused_child() {
             child.key(event);
             self.frame.invalidate();
@@ -2390,7 +2095,7 @@ impl View {
         self.key_input(event);
         self.focus_transition(before);
     }
-    fn key_input(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+    fn key_input(&mut self, event: crate::events::KeyEvent) {
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
@@ -2398,9 +2103,8 @@ impl View {
         let disabled = self
             .document
             .borrow()
-            .get_node(target)
-            .and_then(|n| n.element_data())
-            .is_some_and(|el| el.attr(LocalName::from("disabled")).is_some());
+            .node(target)
+            .is_some_and(|el| el.attr("disabled").is_some());
         if disabled {
             return;
         }
@@ -2414,8 +2118,8 @@ impl View {
         let script_target = {
             let doc = self.document.borrow();
             doc.focused()
-                .or_else(|| doc.query_selector("body").ok().flatten().map(ToKey::key))
-                .unwrap_or_else(|| target.key())
+                .or_else(|| doc.query_selector("body").ok().flatten())
+                .unwrap_or(target)
         };
         let keyboard = NativeEvent::new(if pressed { "keydown" } else { "keyup" }, script_target)
             .init(options);
@@ -2424,6 +2128,36 @@ impl View {
         }
         if pressed {
             let key = event.key.to_string();
+            if key == "Tab" {
+                let Some(native) = &self.native_document else {
+                    return;
+                };
+                let mut native = native.borrow_mut();
+                native.ensure_layout();
+                let mut doc = self.document.borrow_mut();
+                let keys: Vec<_> = doc
+                    .focus_order()
+                    .into_iter()
+                    .filter(|key| native.find_box(*key).is_some_and(|b| b.style.visible))
+                    .collect();
+                if keys.is_empty() {
+                    doc.clear_focus();
+                    return;
+                }
+                let previous = doc
+                    .focused()
+                    .and_then(|key| keys.iter().position(|k| *k == key));
+                let backward = event.modifiers.contains(Modifiers::SHIFT);
+                let index = match (previous, backward) {
+                    (Some(0), true) | (None, true) => keys.len() - 1,
+                    (Some(index), true) => index - 1,
+                    (Some(index), false) => (index + 1) % keys.len(),
+                    (None, false) => 0,
+                };
+                let _ = doc.set_focus(keys[index]);
+                self.frame.invalidate();
+                return;
+            }
             let is_ctrl_or_meta = event.modifiers.contains(Modifiers::CONTROL)
                 || event.modifiers.contains(Modifiers::META);
             if is_ctrl_or_meta {
@@ -2446,28 +2180,21 @@ impl View {
             }
             let is_btn = {
                 let doc = self.document.borrow();
-                doc.get_node(target)
-                    .and_then(|n| n.element_data())
-                    .is_some_and(|el| {
-                        el.name.local == LocalName::from("button")
-                            || (el.name.local == LocalName::from("input")
-                                && matches!(
-                                    el.attr(LocalName::from("type"))
-                                        .unwrap_or_default()
-                                        .to_ascii_lowercase()
-                                        .as_str(),
-                                    "button" | "submit" | "reset"
-                                ))
-                    })
+                doc.node(target).is_some_and(|el| {
+                    el.element_name().is_some_and(|n| n.local == "button")
+                        || (el.element_name().is_some_and(|n| n.local == "input")
+                            && matches!(
+                                el.attr("type")
+                                    .unwrap_or_default()
+                                    .to_ascii_lowercase()
+                                    .as_str(),
+                                "button" | "submit" | "reset"
+                            ))
+                })
             };
             if is_btn && (key == " " || key == "Space" || key == "Enter") {
-                let click_ev = self
-                    .document
-                    .borrow()
-                    .get_node(target)
-                    .map(|n| n.synthetic_click_event_data(event.modifiers));
-                if let Some(click_ev) = click_ev {
-                    self.click_event(target, click_ev, None);
+                if self.document.borrow().node(target).is_some() {
+                    self.click_event(target, None);
                     self.frame.invalidate();
                     return;
                 }
@@ -2479,56 +2206,27 @@ impl View {
             if key == " " || key == "Space" {
                 let toggled = {
                     let mut doc = self.document.borrow_mut();
-                    if let Some(node) = doc.get_node_mut(target) {
-                        if let Some(el) = node.element_data_mut() {
-                            if el.name.local == LocalName::from("input") {
-                                let kind = el
-                                    .attr(LocalName::from("type"))
-                                    .unwrap_or_default()
-                                    .to_ascii_lowercase();
-                                if kind == "checkbox" {
-                                    let is_checked = el.checkbox_input_checked().unwrap_or(false);
-                                    el.set_checkbox_input_checked(!is_checked);
-                                    node.mark_ancestors_dirty();
-                                    Some(true)
-                                } else if kind == "radio" {
-                                    let is_checked = el.checkbox_input_checked().unwrap_or(false);
-                                    if !is_checked {
-                                        el.set_checkbox_input_checked(true);
-                                        node.mark_ancestors_dirty();
-                                        Some(false)
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
+                    let kind = doc
+                        .node(target)
+                        .filter(|n| n.element_name().is_some_and(|n| n.local == "input"))
+                        .and_then(|n| n.attr("type"))
+                        .unwrap_or_default()
+                        .to_ascii_lowercase();
+                    if kind == "checkbox" {
+                        let checked = doc.checked(target);
+                        doc.set_checked(target, !checked);
+                        Some(true)
+                    } else if kind == "radio" && !doc.checked(target) {
+                        doc.toggle_radio(target);
+                        Some(false)
                     } else {
                         None
                     }
                 };
-                if let Some(is_cb) = toggled {
-                    if !is_cb {
-                        let name = self
-                            .document
-                            .borrow()
-                            .get_node(target)
-                            .and_then(|n| n.element_data())
-                            .and_then(|el| el.attr(LocalName::from("name")).map(str::to_string));
-                        if let Some(name) = name {
-                            let mut doc = self.document.borrow_mut();
-                            blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
-                        }
-                    }
+                if toggled.is_some() {
                     let source = script_all(&[
-                        NativeEvent::new("input", target.key()),
-                        NativeEvent::new("change", target.key()),
+                        NativeEvent::new("input", target),
+                        NativeEvent::new("change", target),
                     ]);
                     self.document.borrow_mut().record_external_mutation();
                     self.run(&source, "wega:native-toggle");
@@ -2554,38 +2252,27 @@ impl View {
             };
             let input_options = serde_json::json!({"inputType":input_type,"data":event.text.as_ref().map(|text|text.as_str()),"isComposing":event.is_composing});
             if !input_type.is_empty() {
-                let before =
-                    NativeEvent::new("beforeinput", target.key()).init(input_options.clone());
+                let before = NativeEvent::new("beforeinput", target).init(input_options.clone());
                 if self.send(&before) {
                     return;
                 }
             }
-            let generated = {
-                let mut generated = Vec::new();
-                self.document.borrow_mut().handle_dom_event(
-                    &mut DomEvent::new(target, DomEventData::KeyDown(event)),
-                    |event| generated.push(event),
-                );
-                generated
-            };
-            self.generated_events(generated, input_options, None);
+            let edited = self.document.borrow_mut().edit_key(target, event);
+            self.edited(target, edited, input_options);
         }
         self.frame.invalidate();
     }
     /// Enter in a single-line field submits its form (HTML implicit submission):
     /// through the default button when there is one, else when the form has
     /// only one field that blocks implicit submission.
-    fn implicit_submission(&mut self, field: NodeId) -> bool {
+    fn implicit_submission(&mut self, field: NodeKey) -> bool {
         let (form, submitter) = {
             let doc = self.document.borrow();
-            let Some(element) = doc.get_node(field).and_then(|n| n.element_data()) else {
+            let Some(element) = doc.node(field) else {
                 return false;
             };
-            let kind = element
-                .attr(LocalName::from("type"))
-                .unwrap_or("text")
-                .to_ascii_lowercase();
-            let single_line = &*element.name.local == "input"
+            let kind = element.attr("type").unwrap_or("text").to_ascii_lowercase();
+            let single_line = element.element_name().is_some_and(|n| n.local == "input")
                 && matches!(
                     kind.as_str(),
                     "text"
@@ -2604,32 +2291,32 @@ impl View {
             if !single_line {
                 return false;
             }
-            let Some(form) = crate::dom::Dom::form_owner(&*doc, field.key()).map(ToNodeId::node_id)
-            else {
+            let Some(form) = crate::dom::Dom::form_owner(&*doc, field) else {
                 return false;
             };
             let mut button = None;
             let mut blocking = 0;
-            for id in wega_dom::preorder(&*doc, doc.root()).map(ToNodeId::node_id) {
-                let Some(control) = doc.get_node(id).and_then(|n| n.element_data()) else {
+            for id in wega_dom::preorder(&*doc, doc.root()) {
+                let Some(control) = doc.node(id) else {
                     continue;
                 };
-                if crate::dom::Dom::form_owner(&*doc, id.key()).map(ToNodeId::node_id) != Some(form)
-                {
+                if crate::dom::Dom::form_owner(&*doc, id) != Some(form) {
                     continue;
                 }
-                let tag = &*control.name.local;
+                let Some(tag) = control.element_name().map(|n| n.local) else {
+                    continue;
+                };
                 let kind = control
-                    .attr(LocalName::from("type"))
+                    .attr("type")
                     .unwrap_or_default()
                     .to_ascii_lowercase();
                 if button.is_none()
                     && matches!(tag, "input" | "button")
-                    && (control.is_submit_button()
+                    && (tag == "button" && !matches!(kind.as_str(), "button" | "reset")
                         || kind == "submit"
                         || (tag == "input" && kind == "image"))
                 {
-                    button = Some((id, control.attr(LocalName::from("disabled")).is_some()));
+                    button = Some((id, control.attr("disabled").is_some()));
                 }
                 if tag == "input"
                     && matches!(
@@ -2664,14 +2351,7 @@ impl View {
         };
         if let Some(button) = submitter {
             // Activation behaviour of the default button: a synthetic click.
-            let event = self
-                .document
-                .borrow()
-                .get_node(button)
-                .map(|n| n.synthetic_click_event_data(Modifiers::empty()));
-            if let Some(event) = event {
-                self.click_event(button, event, None);
-            }
+            self.click_event(button, None);
             return true;
         }
         let cancelled = self
@@ -2686,7 +2366,7 @@ impl View {
         }
         true
     }
-    pub fn ime(&mut self, event: blitz_traits::events::BlitzImeEvent) {
+    pub fn ime(&mut self, event: crate::events::ImeEvent) {
         if let Some(child) = self.focused_child() {
             child.ime(event);
             self.frame.invalidate();
@@ -2695,40 +2375,32 @@ impl View {
         if self.frozen || !self.scheduler.script_allowed() {
             return;
         }
-        use blitz_traits::events::BlitzImeEvent;
+        use crate::events::ImeEvent;
         let target = self.keyboard_target();
         let (text, kind) = match &event {
-            BlitzImeEvent::Preedit(text, _) => (text, "compositionupdate"),
-            BlitzImeEvent::Commit(text) => (text, "compositionend"),
+            ImeEvent::Preedit(text, _) => (text, "compositionupdate"),
+            ImeEvent::Commit(text) => (text, "compositionend"),
             _ => return,
         };
-        if matches!(&event,BlitzImeEvent::Preedit(text,_) if !text.is_empty()) && !self.composing {
+        if matches!(&event,ImeEvent::Preedit(text,_) if !text.is_empty()) && !self.composing {
             self.composing = true;
-            let start = NativeEvent::new("compositionstart", target.key())
-                .init(serde_json::json!({"data": ""}));
+            let start =
+                NativeEvent::new("compositionstart", target).init(serde_json::json!({"data": ""}));
             self.run(&start.script(), "wega:composition");
         }
-        let commit = matches!(event, BlitzImeEvent::Commit(_));
+        let commit = matches!(event, ImeEvent::Commit(_));
         let input_options = serde_json::json!({"inputType":if commit{"insertText"}else{"insertCompositionText"},"data":text,"isComposing":!commit});
         if commit {
             self.composing = false;
-            let before = NativeEvent::new("beforeinput", target.key()).init(input_options.clone());
+            let before = NativeEvent::new("beforeinput", target).init(input_options.clone());
             if self.send(&before) {
                 return;
             }
         }
-        let composition =
-            NativeEvent::new(kind, target.key()).init(serde_json::json!({"data": text}));
+        let composition = NativeEvent::new(kind, target).init(serde_json::json!({"data": text}));
         self.run(&composition.script(), "wega:composition");
-        let generated = {
-            let mut generated = Vec::new();
-            self.document.borrow_mut().handle_dom_event(
-                &mut DomEvent::new(target, DomEventData::Ime(event)),
-                |event| generated.push(event),
-            );
-            generated
-        };
-        self.generated_events(generated, input_options, None);
+        let edited = self.document.borrow_mut().edit_ime(target, event);
+        self.edited(target, edited, input_options);
         self.frame.invalidate();
     }
     pub fn scroll_at(&mut self, x: f64, y: f64, pointer_x: f32, pointer_y: f32) {
@@ -2748,21 +2420,7 @@ impl View {
                 native.scroll_by_at(k, -x, -y);
             }
             self.frame.invalidate();
-            return;
         }
-        let mut doc = self.document.borrow_mut();
-        // Viewport coordinates, like the pointer; the contract resolves the scroll offset.
-        let target = doc
-            .element_at(Point {
-                x: pointer_x as f64,
-                y: pointer_y as f64,
-            })
-            .map_or(doc.root_element().id, ToNodeId::node_id);
-        let mut events = vec![];
-        doc.scroll_node_by(target, -x, -y, |event| events.push(event));
-        drop(doc);
-        self.generated_events(events, serde_json::json!({}), None);
-        self.frame.invalidate();
     }
     /// Scroll the viewport (or the scroll container under the pointer, via `wheel`).
     pub fn scroll(&mut self, x: f64, y: f64) {
@@ -2777,15 +2435,7 @@ impl View {
                 y: p.y + y,
             });
             self.frame.invalidate();
-            return;
         }
-        let mut doc = self.document.borrow_mut();
-        let p = doc.viewport().scroll;
-        doc.set_viewport_scroll(Point {
-            x: p.x + x,
-            y: p.y + y,
-        });
-        self.frame.invalidate();
     }
     fn record_paint(
         &mut self,
@@ -2794,7 +2444,7 @@ impl View {
         scale: f32,
         zoom: f32,
         dark: bool,
-    ) -> Result<<BlitzDocument as PaintSource>::Scene, String> {
+    ) -> Result<anyrender::Scene, String> {
         if width == 0
             || height == 0
             || width as usize * height as usize > self.limits.max_pixels
@@ -2812,14 +2462,11 @@ impl View {
             zoom,
             dark,
         };
-        if let Some(native) = &self.native_document {
-            native.borrow_mut().viewport = viewport;
-            self.document.borrow_mut().set_viewport(viewport);
-        } else {
-            self.document
-                .borrow_mut()
-                .prepare_frame(&viewport, self.started.elapsed().as_secs_f64());
-        }
+        self.native_document
+            .as_ref()
+            .ok_or("Native layout is unavailable")?
+            .borrow_mut()
+            .viewport = viewport;
         let another_frame = if let Some(script) = &mut self.script
             && self.scheduler.script_allowed()
         {
@@ -2833,13 +2480,11 @@ impl View {
         } else {
             false
         };
-        if let Some(native) = &self.native_document {
-            native.borrow_mut().ensure_layout();
-        } else {
-            self.document
-                .borrow_mut()
-                .flush_layout(self.started.elapsed().as_secs_f64());
-        }
+        self.native_document
+            .as_ref()
+            .ok_or("Native layout is unavailable")?
+            .borrow_mut()
+            .ensure_layout();
 
         let device = (viewport.scale * viewport.zoom) as f64;
         let mut child_scenes = Vec::new();
@@ -2874,7 +2519,7 @@ impl View {
                 viewport.zoom,
                 viewport.dark,
             ) {
-                child_scenes.push((child.node.key(), recorded));
+                child_scenes.push((child.node, recorded));
                 frames_animating |= child.view.frame_wants_more();
             }
         }
@@ -2899,29 +2544,14 @@ impl View {
                 child_scenes.push((key, scene));
             }
         }
-        let (scene, animating) =
-            if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
-                let native_doc = self.native_document.get_or_insert_with(|| {
-                    Rc::new(RefCell::new(
-                        crate::native_engine::NativeDocument::with_font_source(
-                            self.document.clone(),
-                            self.network.fonts.clone(),
-                        ),
-                    ))
-                });
-                let mut native_doc = native_doc.borrow_mut();
-                native_doc.viewport = viewport;
-                let scene = native_doc.record_scene_with_children(&viewport, child_scenes);
-                (scene, false)
-            } else {
-                let mut doc = self.document.borrow_mut();
-                let scene = doc.record_scene_with_children(&viewport, child_scenes);
-                let animating = doc.is_animating();
-                (scene, animating)
-            };
+        let scene = self
+            .native_document
+            .as_ref()
+            .ok_or("Native layout is unavailable")?
+            .borrow_mut()
+            .record_scene_with_children(&viewport, child_scenes);
 
-        self.frame
-            .recorded(another_frame || animating || frames_animating);
+        self.frame.recorded(another_frame || frames_animating);
         if self.accessibility_enabled {
             if let Some(json) = self.accessibility_tree() {
                 self.events
@@ -3055,10 +2685,9 @@ impl View {
         doc.query_selector(selector)
             .ok()
             .flatten()
-            .and_then(|id| doc.get_node(id))
-            .map(|n| n.text_content())
+            .and_then(|id| wega_dom::content::text_content(&*doc, id))
     }
-    pub fn node_id(&self, selector: &str) -> Option<NodeId> {
+    pub fn node_id(&self, selector: &str) -> Option<NodeKey> {
         self.document
             .borrow()
             .query_selector(selector)
@@ -3186,7 +2815,13 @@ impl crate::inspector::PagePort for View {
         query: &wega_protocol::inspector::styles::StyleQuery,
     ) -> Result<wega_protocol::inspector::styles::StylePage, wega_protocol::inspector::InspectorError>
     {
-        crate::inspector::styles::inspect(&*self.document.borrow(), scope, query)
+        let doc = self.document.borrow();
+        let native = self.native_document.as_ref().map(|n| n.borrow());
+        let read = crate::document::inspection::DocumentRead {
+            doc: &doc,
+            native: native.as_deref(),
+        };
+        crate::inspector::styles::inspect(&read, scope, query)
     }
     fn inspect_dom(
         &self,
@@ -3224,7 +2859,10 @@ impl crate::inspector::PagePort for View {
                 return Ok(native_doc.inspect_geometry_report(document, key));
             }
         }
-        crate::inspector::geometry::inspect(&*self.document.borrow(), document, node)
+        Err(wega_protocol::inspector::InspectorError::new(
+            wega_protocol::inspector::InspectorErrorCode::Unavailable,
+            "Native layout is unavailable",
+        ))
     }
     fn pick_node(
         &self,
@@ -3245,7 +2883,10 @@ impl crate::inspector::PagePort for View {
                 return native_doc.pick_node_report(document, pt);
             }
         }
-        crate::inspector::geometry::pick(&*self.document.borrow(), document, x, y)
+        Err(wega_protocol::inspector::InspectorError::new(
+            wega_protocol::inspector::InspectorErrorCode::Unavailable,
+            "Native layout is unavailable",
+        ))
     }
     fn apply_edit(
         &mut self,
@@ -3421,16 +3062,11 @@ impl View {
         };
         let previous = self.native_hover;
         self.native_hover = hovered;
+        self.document.borrow_mut().set_hover(hovered);
         if previous != hovered {
-            self.hover_changed(
-                previous.map(ToNodeId::node_id),
-                hovered.map(ToNodeId::node_id),
-                &pointer,
-            );
+            self.hover_changed(previous, hovered, &pointer);
         }
-        let target = hovered
-            .map(ToNodeId::node_id)
-            .or_else(|| self.document.borrow().try_root_element().map(|n| n.id));
+        let target = hovered.or_else(|| self.document.borrow().keyboard_target());
         let Some(target) = target else {
             return;
         };
@@ -3447,19 +3083,11 @@ impl View {
                             let rel_x = (pointer.x - cb.x as f32).max(0.0);
                             let rel_y = (pointer.y - cb.y as f32).max(0.0);
                             let mut doc = self.document.borrow_mut();
-                            if let Some(node) = doc.get_node_mut(down.node_id()) {
-                                if let Some(el) = node.element_data_mut() {
-                                    if let Some(input_data) = el.text_input_data_mut() {
-                                        let mut font_ctx = parley::FontContext::new();
-                                        let mut layout_ctx = parley::LayoutContext::new();
-                                        input_data
-                                            .editor
-                                            .driver(&mut font_ctx, &mut layout_ctx)
-                                            .extend_selection_to_point(rel_x, rel_y);
-                                        node.mark_ancestors_dirty();
-                                    }
-                                }
-                            }
+                            doc.with_editor(down, |editor, fonts| {
+                                editor
+                                    .driver(fonts, &mut parley::LayoutContext::new())
+                                    .extend_selection_to_point(rel_x, rel_y);
+                            });
                         }
                     }
                 }
@@ -3467,36 +3095,39 @@ impl View {
             PointerKind::Down => {
                 self.activate();
                 self.native_down = hovered;
+                self.click_count = if self.last_down.is_some_and(|(time, x, y)| {
+                    time.elapsed() < Duration::from_millis(500)
+                        && (x - pointer.x).abs() <= 2.0
+                        && (y - pointer.y).abs() <= 2.0
+                }) {
+                    self.click_count.saturating_add(1)
+                } else {
+                    1
+                };
+                self.last_down = Some((Instant::now(), pointer.x, pointer.y));
                 let cancelled = self.dispatch_pointer("pointerdown", target, &pointer, None)
                     || self.dispatch_pointer("mousedown", target, &pointer, None);
                 if !cancelled {
-                    let focusable = self.document.borrow().node(target.key()).is_some_and(|n| {
+                    self.document.borrow_mut().set_active(Some(target));
+                    let focusable = self.document.borrow().node(target).is_some_and(|n| {
                         n.element_name().is_some_and(|e| {
                             matches!(e.local, "input" | "button" | "select" | "textarea" | "a")
                         }) || n.attr("tabindex").is_some()
                     });
                     if focusable {
-                        let _ = self.document.borrow_mut().set_focus(target.key());
+                        let _ = self.document.borrow_mut().set_focus(target);
                     }
                     if let Some(ref native_doc) = self.native_document {
-                        if let Some(b) = native_doc.borrow().find_box(target.key()) {
+                        if let Some(b) = native_doc.borrow().find_box(target) {
                             let cb = b.content_box();
                             let rel_x = (pointer.x - cb.x as f32).max(0.0);
                             let rel_y = (pointer.y - cb.y as f32).max(0.0);
                             let mut doc = self.document.borrow_mut();
-                            if let Some(node) = doc.get_node_mut(target) {
-                                if let Some(el) = node.element_data_mut() {
-                                    if let Some(input_data) = el.text_input_data_mut() {
-                                        let mut font_ctx = parley::FontContext::new();
-                                        let mut layout_ctx = parley::LayoutContext::new();
-                                        input_data
-                                            .editor
-                                            .driver(&mut font_ctx, &mut layout_ctx)
-                                            .move_to_point(rel_x, rel_y);
-                                        node.mark_ancestors_dirty();
-                                    }
-                                }
-                            }
+                            doc.with_editor(target, |editor, fonts| {
+                                editor
+                                    .driver(fonts, &mut parley::LayoutContext::new())
+                                    .move_to_point(rel_x, rel_y);
+                            });
                         }
                     }
                 }
@@ -3505,19 +3136,22 @@ impl View {
                 self.activate();
                 self.dispatch_pointer("pointerup", target, &pointer, None);
                 self.dispatch_pointer("mouseup", target, &pointer, None);
-                if self.native_down.take() == hovered && hovered.is_some() && pointer.button == 0 {
-                    if let Some(event) = self.pointer_event(target, &pointer) {
-                        self.click_event(target, event, Some(&pointer));
+                self.document.borrow_mut().set_active(None);
+                let down = self.native_down.take();
+                if down == hovered && hovered.is_some() && pointer.button == 0 {
+                    self.click_event(target, Some(&pointer));
+                    if self.click_count == 2 {
+                        self.dispatch_pointer("dblclick", target, &pointer, None);
                     }
+                } else if down == hovered && hovered.is_some() && pointer.button == 2 {
+                    self.dispatch_pointer("contextmenu", target, &pointer, None);
                 }
             }
             PointerKind::Wheel => {
                 if !self.dispatch_pointer("wheel", target, &pointer, None) {
-                    native.borrow_mut().scroll_by_at(
-                        target.key(),
-                        pointer.delta_x,
-                        pointer.delta_y,
-                    );
+                    native
+                        .borrow_mut()
+                        .scroll_by_at(target, pointer.delta_x, pointer.delta_y);
                     self.run("window.dispatchEvent(new Event('scroll'))", "wega:scroll");
                 }
             }
@@ -3620,7 +3254,7 @@ mod tests {
             limits,
         )
         .unwrap();
-        view.pending_file_dialog = Some((42, NodeId::from_u64(1)));
+        view.pending_file_dialog = Some((42, NodeKey::from_u64(1)));
         view.file_selected(42, vec![]);
         assert!(view.selected_files.is_empty());
         assert!(view.pending_file_dialog.is_none());

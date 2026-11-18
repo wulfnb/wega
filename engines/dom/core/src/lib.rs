@@ -104,6 +104,10 @@ pub const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 /// A borrowed, `Copy` handle to one node of a document.
 pub trait NodeView<'a>: Copy {
     fn kind(self) -> NodeKind;
+    fn is_fragment(self) -> bool {
+        self.element_name()
+            .is_some_and(|n| n.local == "#document-fragment")
+    }
     /// Own text/comment data only; never concatenates descendants or flushes layout.
     fn text(self) -> Option<&'a str>;
     /// The qualified name of an element (or anonymous block).
@@ -139,6 +143,30 @@ pub trait DocumentView {
     /// The document node.
     fn root(&self) -> NodeKey;
     fn base_url(&self) -> &Url;
+    /// Ownership edges used for retention only, never DOM ancestry/isConnected.
+    fn ownership_parent(&self, key: NodeKey) -> Option<NodeKey> {
+        self.node(key)?.parent()
+    }
+    fn owned_fragment(&self, _: NodeKey) -> Option<NodeKey> {
+        None
+    }
+    fn element_state(&self, key: NodeKey) -> input::ElementState {
+        let Some(node) = self.node(key) else {
+            return Default::default();
+        };
+        let control = node.element_name().is_some_and(|n| {
+            matches!(
+                n.local,
+                "input" | "button" | "select" | "textarea" | "option" | "optgroup" | "fieldset"
+            )
+        });
+        input::ElementState {
+            checked: node.attr("checked").is_some() || node.attr("selected").is_some(),
+            disabled: control && node.attr("disabled").is_some(),
+            enabled: control && node.attr("disabled").is_none(),
+            ..Default::default()
+        }
+    }
 }
 
 /// A borrowed document is a document: lets a parser build into a `&mut` the caller already
@@ -159,6 +187,15 @@ impl<D: DocumentView> DocumentView for &mut D {
     }
     fn base_url(&self) -> &Url {
         (**self).base_url()
+    }
+    fn ownership_parent(&self, key: NodeKey) -> Option<NodeKey> {
+        (**self).ownership_parent(key)
+    }
+    fn owned_fragment(&self, key: NodeKey) -> Option<NodeKey> {
+        (**self).owned_fragment(key)
+    }
+    fn element_state(&self, key: NodeKey) -> input::ElementState {
+        (**self).element_state(key)
     }
 }
 
@@ -255,6 +292,15 @@ pub struct NodeInfo {
 
 pub fn node_info<D: DocumentView>(doc: &D, key: NodeKey) -> Option<NodeInfo> {
     let node = doc.node(key)?;
+    if node.is_fragment() {
+        return Some(NodeInfo {
+            node_type: 11,
+            node_name: "#document-fragment".into(),
+            local_name: None,
+            namespace: None,
+            prefix: None,
+        });
+    }
     Some(match (node.kind(), node.element_name()) {
         (NodeKind::Document, _) => NodeInfo {
             node_type: 9,
