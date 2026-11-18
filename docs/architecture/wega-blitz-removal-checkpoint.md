@@ -63,3 +63,31 @@
   worker, final Chrome/WPT and public captures, release benchmarks and reports.
 - Production DOM/CSSOM/resource/control/VM/frame integration remains incomplete;
   production independence gate must fail until those owners migrate.
+
+## Full validation in progress
+
+- Last verified implementation/local checkpoint: `0aa6412` (native extraction).
+- Active orchestration: `python3 /private/tmp/wega-blitz-run-validation.py`.
+  Durable command/results/log directory: `/private/tmp/wega-blitz-final-validation`;
+  runner progress `/private/tmp/wega-blitz-validation-runner.log`.
+- Source frozen for this run. The orchestrator runs all required checks sequentially;
+  `active.json` records the active command and `results.json` records completed
+  commands/counts/hash/exit. Resume the runner for the same implementation rather
+  than discarding changes or restarting already successful checks.
+- Remaining final work: investigate actual failed checks, review fresh public
+  Chrome/native captures, archive evidence and release metrics, write required
+  final reports/evidence, final documentation commit. Runtime owner integration
+  remains incomplete; do not delete the reference backend/vendor sources.
+
+## Final public review correction
+
+- Full run on `0aa6412`: engine 878/root 233/security 57, both signed sandbox
+  checks, strict Clippy/fmt, 46 Chrome/WPT tests, release measurements passed.
+  The production independence gate failed with the expected five dependency names.
+- Fresh paired capture review exposed example.com's max-width/auto-width body
+  centering. A new Chrome reduction reproduced 150px displacement before the fix.
+  Final-width auto margin distribution now passes all nine Chrome reductions plus
+  five existing layout geometry tests, with original tolerances.
+- Previous complete run retained at `/private/tmp/wega-blitz-validation-0aa6412`.
+  The latest source needs its own final validation; do not reuse the old head as
+  the final implementation result. Reports are drafts pending that final run.

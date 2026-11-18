@@ -116,3 +116,11 @@ fn nested_inline_replaced_element_contributes_size() {
         "<div data-probe id=container style='width:400px;text-align:center'><a href='#'><img data-probe id=image width=60 height=60 src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22%3E%3Crect width=%2260%22 height=%2260%22 fill=%22red%22/%3E%3C/svg%3E'></a></div>",
     );
 }
+
+#[test]
+fn max_width_with_auto_width_centers_auto_margins() {
+    compare(
+        "max-width-auto-margins",
+        "<body data-probe id=body style='max-width:300px;margin:auto;padding:20px;background:yellow'><div data-probe id=content style='height:80px;background:red'></div>",
+    );
+}

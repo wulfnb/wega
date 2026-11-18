@@ -869,7 +869,13 @@ fn layout_block_or_flow(
 
     let border_box_w = content_w + total_border_w + total_padding_w;
 
-    if !is_absolute && box_node.style.width != Length::Auto {
+    // Auto margins use the final constrained width. A block whose auto width
+    // was reduced by max-width still distributes its remaining inline space.
+    let block_axis = matches!(
+        box_node.box_type,
+        BoxType::Block | BoxType::AnonymousBlock | BoxType::Flex | BoxType::Grid | BoxType::Table
+    );
+    if !is_absolute && (box_node.style.width != Length::Auto || block_axis) {
         let remaining =
             (cb_w - border_box_w - box_node.margin.left - box_node.margin.right).max(0.0);
         match (
