@@ -204,3 +204,28 @@ diff checks passed. Release pixels/geometry are identical in the comparable
 44-glyph fixture; native remains slower than reference in cold style/layout,
 mutation and raster, so no general speed advantage is claimed. Final report
 and hashed evidence are in the existing architecture report/baseline paths.
+
+## Blitz removal continuation — 2026-11-18
+
+Final tested implementation `d4d2098`; local commits only. The full verified
+result is **PARTIAL MIGRATION**, not runtime independence. See
+[removal report](wega-blitz-removal-report.md),
+[dependency inventory](wega-blitz-dependency-inventory.md),
+[compatibility](wega-native-compatibility-report.md),
+[performance](wega-native-performance-report.md), and
+[machine evidence](baseline/wega-blitz-removal-evidence.json).
+
+The new Wega flat document/parser slice and independent `wega-native`
+CSS/layout/shaping/display-list crate are tested through real raster output.
+Production views still share `BlitzDocument` with V8/CSSOM/resources/controls and
+frames. No mirror was added and no Blitz runtime was deleted. Severe Rust homepage
+section overlap, rustdoc offscreen main content and example.com centering were
+fixed with nine new Chrome reductions. Public pages remain partially compatible.
+
+Final engine/root tests: 879/233 passed; native security 57; mandatory acceptance
+47, including 25 strict Chrome comparisons and 1685/1685 selected DOM WPT
+assertions; both signed sandbox checks, Clippy and formatting passed. The actual
+production independence gate fails with five remaining dependency names. Release
+measurements remain mixed; no whole-browser performance improvement is claimed.
+DevTools D4 and inspector implementation remain untouched. All counts refer to
+bounded recorded checks, not full standards conformance.

@@ -91,3 +91,29 @@
 - Previous complete run retained at `/private/tmp/wega-blitz-validation-0aa6412`.
   The latest source needs its own final validation; do not reuse the old head as
   the final implementation result. Reports are drafts pending that final run.
+
+## Final verified checkpoint
+
+- Frozen tested implementation: `d4d209834ad88db268787010d0670905fced1d08`.
+- All recorded final commands complete. Engine 879 passed/25 existing ignored;
+  root 233/1; native broker/security 57/1; mandatory acceptance 47/0, including
+  25 strict Chrome comparisons and 1685 pinned DOM WPT assertions. Both signed
+  sandbox checks and strict codesign verification passed; Clippy/fmt passed.
+- Independent native component build/graph/tests pass. The production graph gate
+  exits 1: five Blitz runtime names remain. Do not delete Blitz or call the worker
+  native-only. The default production backend remains the reference backend.
+- Fresh native/Chrome captures reviewed for all four targets. Rust overlap and
+  rustdoc offscreen-main defects are corrected; example.com centers correctly.
+  All public pages remain PARTIAL with explicit remaining visual/standards gaps.
+- Comparable and independent release benchmarks passed. Isolated binary RSS was
+  measured outside the outer tool sandbox after time's clockrate query failed
+  inside it; original browser/signed-worker restrictions were not altered.
+- Final artifacts: `wega-blitz-removal-report.md`, dependency inventory,
+  compatibility/performance reports, and `baseline/wega-blitz-removal-evidence.json`.
+  Logs, commands, captures, measured geometry, dependency trees and hashes are in
+  `baseline/blitz-removal-2026-11-17/`. The closure commit changes documentation and
+  evidence only. No further source validation is needed for that closure alone.
+- Decision: PARTIAL MIGRATION. Next required implementation is production
+  CSSOM/resource/control/focus/VM/frame ownership migration to the new document,
+  then native-only runtime/security/compatibility gates before any Blitz removal.
+- No push issued. No DevTools D4/inspector implementation work performed.

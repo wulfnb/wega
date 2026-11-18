@@ -1,0 +1,88 @@
+{
+  "native": [
+    [
+      "column",
+      0,
+      0,
+      400,
+      220
+    ],
+    [
+      "main",
+      0,
+      0,
+      400,
+      180
+    ],
+    [
+      "header",
+      0,
+      0,
+      400,
+      70
+    ],
+    [
+      "section",
+      0,
+      70,
+      400,
+      110
+    ],
+    [
+      "footer",
+      0,
+      180,
+      400,
+      40
+    ]
+  ],
+  "chrome": [
+    [
+      "column",
+      0,
+      0,
+      400,
+      220
+    ],
+    [
+      "main",
+      0,
+      0,
+      400,
+      180
+    ],
+    [
+      "header",
+      0,
+      0,
+      400,
+      70
+    ],
+    [
+      "section",
+      0,
+      70,
+      400,
+      110
+    ],
+    [
+      "footer",
+      0,
+      180,
+      400,
+      40
+    ]
+  ],
+  "diff": {
+    "channel_tolerance": 8,
+    "pixel_threshold_fraction": 0.01,
+    "geometry_tolerance_px": 0.5,
+    "differing_pixels": 0,
+    "total_pixels": 252000,
+    "mismatch_fraction": 0.0,
+    "mean_absolute_channel_error": 0.0,
+    "max_channel_error": 0,
+    "geometry_max_error_px": 0.0,
+    "within_tolerance": true
+  }
+}

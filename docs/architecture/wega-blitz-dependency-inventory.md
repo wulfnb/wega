@@ -47,3 +47,23 @@ It is **not wired into production views yet**. The five production dependency
 names remain: `blitz-dom`, `blitz-html`, `blitz-paint`, `blitz-traits`,
 `wega-adapter-blitz`. The signed worker/browser is not native-only, even when its
 native rendering backend is selected. No reference code/vendor source was deleted.
+
+## Final graph/build evidence at `d4d2098`
+
+- [Production graph](baseline/blitz-removal-2026-11-17/production-tree-final.txt)
+  and [test graph](baseline/blitz-removal-2026-11-17/test-tree-final.txt).
+- [Production gate failure](baseline/blitz-removal-2026-11-17/production-graph.json)
+  lists all five remaining names; exit 1 is deliberate evidence of incomplete
+  runtime independence, not an ignored or weakened test.
+- [Independent component graph](baseline/blitz-removal-2026-11-17/independent-graph.json)
+  passes; the actual independent component build and owner-to-raster tests pass.
+- [Final import/source index](baseline/blitz-removal-2026-11-17/blitz-source-references-final.txt)
+  retains exact concrete consumers and lockfile/build/tooling references.
+- No `blitz-net` or `blitz-shell` package occurs in either final graph. Independent
+  Stylo/AnyRender/Skia vendoring and font-fixture/license paths are separate from
+  the remaining Blitz runtime edges; the vendor directory must not be deleted.
+
+A normal no-default-features worker was also built and signed successfully. It
+still has those production edges and therefore does not satisfy the native-only
+browser build gate. No obsolete adapter/vendor/lockfile entry was removed merely
+because the native algorithm component passed.

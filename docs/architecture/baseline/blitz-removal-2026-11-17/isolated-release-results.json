@@ -1,0 +1,62 @@
+[
+  {
+    "command": [
+      "/usr/bin/time",
+      "-l",
+      "/Users/noufalbabu/dev/personal/wega/engines/target/release/deps/native_benchmark-070fc6eee62dd719",
+      "--exact",
+      "comparable_native_blitz_stage_benchmark",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-blitz-final-validation/isolated-release/native_benchmark"
+    },
+    "exit_code": 0,
+    "seconds": 3.3364053330151364,
+    "maximum_rss_bytes": 53542912,
+    "binary_sha256": "e43f29ae49f8be6bbe82a5a8a6cf65dec6af032a7f6f6b28fcc059c1afc9aef5",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "log": "/private/tmp/wega-blitz-final-validation/isolated-release/native_benchmark.log"
+  },
+  {
+    "command": [
+      "/usr/bin/time",
+      "-l",
+      "/Users/noufalbabu/dev/personal/wega/engines/target/release/deps/native_stage_profile-693ad3635f4bf9c4",
+      "--exact",
+      "profile_native_mutation_geometry_and_scroll",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-blitz-final-validation/isolated-release/native_stage_profile"
+    },
+    "exit_code": 0,
+    "seconds": 0.16176608399837278,
+    "maximum_rss_bytes": 29360128,
+    "binary_sha256": "c841109b901a2fe46879fb3153a61c3b3838e1b21a68c057ff37c1ccd87fb09e",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "log": "/private/tmp/wega-blitz-final-validation/isolated-release/native_stage_profile.log"
+  },
+  {
+    "command": [
+      "/usr/bin/time",
+      "-l",
+      "/Users/noufalbabu/dev/personal/wega/engines/target/release/deps/benchmark-c0944229ab86df66",
+      "--exact",
+      "independent_owner_and_native_stages_release_observations",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-blitz-final-validation/isolated-release/benchmark"
+    },
+    "exit_code": 0,
+    "seconds": 0.7192133749776985,
+    "maximum_rss_bytes": 30277632,
+    "binary_sha256": "f14a72d4decc44497c313830682e36c7ead552b3bb3b06668cd76a19054090f8",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "log": "/private/tmp/wega-blitz-final-validation/isolated-release/benchmark.log"
+  }
+]

@@ -1,0 +1,131 @@
+{
+  "profile": "release",
+  "method": "five warmups; alternating backend order; comparable-work pixel and geometry gate; cold document construction and warm records separated",
+  "gate": {
+    "channel_tolerance": 8,
+    "pixel_threshold_fraction": 0.01,
+    "geometry_tolerance_px": 0.5,
+    "differing_pixels": 0,
+    "total_pixels": 144000,
+    "mismatch_fraction": 0.0,
+    "mean_absolute_channel_error": 0.0,
+    "max_channel_error": 0,
+    "geometry_max_error_px": 0.0,
+    "within_tolerance": true
+  },
+  "native_glyphs": 44,
+  "reference_glyphs": 44,
+  "sampled_process_rss_high_water_bytes": 53133312,
+  "allocation_counts": "unmeasured",
+  "scope": "bounded deterministic fixture only; no whole-browser speedup claim; reference parse uses shared DOM adapter; text timing is a subset of layout",
+  "timings": {
+    "native.cold_dom_parse": {
+      "n": 50,
+      "p50_ms": 27.722,
+      "p95_ms": 28.537291999999997,
+      "p99_ms": 28.980333
+    },
+    "native.cold_style_layout": {
+      "n": 50,
+      "p50_ms": 0.25254200000000004,
+      "p95_ms": 0.297334,
+      "p99_ms": 0.34691700000000003
+    },
+    "native.css_parse": {
+      "n": 50,
+      "p50_ms": 0.038625,
+      "p95_ms": 0.049125,
+      "p99_ms": 0.053667
+    },
+    "native.iframe_record": {
+      "n": 50,
+      "p50_ms": 0.00825,
+      "p95_ms": 0.009791,
+      "p99_ms": 0.010125
+    },
+    "native.layout_including_shape": {
+      "n": 50,
+      "p50_ms": 0.143583,
+      "p95_ms": 0.176,
+      "p99_ms": 0.203708
+    },
+    "native.mutation_relayout": {
+      "n": 50,
+      "p50_ms": 0.09825,
+      "p95_ms": 0.12579200000000001,
+      "p99_ms": 0.13037500000000002
+    },
+    "native.raster": {
+      "n": 50,
+      "p50_ms": 0.103459,
+      "p95_ms": 0.117541,
+      "p99_ms": 0.134208
+    },
+    "native.scroll_record": {
+      "n": 50,
+      "p50_ms": 0.005292000000000001,
+      "p95_ms": 0.006875,
+      "p99_ms": 0.009333000000000001
+    },
+    "native.shaping_subset": {
+      "n": 50,
+      "p50_ms": 0.138167,
+      "p95_ms": 0.169542,
+      "p99_ms": 0.194625
+    },
+    "native.style_box_tree": {
+      "n": 50,
+      "p50_ms": 0.063917,
+      "p95_ms": 0.079292,
+      "p99_ms": 0.08475
+    },
+    "native.warm_record": {
+      "n": 50,
+      "p50_ms": 0.011292,
+      "p95_ms": 0.016333,
+      "p99_ms": 0.018542
+    },
+    "reference.cold_dom_parse": {
+      "n": 50,
+      "p50_ms": 27.680083,
+      "p95_ms": 28.849667,
+      "p99_ms": 28.974875
+    },
+    "reference.cold_style_layout": {
+      "n": 50,
+      "p50_ms": 0.24620799999999998,
+      "p95_ms": 0.31645799999999996,
+      "p99_ms": 0.34058299999999997
+    },
+    "reference.iframe_record": {
+      "n": 50,
+      "p50_ms": 0.009625,
+      "p95_ms": 0.010625,
+      "p99_ms": 0.01675
+    },
+    "reference.mutation_relayout": {
+      "n": 50,
+      "p50_ms": 0.06975,
+      "p95_ms": 0.092,
+      "p99_ms": 0.113291
+    },
+    "reference.raster": {
+      "n": 50,
+      "p50_ms": 0.086291,
+      "p95_ms": 0.100042,
+      "p99_ms": 0.10137499999999999
+    },
+    "reference.scroll_record": {
+      "n": 50,
+      "p50_ms": 0.006875,
+      "p95_ms": 0.00825,
+      "p99_ms": 0.010166999999999999
+    },
+    "reference.warm_record": {
+      "n": 50,
+      "p50_ms": 0.017292,
+      "p95_ms": 0.022833,
+      "p99_ms": 0.025417000000000002
+    }
+  }
+}
