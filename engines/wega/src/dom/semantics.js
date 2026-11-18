@@ -2217,9 +2217,209 @@
       },
     });
   }
-  class HTMLSelectElement extends HTMLElement {}
-  class HTMLOptionElement extends HTMLElement {}
-  class HTMLButtonElement extends HTMLElement {}
+  class ValidityState {
+    constructor(element) {
+      this._element = element;
+    }
+    get valueMissing() {
+      const el = this._element;
+      if (!el.hasAttribute("required")) return false;
+      if (el.localName === "input") {
+        if (el.type === "checkbox") return !el.checked;
+        if (el.type === "radio") {
+          const form = el.form;
+          const group = form ? form.querySelectorAll(`input[type="radio"][name="${cssEscape(el.name)}"]`) : document.querySelectorAll(`input[type="radio"][name="${cssEscape(el.name)}"]`);
+          return ![...group].some(r => r.checked);
+        }
+        return !el.value;
+      }
+      if (el.localName === "select") return el.selectedIndex < 0 || (el.value === "" && !el.multiple);
+      if (el.localName === "textarea") return !el.value;
+      return false;
+    }
+    get typeMismatch() {
+      const el = this._element;
+      if (el.localName !== "input" || !el.value) return false;
+      if (el.type === "email") return !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(el.value);
+      if (el.type === "url") {
+        try { new URL(el.value); return false; } catch { return true; }
+      }
+      return false;
+    }
+    get patternMismatch() {
+      const el = this._element;
+      if (el.localName !== "input" || !el.hasAttribute("pattern") || !el.value) return false;
+      try {
+        const regex = new RegExp("^(?:" + el.getAttribute("pattern") + ")$", "u");
+        return !regex.test(el.value);
+      } catch { return false; }
+    }
+    get tooLong() {
+      const el = this._element;
+      if (!el.hasAttribute("maxlength")) return false;
+      const max = Number(el.getAttribute("maxlength"));
+      return !isNaN(max) && max >= 0 && el.value.length > max;
+    }
+    get tooShort() {
+      const el = this._element;
+      if (!el.hasAttribute("minlength")) return false;
+      const min = Number(el.getAttribute("minlength"));
+      return !isNaN(min) && min >= 0 && el.value.length > 0 && el.value.length < min;
+    }
+    get rangeUnderflow() {
+      const el = this._element;
+      if (el.localName !== "input" || !el.hasAttribute("min") || !el.value) return false;
+      const min = Number(el.getAttribute("min"));
+      const val = Number(el.value);
+      return !isNaN(min) && !isNaN(val) && val < min;
+    }
+    get rangeOverflow() {
+      const el = this._element;
+      if (el.localName !== "input" || !el.hasAttribute("max") || !el.value) return false;
+      const max = Number(el.getAttribute("max"));
+      const val = Number(el.value);
+      return !isNaN(max) && !isNaN(val) && val > max;
+    }
+    get stepMismatch() { return false; }
+    get badInput() { return false; }
+    get customError() { return !!this._element._customValidityMessage; }
+    get valid() {
+      return !this.valueMissing && !this.typeMismatch && !this.patternMismatch &&
+             !this.tooLong && !this.tooShort && !this.rangeUnderflow &&
+             !this.rangeOverflow && !this.stepMismatch && !this.badInput && !this.customError;
+    }
+  }
+
+  function setupFormValidation(proto) {
+    Object.defineProperties(proto, {
+      validity: {
+        get() {
+          return this._validityState || (this._validityState = new ValidityState(this));
+        }
+      },
+      validationMessage: {
+        get() {
+          if (this._customValidityMessage) return this._customValidityMessage;
+          const v = this.validity;
+          if (v.valid) return "";
+          if (v.valueMissing) return "Please fill out this field.";
+          if (v.typeMismatch) return "Please enter a valid value.";
+          if (v.patternMismatch) return "Please match the requested format.";
+          if (v.tooLong) return "Please shorten this text.";
+          if (v.tooShort) return "Please lengthen this text.";
+          if (v.rangeUnderflow || v.rangeOverflow) return "Value out of range.";
+          return "Constraints not satisfied.";
+        }
+      },
+      willValidate: {
+        get() {
+          if (this.disabled) return false;
+          if (this.hasAttribute("readonly")) return false;
+          if (this.localName === "input" && ["hidden", "button", "reset"].includes(this.type)) return false;
+          if (this.localName === "button" && this.type === "reset") return false;
+          return true;
+        }
+      },
+      checkValidity: {
+        value() {
+          if (!this.willValidate || this.validity.valid) return true;
+          this.dispatchEvent(new Event("invalid", { bubbles: false, cancelable: true }));
+          return false;
+        }
+      },
+      reportValidity: {
+        value() { return this.checkValidity(); }
+      },
+      setCustomValidity: {
+        value(msg) {
+          this._customValidityMessage = String(msg || "");
+        }
+      }
+    });
+  }
+
+  setupFormValidation(HTMLInputElement.prototype);
+  setupFormValidation(HTMLTextAreaElement.prototype);
+
+  class HTMLSelectElement extends HTMLElement {
+    get options() {
+      return this.querySelectorAll("option");
+    }
+    get length() {
+      return this.options.length;
+    }
+    get selectedOptions() {
+      return nodeList(() => [...this.options].filter(o => o.selected));
+    }
+    get selectedIndex() {
+      const opts = [...this.options];
+      return opts.findIndex(o => o.selected);
+    }
+    set selectedIndex(idx) {
+      const opts = [...this.options];
+      opts.forEach((o, i) => { o.selected = (i === Number(idx)); });
+    }
+    get value() {
+      const sel = [...this.options].find(o => o.selected);
+      return sel ? sel.value : "";
+    }
+    set value(val) {
+      val = String(val);
+      for (const o of this.options) {
+        o.selected = (o.value === val);
+      }
+    }
+    get multiple() { return this.hasAttribute("multiple"); }
+    set multiple(val) {
+      if (val) this.setAttribute("multiple", "");
+      else this.removeAttribute("multiple");
+    }
+    item(i) { return this.options[i] || null; }
+    namedItem(name) { return this.options.namedItem?.(name) || null; }
+  }
+  setupFormValidation(HTMLSelectElement.prototype);
+
+  class HTMLOptionElement extends HTMLElement {
+    get selected() {
+      if (this._selected !== undefined) return this._selected;
+      return this.hasAttribute("selected");
+    }
+    set selected(val) {
+      this._selected = !!val;
+      if (!this.closest("select")?.multiple && this._selected) {
+        for (const opt of (this.closest("select")?.options || [])) {
+          if (opt !== this) opt._selected = false;
+        }
+      }
+    }
+    get value() {
+      return this.getAttribute("value") ?? this.textContent ?? "";
+    }
+    set value(val) {
+      this.setAttribute("value", String(val));
+    }
+    get text() { return (this.textContent || "").trim(); }
+    set text(val) { this.textContent = String(val); }
+    get index() {
+      const select = this.closest("select");
+      if (!select) return 0;
+      return [...select.options].indexOf(this);
+    }
+    get form() {
+      return this.closest("select")?.form || null;
+    }
+  }
+
+  class HTMLButtonElement extends HTMLElement {
+    get type() {
+      const t = (this.getAttribute("type") || "submit").toLowerCase();
+      return ["submit", "reset", "button"].includes(t) ? t : "submit";
+    }
+    set type(val) { this.setAttribute("type", String(val)); }
+    get value() { return this.getAttribute("value") || ""; }
+    set value(val) { this.setAttribute("value", String(val)); }
+  }
+  setupFormValidation(HTMLButtonElement.prototype);
   class HTMLFormElement extends HTMLElement {
     // submit() skips the submit event and validation, per HTML.
     submit() {
@@ -4873,6 +5073,7 @@
     SVGElement,
     HTMLIFrameElement,
     DOMTokenList,
+    ValidityState,
     HTMLInputElement,
     HTMLTextAreaElement,
     HTMLSelectElement,
