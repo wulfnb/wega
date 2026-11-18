@@ -1,10 +1,10 @@
 //! Form entries and submission from Wega's sole tree/editor/file state.
 use super::*;
-use blitz_traits::{
+use std::{fmt::Display, str::FromStr};
+use wega_network::document::{
     navigation::NavigationOptions,
     net::{Body, Entry, EntryValue, FormData, Method},
 };
-use std::{fmt::Display, str::FromStr};
 /// https://url.spec.whatwg.org/#default-encode-set
 const DEFAULT_ENCODE_SET: percent_encoding::AsciiSet = percent_encoding::CONTROLS
     // Query Set

@@ -4858,8 +4858,10 @@ name = "wega-network"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bytes",
  "fontdb",
  "getrandom 0.3.4",
+ "http",
  "reqwest",
  "rusqlite",
  "serde",

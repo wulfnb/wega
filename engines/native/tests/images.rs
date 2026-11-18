@@ -10,6 +10,30 @@ fn png() -> Vec<u8> {
 }
 
 #[test]
+fn svg_broker_fonts_share_only_the_same_authorized_source_and_never_fall_back() {
+    use std::sync::Arc;
+    let source = Arc::new(vec![
+        include_bytes!("../../vendor/blitz/blitz-dom/assets/moz-bullet-font.otf").to_vec(),
+    ]);
+    let first = wega_native::images::fonts::database(Some(&source));
+    let shared = wega_native::images::fonts::database(Some(&source));
+    assert!(Arc::ptr_eq(&first, &shared));
+    assert_eq!(first.faces().count(), 1);
+    let empty_source = Arc::new(Vec::new());
+    let empty = wega_native::images::fonts::database(Some(&empty_source));
+    assert_eq!(
+        empty.faces().count(),
+        0,
+        "an explicit empty broker source must never discover host fonts"
+    );
+    assert!(!Arc::ptr_eq(&first, &empty));
+    assert!(Arc::ptr_eq(
+        &empty,
+        &wega_native::images::fonts::database(Some(&empty_source))
+    ));
+}
+
+#[test]
 fn raster_decoder_preserves_real_rgba_and_the_admitted_allocation_owner() {
     let decoded = decode_raster(&png()).unwrap();
     assert_eq!((decoded.width, decoded.height), (1, 1));

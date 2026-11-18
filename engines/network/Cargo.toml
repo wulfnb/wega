@@ -6,6 +6,8 @@ license = "MPL-2.0"
 publish = false
 
 [dependencies]
+bytes = "1"
+http = "1"
 wega-platform = { path = "../platform" }
 wega-protocol = { path = "../protocol" }
 wega-cookies = { path = "../services/cookies" }

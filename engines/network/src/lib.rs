@@ -2566,3 +2566,5 @@ mod tests {
         assert!(cache.entries.len() <= 128);
     }
 }
+
+pub mod document;

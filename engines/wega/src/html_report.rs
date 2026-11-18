@@ -26,8 +26,8 @@ pub(crate) fn parse_xml_document<D: wega_dom::DocumentMutation>(
     document: std::rc::Rc<std::cell::RefCell<D>>,
     source: &str,
     limit: usize,
-    abort: blitz_traits::net::AbortController,
-) -> Result<blitz_traits::net::AbortController, String> {
+    abort: wega_network::document::net::AbortController,
+) -> Result<wega_network::document::net::AbortController, String> {
     match wega_html::parse_xml(document, source, limit, HtmlReport) {
         Ok(_) => Ok(abort),
         Err(_) => {
@@ -41,11 +41,13 @@ pub(crate) fn parse_xml_document<D: wega_dom::DocumentMutation>(
 mod tests {
     use super::*;
     use crate::document::DocumentSetup;
-    use blitz_traits::net::{AbortController, AbortSignal, NetHandler, NetProvider, Request};
     use std::{
         cell::RefCell,
         rc::Rc,
         sync::{Arc, Mutex},
+    };
+    use wega_network::document::net::{
+        AbortController, AbortSignal, NetHandler, NetProvider, Request,
     };
 
     #[derive(Default)]

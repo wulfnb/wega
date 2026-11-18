@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.98"
 license = "MPL-2.0"
 publish = false
-description = "Wega's experimental Blitz-based page engine"
+description = "Wega-owned DOM, V8 and native page engine"
 
 [dependencies]
 wega-native = { path = "../native" }

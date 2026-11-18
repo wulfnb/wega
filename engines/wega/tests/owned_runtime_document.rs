@@ -1,5 +1,4 @@
 //! Exercise the runtime services with the sole Wega tree, without a reference owner.
-use blitz_traits::net::{AbortController, Bytes, NetHandler, NetProvider, Request};
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -12,6 +11,7 @@ use wega_engine::{
     NativeDocument,
     document::{DocumentSetup, WegaDocument},
 };
+use wega_network::document::net::{AbortController, Bytes, NetHandler, NetProvider, Request};
 struct Report;
 impl wega_html::ParseReport for Report {
     fn warning(&self, _: wega_html::HtmlDiagnostic<'_>) {}

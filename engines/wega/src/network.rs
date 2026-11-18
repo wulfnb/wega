@@ -252,9 +252,6 @@ impl Network {
                     .map(Arc::new)
             })
             .transpose()?;
-        if let Some(fonts) = &fonts {
-            blitz_dom::install_broker_fonts(fonts);
-        }
         let (client, cookies) = if let Some(remote) = remote {
             (
                 Client::Remote(remote.clone()),

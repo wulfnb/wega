@@ -1,5 +1,10 @@
 # Wega Blitz removal campaign
 
+The [18 November continuation report](wega-blitz-removal-continuation-report.md)
+records subsequent production parser, V8-contract/identity and decoded-image
+integration. Production removal remains incomplete. The report below and its
+evidence describe the earlier campaign.
+
 **Decision: PARTIAL MIGRATION.** Production Wega still depends on Blitz. The
 independent native algorithm crate and Wega tree are implemented and tested, but
 production DOM/CSSOM/resource/control/V8/frame ownership has not been switched.

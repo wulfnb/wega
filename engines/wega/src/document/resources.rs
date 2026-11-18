@@ -1,7 +1,6 @@
 //! Authorized resource requests and document-thread application. No local fetcher.
 use super::*;
 use ::selectors::context::QuirksMode;
-use blitz_traits::net::{Bytes, NetHandler, Request};
 use style::{
     media_queries::MediaList,
     shared_lock::Locked,
@@ -13,6 +12,7 @@ use style::{
     values::{CssUrl, SourceLocation},
 };
 use wega_native::images::{RasterImageData, SvgImageData};
+use wega_network::document::net::{Bytes, NetHandler, Request};
 
 #[derive(Clone)]
 pub(super) enum Image {
@@ -269,6 +269,7 @@ impl WegaDocument {
             let tx = self.tx.clone();
             let signal = self.signal.clone();
             let requested = url.clone();
+            let svg_fonts = self.svg_fonts.clone();
             net.fetch(
                 self.root().as_u64() as usize,
                 request(url, self.signal.as_ref(), "image"),
@@ -285,9 +286,13 @@ impl WegaDocument {
                         )),
                         Err(RasterDecodeError::Rejected(_)) => return,
                         Err(RasterDecodeError::Format(_)) => {
-                            let Ok(image) =
-                                SvgImageData::from_data(&bytes, &usvg::Options::default())
-                            else {
+                            let Ok(image) = SvgImageData::from_data(
+                                &bytes,
+                                &usvg::Options {
+                                    fontdb: svg_fonts,
+                                    ..Default::default()
+                                },
+                            ) else {
                                 return;
                             };
                             Image::Svg(image)
@@ -414,8 +419,15 @@ impl WegaDocument {
                 .and_then(NodeView::element_name)
                 .is_some_and(|n| n.local == "svg")
             {
-                b.svg = wega_native::graphics::svg_source(self, key)
-                    .and_then(|s| wega_native::graphics::decode_svg(s.as_bytes()));
+                b.svg = wega_native::graphics::svg_source(self, key).and_then(|s| {
+                    wega_native::graphics::decode_svg_with_options(
+                        s.as_bytes(),
+                        &usvg::Options {
+                            fontdb: self.svg_fonts.clone(),
+                            ..Default::default()
+                        },
+                    )
+                });
             }
             if let Some(url) = self
                 .node(key)

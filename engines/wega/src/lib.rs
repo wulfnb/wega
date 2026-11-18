@@ -8,10 +8,9 @@
     clippy::manual_strip,
     clippy::manual_slice_fill
 )]
-//! Owned page orchestration on Blitz, independent of Servo and SpiderMonkey.
+//! Wega-owned DOM, V8 host and native page orchestration.
 #![deny(unsafe_code)]
 pub mod events;
-pub use blitz_traits::shell::{ColorScheme, Viewport};
 pub use url::Url;
 
 pub mod canvas;

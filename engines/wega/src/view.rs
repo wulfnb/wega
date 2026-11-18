@@ -8,10 +8,6 @@ use crate::{
     network::{Destination, FetchContext, Network, Response},
     script::{DynScriptHost, HostContext},
 };
-use blitz_traits::{
-    navigation::{NavigationOptions, NavigationProvider},
-    net::{AbortController, AbortSignal, Body, Bytes, NetHandler, NetProvider, Request},
-};
 use encoding_rs::Encoding;
 use html5ever::{LocalName, QualName, ns};
 use keyboard_types::Modifiers;
@@ -33,6 +29,10 @@ use wega_dom::NodeKey;
 use wega_dom::input::{FocusState as _, element_chain};
 use wega_dom::layout::{Point, ViewportConfig};
 use wega_dom::{DocumentView, NodeView};
+use wega_network::document::{
+    navigation::{NavigationOptions, NavigationProvider},
+    net::{AbortController, AbortSignal, Body, Bytes, NetHandler, NetProvider, Request},
+};
 use wega_protocol::identity::FrameId;
 
 pub struct Frame {
@@ -214,7 +214,7 @@ impl NetProvider for Resources {
             }
         };
         drop(csp);
-        let blocked = request.method != blitz_traits::net::http::Method::GET
+        let blocked = request.method != wega_network::document::net::http::Method::GET
             || !permitted
             || self.resource_requests.fetch_add(1, Ordering::Relaxed) >= 512;
         if blocked {
@@ -1085,7 +1085,7 @@ impl View {
     }
     /// A navigation started by the page (link, form, script).
     fn navigation(&mut self, options: NavigationOptions) {
-        if options.method == blitz_traits::net::http::Method::GET {
+        if options.method == wega_network::document::net::http::Method::GET {
             if self.same_document(&options.url) {
                 self.navigate_fragment(&options.url);
             } else if self.navigate.borrow().len() < 8 {
@@ -2740,13 +2740,13 @@ fn encode_body(body: &Body, content_type: Option<&str>) -> (Vec<u8>, String) {
                 for entry in &form.0 {
                     let name = entry.name.replace('"', "%22").replace(['\r', '\n'], " ");
                     match &entry.value {
-                        blitz_traits::net::EntryValue::String(text) => {
+                        wega_network::document::net::EntryValue::String(text) => {
                             out.extend_from_slice(
                                 format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{text}\r\n")
                                     .as_bytes(),
                             );
                         }
-                        blitz_traits::net::EntryValue::File(path) => {
+                        wega_network::document::net::EntryValue::File(path) => {
                             let filename = path
                                 .file_name()
                                 .map(|f| f.to_string_lossy().to_string())
@@ -2759,7 +2759,7 @@ fn encode_body(body: &Body, content_type: Option<&str>) -> (Vec<u8>, String) {
                             out.extend_from_slice(&data);
                             out.extend_from_slice(b"\r\n");
                         }
-                        blitz_traits::net::EntryValue::EmptyFile => {
+                        wega_network::document::net::EntryValue::EmptyFile => {
                             out.extend_from_slice(
                                 format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"\"\r\nContent-Type: application/octet-stream\r\n\r\n\r\n")
                                     .as_bytes(),
@@ -3178,7 +3178,7 @@ mod tests {
     }
     #[test]
     fn form_bodies_are_encoded_for_their_enctype() {
-        use blitz_traits::net::{Entry, EntryValue, FormData};
+        use wega_network::document::net::{Entry, EntryValue, FormData};
         let form = Body::Form(FormData(vec![
             Entry {
                 name: "q".into(),
@@ -3204,7 +3204,7 @@ mod tests {
     }
     #[test]
     fn form_bodies_support_file_entries_multipart() {
-        use blitz_traits::net::{Entry, EntryValue, FormData};
+        use wega_network::document::net::{Entry, EntryValue, FormData};
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("upload.txt");
         std::fs::write(&file_path, b"Hello file content!").unwrap();

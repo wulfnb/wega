@@ -2078,9 +2078,9 @@ impl Dom {
                 (
                     entry.name,
                     match entry.value {
-                        blitz_traits::net::EntryValue::String(value) => value,
-                        blitz_traits::net::EntryValue::File(_)
-                        | blitz_traits::net::EntryValue::EmptyFile => String::new(),
+                        wega_network::document::net::EntryValue::String(value) => value,
+                        wega_network::document::net::EntryValue::File(_)
+                        | wega_network::document::net::EntryValue::EmptyFile => String::new(),
                     },
                 )
             })

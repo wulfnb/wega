@@ -4,6 +4,7 @@
 //! No fetch, document identity, DOM, CSP decision, path resolver or fallback
 //! network request belongs here. All callers share one process admission budget.
 mod budget;
+pub mod fonts;
 mod svg;
 use std::sync::Arc;
 pub use svg::{SvgImageData, SvgIntrinsicDimensions};

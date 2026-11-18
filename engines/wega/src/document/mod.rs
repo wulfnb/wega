@@ -8,7 +8,6 @@ mod inline;
 pub(crate) mod inspection;
 mod resources;
 mod selectors;
-use blitz_traits::net::{AbortSignal, NetProvider};
 pub use cssom::{CssRuleInfo, CssomError};
 use html5ever::QualName;
 use resources::{Image, Message};
@@ -26,6 +25,7 @@ use wega_dom::{
     NewAttribute, NodeKey, NodeView,
 };
 use wega_native::{controls::ControlView, layout::LayoutBox, resources::NativeResources};
+use wega_network::document::net::{AbortSignal, NetProvider};
 
 #[derive(Default)]
 pub struct DocumentSetup {
@@ -33,7 +33,8 @@ pub struct DocumentSetup {
     pub fonts: Option<Arc<Vec<Vec<u8>>>>,
     pub abort_signal: Option<AbortSignal>,
     pub net_provider: Option<Arc<dyn NetProvider>>,
-    pub navigation_provider: Option<Arc<dyn blitz_traits::navigation::NavigationProvider>>,
+    pub navigation_provider:
+        Option<Arc<dyn wega_network::document::navigation::NavigationProvider>>,
 }
 
 pub struct TextInput {
@@ -56,6 +57,7 @@ impl TextInput {
 pub struct WegaDocument {
     tree: Document,
     fonts: Arc<Mutex<parley::FontContext>>,
+    svg_fonts: Arc<usvg::fontdb::Database>,
     focused: Option<NodeKey>,
     hovered: Option<NodeKey>,
     active: Option<NodeKey>,
@@ -73,7 +75,7 @@ pub struct WegaDocument {
     images: HashMap<Url, Option<Image>>,
     image_users: HashMap<NodeKey, Url>,
     background_users: HashMap<NodeKey, Url>,
-    navigation: Option<Arc<dyn blitz_traits::navigation::NavigationProvider>>,
+    navigation: Option<Arc<dyn wega_network::document::navigation::NavigationProvider>>,
     net: Option<Arc<dyn NetProvider>>,
     signal: Option<AbortSignal>,
     tx: mpsc::Sender<Message>,
@@ -88,10 +90,12 @@ impl WegaDocument {
             .and_then(|u| Url::parse(u).ok())
             .unwrap_or_else(|| Url::parse("about:blank").unwrap());
         let fonts = wega_native::text::font_context(setup.fonts.as_deref().map(Vec::as_slice));
+        let svg_fonts = wega_native::images::fonts::database(setup.fonts.as_ref());
         let (tx, rx) = mpsc::channel();
         Self {
             tree: Document::new(url),
             fonts: Arc::new(Mutex::new(fonts)),
+            svg_fonts,
             focused: None,
             hovered: None,
             active: None,
