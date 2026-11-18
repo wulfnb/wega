@@ -274,6 +274,9 @@ impl DocumentMutation for Document {
 }
 pub struct DocumentMutator<'a>(&'a mut Document);
 impl Mutator for DocumentMutator<'_> {
+    fn create_document(&mut self) -> NodeKey {
+        self.0.allocate(Data::Document)
+    }
     fn parent(&self, key: NodeKey) -> Option<NodeKey> {
         self.0.node(key)?.parent()
     }
@@ -471,6 +474,16 @@ impl Mutator for DocumentMutator<'_> {
         };
         if !text.is_empty() {
             current.push_str(text);
+            self.0.changed(key, false);
+        }
+        Ok(())
+    }
+    fn set_comment(&mut self, key: NodeKey, text: &str) -> Result<(), MutationError> {
+        let Data::Comment(current) = &self.0.get(key)?.data else {
+            return Err(MutationError::NotText(key));
+        };
+        if current != text {
+            self.0.nodes.get_mut(&key).unwrap().data = Data::Comment(text.into());
             self.0.changed(key, false);
         }
         Ok(())

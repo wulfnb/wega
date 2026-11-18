@@ -1032,6 +1032,12 @@ fn with_ids<R>(children: &[NodeKey], f: impl FnOnce(&[NodeId]) -> R) -> R {
 }
 
 impl Mutator for BlitzMutator<'_> {
+    fn create_document(&mut self) -> NodeKey {
+        self.0
+            .doc
+            .create_node(NodeData::Document(Box::default()))
+            .key()
+    }
     fn parent(&self, key: NodeKey) -> Option<NodeKey> {
         self.node(key).ok()?.parent.map(ToKey::key)
     }
@@ -1183,6 +1189,21 @@ impl Mutator for BlitzMutator<'_> {
             .append_text_to_node(id, text)
             .map_err(|_| MutationError::NotText(node))?;
         if !text.is_empty() {
+            self.stepped();
+        }
+        Ok(())
+    }
+    fn set_comment(&mut self, key: NodeKey, text: &str) -> Result<(), MutationError> {
+        let NodeData::Comment { contents } = &self.node(key)?.data else {
+            return Err(MutationError::NotText(key));
+        };
+        if contents != text {
+            let NodeData::Comment { contents } =
+                &mut self.0.doc.get_node_mut(key.node_id()).unwrap().data
+            else {
+                unreachable!()
+            };
+            *contents = text.into();
             self.stepped();
         }
         Ok(())

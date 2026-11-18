@@ -79,3 +79,20 @@ fn each_document_gets_a_fresh_identity_space() {
         r#""[null,true]""#
     );
 }
+
+#[test]
+fn comment_writes_preserve_identity_and_step_the_authoritative_mutation_clock() {
+    let mut v = view("<!doctype html><body><!--before--></body>");
+    let before = v.mutation_epoch();
+    assert_eq!(
+        js(
+            &mut v,
+            "globalThis.comment=document.body.firstChild;comment.data='after';JSON.stringify([comment===document.body.firstChild,comment.data])"
+        ),
+        r#""[true,\"after\"]""#
+    );
+    let after = v.mutation_epoch();
+    assert_ne!(before, after);
+    js(&mut v, "comment.data='after'");
+    assert_eq!(v.mutation_epoch(), after);
+}

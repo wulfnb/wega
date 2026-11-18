@@ -19,6 +19,7 @@
 //!   operation, never a panic on a stale key), and deferred side effects run when the mutator is
 //!   finished or dropped. There is no rollback and no staging.
 #![forbid(unsafe_code)]
+pub mod content;
 pub mod document;
 pub use document::Document;
 pub mod input;
@@ -381,6 +382,9 @@ pub trait Mutator {
     fn previous_sibling(&self, key: NodeKey) -> Option<NodeKey>;
 
     // Creation: new nodes are detached.
+    /// A detached document node (DOMImplementation construction). This does not
+    /// replace the browsing context's document or create another authority.
+    fn create_document(&mut self) -> NodeKey;
     fn create_element(
         &mut self,
         name: QualName,
@@ -415,6 +419,9 @@ pub trait Mutator {
 
     // Text and attributes.
     fn set_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError>;
+    /// Replace a comment's data, preserving its key and mutation accounting.
+    /// `NotText` rejects other node kinds just as `set_text` rejects comments.
+    fn set_comment(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError>;
     fn append_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError>;
     fn set_attribute(
         &mut self,

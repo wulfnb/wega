@@ -2207,7 +2207,7 @@ impl View {
                     let tag = &*element.name.local;
                     let kind = element.attr(LocalName::from("type")).unwrap_or_default();
                     if matches!(tag, "input" | "button") && kind.eq_ignore_ascii_case("reset") {
-                        if let Some(form) = crate::dom::Dom::form_owner(&doc, id) {
+                        if let Some(form) = crate::dom::Dom::form_owner(&*doc, id) {
                             action = Some(Action::Reset(form));
                             break;
                         }
@@ -2231,7 +2231,7 @@ impl View {
                             || kind.eq_ignore_ascii_case("submit")
                             || (tag == "input" && kind.eq_ignore_ascii_case("image")))
                     {
-                        action = crate::dom::Dom::form_owner(&doc, id)
+                        action = crate::dom::Dom::form_owner(&*doc, id)
                             .map(|form| Action::Submit(form, id));
                         break;
                     }
@@ -2594,7 +2594,7 @@ impl View {
             if !single_line {
                 return false;
             }
-            let Some(form) = crate::dom::Dom::form_owner(&doc, field) else {
+            let Some(form) = crate::dom::Dom::form_owner(&*doc, field) else {
                 return false;
             };
             let mut button = None;
@@ -2603,7 +2603,7 @@ impl View {
                 let Some(control) = doc.get_node(id).and_then(|n| n.element_data()) else {
                     continue;
                 };
-                if crate::dom::Dom::form_owner(&doc, id) != Some(form) {
+                if crate::dom::Dom::form_owner(&*doc, id) != Some(form) {
                     continue;
                 }
                 let tag = &*control.name.local;

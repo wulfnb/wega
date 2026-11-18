@@ -153,7 +153,12 @@ fn refresh_headers_navigate_after_load() {
 
 #[test]
 fn xhtml_navigation_uses_namespaced_xml_and_runs_scripts_after_construction() {
-    let server = Server::new(|_| Reply::ok("application/xhtml+xml", r#"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>XML document</title></head><body><MixedCase id="item">A&amp;B</MixedCase><script>globalThis.xmlReady = document.getElementById('after') !== null;</script><p id="after">after</p></body></html>"#));
+    let server = Server::new(|_| {
+        Reply::ok(
+            "application/xhtml+xml",
+            r#"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>XML document</title></head><body><MixedCase id="item">A&amp;B</MixedCase><script>globalThis.xmlReady = document.getElementById('after') !== null;</script><p id="after">after</p></body></html>"#,
+        )
+    });
     let engine = engine();
     let mut view = open(&engine, &server.url("127.0.0.1", "/page.xhtml"));
     assert_eq!(view.title(), "XML document");

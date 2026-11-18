@@ -22,6 +22,20 @@
 
 ## Historical campaign checkpoints
 
+### Continuation tree-host checkpoint
+
+- Tree-only V8 reads, fragment serialization, form association, component/slot
+  traversal and detached-node retention now use `DocumentView`/`DocumentMutation`
+  without concrete node-data matching. Shared algorithms run on `wega-dom::Document`.
+- Added detached-document creation and counted comment-data mutation to the
+  existing mutation contract and both owners. Comment writes no longer bypass
+  the authoritative mutation clock; identity and no-op behavior are exercised.
+- Verified runtime DOM/identity/forms/custom elements: 51 passed. DOM/parser/
+  reference-adapter suite: 115 passed, 2 existing ignored. Deep content traversal
+  exercises 10,000 levels on 128 KiB without changing accepted browser depth.
+- This is a safe M1/M2 integration slice, not completion of either milestone.
+  Editor, CSSOM, query, resources, frame and production owner migration remain.
+
 - Starting/last verified commit: `8523150487a953394920e69459ad7f374e57297c`.
 - Branch: `feature/dom-rounds-9-12`; initial worktree clean.
 - Phase 0: inventory recorded before production edits; graph capture in progress.
