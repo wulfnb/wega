@@ -36,6 +36,22 @@
 - This is a safe M1/M2 integration slice, not completion of either milestone.
   Editor, CSSOM, query, resources, frame and production owner migration remain.
 
+### Continuation V8 identity checkpoint
+
+- V8 node arguments, wrapper retention, activation/script requests, started-script
+  sets, pending script queues and applied-meta bookkeeping now use `NodeKey`.
+  Conversion to reference IDs occurs only at remaining concrete reference calls.
+- Removed concrete traversal from V8 host and view node counting; generic
+  pre-order iteration preserves document order. Script/meta reads use NodeView.
+- Verified 87 production brokered DOM/identity/form/custom-element/event/frame/
+  script regressions, then 20 lifecycle/document/script checks on the final
+  lifecycle edits. No callback borrows or security boundaries were broadened.
+- Initial runtime rebuild failed with linker ENOSPC. Inventoried 86 obsolete
+  generated test executables with old dependency signatures, confirmed no active
+  processes/open files, removed 17,241,038,848 bytes and reran successfully.
+  Manifest and failure/retry logs are archived; sources and current executables
+  were preserved. Full production DOM ownership still has not switched.
+
 - Starting/last verified commit: `8523150487a953394920e69459ad7f374e57297c`.
 - Branch: `feature/dom-rounds-9-12`; initial worktree clean.
 - Phase 0: inventory recorded before production edits; graph capture in progress.

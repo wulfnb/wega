@@ -227,6 +227,21 @@ pub fn subtree<D: DocumentView, K>(
     nodes
 }
 
+/// Pre-order traversal of `root` in document order. Borrows the single owner;
+/// no copied nodes, recursion or concrete storage/traversal type is required.
+pub fn preorder<D: DocumentView>(doc: &D, root: NodeKey) -> impl Iterator<Item = NodeKey> + '_ {
+    let mut pending = vec![root];
+    std::iter::from_fn(move || {
+        while let Some(key) = pending.pop() {
+            if let Some(node) = doc.node(key) {
+                pending.extend(node.children().rev());
+                return Some(key);
+            }
+        }
+        None
+    })
+}
+
 /// The DOM `Node` interface facts for `nodeType`, `nodeName`, `localName`, `namespaceURI`
 /// and `prefix`.
 #[derive(Debug, PartialEq, Eq)]

@@ -181,4 +181,79 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 4 tests
 test comment_mutations_are_atomic_and_counted_and_document_nodes_are_distinct ... ok
 test form_association_follows_current_tree_and_explicit_invalid_owner_stays_unowned ... ok
-test markup_and_text_traversals_do_not_recurse_through_a_deep_document ... 
+test markup_and_text_traversals_do_not_recurse_through_a_deep_document ... ok
+test text_and_markup_use_the_owned_tree_in_document_order ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.76s
+
+     Running tests/document.rs (engines/target/debug/deps/document-86af9992c44c9dd4)
+
+running 11 tests
+test attribute_creation_and_missing_updates_deduplicate_by_namespace ... ok
+test deep_storage_clone_drop_and_document_drop_do_not_recurse ... ok
+test duplicate_ids_follow_connected_tree_order_after_moves ... ok
+test epoch_and_invalidations_change_only_for_effective_operations ... ok
+test fragments_insert_contents_and_template_ownership_cannot_cycle ... ok
+test keys_are_stable_and_foreign_or_deleted_keys_never_alias ... ok
+test namespaces_and_attribute_order_survive_mutation_and_clone ... ok
+test rejected_mutations_are_atomic ... ok
+test reparent_insert_replace_and_detach_preserve_tree_links ... ok
+test repeated_collection_does_not_retain_deleted_keys_in_invalidation_set ... ok
+test template_clone_has_separate_owned_fragment_and_iterative_cleanup ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running unittests src/lib.rs (engines/target/debug/deps/wega_html-7c0cc782e202e0eb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/boundary.rs (engines/target/debug/deps/boundary-67f238624b63dd90)
+
+running 2 tests
+test dependencies_stay_inside_the_boundary ... ok
+test sources_do_not_name_the_engine_or_other_document_engines ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/owned_document.rs (engines/target/debug/deps/owned_document-76ae7f7ee0110d8d)
+
+running 6 tests
+test fragment_context_and_overflow_cleanup_preserve_existing_document ... ok
+test malformed_html_entities_and_implied_structure_use_html5ever ... ok
+test parser_budget_stops_real_node_creation ... ok
+test script_pause_and_document_write_use_the_same_tree ... ok
+test svg_namespaces_and_template_contents_are_real_nodes ... ok
+test table_foster_parenting_and_implicit_tbody_are_preserved ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/xml.rs (engines/target/debug/deps/xml-83abc95168308f86)
+
+running 4 tests
+test xml_binds_namespaces_and_preserves_case_without_html_implied_elements ... ok
+test xml_budget_stops_before_allocating_the_remaining_input ... ok
+test xml_does_not_resolve_external_entities ... ok
+test xml_scripts_are_constructed_without_running_and_style_pop_is_delivered ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wega_adapter_blitz
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wega_dom
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wega_html
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

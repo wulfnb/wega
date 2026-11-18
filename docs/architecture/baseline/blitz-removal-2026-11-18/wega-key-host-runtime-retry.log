@@ -1,0 +1,195 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+    Finished `test` profile [unoptimized] target(s) in 37.06s
+     Running tests/custom_elements.rs (engines/target/debug/deps/custom_elements-b36405537e6fa8bc)
+
+running 12 tests
+test component_library_template_cloning_and_nested_shadow_dom ... ok
+test custom_element_definition_and_instantiation ... ok
+test custom_element_lifecycle_connected_disconnected_and_attribute_changed ... ok
+test custom_element_observed_attributes_and_property_reflection ... ok
+test custom_element_when_defined_and_late_upgrade ... ok
+test delegates_focus_and_event_composed_path_retargeting ... ok
+test disconnected_upgrade_failure_and_definition_callbacks_are_stable ... ok
+test event_retargeting_and_composed_path_across_shadow_boundary ... ok
+test invalid_registration_does_not_read_user_callbacks_and_closed_paths_hide_internals ... ok
+test security_and_spec_conformance_fail_closed ... ok
+test shadow_root_open_and_closed_encapsulation ... ok
+test shadow_root_slot_assignment_named_default_and_flatten ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.51s
+
+     Running tests/document_host.rs (engines/target/debug/deps/document_host-90e6e1ae8210b08c)
+
+running 6 tests
+test explicit_document_replacement_cancels_a_pending_navigation ... ok
+test hostile_to_json_is_terminated_and_requires_explicit_recovery ... ok
+test insecure_crypto_is_restricted_on_the_instance_and_its_prototype ... ok
+test ordinary_script_failure_does_not_disable_the_following_script_or_timer ... ok
+test parser_checkpoints_run_microtasks_without_dispatching_timer_tasks ... ok
+test provisional_navigation_suspends_the_old_realm_and_replacement_drops_it ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.05s
+
+     Running tests/dom.rs (engines/target/debug/deps/dom-94732b31de7883a1)
+
+running 30 tests
+test adjacent_html_uses_the_insertion_position_and_namespace_context ... ok
+test box_metrics_distinguish_content_padding_borders_and_scroll_overflow ... ok
+test canvas_and_screen_support_speedtest_and_lottie ... ok
+test capture_bubble_inline_handlers_and_mutation_observers ... ok
+test computed_style_returns_used_auto_and_percentage_sizes_for_layout_consumers ... ok
+test computed_styles_inside_display_none_do_not_panic_the_worker ... ok
+test contextual_fragment_scripts_run_once_while_inner_html_scripts_stay_inert ... ok
+test detached_wrappers_and_listeners_release_the_native_node_budget ... ok
+test document_location_html_document_and_live_names_support_trak_scripts ... ok
+test document_scripts_is_a_live_collection_for_ad_loader_inspection ... ok
+test fragment_parsing_covers_contexts_foreign_content_and_budgets ... ok
+test frame_callbacks_observers_media_and_layout_come_from_blitz ... ok
+test generated_bindings_enforce_brands_conversions_and_survive_reentrancy ... ok
+test history_is_same_origin_and_delivers_popstate ... ok
+test html_document_creation_keeps_mutations_separate_from_the_active_page ... ok
+test inline_geometry_uses_line_fragments_and_dom_rect_objects ... ok
+test live_collection_caches_do_not_keep_removed_nodes_charged ... ok
+test live_collections_refresh_when_the_parser_adds_nodes_between_scripts ... ok
+test live_query_collections_finish_in_budget_and_invalidate_after_mutation ... ok
+test mutations_namespaces_collections_and_native_style_share_one_tree ... ok
+test native_keyboard_and_ime_edit_parley_and_deliver_cancelable_input ... ok
+test newly_inserted_focused_input_accepts_ime_before_paint ... ok
+test newly_inserted_focused_input_accepts_keyboard_before_paint ... ok
+test range_fragment_limits_preserve_existing_dom_and_boundary_points ... ok
+test range_insertion_removal_validation_and_document_ownership ... ok
+test ranges_parse_contextual_html_svg_and_keep_live_boundary_points ... ok
+test repeated_style_and_geometry_reads_share_layout_until_a_mutation ... ok
+test visibility_tracks_freezing_and_domain_never_relaxes_profile_origin ... ok
+test wide_dom_traversal_and_live_child_lists_finish_within_the_script_budget ... ok
+test window_named_elements_are_live_and_do_not_override_own_globals ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.05s
+
+     Running tests/dom_identity.rs (engines/target/debug/deps/dom_identity-dbbcd17563521552)
+
+running 5 tests
+test comment_writes_preserve_identity_and_step_the_authoritative_mutation_clock ... ok
+test each_document_gets_a_fresh_identity_space ... ok
+test node_info_matches_the_dom_interface ... ok
+test removed_nodes_stay_usable_until_dropped_and_ids_resolve_by_current_state ... ok
+test wrappers_keep_their_identity_across_mutation_and_reparenting ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+
+     Running tests/events.rs (engines/target/debug/deps/events-52ce2ac455a3ceb2)
+
+running 20 tests
+test a_click_targets_the_innermost_element_and_bubbles_to_ancestors ... ok
+test blur_clears_the_active_element_and_a_fresh_document_has_the_body_active ... ok
+test capture_target_bubble_order_and_phases_through_a_deep_tree ... ok
+test clicking_a_non_focusable_element_blurs_the_focused_one ... ok
+test detached_nodes_dispatch_to_their_own_tree_only ... ok
+test focus_transitions_have_one_order_trusted_related_targets_and_a_single_owner ... ok
+test keyboard_events_go_to_the_focused_element_else_the_body ... ok
+test native_events_for_dropped_nodes_are_ignored_without_error ... ok
+test native_events_have_the_right_cancelable_and_bubbles_flags ... ok
+test native_input_events_are_trusted_and_script_events_are_not ... ok
+test navigation_reload_and_error_pages_replace_the_document_cleanly ... ok
+test once_passive_cancelable_and_prevent_default ... ok
+test preventing_a_click_stops_its_default_action_and_preventing_keydown_stops_typing ... ok
+test replacing_a_document_mid_parse_tears_the_parser_down ... ok
+test replacing_the_document_drops_listeners_focus_and_old_state ... ok
+test shadow_dom_composed_and_non_composed_events_retarget_at_the_host ... ok
+test shadow_dom_focus_retargets_active_element_and_focusin_crosses_the_boundary ... ok
+test shadow_dom_slotted_events_pass_through_the_slot_and_closed_roots_hide_internals ... ok
+test stale_ids_removed_nodes_and_recreated_nodes_do_not_alias ... ok
+test stop_propagation_and_stop_immediate_propagation ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.96s
+
+     Running tests/forms.rs (engines/target/debug/deps/forms-8f5a63b41b76669e)
+
+running 4 tests
+test clicking_submit_posts_an_urlencoded_body_and_shows_the_response ... ok
+test enter_in_a_single_field_submits_its_form ... ok
+test multipart_and_formdata_use_the_form_entry_list ... ok
+test submit_events_can_cancel_and_submit_skips_them ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s
+
+     Running tests/same_origin_dom.rs (engines/target/debug/deps/same_origin_dom-100ff2e58e0737f3)
+
+running 2 tests
+test same_origin_dom_access_content_document_and_window ... ok
+test same_origin_dom_navigation_and_stale_reference_safety ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+
+     Running tests/scripts.rs (engines/target/debug/deps/scripts-cae6d2dc8957a748)
+
+running 8 tests
+test defer_and_blocking_scripts_run_in_document_order_before_domcontentloaded ... ok
+test inline_inserted_scripts_run_synchronously_as_classic_scripts ... ok
+test large_scripts_run_and_slow_scripts_are_reported_not_killed ... ok
+test load_waits_for_images_and_fires_after_domcontentloaded ... ok
+test more_than_sixty_four_scripts_all_run ... ok
+test parser_scripts_see_the_partial_document_and_document_write ... ok
+test script_inserted_external_scripts_run_and_fire_load ... ok
+test script_inserted_scripts_keep_order_only_when_async_is_false ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.34s
+

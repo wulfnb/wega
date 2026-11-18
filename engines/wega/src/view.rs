@@ -7,7 +7,7 @@ use crate::{
     network::{Destination, FetchContext, Network, Response},
     script::{DynScriptHost, HostContext},
 };
-use blitz_dom::{NodeId, traversal::TreeTraverser};
+use blitz_dom::NodeId;
 use blitz_traits::{
     events::{
         BlitzPointerEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
@@ -855,7 +855,7 @@ impl View {
                 .map(|ids| ids.to_vec())
                 .unwrap_or_default();
             for node in scripts {
-                self.prepare_script(node, true, true);
+                self.prepare_script(node.key(), true, true);
             }
         } else {
             self.host.parser = Some(Parser::new(
@@ -1431,7 +1431,7 @@ impl View {
     }
     pub fn reset_form(&mut self, form: NodeId) {
         let mut doc = self.document.borrow_mut();
-        crate::dom::Dom::reset_form_controls(&mut doc, form);
+        crate::dom::Dom::reset_form_controls(&mut doc, form.key());
         self.frame.invalidate();
     }
     pub fn copy(&mut self) -> Option<String> {
@@ -1795,7 +1795,8 @@ impl View {
         self.document.borrow().layout_pending()
     }
     pub fn node_count(&self) -> usize {
-        TreeTraverser::new(&self.document.borrow()).count()
+        let doc = self.document.borrow();
+        wega_dom::preorder(&*doc, doc.root()).count()
     }
     /// Script-created nodes and charged text bytes, for budget diagnostics.
     pub fn dom_budget(&self) -> Option<(usize, usize)> {
@@ -2207,7 +2208,9 @@ impl View {
                     let tag = &*element.name.local;
                     let kind = element.attr(LocalName::from("type")).unwrap_or_default();
                     if matches!(tag, "input" | "button") && kind.eq_ignore_ascii_case("reset") {
-                        if let Some(form) = crate::dom::Dom::form_owner(&*doc, id) {
+                        if let Some(form) =
+                            crate::dom::Dom::form_owner(&*doc, id.key()).map(ToNodeId::node_id)
+                        {
                             action = Some(Action::Reset(form));
                             break;
                         }
@@ -2231,7 +2234,8 @@ impl View {
                             || kind.eq_ignore_ascii_case("submit")
                             || (tag == "input" && kind.eq_ignore_ascii_case("image")))
                     {
-                        action = crate::dom::Dom::form_owner(&*doc, id)
+                        action = crate::dom::Dom::form_owner(&*doc, id.key())
+                            .map(ToNodeId::node_id)
                             .map(|form| Action::Submit(form, id));
                         break;
                     }
@@ -2594,16 +2598,18 @@ impl View {
             if !single_line {
                 return false;
             }
-            let Some(form) = crate::dom::Dom::form_owner(&*doc, field) else {
+            let Some(form) = crate::dom::Dom::form_owner(&*doc, field.key()).map(ToNodeId::node_id)
+            else {
                 return false;
             };
             let mut button = None;
             let mut blocking = 0;
-            for id in TreeTraverser::new(&doc) {
+            for id in wega_dom::preorder(&*doc, doc.root()).map(ToNodeId::node_id) {
                 let Some(control) = doc.get_node(id).and_then(|n| n.element_data()) else {
                     continue;
                 };
-                if crate::dom::Dom::form_owner(&*doc, id) != Some(form) {
+                if crate::dom::Dom::form_owner(&*doc, id.key()).map(ToNodeId::node_id) != Some(form)
+                {
                     continue;
                 }
                 let tag = &*control.name.local;
