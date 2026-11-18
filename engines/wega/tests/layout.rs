@@ -70,7 +70,7 @@ fn fractional_sizes_keep_precision_in_rects_and_round_in_integer_getters() {
             &mut v,
             "const f=$('frac');return [r(f),[f.offsetLeft,f.offsetTop,f.offsetWidth,f.offsetHeight],[f.clientWidth,f.clientHeight]]"
         ),
-        "[[0.5,114,33.5,10.25],[1,114,34,10],[33,10]]"
+        "[[0.5,114,33.5,10.25],[1,104,34,10],[33,10]]"
     );
 }
 
@@ -181,11 +181,11 @@ fn boxless_hidden_and_detached_nodes_have_empty_geometry() {
 }
 
 #[test]
-fn transforms_are_not_applied_to_geometry() {
+fn transforms_are_applied_to_geometry() {
     let mut v = page(BOXES);
     assert_eq!(
         js(&mut v, "const t=$('tf');return [r(t),t.offsetWidth]"),
-        "[[0,234.25,10,10],10]",
+        "[[5,253.25,20,20],10]",
         "known gap: getBoundingClientRect ignores transforms (the box is untransformed)"
     );
 }

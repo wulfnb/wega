@@ -127,6 +127,12 @@ impl Color {
                 b: 128,
                 a: 255,
             }),
+            "lime" => Some(Self {
+                r: 0,
+                g: 255,
+                b: 0,
+                a: 255,
+            }),
             "orange" => Some(Self {
                 r: 255,
                 g: 165,

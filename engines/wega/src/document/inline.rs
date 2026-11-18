@@ -19,7 +19,7 @@ impl WegaDocument {
         parse_style_attribute(
             style_attr,
             &self.url().clone().into(),
-            None,
+            Some(&super::resources::CssReporter),
             QuirksMode::NoQuirks,
             CssRuleType::Style,
         )

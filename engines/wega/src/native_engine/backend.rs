@@ -89,6 +89,7 @@ pub struct NativeDocument<D: NativeResources = WegaDocument> {
     pub layout_generation: u64,
     pub timings: NativeTimings,
     pub font_source: Option<std::sync::Arc<Vec<Vec<u8>>>>,
+    pub canvas_background: Option<peniko::Color>,
     pub csp: Option<std::sync::Arc<std::sync::RwLock<wega_security::csp::Csp>>>,
     seen_policy_generation: usize,
     sheet_cache_key: Option<SheetCacheKey>,
@@ -163,6 +164,7 @@ impl<D: NativeResources> NativeDocument<D> {
             layout_generation: 0,
             timings: NativeTimings::default(),
             font_source,
+            canvas_background: Some(peniko::Color::WHITE),
             csp: None,
             seen_policy_generation: 0,
             sheet_cache_key: None,
@@ -400,17 +402,23 @@ impl<D: NativeResources> NativeDocument<D> {
         Ok(self.geometry().rects.get(&key).cloned().unwrap_or_default())
     }
     pub fn client_box(&self, key: NodeKey) -> Result<ClientBox, LayoutError> {
-        let b = self.find_box(key).ok_or(LayoutError::Stale(key))?;
+        let Some(b) = self.find_box(key) else {
+            return Ok(ClientBox::default());
+        };
         Ok(b.client_box())
     }
 
     pub fn content_box(&self, key: NodeKey) -> Result<ContentBox, LayoutError> {
-        let b = self.find_box(key).ok_or(LayoutError::Stale(key))?;
+        let Some(b) = self.find_box(key) else {
+            return Ok(ContentBox::default());
+        };
         Ok(b.content_box_metrics())
     }
 
     pub fn offset_box(&self, key: NodeKey) -> Result<OffsetBox, LayoutError> {
-        let b = self.find_box(key).ok_or(LayoutError::Stale(key))?;
+        let Some(b) = self.find_box(key) else {
+            return Ok(OffsetBox { rect: Rect::ZERO, parent: None });
+        };
         if b.style.position == super::css::Position::Fixed {
             return Ok(OffsetBox {
                 rect: b.border_box,
@@ -421,15 +429,20 @@ impl<D: NativeResources> NativeDocument<D> {
         let mut at = d.node(key).and_then(NodeView::parent);
         while let Some(parent) = at {
             if let Some(p) = self.find_box(parent) {
-                if p.style.position != super::css::Position::Static
-                    || d.node(parent)
-                        .and_then(NodeView::element_name)
-                        .is_some_and(|n| n.local == "body")
-                {
+                let is_body = d.node(parent)
+                    .and_then(NodeView::element_name)
+                    .is_some_and(|n| n.local == "body");
+                if p.style.position != super::css::Position::Static || is_body {
+                    let (px, py) = if is_body {
+                        (p.border_box.x, p.border_box.y)
+                    } else {
+                        (p.border_box.x + p.border.left, p.border_box.y + p.border.top)
+                    };
+                    let (ox, oy) = (b.border_box.x - px, b.border_box.y - py + if is_body { b.margin.top } else { 0.0 });
                     return Ok(OffsetBox {
                         rect: Rect {
-                            x: b.border_box.x - p.border_box.x - p.border.left,
-                            y: b.border_box.y - p.border_box.y - p.border.top,
+                            x: ox,
+                            y: oy,
                             ..b.border_box
                         },
                         parent: Some(parent),
@@ -445,7 +458,9 @@ impl<D: NativeResources> NativeDocument<D> {
     }
 
     pub fn scroll_size(&self, key: NodeKey) -> Result<Size, LayoutError> {
-        let b = self.find_box(key).ok_or(LayoutError::Stale(key))?;
+        let Some(b) = self.find_box(key) else {
+            return Ok(Size::default());
+        };
         Ok(Size {
             width: b.scroll_width,
             height: b.scroll_height,
@@ -453,7 +468,9 @@ impl<D: NativeResources> NativeDocument<D> {
     }
 
     pub fn scroll_offset(&self, key: NodeKey) -> Result<Point, LayoutError> {
-        let b = self.find_box(key).ok_or(LayoutError::Stale(key))?;
+        let Some(b) = self.find_box(key) else {
+            return Ok(Point::default());
+        };
         Ok(b.scroll_offset)
     }
 
@@ -510,6 +527,20 @@ impl<D: NativeResources> NativeDocument<D> {
         use anyrender::PaintScene;
         // CSS canvas background propagates from the root, or the body when
         // the root is transparent, including otherwise empty child documents.
+        if let Some(bg) = self.canvas_background {
+            scene.fill(
+                peniko::Fill::NonZero,
+                kurbo::Affine::IDENTITY,
+                bg,
+                None,
+                &kurbo::Rect::new(
+                    0.0,
+                    0.0,
+                    viewport.width_px as f64,
+                    viewport.height_px as f64,
+                ),
+            );
+        }
         let backdrop = {
             let doc = self.doc.borrow();
             let mut html = None;

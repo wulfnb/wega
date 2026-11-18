@@ -1535,10 +1535,10 @@
       return host("clientRects", this._id).map(rect=>DOMRect.fromRect(rect));
     }
     get clientWidth() {
-      return Math.round(host("clientBox", this._id).width);
+      return Math.floor(host("clientBox", this._id).width);
     }
     get clientHeight() {
-      return Math.round(host("clientBox", this._id).height);
+      return Math.floor(host("clientBox", this._id).height);
     }
     get clientLeft() {
       return Math.round(host("clientBox", this._id).left);

@@ -140,7 +140,7 @@ pub struct ContentBox {
 /// overflows at 122, which is the historical "depth-122 hang"). Past this limit
 /// [`LayoutControl::flush_layout`] does nothing and [`GeometryAccess::layout_refused`] is true.
 /// The limit leaves more than twice the measured headroom. See `devtools-d3-c-0-report.md`.
-pub const MAX_LAYOUT_DEPTH: usize = 256;
+pub const MAX_LAYOUT_DEPTH: usize = 128;
 
 /// Edge widths (top, right, bottom, left) in CSS pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

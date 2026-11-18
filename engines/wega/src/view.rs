@@ -378,6 +378,7 @@ pub struct View {
     click_count: u32,
     pub last_favicon: Option<Url>,
     pub user_script: String,
+    pub transparent: bool,
     pub url: Url,
     pub loading: bool,
     pub notices: VecDeque<String>,
@@ -491,6 +492,7 @@ impl View {
             click_count: 0,
             last_favicon: None,
             user_script: String::new(),
+            transparent: false,
             url: url.clone(),
             loading: false,
             notices: VecDeque::new(),
@@ -542,6 +544,17 @@ impl View {
     }
     pub fn rendering_backend(&self) -> crate::native_engine::RenderingBackend {
         self.rendering_backend
+    }
+    pub fn set_transparent(&mut self, transparent: bool) {
+        self.transparent = transparent;
+        if let Some(native) = &self.native_document {
+            native.borrow_mut().canvas_background = if transparent {
+                None
+            } else {
+                Some(peniko::Color::WHITE)
+            };
+        }
+        self.frame.invalidate();
     }
     pub fn set_dialog_handler(&mut self, mut handler: crate::dom::DialogHandler) {
         self.set_document_dialog_handler(Box::new(move |_, _, _, kind, message, default| {
@@ -786,6 +799,9 @@ impl View {
         if let Some(native) = &self.native_document {
             let mut native = native.borrow_mut();
             native.csp = Some(self.csp.clone());
+            if self.transparent {
+                native.canvas_background = None;
+            }
             native.viewport.width_px = 0;
             native.viewport.height_px = 0;
         }
@@ -2417,7 +2433,7 @@ impl View {
                 x: pointer_x as f64,
                 y: pointer_y as f64,
             }) {
-                native.scroll_by_at(k, -x, -y);
+                native.scroll_by_at(k, x, y);
             }
             self.frame.invalidate();
         }

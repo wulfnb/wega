@@ -445,9 +445,6 @@ impl Mutator for DocumentMutator<'_> {
     }
     fn clone_node(&mut self, key: NodeKey, deep: bool) -> Result<NodeKey, MutationError> {
         let data = self.0.get(key)?.data.clone();
-        if matches!(data, Data::Document) {
-            return Err(MutationError::NotCloneable(key));
-        }
         let clone = self.0.allocate(data);
         if !deep {
             return Ok(clone);

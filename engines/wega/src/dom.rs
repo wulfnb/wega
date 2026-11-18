@@ -1570,7 +1570,7 @@ impl Dom {
             "styleSet"|"styleSetImportant"=>{
                 let target=node_id()?;let old=Self::attribute(&*doc,target,"style");
                 let changed=doc.set_inline_property(target,text(2),text(3),text(0)=="styleSetImportant").map_err(Self::mutation_error)?;
-                if changed{let new=Self::attribute(&*doc,target,"style");self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),new.as_deref(),None);}
+                if changed{let new=Self::attribute(&*doc,target,"style");self.components.borrow_mut().attribute(target.as_u64(),"style",old.as_deref(),new.as_deref(),None);self.invalidate();}
                 json!(changed)
             },
             "inputValue"=>json!(doc.input_value(node_id()?).ok_or("Input needs an element")?),
@@ -2369,10 +2369,19 @@ impl Dom {
                     .parse::<u64>()
                     .map_err(|_| "Invalid node identity")?,
             );
-            if native.doc.borrow().node(key).is_none() {
-                return Err("Node no longer exists".into());
-            }
             let rjson = |r: Rect| json!({"x":r.x,"y":r.y,"width":r.width,"height":r.height,"left":r.x,"top":r.y,"right":r.right(),"bottom":r.bottom()});
+            if native.doc.borrow().node(key).is_none() {
+                match command {
+                    "rect" => return Ok(rjson(Rect::ZERO)),
+                    "clientRects" => return Ok(json!([])),
+                    "clientBox" => return Ok(json!({"left":0.0,"top":0.0,"width":0.0,"height":0.0})),
+                    "offsetBox" => return Ok(json!({"x":0.0,"y":0.0,"width":0.0,"height":0.0,"parent":null})),
+                    "scrollSize" => return Ok(json!({"width":0.0,"height":0.0})),
+                    "scroll" => return Ok(json!({"x":0.0,"y":0.0})),
+                    "box" => return Ok(json!({"offsetWidth":0.0,"offsetHeight":0.0,"contentWidth":0.0,"contentHeight":0.0,"paddingLeft":0.0,"paddingTop":0.0})),
+                    _ => return Err("Node no longer exists".into()),
+                }
+            }
             match command {
                 "computed" => {
                     let mut css = String::new();

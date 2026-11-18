@@ -97,7 +97,7 @@ fn nested_scroll_geometry_hit_targets_and_fixed_viewport() {
 fn iframe_real_child_content_clipping_transform_and_input() {
     let server = support::Server::new(|seen| match seen.path.as_str() {
         "/page" => support::Reply::html(
-            "<body style='margin:0'><iframe id=f src='/child' style='display:block;width:100px;height:70px;border:0;transform:translate(40px,20px)'></iframe></body>",
+            "<body style='margin:0;background:white'><iframe id=f src='/child' style='display:block;width:100px;height:70px;border:0;transform:translate(40px,20px)'></iframe></body>",
         ),
         _ => support::Reply::html(
             "<body style='margin:0;background:green'><div style='height:140px;width:200px;background:red'>Readable child frame</div><script>document.addEventListener('click',()=>parent.postMessage('child-click','*'))</script></body>",

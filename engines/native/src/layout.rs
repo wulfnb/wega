@@ -175,6 +175,9 @@ impl LayoutBox {
     }
 
     pub fn client_box(&self) -> ClientBox {
+        if self.style.display == Display::Inline {
+            return ClientBox::default();
+        }
         let p = self.padding_box();
         ClientBox {
             left: self.border.left,

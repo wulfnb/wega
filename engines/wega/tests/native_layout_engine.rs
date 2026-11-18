@@ -3,7 +3,7 @@ mod support;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+use wega_engine::document::{DocumentSetup, WegaDocument};
 use wega_dom::DocumentView;
 use wega_engine::native_engine::*;
 
@@ -17,7 +17,7 @@ fn test_ifc_text_wrapping_and_alignment() {
             </div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.flush_layout();
 
@@ -59,7 +59,7 @@ fn test_flexbox_row_grow_and_justify() {
             </div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.flush_layout();
 
@@ -99,7 +99,7 @@ fn test_flexbox_column_and_align_items() {
             </div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.flush_layout();
 
@@ -136,7 +136,7 @@ fn test_positioning_relative_and_absolute() {
             </div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.flush_layout();
 
@@ -183,7 +183,7 @@ fn test_min_max_dimensions_and_box_sizing() {
             </div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.flush_layout();
 
@@ -216,7 +216,7 @@ fn test_overflow_and_display_list_clipping() {
             </div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.flush_layout();
 
@@ -258,7 +258,7 @@ fn test_dynamic_style_and_layout_updates() {
             <div id="dynamic" style="width: 100px; height: 100px; background-color: #ff0000;">Box</div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.flush_layout();
 

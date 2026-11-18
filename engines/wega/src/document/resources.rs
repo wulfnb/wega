@@ -126,7 +126,7 @@ impl Loader for StylesheetLoader {
         import
     }
 }
-struct CssReporter;
+pub(super) struct CssReporter;
 impl style::error_reporting::ParseErrorReporter for CssReporter {
     fn report_error(
         &self,
@@ -200,6 +200,7 @@ impl WegaDocument {
         let Some(name) = node.element_name() else {
             return;
         };
+        let style = node.attr("style").map(|s| s.to_owned());
         if name.local == "link"
             && node.attr("rel").is_some_and(|r| {
                 r.split_ascii_whitespace()
@@ -258,6 +259,9 @@ impl WegaDocument {
                 self.image_users.insert(key, url.clone());
                 self.image(url);
             }
+        }
+        if let Some(style) = style {
+            let _ = self.parse_style_attr_block(&style);
         }
     }
     fn image(&mut self, url: Url) -> Option<Image> {

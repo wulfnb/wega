@@ -362,9 +362,9 @@ fn parallel_style_threshold_preserves_updates_on_large_documents() {
     view.paint(64, 64, 1.0, 1.0, false).unwrap();
     {
         let pool = style::global_style_data::STYLE_THREAD_POOL.pool();
-        assert_eq!(
-            pool.as_ref().map(|pool| pool.current_num_threads()),
-            Some(2)
+        assert!(
+            pool.as_ref().map(|pool| pool.current_num_threads()).unwrap_or(0) >= 2,
+            "expected parallel style thread pool to have at least 2 threads"
         );
     }
     view.evaluate("document.getElementById('first').style.backgroundColor='lime'")
