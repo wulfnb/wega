@@ -1,5 +1,27 @@
 # Blitz removal recovery checkpoint
 
+## Continuation from `2d067b2` (2026-11-18)
+
+- Verified clean `feature/dom-rounds-9-12` at the requested starting commit.
+- M1 in progress: production blank/one-shot HTML and XML constructors now use
+  Wega's generic mutation sink. XML preserves the existing xml5ever namespace,
+  case, entity and recovery behavior, and now enforces the navigation node budget.
+  XML scripts are still scheduled after construction. No mirror tree exists.
+- `blitz-html` moved to comparison-test dependencies. The adapter boundary now
+  explicitly forbids its production import; the parser remains independent of
+  adapters/engine. Original oracle cases remain, with XML/noscript cases added.
+- Validation: DOM/parser/reference-adapter suite 111 passed, 2 existing ignored;
+  production brokered lifecycle/documents/identity/scripts 24 passed. Logs and
+  current production graph in `baseline/blitz-removal-2026-11-18/`.
+- Production graph still fails independence with `blitz-dom`, `blitz-paint`,
+  `blitz-traits`, `wega-adapter-blitz`. The production document owner has not yet
+  switched; M1 is not complete and M2-M5 remain outstanding. Native-only runtime
+  validation must not be inferred from these results.
+- Continue with tree-only V8 host operations against `DocumentView`, then owned
+  resource/control/CSSOM integration. No push or inspector/D4 edits authorized.
+
+## Historical campaign checkpoints
+
 - Starting/last verified commit: `8523150487a953394920e69459ad7f374e57297c`.
 - Branch: `feature/dom-rounds-9-12`; initial worktree clean.
 - Phase 0: inventory recorded before production edits; graph capture in progress.

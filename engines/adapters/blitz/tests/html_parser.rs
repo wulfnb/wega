@@ -63,6 +63,42 @@ fn contract_based_parser_builds_the_same_trees_as_blitz_html() {
 }
 
 #[test]
+fn generic_xml_construction_matches_the_retained_reference_parser() {
+    let cases = [
+        r#"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><style>p{color:red}</style></head><body><p id="p">A&amp;B</p><script>1 &lt; 2</script></body></html>"#,
+        r#"<root xmlns="urn:root" xmlns:q="urn:q"><Item q:Name="value"><![CDATA[<text>]]></Item><empty/><!--comment--></root>"#,
+        "<root><a><b>malformed</a></root>",
+        "<!DOCTYPE root SYSTEM 'https://never.test/entity'><root>&unknown;</root>",
+    ];
+    for xml in cases {
+        let document = Rc::new(RefCell::new(BlitzDocument::empty(Default::default())));
+        wega_html::parse_xml(document.clone(), xml, 1000, Silent).unwrap();
+        let reference =
+            BlitzDocument::new(HtmlDocument::from_xml(xml, DocumentConfig::default()).into_inner());
+        assert_eq!(
+            serialized(&document.borrow()),
+            serialized(&reference),
+            "{xml}"
+        );
+    }
+}
+
+#[test]
+fn construction_preserves_noscript_mode_and_xhtml_sniffing() {
+    for html in [
+        "<!doctype html><noscript><p>enabled parsing</p></noscript><p>after</p>",
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body><br/><MixedCase>text</MixedCase></body></html>",
+        "<?xml version='1.0'?><root><Child/></root>",
+    ] {
+        let document = BlitzDocument::from_html(html, Default::default());
+        let reference = BlitzDocument::new(
+            HtmlDocument::from_html(html, DocumentConfig::default()).into_inner(),
+        );
+        assert_eq!(serialized(&document), serialized(&reference), "{html}");
+    }
+}
+
+#[test]
 fn scripts_pause_the_parser_and_adjacent_text_merges() {
     let (document, scripts) = wega_parse("<p>a<script>1</script>b<script>2</script>c</p>", 100);
     assert_eq!(scripts, 2);

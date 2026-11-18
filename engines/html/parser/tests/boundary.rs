@@ -2,7 +2,8 @@
 //! dependency (above all `wega-engine`, another adapter or a second document engine) fails
 //! this test, so the boundary is enforced by `cargo test` and not only by the report-only
 //! architecture checker. Extend the lists deliberately, with the architecture docs.
-const ALLOWED: &[&str] = &["wega-dom", "html5ever", "url"];
+// XML uses the same engine-neutral tree sink and the existing pinned XML tokenizer.
+const ALLOWED: &[&str] = &["wega-dom", "html5ever", "xml5ever", "url"];
 const ALLOWED_DEV: &[&str] = &[];
 
 /// Dependency names declared in the given Cargo.toml tables.

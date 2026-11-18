@@ -6937,6 +6937,7 @@ dependencies = [
  "html5ever",
  "url",
  "wega-dom",
+ "xml5ever",
 ]
 
 [[package]]

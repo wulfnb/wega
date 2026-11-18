@@ -4,7 +4,6 @@ mod inspect;
 use blitz_dom::{
     BaseDocument, DocumentConfig, DocumentMutator, Node, NodeId, node::Attribute, node::NodeData,
 };
-use blitz_html::HtmlDocument;
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
@@ -158,19 +157,61 @@ impl DocumentSetup {
 impl BlitzDocument {
     /// A document parsed from `html` in one pass (the engine's initial blank page).
     pub fn from_html(html: &str, setup: DocumentSetup) -> Self {
-        Self(
-            HtmlDocument::from_html(html, setup.config()).into_inner(),
-            0,
-        )
+        // Preserve the reference constructor's XHTML sniffing. Actual browser
+        // navigation uses the MIME/extension decision in `encoding`.
+        let root = html.trim_start_matches('\u{feff}').trim_start();
+        let xhtml_root = root
+            .strip_prefix("<html")
+            .and_then(|r| r.split_once('>'))
+            .is_some_and(|(attrs, _)| {
+                attrs.contains("xmlns=\"http://www.w3.org/1999/xhtml\"")
+                    || attrs.contains("xmlns='http://www.w3.org/1999/xhtml'")
+            });
+        if html.starts_with("<?xml")
+            || (html.starts_with("<!DOCTYPE")
+                && html
+                    .lines()
+                    .next()
+                    .is_some_and(|s| s.contains("XHTML") || s.contains("xhtml")))
+            || xhtml_root
+        {
+            return Self::from_xml(html, setup);
+        }
+        let document = std::rc::Rc::new(std::cell::RefCell::new(Self::empty(setup)));
+        {
+            let mut parser = wega_html::Parser::with_scripting(
+                document.clone(),
+                html,
+                usize::MAX,
+                ConstructionReport,
+                false,
+            );
+            while let wega_html::Step::Script(_) = parser.step() {}
+        }
+        std::rc::Rc::try_unwrap(document)
+            .ok()
+            .expect("parser released document")
+            .into_inner()
     }
     /// A document parsed from XML in one pass.
     pub fn from_xml(xml: &str, setup: DocumentSetup) -> Self {
-        Self(HtmlDocument::from_xml(xml, setup.config()).into_inner(), 0)
+        let document = std::rc::Rc::new(std::cell::RefCell::new(Self::empty(setup)));
+        wega_html::parse_xml(document.clone(), xml, usize::MAX, ConstructionReport)
+            .expect("unbounded reference constructor");
+        std::rc::Rc::try_unwrap(document)
+            .ok()
+            .expect("parser released document")
+            .into_inner()
     }
     /// An empty document that the incremental HTML parser then fills.
     pub fn empty(setup: DocumentSetup) -> Self {
         Self(BaseDocument::new(setup.config()), 0)
     }
+}
+
+struct ConstructionReport;
+impl wega_html::ParseReport for ConstructionReport {
+    fn warning(&self, _: wega_html::HtmlDiagnostic<'_>) {}
 }
 
 /// A borrowed node of a [`BlitzDocument`].

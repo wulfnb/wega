@@ -749,6 +749,11 @@ impl View {
             })),
             navigation_provider: Some(Arc::new(Navigation(sender, self.network.wake.clone()))),
         };
+        let document = Rc::new(RefCell::new(BlitzDocument::empty(setup)));
+        if xml {
+            wega_html::parse_xml(document.clone(), html, self.limits.dom_nodes, HtmlReport)
+                .map_err(|_| "XML document exceeded the DOM node limit".to_string())?;
+        }
         // A new document tears down every child browsing context of the old one.
         self.frames = Default::default();
         self.frame_shared = Default::default();
@@ -768,14 +773,9 @@ impl View {
         self.host.applied_meta.clear();
         self.host.script_count = 0;
         self.host.encoding = encoding;
-        let document = if xml {
-            BlitzDocument::from_xml(html, setup)
-        } else {
-            BlitzDocument::empty(setup)
-        };
         self.native_hover = None;
         self.native_down = None;
-        self.document = Rc::new(RefCell::new(document));
+        self.document = document;
         self.native_document =
             if self.rendering_backend == crate::native_engine::RenderingBackend::WegaNative {
                 Some(Rc::new(RefCell::new(
