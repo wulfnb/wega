@@ -79,8 +79,8 @@ fn role(tag: &str, kind: &str, aria: Option<&str>) -> Role {
     }
 }
 
-pub fn build<D: DocumentView>(
-    native: &NativeDocument,
+pub fn build<D: wega_native::resources::NativeResources>(
+    native: &NativeDocument<D>,
     doc: &D,
     focused: Option<NodeKey>,
 ) -> TreeUpdate {

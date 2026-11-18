@@ -4,6 +4,7 @@
 //! architecture checker. Extend the lists deliberately, with the architecture docs.
 const ALLOWED: &[&str] = &[
     "wega-dom",
+    "wega-native",
     "blitz-dom",
     "wega-html",
     "blitz-traits",

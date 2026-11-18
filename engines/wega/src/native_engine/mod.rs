@@ -11,5 +11,3 @@ pub use css::{
 pub use display_list::{DisplayItem, DisplayList};
 
 pub mod accessibility;
-
-mod dom_adapter;

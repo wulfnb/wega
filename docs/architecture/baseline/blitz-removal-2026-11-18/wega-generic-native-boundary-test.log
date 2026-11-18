@@ -1,0 +1,30 @@
+   Compiling selectors v0.41.0
+   Compiling objc2-foundation v0.3.2
+   Compiling usvg v0.48.1
+   Compiling wega-dom v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/dom/core)
+   Compiling image v0.25.10
+   Compiling blitz-traits v0.3.0-beta.4
+   Compiling wega-html v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/html/parser)
+   Compiling fontique v0.12.0
+   Compiling stylo_malloc_size_of v0.22.0
+   Compiling stylo_traits v0.22.0
+   Compiling stylo_dom v0.22.0
+   Compiling parley_engine v0.12.0
+   Compiling stylo v0.22.0 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/stylo)
+   Compiling parley v0.12.0
+   Compiling anyrender_svg v0.15.0
+   Compiling wega-native v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/native)
+   Compiling stylo_taffy v0.3.0-beta.4
+   Compiling blitz-dom v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-dom)
+   Compiling blitz-paint v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint)
+   Compiling blitz-html v0.3.0-beta.4
+   Compiling wega-adapter-blitz v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/adapters/blitz)
+    Finished `test` profile [unoptimized] target(s) in 31.68s
+     Running tests/boundary.rs (target/debug/deps/boundary-0cbc7df159d99f94)
+
+running 2 tests
+test dependencies_stay_inside_the_boundary ... ok
+test sources_do_not_name_the_engine_or_other_document_engines ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

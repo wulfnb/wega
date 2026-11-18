@@ -7,5 +7,6 @@ pub mod display_list;
 pub mod graphics;
 pub mod images;
 pub mod layout;
+pub mod resources;
 mod syntax;
 pub mod text;

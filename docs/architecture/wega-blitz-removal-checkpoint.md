@@ -2,6 +2,21 @@
 
 ## Continuation from `2d067b2` (2026-11-18)
 
+### Native owner boundary checkpoint
+
+- `NativeDocument<D>` now consumes `NativeResources` with the existing document,
+  mutation and focus contracts. Stylesheet admission still calls the embedding
+  CSP policy with the same nonce/source. Resources/controls are supplied by the
+  single owner; native CSS/layout/shaping/scene algorithms do not require a
+  concrete reference document. The default remains the reference owner until
+  the real production transition is complete.
+- Reference image/style/control mappings moved into the reference adapter.
+  Existing comparison coverage remains. No new DOM or alternate layout exists.
+- Validation: production stylesheet/image/forms/accessibility/redirect selection
+  12 passed; adapter boundary 2 passed; native/adapter/engine library strict
+  Clippy passed, rustfmt applied. Logs are archived under the continuation
+  baseline. This boundary is preparatory work, not M1 completion.
+
 - Lifecycle follow-up: XML overflow now explicitly aborts resources discovered
   before the budget rejection, since the view has not installed that controller
   yet. A production-construction test observes the actual stylesheet request's

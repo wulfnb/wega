@@ -30,16 +30,14 @@ fn to_box_set(b: BoxModel) -> BoxSet {
 /// Native Engine Backend: Backend selector, NativeDocument, and Wega DOM integration.
 use super::css::{MediaContext, StyleSheet, resolve_computed_style};
 use super::display_list::DisplayList;
-use super::dom_adapter::{
-    NativeResources, compute_form_decorations, ensure_form_control_data, sync_form_state,
-};
 use super::layout::{LayoutBox, LayoutContext, build_box_tree, perform_layout};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wega_adapter_blitz::BlitzDocument;
 use wega_dom::layout::*;
 use wega_dom::style::StyleError;
-use wega_dom::{DocumentView, NodeKey, NodeKind, NodeView};
+use wega_dom::{NodeKey, NodeKind, NodeView};
+use wega_native::resources::NativeResources;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RenderingBackend {
@@ -80,8 +78,8 @@ struct GeometryCache {
     rects: std::collections::HashMap<NodeKey, Vec<Rect>>,
     transforms: std::collections::HashMap<NodeKey, kurbo::Affine>,
 }
-pub struct NativeDocument {
-    pub doc: Rc<RefCell<BlitzDocument>>,
+pub struct NativeDocument<D: NativeResources = BlitzDocument> {
+    pub doc: Rc<RefCell<D>>,
     pub layout_tree: Option<LayoutBox>,
     pub author_sheets: Vec<StyleSheet>,
     pub viewport: ViewportConfig,
@@ -101,7 +99,7 @@ pub struct NativeDocument {
     seen_focus: Option<NodeKey>,
 }
 
-impl NativeDocument {
+impl<D: NativeResources> NativeDocument<D> {
     pub fn media_context(&self) -> MediaContext {
         let v = self.viewport;
         let scale = (v.scale * v.zoom) as f64;
@@ -139,11 +137,11 @@ impl NativeDocument {
         super::text::register_font_bytes(family_name, bytes, weight, style);
     }
 
-    pub fn new(doc: Rc<RefCell<BlitzDocument>>) -> Self {
+    pub fn new(doc: Rc<RefCell<D>>) -> Self {
         Self::with_font_source(doc, None)
     }
     pub fn with_font_source(
-        doc: Rc<RefCell<BlitzDocument>>,
+        doc: Rc<RefCell<D>>,
         font_source: Option<std::sync::Arc<Vec<Vec<u8>>>>,
     ) -> Self {
         let initial_viewport = ViewportConfig {
@@ -209,7 +207,13 @@ impl NativeDocument {
             return;
         }
         self.sheet_cache_key = Some(key);
-        self.author_sheets = d.native_stylesheets(self.csp.as_ref());
+        self.author_sheets = d.native_stylesheets(&|nonce, css| {
+            self.csp.as_ref().is_none_or(|csp| {
+                csp.read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .allows_inline("style-src-elem", nonce, css)
+            })
+        });
     }
 
     fn viewport_key(&self) -> (u32, u32, u32, u32, bool) {
@@ -261,7 +265,7 @@ impl NativeDocument {
         if let Some(tree) = &self.layout_tree {
             save(tree, &mut offsets);
         }
-        ensure_form_control_data(&mut self.doc.borrow_mut());
+        self.doc.borrow_mut().prepare_controls();
         let start = std::time::Instant::now();
         self.sync_author_stylesheets();
         self.timings.stylesheet_parse_ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -275,7 +279,7 @@ impl NativeDocument {
             build_box_tree(&*d, root_key, None, &sheets_ref, Some(&media_ctx))
         {
             d.native_images(&mut box_tree);
-            sync_form_state(&mut box_tree, &d);
+            d.sync_controls(&mut box_tree);
             self.timings.style_and_box_tree_ms = style_start.elapsed().as_secs_f64() * 1000.0;
             let layout_start = std::time::Instant::now();
             let shaping_start = super::text::shaping_nanos();
@@ -291,7 +295,7 @@ impl NativeDocument {
                     .map_or(16.0, |b| b.style.font_size),
             };
             perform_layout(&mut box_tree, &ctx);
-            compute_form_decorations(&mut box_tree, &d);
+            d.decorate_controls(&mut box_tree);
             self.timings.layout_ms = layout_start.elapsed().as_secs_f64() * 1000.0;
             self.timings.shaping_ms = (super::text::shaping_nanos() - shaping_start) as f64 / 1e6;
             fn restore(b: &mut LayoutBox, offsets: &std::collections::HashMap<NodeKey, Point>) {
@@ -773,7 +777,7 @@ fn find_box_in_tree(box_node: &LayoutBox, key: NodeKey) -> Option<&LayoutBox> {
     None
 }
 
-impl NativeDocument {
+impl<D: NativeResources> NativeDocument<D> {
     pub fn scroll_node_to(&mut self, key: NodeKey, point: Point) -> Result<(), LayoutError> {
         self.ensure_layout();
         fn find(b: &mut LayoutBox, k: NodeKey) -> Option<&mut LayoutBox> {

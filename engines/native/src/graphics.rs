@@ -294,3 +294,14 @@ impl SvgGraphic {
         }
     }
 }
+
+/// Decode authorized inline SVG bytes with the shared bounded image decoder.
+pub fn decode_svg(source: &[u8]) -> Option<SvgGraphic> {
+    let svg = crate::images::SvgImageData::from_data(source, &Default::default()).ok()?;
+    Some(SvgGraphic::from_decoded(
+        svg.tree,
+        svg.intrinsic_dimensions.view_box,
+        svg.intrinsic_dimensions.preserve_aspect_ratio,
+        svg.intrinsic_dimensions.degenerate_view_box,
+    ))
+}

@@ -6828,6 +6828,7 @@ dependencies = [
  "url",
  "wega-dom",
  "wega-html",
+ "wega-native",
 ]
 
 [[package]]
