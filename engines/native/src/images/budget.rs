@@ -25,19 +25,31 @@ impl DecodePermit {
         let mut budget = BUDGET
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(2);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {
-            budget.retained.retain(|entry| entry.owner.strong_count()!=0);
-            let used:usize=budget.retained.iter().map(|entry|entry.bytes).sum();
-            if budget.retained.len()>=IMAGE_COUNT || used.saturating_add(DECODE_RESERVATION)>RETAINED_LIMIT {
+            budget
+                .retained
+                .retain(|entry| entry.owner.strong_count() != 0);
+            let used: usize = budget.retained.iter().map(|entry| entry.bytes).sum();
+            if budget.retained.len() >= IMAGE_COUNT
+                || used.saturating_add(DECODE_RESERVATION) > RETAINED_LIMIT
+            {
                 return Err("Decoded-image admission limit exceeded".into());
             }
-            if used.saturating_add(budget.decoding).saturating_add(DECODE_RESERVATION)<=RETAINED_LIMIT {break;}
-            let Some(remaining)=deadline.checked_duration_since(std::time::Instant::now()) else {
+            if used
+                .saturating_add(budget.decoding)
+                .saturating_add(DECODE_RESERVATION)
+                <= RETAINED_LIMIT
+            {
+                break;
+            }
+            let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
                 return Err("Decoded-image admission deadline exceeded".into());
             };
-            let (next,_)=AVAILABLE.wait_timeout(budget,remaining).unwrap_or_else(std::sync::PoisonError::into_inner);
-            budget=next;
+            let (next, _) = AVAILABLE
+                .wait_timeout(budget, remaining)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            budget = next;
         }
         budget.decoding += DECODE_RESERVATION;
         Ok(Self { active: true })

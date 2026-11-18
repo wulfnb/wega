@@ -240,7 +240,7 @@ pub struct SvgGraphic {
 }
 impl SvgGraphic {
     /// Attach a tree already decoded by the embedding browser's bounded decoder.
-    /// This crate performs no network/file access or image decoding.
+    /// The decoder accepts only authorized bytes and never opens files or sockets.
     pub fn from_decoded(
         tree: Arc<usvg::Tree>,
         view_box: Option<usvg::NonZeroRect>,

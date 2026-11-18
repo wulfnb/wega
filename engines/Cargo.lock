@@ -533,6 +533,7 @@ dependencies = [
  "url",
  "usvg",
  "web-time",
+ "wega-native",
  "wuff",
 ]
 
@@ -6948,7 +6949,9 @@ dependencies = [
  "anyrender_skia",
  "anyrender_svg",
  "cssparser 0.38.0",
+ "flate2",
  "html5ever",
+ "image",
  "kurbo",
  "parley",
  "peniko",

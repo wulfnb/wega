@@ -101,10 +101,11 @@ impl NativeResources for BlitzDocument {
     }
 }
 pub(crate) fn decode_svg(source: &[u8]) -> Option<SvgGraphic> {
-    let svg = blitz_dom::node::SvgImageData::from_data(source, &usvg::Options::default()).ok()?;
+    let svg =
+        wega_native::images::SvgImageData::from_data(source, &usvg::Options::default()).ok()?;
     Some(svg_graphic(&svg))
 }
-pub fn raster(image: &blitz_dom::node::RasterImageData) -> peniko::ImageData {
+pub fn raster(image: &wega_native::images::RasterImageData) -> peniko::ImageData {
     peniko::ImageData {
         data: image.data.clone(),
         format: peniko::ImageFormat::Rgba8,
@@ -114,7 +115,7 @@ pub fn raster(image: &blitz_dom::node::RasterImageData) -> peniko::ImageData {
     }
 }
 
-fn svg_graphic(svg: &blitz_dom::node::SvgImageData) -> SvgGraphic {
+fn svg_graphic(svg: &wega_native::images::SvgImageData) -> SvgGraphic {
     SvgGraphic::from_decoded(
         svg.tree.clone(),
         svg.intrinsic_dimensions.view_box,

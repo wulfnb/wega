@@ -2,7 +2,6 @@
 use blitz_traits::node_id::NodeId;
 use cssparser::Parser;
 use kurbo::{Affine, Rect as KurboRect};
-use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, QualName, local_name};
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use std::cell::Cell;
@@ -844,24 +843,7 @@ impl ElementData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct RasterImageData {
-    /// The width of the image
-    pub width: u32,
-    /// The height of the image
-    pub height: u32,
-    /// The raw image data in RGBA8 format
-    pub data: Blob<u8>,
-}
-impl RasterImageData {
-    pub fn new(width: u32, height: u32, data: Arc<Vec<u8>>) -> Self {
-        Self {
-            width,
-            height,
-            data: Blob::new(data),
-        }
-    }
-}
+pub use wega_native::images::RasterImageData;
 
 #[derive(Debug, Clone)]
 pub enum ImageData {

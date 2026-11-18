@@ -3,7 +3,6 @@ use blitz_traits::node_id::NodeId;
 use selectors::context::QuirksMode;
 use std::sync::atomic::Ordering as Ao;
 use std::{
-    io::Cursor,
     sync::{Arc, atomic::AtomicUsize, mpsc::Sender},
 };
 use style::{
@@ -577,37 +576,12 @@ impl NetHandler for ResourceHandler<ImageHandler> {
 
 impl ImageHandler {
     fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
-        let permit = crate::image_budget::DecodePermit::reserve()?;
-        let mut reader = image::ImageReader::new(Cursor::new(&bytes))
-            .with_guessed_format()
-            .map_err(|error| error.to_string())?;
-        let mut limits = image::Limits::default();
-        limits.max_image_width = Some(8192);
-        limits.max_image_height = Some(8192);
-        limits.max_alloc = Some(64 * 1024 * 1024);
-        reader.limits(limits);
-        let image_err = match reader.into_decoder() {
-            Ok(decoder) => {
-                use image::ImageDecoder;
-                let (width, height) = decoder.dimensions();
-                if u64::from(width) * u64::from(height) > 8 * 1024 * 1024
-                    || decoder.total_bytes() > 64 * 1024 * 1024
-                {
-                    return Err("Decoded image exceeds dimensions/allocation budget".into());
-                }
-                match image::DynamicImage::from_decoder(decoder) {
-                    Ok(image) => {
-                        let data = Arc::new(image.into_rgba8().into_raw());
-                        permit.retain(&data, data.len())?;
-                        return Ok(Resource::Image(self.kind, width, height, data));
-                    }
-                    Err(error) => error.to_string(),
-                }
-            }
-            Err(error) => error.to_string(),
+        let image_err = match wega_native::images::decode_raster(&bytes) {
+            Ok(image) => return Ok(Resource::Image(self.kind, image.width, image.height, image.data)),
+            Err(wega_native::images::RasterDecodeError::Rejected(error)) => return Err(error),
+            Err(wega_native::images::RasterDecodeError::Format(error)) => error,
         };
-        // Raster probing has finished. SVG parsing reserves its own bounded budget.
-        drop(permit);
+        // Raster probing has released its reservation before bounded SVG fallback.
         #[cfg(feature = "svg")]
         let svg_err = {
             use crate::util::parse_svg_image;

@@ -59,6 +59,19 @@ replaces yanked `crypto-bigint` 0.7.8 with 0.7.11.
 
 ## Blitz, Stylo and Skia adapter (`blitz/`, P4–P5)
 
+### Wega decoded image ownership (18 November 2026)
+
+`blitz/patches/native-owner-baseline.patch` records the already-existing native
+campaign modifications at `64ce6ec` that were missing from the archive patch
+ledger. It reproduces that baseline; it introduces no new inspector behavior.
+`blitz/patches/wega-owned-images.patch` then moves raster/SVG payloads, bounded
+decoding and the single process admission/retention budget to `engines/native`.
+Reference imports forward to those types. Broker fetching, SVG font options,
+resource completion, cancellation and authorization stay at their existing
+boundaries. PNG/JPEG/GIF/WebP features and all decoder budgets remain unchanged.
+Copied upstream portions retain their origin headers and licenses under
+`engines/native/licenses/`. No second decoder or resource-fetching path is added.
+
 Published `blitz-dom`/`blitz-paint` 0.3.0-beta.4, `stylo` 0.22.0 and
 `anyrender_skia` 0.12.0 are pinned by archive SHA-256 in `sources.json`.
 `blitz/patches/` is the exact reviewable delta from those releases:

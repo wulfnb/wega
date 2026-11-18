@@ -1,5 +1,22 @@
 # Blitz dependency inventory
 
+## 2026-11-18 continuation
+
+Production `blitz-html` has moved to reference-parser oracle tests. Blank and
+XML construction use the generic Wega parser; XML node budgets now apply during
+construction. V8 retention/script/meta identities use `NodeKey`, and tree-only
+host operations use document contracts. Production raster/SVG payloads, bounded
+decoders and the single admission budget now live in `wega-native::images`.
+
+The actual browser graph still contains **four** reference packages: `blitz-dom`,
+`blitz-paint`, `blitz-traits`, `wega-adapter-blitz`. Their ownership barriers in
+the table below remain applicable. `View`, `Dom`, `NativeDocument`, frame access
+contexts and the parser's production type still share `BlitzDocument`; V8 queries,
+CSSOM, control state, focus/default actions and resource/frame lifecycle require
+further migration. Component independence is not production independence.
+
+The original inventory and five-package evidence below describe the prior head.
+
 Start: `feature/dom-rounds-9-12`, clean `8523150487a953394920e69459ad7f374e57297c`.
 No pushes authorized. DevTools D4 and inspector implementation excluded.
 

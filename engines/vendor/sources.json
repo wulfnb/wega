@@ -54,7 +54,9 @@
       "blitz/patches/document-id-scope.patch",
       "blitz/patches/detached-style-elements.patch",
       "blitz/patches/own-scroll-bounding-rect.patch",
-      "blitz/patches/cssom-inspection-generation.patch"
+      "blitz/patches/cssom-inspection-generation.patch",
+      "blitz/patches/native-owner-baseline.patch",
+      "blitz/patches/wega-owned-images.patch"
     ]
   },
   "blitz-paint": {

@@ -20,8 +20,6 @@
 - Continue with tree-only V8 host operations against `DocumentView`, then owned
   resource/control/CSSOM integration. No push or inspector/D4 edits authorized.
 
-## Historical campaign checkpoints
-
 ### Continuation tree-host checkpoint
 
 - Tree-only V8 reads, fragment serialization, form association, component/slot
@@ -51,6 +49,32 @@
   processes/open files, removed 17,241,038,848 bytes and reran successfully.
   Manifest and failure/retry logs are archived; sources and current executables
   were preserved. Full production DOM ownership still has not switched.
+
+### Continuation decoded-image checkpoint
+
+- The production raster/SVG payloads and decoder implementations now live in
+  `wega-native::images`. The reference resource handler calls the same decoder;
+  reference node types forward to Wega payloads, without a second decoder/tree.
+- Preserved 8192-side/8 Mi-pixel/64 MiB raster limits, 8 MiB SVG decompression,
+  16,384 aggregate SVG nodes, nested depth 8, the 2-second admission deadline,
+  128 MiB reservations, 256 MiB retention and 4096-image count. Broker font options,
+  CSP per redirect hop, fetching, cancellation and completion are unchanged.
+- Verified: 4 independent pipeline tests; 4 new decode/retention/rejection tests;
+  12 production image/graphics/redirect tests. The opt-in Chrome case in that
+  selection still requires the explicit acceptance runner before it is counted.
+  Strict workspace/all-target Clippy passes. Component graph remains independent;
+  actual browser graph still fails with four reference package names.
+- Exact pinned-archive provenance for `blitz-dom` passes. Added the missing prior
+  baseline delta separately from the decoder extraction delta. The verifier now
+  asks BSD patch to remove /dev/null deletions, retaining exact-file comparison.
+  Other vendor packages were not verified by this targeted run (local archive
+  cache lacks the Deno source archive). Original licenses were retained.
+- M3 remains incomplete: resource lifecycle/sheet/control/frame owners still
+  belong to the reference document. Next: full sequential validation of this
+  partial integration, retaining every failed attempt and native-only graph
+  failure; no native-only runtime success may be claimed.
+
+## Historical campaign checkpoints
 
 - Starting/last verified commit: `8523150487a953394920e69459ad7f374e57297c`.
 - Branch: `feature/dom-rounds-9-12`; initial worktree clean.

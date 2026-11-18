@@ -1,0 +1,508 @@
+--- a/src/cssom.rs
++++ b/src/cssom.rs
+@@ -283,6 +283,38 @@
+ }
+ 
+ impl BaseDocument {
++    pub fn stylesheet_url(&self, node_id: NodeId) -> Option<url::Url> {
++        let sheet = self.nodes_to_stylesheet.get(&node_id)?;
++        Some((*sheet.contents(&self.guard.read()).url_data.0).clone())
++    }
++    /// Serialize the authoritative rules for the native renderer. Imported
++    /// sheets are included only after the existing authorized loader completed.
++    /// This is a rendering bridge, never a script-visible cross-origin read.
++    pub fn native_stylesheet_text(&self, node_id: NodeId) -> Option<String> {
++        fn append(rules: &[CssRule], guard: &SharedRwLockReadGuard, out: &mut String, depth: usize, remaining: &mut usize) {
++            if depth > 8 { return; }
++            for rule in rules {
++                if *remaining == 0 || out.len() > 8 * 1024 * 1024 { break; }
++                *remaining -= 1;
++                if let CssRule::Import(import) = rule {
++                    let import = import.read_with(guard);
++                    if !matches!(import.layer, style::stylesheets::import_rule::ImportLayer::None) { continue; }
++                    let media = import.stylesheet.media(guard).map(|m| m.to_css_string()).unwrap_or_default();
++                    if !media.is_empty() { out.push_str("@media "); out.push_str(&media); out.push('{'); }
++                    append(import.stylesheet.rules(guard), guard, out, depth + 1, remaining);
++                    if !media.is_empty() { out.push('}'); }
++                } else {
++                    let _ = rule.to_css(guard, out);
++                    out.push('\n');
++                }
++            }
++        }
++        let sheet = self.nodes_to_stylesheet.get(&node_id)?;
++        let guard = self.guard.read();
++        let mut text = String::new();
++        append(sheet.contents(&guard).rules(&guard), &guard, &mut text, 0, &mut 16384);
++        Some(text)
++    }
+     /// The owner nodes (`<style>` / `<link>` elements) of the document's author
+     /// stylesheets (`document.styleSheets`).
+     ///
+--- a/src/document.rs
++++ b/src/document.rs
+@@ -340,6 +340,11 @@
+     /// added, replaced or removed), so that CSSOM wrappers can detect that
+     /// their cached rule data is stale.
+     pub(crate) stylesheet_generation: u64,
++    resource_generation:u64,
++    /// Raw, broker-authorized CSS and request URL. Native style resolution must
++    /// parse this source itself, never serialize Stylo computed declarations.
++    pub(crate) stylesheet_sources: BTreeMap<NodeId, (String, String)>,
++    inline_stylesheet_sources: BTreeMap<NodeId,(String,u64)>,
+     /// Map from form control node ID's to their associated forms node ID's
+     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
+     /// Nodes that contain sub documents
+@@ -399,6 +404,17 @@
+     pub fn set_style_threading(&mut self, threading: StyleThreading) { self.style_threading = threading; }
+     /// Release redundant decoded-image cache references. Live nodes retain their
+     /// images so freezing never loses pixels or requires a network reload.
++    /// Native image lookup/discovery reuses the authorized provider and bounded decoder.
++    pub fn native_image(&mut self, url: url::Url) -> Option<crate::node::ImageData> {
++        if let Some(image) = self.image_cache.get(url.as_str()) { return Some(image.clone()); }
++        if !self.pending_images.contains_key(url.as_str()) {
++            self.pending_images.insert(url.to_string(), Vec::new());
++            self.net_provider.fetch(self.id(), crate::net::destined_request(url, self.abort_signal.as_ref(), "image"),
++                crate::net::ResourceHandler::boxed(self.tx.clone(), self.id(), None, self.shell_provider.clone(),
++                    crate::net::ImageHandler::new(crate::util::ImageType::Image)));
++        }
++        None
++    }
+     pub fn release_image_cache(&mut self) { self.image_cache.clear(); }
+ 
+     /// Create a new (empty) [`BaseDocument`] with the specified configuration
+@@ -498,6 +514,9 @@
+             url: base_url,
+             nodes_to_stylesheet: BTreeMap::new(),
+             stylesheet_generation: 0,
++            resource_generation:0,
++            stylesheet_sources: BTreeMap::new(),
++            inline_stylesheet_sources: BTreeMap::new(),
+             font_ctx,
+             #[cfg(feature = "parallel-construct")]
+             thread_font_contexts: ThreadLocal::new(),
+@@ -614,6 +633,12 @@
+     /// when `&self` would conflict with a held `&mut` borrow on a field.
+     pub(crate) fn build_request(&self, url: url::Url) -> Request {
+         crate::net::stamped_request(url, self.abort_signal.as_ref())
++    }
++
++    pub(crate) fn build_stylesheet_request(&self, url: url::Url) -> Request {
++        let mut request = self.build_request(url);
++        request.headers.insert("sec-fetch-dest", "style".parse().unwrap());
++        request
+     }
+ 
+     pub fn favicon_url(&self) -> Option<String> {
+@@ -1134,7 +1159,7 @@
+                         let resolved_href = self.resolve_url(href);
+                         self.net_provider.fetch(
+                             self.id(),
+-                            self.build_request(resolved_href.clone()),
++                            self.build_stylesheet_request(resolved_href.clone()),
+                             ResourceHandler::boxed(
+                                 self.tx.clone(),
+                                 self.id,
+@@ -1157,8 +1182,7 @@
+     pub fn process_style_element(&mut self, target_id: NodeId) {
+         let css = self.nodes[target_id].text_content();
+         let css = html_escape::decode_html_entities(&css);
+-        let sheet = self.make_stylesheet(&css, Origin::Author);
+-        self.add_stylesheet_for_node(sheet, target_id);
++        self.upsert_stylesheet_text(target_id,css.as_ref());
+     }
+ 
+     pub fn remove_user_agent_stylesheet(&mut self, sheet: &UserAgentStylesheet) {
+@@ -1175,6 +1199,20 @@
+ 
+     /// Iterate over the author stylesheets (from `<style>` and `<link>` nodes)
+     /// currently associated with this document
++    /// Completed authorized resources, independent of style/layout processing.
++    pub fn resource_generation(&self)->u64 {self.resource_generation}
++    pub fn stylesheet_source(&self, node: NodeId) -> Option<(&str, &str)> {
++        self.stylesheet_sources.get(&node).map(|(source, url)| (source.as_str(), url.as_str()))
++    }
++    pub fn stylesheet_source_by_url(&self, url: &str) -> Option<&str> {
++        self.stylesheet_sources.values()
++            .find(|(_, u)| u == url)
++            .map(|(s, _)| s.as_str())
++    }
++    pub fn font_ctx(&self) -> Arc<Mutex<parley::FontContext>> {
++        self.font_ctx.clone()
++    }
++
+     pub fn author_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
+         self.nodes_to_stylesheet.values()
+     }
+@@ -1218,8 +1256,17 @@
+ 
+     pub fn upsert_stylesheet_for_node(&mut self, node_id: NodeId) {
+         let raw_styles = self.nodes[node_id].text_content();
+-        let sheet = self.make_stylesheet(raw_styles, Origin::Author);
+-        self.add_stylesheet_for_node(sheet, node_id);
++        self.upsert_stylesheet_text(node_id,&raw_styles);
++    }
++
++    fn upsert_stylesheet_text(&mut self,node_id:NodeId,source:&str) {
++        // Parser and mutation notifications may report the same completed style.
++        // A CSSOM edit changes the generation and must still be reset by text edits.
++        if self.nodes_to_stylesheet.contains_key(&node_id) && self.inline_stylesheet_sources.get(&node_id)
++            .is_some_and(|(old,generation)|old==source&&*generation==self.stylesheet_generation){return;}
++        let sheet=self.make_stylesheet(source,Origin::Author);
++        self.add_stylesheet_for_node(sheet,node_id);
++        self.inline_stylesheet_sources.insert(node_id,(source.to_owned(),self.stylesheet_generation));
+     }
+ 
+     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: NodeId) {
+@@ -1317,9 +1364,15 @@
+             }
+         };
+ 
++        self.resource_generation=self.resource_generation.wrapping_add(1);
+         match resource {
+-            Resource::Css(css) => {
++            Resource::Css(css, source, requested_url) => {
+                 let node_id = res.node_id.unwrap();
++                // Ignore late completions after removal or href replacement.
++                let current = self.nodes.get(node_id).and_then(|n| n.attr(local_name!("href")))
++                    .and_then(|href| self.url.join(href).ok());
++                if current.as_ref().map(Url::as_str) != Some(requested_url.as_str()) { return; }
++                self.stylesheet_sources.insert(node_id, (source, requested_url));
+                 self.add_stylesheet_for_node(css, node_id);
+             }
+             Resource::ImportedCss(import_rule, sheet) => {
+@@ -1678,16 +1731,30 @@
+     }
+ 
+     pub fn focus_next_node(&mut self) -> Option<NodeId> {
+-        let focussed_node_id = self.get_focussed_node_id()?;
+-        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
++        let id = match self.get_focussed_node_id() {
++            Some(curr) => self.next_node(&self.nodes[curr], |node| node.is_focussable())?,
++            None => {
++                let root = self.root_node();
++                if root.is_focussable() {
++                    root.id
++                } else {
++                    self.next_node(root, |node| node.is_focussable())?
++                }
++            }
++        };
+         self.set_focus_to(id);
+         Some(id)
+     }
+ 
+     /// Move focus to the previous focussable node in the document
+     pub fn focus_prev_node(&mut self) -> Option<NodeId> {
+-        let focussed_node_id = self.get_focussed_node_id()?;
+-        let id = self.prev_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
++        let id = match self.get_focussed_node_id() {
++            Some(curr) => self.prev_node(&self.nodes[curr], |node| node.is_focussable())?,
++            None => {
++                let root = self.root_node();
++                self.prev_node(root, |node| node.is_focussable())?
++            }
++        };
+         self.set_focus_to(id);
+         Some(id)
+     }
+--- a/src/events/keyboard.rs
++++ b/src/events/keyboard.rs
+@@ -74,6 +74,28 @@
+         let Some(element_data) = node.element_data_mut() else {
+             return;
+         };
++
++        if element_data.has_attr(local_name!("disabled")) {
++            return;
++        }
++
++        let is_readonly = element_data.has_attr(local_name!("readonly"));
++        if is_readonly {
++            if let KeyboardOrTextInputEvent::KeyPress(ref k) = event {
++                let is_mutating = match &k.key {
++                    Key::Character(c) => !k.modifiers.contains(ACTION_MOD) || matches!(c.to_lowercase().as_str(), "x" | "v"),
++                    Key::Named(NamedKey::Backspace | NamedKey::Delete | NamedKey::Enter) => true,
++                    _ => false,
++                };
++                if is_mutating {
++                    return;
++                }
++            } else if let KeyboardOrTextInputEvent::AppleStandardKeyBinding(ref cmd) = event {
++                if cmd.starts_with("delete") || cmd.starts_with("insert") || cmd == "yank:" {
++                    return;
++                }
++            }
++        }
+ 
+         if let Some(input_data) = element_data.text_input_data_mut() {
+             let generated_event = match event {
+--- a/src/image_budget.rs
++++ b/src/image_budget.rs
+@@ -1,6 +1,7 @@
+ //! Wega contributors, 2026: bound image admission before decoding and retain
+ //! charges while decoded bytes/trees survive in nodes, caches or display lists.
+-use std::sync::{Arc, Mutex, Weak};
++use std::sync::{Arc, Condvar, Mutex, Weak};
++static AVAILABLE: Condvar = Condvar::new();
+ const DECODE_RESERVATION: usize = 128 * 1024 * 1024;
+ const RETAINED_LIMIT: usize = 256 * 1024 * 1024;
+ const IMAGE_COUNT: usize = 4096;
+@@ -24,17 +25,19 @@
+         let mut budget = BUDGET
+             .lock()
+             .unwrap_or_else(std::sync::PoisonError::into_inner);
+-        budget
+-            .retained
+-            .retain(|entry| entry.owner.strong_count() != 0);
+-        let used: usize = budget.retained.iter().map(|entry| entry.bytes).sum();
+-        if budget.retained.len() >= IMAGE_COUNT
+-            || used
+-                .saturating_add(budget.decoding)
+-                .saturating_add(DECODE_RESERVATION)
+-                > RETAINED_LIMIT
+-        {
+-            return Err("Decoded-image admission limit exceeded".into());
++        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(2);
++        loop {
++            budget.retained.retain(|entry| entry.owner.strong_count()!=0);
++            let used:usize=budget.retained.iter().map(|entry|entry.bytes).sum();
++            if budget.retained.len()>=IMAGE_COUNT || used.saturating_add(DECODE_RESERVATION)>RETAINED_LIMIT {
++                return Err("Decoded-image admission limit exceeded".into());
++            }
++            if used.saturating_add(budget.decoding).saturating_add(DECODE_RESERVATION)<=RETAINED_LIMIT {break;}
++            let Some(remaining)=deadline.checked_duration_since(std::time::Instant::now()) else {
++                return Err("Decoded-image admission deadline exceeded".into());
++            };
++            let (next,_)=AVAILABLE.wait_timeout(budget,remaining).unwrap_or_else(std::sync::PoisonError::into_inner);
++            budget=next;
+         }
+         budget.decoding += DECODE_RESERVATION;
+         Ok(Self { active: true })
+@@ -57,6 +60,7 @@
+         });
+         budget.decoding -= DECODE_RESERVATION;
+         self.active = false;
++        AVAILABLE.notify_all();
+         Ok(())
+     }
+ }
+@@ -67,6 +71,7 @@
+                 .lock()
+                 .unwrap_or_else(std::sync::PoisonError::into_inner)
+                 .decoding -= DECODE_RESERVATION;
++            AVAILABLE.notify_all();
+         }
+     }
+ }
+--- a/src/mutator.rs
++++ b/src/mutator.rs
+@@ -1137,7 +1137,7 @@
+ 
+         self.doc.net_provider.fetch(
+             self.doc.id(),
+-            self.doc.build_request(url),
++            self.doc.build_stylesheet_request(url),
+             Box::new(handler),
+         );
+     }
+@@ -1158,6 +1158,7 @@
+             .force_stylesheet_origins_dirty(OriginSet::all());
+ 
+         self.doc.nodes_to_stylesheet.remove(&node_id);
++        self.doc.stylesheet_sources.remove(&node_id);
+         self.doc.stylesheet_generation += 1;
+     }
+ 
+@@ -1197,7 +1198,7 @@
+ 
+                 self.doc.net_provider.fetch(
+                     self.doc.id(),
+-                    self.doc.build_request(src),
++                    crate::net::destined_request(src,self.doc.abort_signal.as_ref(),"image"),
+                     ResourceHandler::boxed(
+                         self.doc.tx.clone(),
+                         self.doc.id(),
+--- a/src/net.rs
++++ b/src/net.rs
+@@ -35,6 +35,12 @@
+     req
+ }
+ 
++pub(crate) fn destined_request(url:Url,signal:Option<&AbortSignal>,destination:&'static str)->Request {
++    let mut request=stamped_request(url,signal);
++    request.headers.insert("sec-fetch-dest",destination.parse().unwrap());
++    request
++}
++
+ /// Carries `@font-face` descriptors from CSS parsing through to font
+ /// registration so `parley::Collection::register_fonts` can alias the bytes
+ /// under the `font-family` declared in CSS rather than whatever family name
+@@ -60,7 +66,8 @@
+     Image(ImageType, u32, u32, Arc<Vec<u8>>),
+     #[cfg(feature = "svg")]
+     Svg(ImageType, crate::node::SvgImageData),
+-    Css(DocumentStyleSheet),
++    // Retain authorized response bytes for independent rendering backends.
++    Css(DocumentStyleSheet, String, String),
+     /// Stylesheet loaded for an `@import` rule, to be attached to the rule on the document thread
+     ImportedCss(ServoArc<Locked<ImportRule>>, ServoArc<Stylesheet>),
+     Font(Bytes, FontFaceOverrides),
+@@ -152,7 +159,7 @@
+ 
+         let sheet = Stylesheet::from_str(
+             css,
+-            self.data.source_url.clone().into(),
++            Url::parse(&resolved_url).unwrap_or_else(|_| self.data.source_url.clone()).into(),
+             Origin::Author,
+             ServoArc::new(self.data.guard.wrap(MediaList::empty())),
+             self.data.guard.clone(),
+@@ -171,7 +178,7 @@
+ 
+         self.respond(
+             resolved_url,
+-            Ok(Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)))),
++            Ok(Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)), css.to_owned(), self.data.source_url.to_string())),
+         );
+     }
+ }
+@@ -180,7 +187,7 @@
+ /// are refused, preventing unbounded recursion (e.g. a stylesheet whose
+ /// resolved `@import` URL yields another stylesheet importing in turn, with
+ /// the URL growing geometrically at each level).
+-const MAX_IMPORT_DEPTH: usize = 16;
++const MAX_IMPORT_DEPTH: usize = 8;
+ 
+ #[derive(Clone)]
+ pub(crate) struct StylesheetLoader {
+@@ -225,7 +232,7 @@
+         let import = ServoArc::new(lock.wrap(import));
+         self.net_provider.fetch(
+             self.doc_id,
+-            stamped_request(url.as_ref().clone(), self.abort_signal.as_ref()),
++            destined_request(url.as_ref().clone(), self.abort_signal.as_ref(),"style"),
+             ResourceHandler::boxed(
+                 self.tx.clone(),
+                 self.doc_id,
+@@ -269,7 +276,7 @@
+ 
+         let sheet = ServoArc::new(Stylesheet::from_str(
+             css,
+-            UrlExtraData(self.data.url.clone()),
++            UrlExtraData(ServoArc::new(Url::parse(&resolved_url).unwrap_or_else(|_| (*self.data.url).clone()))),
+             Origin::Author,
+             self.data.media.clone(),
+             self.data.lock.clone(),
+@@ -506,7 +513,7 @@
+             if let Some((url, format)) = preferred_source {
+                 network_provider.fetch(
+                     doc_id,
+-                    stamped_request(url, abort_signal),
++                    destined_request(url, abort_signal,"font"),
+                     ResourceHandler::boxed(
+                         tx.clone(),
+                         doc_id,
+@@ -599,8 +606,8 @@
+             }
+             Err(error) => error.to_string(),
+         };
++        // Raster probing has finished. SVG parsing reserves its own bounded budget.
+         drop(permit);
+-
+         #[cfg(feature = "svg")]
+         let svg_err = {
+             use crate::util::parse_svg_image;
+--- a/src/node/element.rs
++++ b/src/node/element.rs
+@@ -597,7 +597,15 @@
+     pub fn checkbox_input_checked(&self) -> Option<bool> {
+         match self.special_data {
+             SpecialElementData::CheckboxInput(checked) => Some(checked),
+-            _ => None,
++            _ => {
++                if self.name.local == local_name!("input") {
++                    let kind = self.attr(local_name!("type")).unwrap_or("text").to_ascii_lowercase();
++                    if matches!(kind.as_str(), "checkbox" | "radio") {
++                        return Some(self.attr(local_name!("checked")).is_some());
++                    }
++                }
++                None
++            }
+         }
+     }
+ 
+@@ -614,6 +622,8 @@
+     pub fn set_checkbox_input_checked(&mut self, checked: bool) {
+         if let Some(is_checked) = self.checkbox_input_checked_mut() {
+             *is_checked = checked;
++        } else {
++            self.special_data = SpecialElementData::CheckboxInput(checked);
+         }
+         self.element_state.set(ElementState::CHECKED, checked);
+     }
+--- a/src/node/svg.rs
++++ b/src/node/svg.rs
+@@ -109,8 +109,8 @@
+         // Gzip magic bytes, matching the SVGZ detection in `usvg::Tree::from_data`.
+         use std::io::Read;
+         const MAX_SVG: usize = 8 * 1024 * 1024;
+-        let permit = crate::image_budget::DecodePermit::reserve()
+-            .map_err(|_| usvg::Error::ElementsLimitReached)?;
++        let permit = if depth==0 { Some(crate::image_budget::DecodePermit::reserve()
++            .map_err(|_| usvg::Error::ElementsLimitReached)?) } else {None};
+         let mut decompressed = Vec::new();
+         let data = if data.starts_with(&[0x1f, 0x8b]) {
+             flate2::read::GzDecoder::new(data)
+@@ -203,9 +203,9 @@
+                 (budget.pixels.load(std::sync::atomic::Ordering::Relaxed) as usize)
+                     .saturating_mul(4),
+             );
+-        permit
+-            .retain(&tree, charge)
+-            .map_err(|_| usvg::Error::ElementsLimitReached)?;
++        if let Some(permit)=permit {
++            permit.retain(&tree,charge).map_err(|_| usvg::Error::ElementsLimitReached)?;
++        }
+         Ok(Self {
+             tree,
+             intrinsic_dimensions: SvgIntrinsicDimensions::from_xmltree(&doc),
+--- a/src/node/text.rs
++++ b/src/node/text.rs
+@@ -322,21 +322,23 @@
+                 return Some(GeneratedTextInputEvent::Select);
+             }
+             Key::Named(NamedKey::Delete) => {
+-                if action_mod {
+-                    driver.delete_word()
+-                } else {
+-                    driver.delete()
+-                }
+-                return Some(GeneratedTextInputEvent::Input);
+-            }
+-
+-            // On macOS this is handled by the apple standard keybindings
+-            #[cfg(not(target_os = "macos"))]
++                if !driver.editor.raw_selection().is_collapsed() {
++                    driver.delete_selection();
++                } else if action_mod {
++                    driver.delete_word();
++                } else {
++                    driver.delete();
++                }
++                return Some(GeneratedTextInputEvent::Input);
++            }
++
+             Key::Named(NamedKey::Backspace) => {
+-                if action_mod {
+-                    driver.backdelete_word()
+-                } else {
+-                    driver.backdelete()
++                if !driver.editor.raw_selection().is_collapsed() {
++                    driver.delete_selection();
++                } else if action_mod {
++                    driver.backdelete_word();
++                } else {
++                    driver.backdelete();
+                 }
+                 return Some(GeneratedTextInputEvent::Input);
+             }
