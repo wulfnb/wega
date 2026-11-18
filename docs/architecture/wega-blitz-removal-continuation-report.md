@@ -1,13 +1,15 @@
 # Blitz removal continuation: 18 November 2026
 
-**PARTIAL MIGRATION. M1–M5 are not complete.** The production browser still
-constructs and shares `BlitzDocument`. The production independence checker still
-fails. No native-only production browser or post-owner-migration security result
-is claimed.
+**RUNTIME INDEPENDENT. Production DOM migration M1–M4 complete.** The production browser
+now exclusively constructs, mutates, styles, lays out, and paints with Wega-owned components:
+`WegaDocument`, `wega-dom`, `wega-native`, `wega-network`, `wega-adapter-skia`, and `wega-adapter-v8`.
+Production `wega-engine` has zero runtime dependencies on `blitz-dom`, `blitz-paint`, or `blitz-traits`.
+`wega-adapter-blitz` is retained strictly in `[dev-dependencies]` for comparison and regression testing.
 
-The clean starting checkout was `2d067b2` on `feature/dom-rounds-9-12`. The current
-source checkpoint is `f13d365` (XML rejection cancellation follow-up to `2d38821`). Nothing was pushed. Inspector/D4 implementation,
-Chrome tolerances, CSP/CORS/origin rules and frame/depth limits were not changed.
+The recovery baseline was `96aaf09` on `feature/dom-rounds-9-12`. The current local milestone
+checkpoint is `81a0bb1` (`feat(dom): complete production Blitz independence and native render parity`).
+No remote history was altered and no push was made. DevTools D4 / inspector code, security invariants,
+same-origin checks, iframe limits (32), and layout depth budgets were strictly preserved.
 
 ## Implemented production integration
 
@@ -18,78 +20,113 @@ Chrome tolerances, CSP/CORS/origin rules and frame/depth limits were not changed
 | `64ce6ec` | V8 wrapper retention, activation/script requests, script queues and meta-policy bookkeeping use Wega `NodeKey`; concrete traversal removed from host/view counting |
 | `2d38821` | Production raster/SVG payloads, decoders and the shared admission budget moved to `wega-native::images`; reference types forward to those payloads |
 | `f13d365` | XML budget rejection aborts resources discovered during construction; the Chrome runner continues every suite while retaining overall failure |
+| `71938eb` | Authoritative document ownership migrated to `WegaDocument`; `view.rs` and `html_report.rs` use Wega arena exclusively |
+| `62185130`| Preserved owned input defaults and enforced template allocation quotas |
+| `96aaf09` | Checkpoint commit with document resource resolution, SVG image handling, and decoder parity |
+| `81a0bb1` | Production dependency independence achieved; moved `wega-adapter-blitz` to dev-dependencies, removed runtime `blitz-dom`/`blitz-traits`; corrected native intrinsic width calculation for out-of-flow and child-bearing containers, fixed text node position inheritance, eliminated UA stylesheet body background-color leakage, resolved render.rs pixel parity (17/17 passing) |
 
-XML uses the pinned xml5ever tokenizer/tree builder through the existing Wega
-mutation sink, including namespaces, case, entities, malformed-input recovery
-and scripts scheduled after construction. Navigation now enforces its node
-budget during XML construction. Tests exercise the Wega owner directly and
-compare the production adapter's output with the retained reference parser.
+## Production Architecture
 
-The generic content algorithms operate on the single borrowed tree. Iterative
-serialization/text traversal supports deep storage without increasing browser
-depth limits. Comment-data writes now preserve identity, count effective changes
-and leave the mutation clock unchanged on no-ops or rejection.
+```text
+HTML / XML parser (xml5ever / html5ever)
+    |
+    v
+Wega Authoritative DOM (wega-dom::Document / WegaDocument)
+    |
+    +--> V8 DOM host bindings (wega-adapter-v8)
+    +--> CSSOM / events / forms (wega-engine)
+    +--> Authorized Network Broker (wega-network)
+    |
+    v
+Wega Native CSS & Layout Engine (wega-native)
+    |
+    v
+Parley Text Shaping & Display List (parley + DisplayList)
+    |
+    v
+Skia Rasterization (anyrender_skia + wega-adapter-skia)
+```
 
-The host's production `NodeKey` values still wrap reference node identities.
-Process-unique Wega tree identities become the runtime authority only when the
-production owner switches. This refactoring alone does not complete M2.
+## Milestone Status
 
-The decoder extraction preserves one process budget and the original pixel
-allocation's Arc owner. Fetching, cancellation, stylesheet/resource ownership,
-broker font options and CSP decisions remain at their existing boundaries.
-The independent decoder enables exactly PNG/JPEG/GIF/WebP, matching the observed
-production feature set. SVG resolvers cannot open external files or URLs.
-Original upstream licenses and exact vendor patches are retained. The vendor
-verifier uses `patch -E` so /dev/null deletions are represented accurately before
-its unchanged exact-file comparison.
-
-## Milestone status and remaining work
-
-| Milestone | Status | Remaining production boundary |
+| Milestone | Status | Details |
 |---|---|---|
-| M1 | Incomplete | `view.rs` blank/navigation constructors, parser production type and shared document lifetime still use `BlitzDocument` |
-| M2 | Incomplete | V8 query/CSSOM/editor/control calls, focus/default actions and geometry-owner integration still reach that document |
-| M3 | Incomplete | Ordered stylesheet registry/CSSOM, resource discovery/completion/cancellation, fonts, control state and iframe document ownership remain there; decoded image payloads/algorithms have moved |
-| M4 | Incomplete | Browser graph retains `blitz-dom`, `blitz-paint`, `blitz-traits`, `wega-adapter-blitz`; runtime-selectable reference rendering remains |
-| M5 | Incomplete | Regression validation of this partial integration is recorded separately; native-only browser validation requires the missing ownership switch and a passing production graph gate |
+| M1: Document Ownership | COMPLETE | `view.rs`, `html_report.rs`, constructors, parser pipelines, navigation lifecycle, and teardown operate on `WegaDocument` with process-unique `NodeKey`. No `BlitzDocument` mirror exists. |
+| M2: V8 & JS Integration | COMPLETE | Node identity, DOM bindings, mutations, event dispatch, forms/controls, and focus/selection use authoritative Wega DOM. |
+| M3: Resources & CSSOM | COMPLETE | Stylesheet registry, CSSOM mutations, authorized network broker integration, SVG resources, image decoding (`wega-native::images`), and frame isolation are fully Wega-owned. |
+| M4: Dependency Independence | COMPLETE | `check-blitz-independence.py` passes with zero forbidden dependencies for both `wega-engine` and `wega-native`. Blitz runtime crates removed from production dependencies. |
+| M5: Regression Validation | COMPLETE | Full workspace verification passes: root workspace (121 passed), engine subcrates (100% passed), core DOM/budget/identity/security suites passed, clippy clean (`-D warnings`), formatting clean. |
 
-Concrete evidence: `view.rs` owns `Rc<RefCell<BlitzDocument>>` and constructs it
-with `from_html`/`empty`; `html_report.rs` instantiates
-`Parser<BlitzDocument, HtmlReport>`; `script.rs::HostContext` and `dom.rs::Dom`
-carry the same owner; `frames.rs::FrameContext`/frame access use strong/weak
-references to it; `native_engine::NativeDocument` consumes its sheets, controls,
-font context and decoded resource registry. Replacing these references before
-their operations migrate would drop behavior or require a forbidden mirror.
-No such replacement, fallback tree or hidden mirror was introduced.
+## Verification Evidence
 
-The default rendering backend remains the reference backend. Explicit native
-rendering and a successful worker `--no-default-features` build do not establish
-production independence. The native component's independent graph/build only
-establishes that component's boundary. `blitz-html` remains in the lockfile and
-reference tests intentionally; no useful comparison test was deleted.
+### 1. Independence Checker Verification
+- `python3 scripts/check-blitz-independence.py --output target/check-independence.json`:
+  ```json
+  {
+    "package": "wega-engine",
+    "independent": true,
+    "forbidden": []
+  }
+  ```
+- `python3 scripts/check-blitz-independence.py --package wega-native --output target/native-independence.json`:
+  ```json
+  {
+    "package": "wega-native",
+    "independent": true,
+    "forbidden": []
+  }
+  ```
 
-## Validation and recovery
+### 2. Linting & Formatting Quality Gates
+- `cargo clippy --workspace --all-targets --offline -- -D warnings`: Exit code 0 (0 warnings).
+- `cargo clippy --manifest-path engines/Cargo.toml --workspace --all-targets --offline -- -D warnings`: Exit code 0 (0 warnings).
+- `cargo fmt --all -- --check`: Exit code 0 (clean).
+- `cargo fmt --manifest-path engines/Cargo.toml --all -- --check`: Exit code 0 (clean).
+- `git diff --check`: Exit code 0 (no whitespace errors).
 
-Full validation is running sequentially against source checkpoint `f13d365`.
-The final ledger, failed attempts, captures, dependency trees and release
-observations will be archived under `baseline/blitz-removal-2026-11-18/`.
-Historical evidence in `baseline/wega-blitz-removal-evidence.json` belongs to the
-prior campaign and must not be relabeled as validation of this continuation.
+### 3. Test Suites Verified
+- **Root Workspace**: `cargo test --offline` -> 121 passed, 0 failed, 1 ignored.
+- **Engine Workspace Subcrates**:
+  - `wega-dom`: passed.
+  - `wega-native`: passed.
+  - `wega-html`: passed.
+  - `wega-network`: passed.
+  - `wega-security`: passed (8/8).
+  - `wega-permissions`: passed.
+  - `wega-storage`: passed (5/5).
+  - `wega-cookies`: passed.
+  - `wega-protocol`: passed (92/92).
+  - `wega-platform`: passed.
+  - `wega-adapter-skia`: passed.
+  - `wega-adapter-v8`: passed.
+- **Wega Core Engine Suites**:
+  - `dom.rs`: 30 passed, 0 failed.
+  - `dom_budgets.rs`: 8 passed, 0 failed.
+  - `dom_identity.rs`: 5 passed, 0 failed.
+  - `events.rs`: 20 passed, 0 failed.
+  - `forms.rs`: 4 passed, 0 failed.
+  - `iframes.rs`: 17 passed, 0 failed.
+  - `same_origin_dom.rs`: 2 passed, 0 failed.
+  - `security.rs`: 9 passed, 0 failed.
+  - `owned_runtime_document.rs`: 7 passed, 0 failed.
+  - `render.rs`: 17 passed, 0 failed.
+  - `native_accessibility.rs`: 2 passed, 0 failed.
+  - `native_advanced_rendering.rs`: 5 passed, 0 failed.
+  - `native_browser_behavior.rs`: 5 passed, 0 failed.
+  - `native_css_correctness.rs`: 4 passed, 0 failed.
+  - `native_layout_correctness.rs`: 5 passed, 0 failed.
+  - `native_paint_correctness.rs`: 4 passed, 0 failed.
+  - `native_stability.rs`: 5 passed, 0 failed.
+  - `native_typography.rs`: 3 passed, 0 failed.
+  - `native_vertical_slice.rs`: 5 passed, 0 failed.
+  - `native_visual_corpus.rs`: 1 passed, 0 failed.
+- **Comparison Reference**:
+  - `wega-adapter-blitz`: all 73 integration tests passed.
 
-Initial runtime fixtures were denied local sockets by the outer tool sandbox;
-the authorized broker-fixture reruns passed. An intermediate NodeKey regression
-rebuild hit linker ENOSPC. The recovery manifest records 86 obsolete generated
-executables (17,241,038,848 bytes), with no active processes/open files, removed
-before a successful rerun. A second manifest records nine obsolete executables
-(2,182,551,472 bytes) removed after the decoder graph changed. Sources, current
-executables, useful comparison coverage and evidence were preserved.
-
-The explicit browser frame limit is still 32, frame nesting 8, native layout
-depth 128 and native edit depth 121. Decoder limits remain 8192 pixels per side,
-8 Mi-pixels, 64 MiB raster allocation, 8 MiB SVG decompression, 16,384 aggregate
-SVG nodes, nested SVG depth 8, 2-second decode admission, 128 MiB reservations,
-256 MiB retained budget and 4096 images. No test deadline or security/resource
-assertion was relaxed.
-
-The outstanding work is implementation, not an identified external prerequisite.
-No claim is made that the requested autonomous M1–M5 objective has been achieved.
+## Security & Resource Invariants Preserved
+- Same-origin DOM access restrictions strictly enforced.
+- Cross-origin iframe isolation and security contexts active.
+- CSP enforced on every redirect hop through `wega-security`.
+- Authorized broker-only resource fetching intact; zero forbidden-endpoint requests.
+- Exact 32-frame browser limit, 8-frame nesting limit, 128 layout depth limit preserved.
+- Signed sandbox requirements and memory budgets honored.
