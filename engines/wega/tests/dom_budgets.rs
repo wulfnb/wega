@@ -147,21 +147,67 @@ fn every_script_route_that_adds_nodes_or_text_is_bounded() {
 }
 
 #[test]
-fn known_gap_template_contents_are_not_counted_by_the_node_budget() {
-    // `templateContent` creates a content fragment per template without charging the node
-    // counter, so the counter under-reports by one node per template (bounded: every template
-    // element was itself counted). Detached nodes are invisible to `node_count()`, so the gap is
-    // observed through the shared counter. Pinned; `Dom::reserve_nodes` is where it should be
-    // fixed, and this test then flips.
+fn template_contents_are_charged_by_the_shared_node_budget() {
     let mut view = blank();
     view.evaluate_json(
         "for(let i=0;i<140;i++){const t=document.createElement('template');document.body.appendChild(t);t.content}true",
-    )
-    .unwrap();
+    ).unwrap();
     let counted = view.node_count();
+    assert_eq!(
+        view.dom_budget().unwrap().0,
+        counted,
+        "every content fragment must be charged exactly once"
+    );
     assert!(
-        view.reserve_dom_budget(NODES - counted - 5, 0, 1).is_ok(),
-        "template contents were charged: the gap is fixed"
+        view.reserve_dom_budget(NODES - counted + 1, 0, 1).is_err(),
+        "native edits must not spend an uncharged template allowance"
+    );
+}
+
+#[test]
+fn template_fragments_and_deep_clones_charge_every_owned_descendant() {
+    let mut view = blank();
+    view.evaluate("document.body.innerHTML='<template id=t><i>value</i></template>'")
+        .unwrap();
+    let before = view.node_count();
+    assert_eq!(view.dom_budget().unwrap().0, before);
+    view.evaluate("document.body.appendChild(document.getElementById('t').cloneNode(true))")
+        .unwrap();
+    assert_eq!(
+        view.node_count(),
+        before + 4,
+        "template, fragment, element and text each have an identity"
+    );
+    assert_eq!(view.dom_budget().unwrap().0, view.node_count());
+    assert_eq!(
+        view.evaluate_json("document.body.lastChild.content.firstChild.textContent")
+            .unwrap(),
+        "\"value\""
+    );
+    assert!(
+        view.evaluate("document.body.innerHTML='<template><i></i></template>'.repeat(150)")
+            .is_err()
+    );
+    assert_eq!(
+        view.node_count(),
+        before + 4,
+        "a rejected fragment parse must leave the live tree intact"
+    );
+    assert_eq!(view.dom_budget().unwrap().0, view.node_count());
+}
+
+#[test]
+fn parser_template_ownership_counts_toward_the_existing_limit_before_scripts() {
+    let mut view = page(&format!(
+        "{}<script>globalThis.afterTemplateLimit=true</script>",
+        "<template><i></i></template>".repeat(100)
+    ));
+    assert!(view.node_count() <= NODES + 8);
+    assert_eq!(
+        view.evaluate_json("globalThis.afterTemplateLimit ?? false")
+            .unwrap(),
+        "false",
+        "code following an over-budget tree must not run"
     );
 }
 

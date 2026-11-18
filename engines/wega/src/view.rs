@@ -3116,6 +3116,8 @@ impl View {
                     });
                     if focusable {
                         let _ = self.document.borrow_mut().set_focus(target);
+                    } else {
+                        self.document.borrow_mut().clear_focus();
                     }
                     if let Some(ref native_doc) = self.native_document {
                         if let Some(b) = native_doc.borrow().find_box(target) {

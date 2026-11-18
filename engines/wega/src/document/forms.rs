@@ -39,6 +39,19 @@ impl WegaDocument {
             {
                 continue;
             }
+            let mut ancestor = node.parent();
+            let mut in_datalist = false;
+            while let Some(key) = ancestor {
+                let Some(node) = self.node(key) else { break };
+                if node.element_name().is_some_and(|n| n.local == "datalist") {
+                    in_datalist = true;
+                    break;
+                }
+                ancestor = node.parent();
+            }
+            if in_datalist {
+                continue;
+            }
             let Some(name) = node.attr("name").filter(|n| !n.is_empty()) else {
                 continue;
             };

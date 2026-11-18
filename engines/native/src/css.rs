@@ -1541,6 +1541,7 @@ td, th { display: table-cell; }
 img, button, input, textarea, select { display: inline-block; }
 button { box-sizing: border-box; padding: 2px 6px; border: 2px solid #aaaaaa; background-color: #f0f0f0; }
 input, textarea, select { box-sizing: border-box; width: 185px; height: 24px; border: 1px solid #aaaaaa; background-color: white; }
+input[type="checkbox" i], input[type="radio" i] { width: 13px; height: 13px; margin: 3px 3px 3px 4px; padding: 0; border: 0; background-color: transparent; }
 textarea { white-space: pre-wrap; height: 60px; }
 svg { display: inline-block; }
 canvas { display:inline-block; }

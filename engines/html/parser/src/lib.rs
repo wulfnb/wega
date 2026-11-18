@@ -206,6 +206,9 @@ impl<D: DocumentMutation, W: ParseReport> TreeSink for Sink<D, W> {
     ) {
     }
     fn get_template_contents(&self, target: &NodeKey) -> NodeKey {
+        if self.document.borrow().owned_fragment(*target).is_none() {
+            self.count_node();
+        }
         match self.mutate(|m| m.template_contents(*target)) {
             Ok(contents) => contents,
             Err(error) => {

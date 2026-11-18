@@ -227,6 +227,13 @@ impl<'a> BlitzNode<'a> {
 
 impl DocumentView for BlitzDocument {
     type Node<'a> = BlitzNode<'a>;
+    fn owned_fragment(&self, key: NodeKey) -> Option<NodeKey> {
+        self.0
+            .get_node(key.node_id())?
+            .element_data()?
+            .template_contents
+            .map(ToKey::key)
+    }
     #[inline]
     fn node(&self, key: NodeKey) -> Option<BlitzNode<'_>> {
         self.0.get_node(key.node_id()).map(BlitzNode)

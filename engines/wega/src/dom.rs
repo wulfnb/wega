@@ -1453,7 +1453,7 @@ impl Dom {
             },
             "cookie"=>if self.restrictions.opaque{json!("")}else{json!(self.network.cookies.get_frame(doc.url(),true,crate::cookies::SiteContext::SameSite,self.frame_id))},
             "setCookie"=>{if !self.restrictions.opaque{self.network.cookies.set_frame(doc.url(),text(1),true,crate::cookies::SiteContext::SameSite,self.frame_id);}Value::Null},
-            "templateContent"=>{let target=node_id()?;let content=wega_dom::mutate(&mut *doc).template_contents(target).map_err(Self::mutation_error)?;json!(content.as_u64().to_string())},
+            "templateContent"=>{let target=node_id()?;let creates=doc.owned_fragment(target).is_none();if creates {self.reserve_nodes(1)?;}let content=wega_dom::mutate(&mut *doc).template_contents(target).map_err(Self::mutation_error)?;if creates {self.commit_nodes(1);}json!(content.as_u64().to_string())},
             "active"=>json!(wega_dom::input::FocusState::focused(&*doc).map(|key|key.to_string())),
             "history"=>{let url=doc.url().join(text(1)).map_err(|e|e.to_string())?;if url.origin()!=doc.url().origin()||!matches!(url.scheme(),"http"|"https"){return Err("SecurityError: history URL must have the same tuple origin".into());}doc.set_base_url(url);Value::Null},
 
@@ -1507,25 +1507,25 @@ impl Dom {
                 let name=if node.is_fragment() {QualName::new(None,ns!(html),LocalName::from("div"))} else {node.qual_name().ok_or("innerHTML needs an element")?.clone()};let staging:NodeKey=wega_dom::mutate(&mut *doc).create_element(name,[]);
                 let remaining=self.limits.dom_nodes.saturating_sub(self.allocated.get()).saturating_add(2);
                 if wega_html::parse_fragment(&mut *doc,staging,remaining,text(2),&crate::html_report::HtmlReport).is_err() {let _=wega_dom::mutate(&mut *doc).remove_and_drop(staging);return Err("DOM node limit exceeded".into());}
-                let parsed=Self::subtree(&*doc,staging);
+                let parsed=Self::subtree(&*doc,staging);let parsed_count=wega_dom::owned_subtree(&*doc,staging).count();
                 // innerHTML scripts stay inert; Range fragment scripts can run on insertion.
                 if text(0)=="innerHTML" {for id in &parsed {if doc.node(*id).and_then(NodeView::element_name).is_some_and(|name|name.local=="script"){self.started_scripts.borrow_mut().insert(*id);}}}
-                if self.allocated.get().saturating_add(parsed.len())>self.limits.dom_nodes {wega_dom::mutate(&mut *doc).remove_and_drop(staging).map_err(Self::mutation_error)?;return Err("DOM node limit exceeded".into());}
+                if self.allocated.get().saturating_add(parsed_count)>self.limits.dom_nodes {wega_dom::mutate(&mut *doc).remove_and_drop(staging).map_err(Self::mutation_error)?;return Err("DOM node limit exceeded".into());}
                 let children:Vec<wega_dom::NodeKey>=doc.node(staging).map(|node|node.children().collect()).unwrap_or_default();
                 if text(0)=="contextualFragment" {
                     let mut mutation=wega_dom::mutate(&mut *doc);let fragment=mutation.create_element(QualName::new(None,ns!(html),LocalName::from("#document-fragment")),[]);
                     mutation.replace_children(fragment,&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging).map_err(Self::mutation_error)?;mutation.finish();let fragment:NodeKey=fragment;
-                    self.allocated.set(self.allocated.get()+parsed.len());
+                    self.allocated.set(self.allocated.get()+parsed_count);
                     return Ok(json!(fragment.as_u64().to_string()));
                 }
                 let old:Vec<NodeKey>=doc.node(target).map(|node|node.children().collect()).unwrap_or_default();
                 {let mut mutation=wega_dom::mutate(&mut *doc);mutation.replace_children(target,&children).map_err(Self::mutation_error)?;mutation.remove_and_drop(staging).map_err(Self::mutation_error)?;}
-                self.allocated.set(self.allocated.get()+parsed.len()-1);
+                self.allocated.set(self.allocated.get()+parsed_count-1);
                 for id in old {self.collect_detached(&mut *doc,id);}
                 Value::Null
             },
             "clone"=>{
-                let source=node_id()?;let deep=text(2)=="true";let count=if deep{Self::subtree(&*doc,source).len()}else{1};
+                let source=node_id()?;let deep=text(2)=="true";let count=if deep{wega_dom::owned_subtree(&*doc,source).count()}else{1};
                 self.reserve_nodes(count)?;
                 let mut serialized=String::new();Self::serialize(&*doc,source,&mut serialized);let bytes=serialized.len();
                 if self.used.get().saturating_add(bytes)>self.limits.dom_text_bytes{return Err("DOM text allocation budget exceeded".into());}
@@ -1885,6 +1885,14 @@ impl Dom {
         wega_dom::attribute(doc, id, name)
     }
     fn component_subtree<D: DocumentView>(&self, doc: &D, root: NodeKey) -> Vec<NodeKey> {
+        self.component_ownership_subtree(doc, root, false)
+    }
+    fn component_ownership_subtree<D: DocumentView>(
+        &self,
+        doc: &D,
+        root: NodeKey,
+        include_owned: bool,
+    ) -> Vec<NodeKey> {
         let mut nodes = Vec::new();
         let mut pending = vec![root];
         let mut seen = HashSet::new();
@@ -1897,7 +1905,9 @@ impl Dom {
             };
             nodes.push(id);
             pending.extend(node.children().rev());
-            pending.extend(doc.owned_fragment(id));
+            if include_owned {
+                pending.extend(doc.owned_fragment(id));
+            }
             if let Some(root) = self.shadows.borrow().root(id.as_u64(), true)
                 && let Ok(root) = root.root.parse()
             {
@@ -2010,7 +2020,7 @@ impl Dom {
         if self.component_connected(doc, root) || doc.node(root).is_none() {
             return;
         }
-        let nodes = self.component_subtree(doc, root);
+        let nodes = self.component_ownership_subtree(doc, root, true);
         if nodes.iter().any(|id| self.retained.borrow().contains(id)) {
             return;
         }
@@ -2064,7 +2074,16 @@ impl Dom {
         doc.form_data(form, submitter)
             .0
             .into_iter()
-            .map(|entry| (entry.name, entry.value.as_ref().to_owned()))
+            .map(|entry| {
+                (
+                    entry.name,
+                    match entry.value {
+                        blitz_traits::net::EntryValue::String(value) => value,
+                        blitz_traits::net::EntryValue::File(_)
+                        | blitz_traits::net::EntryValue::EmptyFile => String::new(),
+                    },
+                )
+            })
             .collect()
     }
     fn serialize<D: DocumentView>(doc: &D, id: NodeKey, out: &mut String) {

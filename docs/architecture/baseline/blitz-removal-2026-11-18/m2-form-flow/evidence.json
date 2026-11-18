@@ -1,0 +1,24 @@
+{
+  "base_commit": "71938eb",
+  "chrome": "Chrome/157.0.8103.79",
+  "chrome_checkbox": [
+    13,
+    13
+  ],
+  "chrome_submit_y": 22,
+  "native_before_checkbox": [
+    185,
+    24
+  ],
+  "native_before_submit_y": 84,
+  "native_after_checkbox": [
+    13,
+    13
+  ],
+  "native_after_submit_y": 28,
+  "native_after_hit_target": "go",
+  "remaining_difference": "Native text-input UA sizing and inline baseline differ from Chrome; no claim of complete default-control visual parity.",
+  "assertions_relaxed": false,
+  "before_instrumentation": "A diagnostic println was added before the original submit click and removed after capture; all assertions were retained.",
+  "heavy_tests_sequential": true
+}

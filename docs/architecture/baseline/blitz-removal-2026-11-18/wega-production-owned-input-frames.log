@@ -1,0 +1,239 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+    Finished `test` profile [unoptimized] target(s) in 41.84s
+     Running tests/custom_elements.rs (target/debug/deps/custom_elements-e5c855ce2a245c38)
+
+running 12 tests
+test component_library_template_cloning_and_nested_shadow_dom ... ok
+test custom_element_definition_and_instantiation ... ok
+test custom_element_lifecycle_connected_disconnected_and_attribute_changed ... ok
+test custom_element_observed_attributes_and_property_reflection ... ok
+test custom_element_when_defined_and_late_upgrade ... ok
+test delegates_focus_and_event_composed_path_retargeting ... ok
+test disconnected_upgrade_failure_and_definition_callbacks_are_stable ... ok
+test event_retargeting_and_composed_path_across_shadow_boundary ... ok
+test invalid_registration_does_not_read_user_callbacks_and_closed_paths_hide_internals ... ok
+test security_and_spec_conformance_fail_closed ... ok
+test shadow_root_open_and_closed_encapsulation ... ok
+test shadow_root_slot_assignment_named_default_and_flatten ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.65s
+
+     Running tests/dom_budgets.rs (target/debug/deps/dom_budgets-1b0e61dd0510adcd)
+
+running 6 tests
+test after_a_fatal_script_stop_there_is_nothing_left_to_charge ... ok
+test every_script_route_that_adds_nodes_or_text_is_bounded ... ok
+test known_gap_script_nesting_depth_has_no_budget ... ok
+test known_gap_template_contents_are_not_counted_by_the_node_budget ... ok
+test native_edit_reservations_check_nodes_text_and_depth_and_fail_without_side_effects ... ok
+test native_edits_share_the_scripts_counters ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.88s
+
+     Running tests/epoch.rs (target/debug/deps/epoch-b81073914adc6cbe)
+
+running 5 tests
+test a_failed_script_mutation_leaves_the_epoch_alone ... ok
+test layout_pending_tracks_flushes_and_mutations_without_ever_flushing ... ok
+test parsing_a_document_counts_and_a_replacement_starts_again ... ok
+test script_mutations_step_the_epoch_and_reads_do_not ... ok
+test script_no_ops_do_not_step_the_epoch ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.36s
+
+     Running tests/events.rs (target/debug/deps/events-3e6bebf9e589a99a)
+
+running 20 tests
+test a_click_targets_the_innermost_element_and_bubbles_to_ancestors ... ok
+test blur_clears_the_active_element_and_a_fresh_document_has_the_body_active ... ok
+test capture_target_bubble_order_and_phases_through_a_deep_tree ... ok
+test clicking_a_non_focusable_element_blurs_the_focused_one ... FAILED
+test detached_nodes_dispatch_to_their_own_tree_only ... ok
+test focus_transitions_have_one_order_trusted_related_targets_and_a_single_owner ... ok
+test keyboard_events_go_to_the_focused_element_else_the_body ... ok
+test native_events_for_dropped_nodes_are_ignored_without_error ... ok
+test native_events_have_the_right_cancelable_and_bubbles_flags ... ok
+test native_input_events_are_trusted_and_script_events_are_not ... ok
+test navigation_reload_and_error_pages_replace_the_document_cleanly ... ok
+test once_passive_cancelable_and_prevent_default ... ok
+test preventing_a_click_stops_its_default_action_and_preventing_keydown_stops_typing ... ok
+test replacing_a_document_mid_parse_tears_the_parser_down ... ok
+test replacing_the_document_drops_listeners_focus_and_old_state ... ok
+test shadow_dom_composed_and_non_composed_events_retarget_at_the_host ... ok
+test shadow_dom_focus_retargets_active_element_and_focusin_crosses_the_boundary ... ok
+test shadow_dom_slotted_events_pass_through_the_slot_and_closed_roots_hide_internals ... ok
+test stale_ids_removed_nodes_and_recreated_nodes_do_not_alias ... ok
+test stop_propagation_and_stop_immediate_propagation ... ok
+
+failures:
+
+---- clicking_a_non_focusable_element_blurs_the_focused_one stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+
+thread 'clicking_a_non_focusable_element_blurs_the_focused_one' (3662318) panicked at wega/tests/events.rs:377:5:
+assertion `left == right` failed
+  left: "[]"
+ right: "[\"a:blur:true:null\",\"a:focusout:true:null\"]"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    clicking_a_non_focusable_element_blurs_the_focused_one
+
+test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.49s
+
+error: test failed, to rerun pass `-p wega-engine --test events`
+     Running tests/forms.rs (target/debug/deps/forms-b5d3d408aadf4247)
+
+running 4 tests
+test clicking_submit_posts_an_urlencoded_body_and_shows_the_response ... FAILED
+test enter_in_a_single_field_submits_its_form ... ok
+test multipart_and_formdata_use_the_form_entry_list ... ok
+test submit_events_can_cancel_and_submit_skips_them ... ok
+
+failures:
+
+---- clicking_submit_posts_an_urlencoded_body_and_shows_the_response stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:62649/","line":1,"column":null,"truncated":false}
+
+thread 'clicking_submit_posts_an_urlencoded_body_and_shows_the_response' (3662691) panicked at wega/tests/forms.rs:36:5:
+assertion `left == right` failed
+  left: "null"
+ right: "\"go\""
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    clicking_submit_posts_an_urlencoded_body_and_shows_the_response
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.66s
+
+error: test failed, to rerun pass `-p wega-engine --test forms`
+     Running tests/frames.rs (target/debug/deps/frames-bc32418f17753343)
+
+running 6 tests
+test failed_or_duplicate_transfers_leave_the_callers_buffers_attached ... ok
+test frame_attributes_remain_native_dom_attributes_without_creating_a_context ... ok
+test frame_tree_and_origin_policy_isolation ... ok
+test frames_expose_only_host_backed_facades_never_documents_or_engine_internals ... ok
+test post_frame_message_dispatches_message_event_with_origin_and_target_filtering ... ok
+test window_messages_use_tasks_structured_clone_and_native_transfer ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s
+
+     Running tests/history.rs (target/debug/deps/history-1f58e3709d714d04)
+
+running 3 tests
+test browser_back_walks_pushstate_entries_before_leaving_the_document ... ok
+test clear_history_resets_session_history_entries ... ok
+test fragments_scroll_fire_hashchange_and_never_refetch ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running tests/iframes.rs (target/debug/deps/iframes-c5a4682dc26b1276)
+
+running 17 tests
+test a_runaway_child_script_is_stopped_by_its_own_watchdog_and_the_parent_survives ... ok
+test child_navigation_reload_and_stale_references ... ok
+test cross_origin_frame_loads_but_its_window_is_a_restricted_facade ... ok
+test embedding_policies_block_frames_and_keep_them_unscriptable ... ok
+test frame_limits_bound_nesting_count_and_srcdoc_size ... ok
+test frames_composite_into_the_parent_and_receive_input_instead_of_what_is_behind ... ok
+test keyboard_input_goes_only_to_the_focused_frame ... ok
+test opaque_frames_send_no_cookies_and_post_null_origin ... ok
+test parser_created_same_origin_iframe_loads_with_its_own_document_and_realm ... ok
+test post_message_checks_target_origin_and_reports_the_host_computed_origin ... ok
+test redirects_commit_the_final_principal ... ok
+test sandbox_denies_forms_popups_modals_and_top_navigation ... ok
+test script_created_frames_navigate_and_detach_independently ... ok
+test siblings_and_nested_frames_are_independent_contexts ... ok
+test srcdoc_and_about_blank_inherit_the_creators_origin_unless_sandboxed ... ok
+test wheel_scrolls_the_frame_under_the_pointer_and_not_the_parent ... ok
+test window_relationships_names_and_nested_posting ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 100.89s
+
+     Running tests/input.rs (target/debug/deps/input-576fa5b83295b261)
+
+running 8 tests
+test clicks_produce_the_full_event_sequence_and_double_clicks ... ok
+test dialogs_block_for_the_browser_answer ... ok
+test events_reach_ancestors_when_the_target_has_no_listeners ... ok
+test hover_applies_css_and_events_and_reports_the_cursor ... ok
+test native_text_input_sets_unsaved_state_but_hover_and_links_do_not ... ok
+test popups_need_a_user_gesture_and_target_blank_links_open_windows ... ok
+test unsaved_state_tracks_edits_reverts_checkboxes_resets_and_removed_controls ... ok
+test wheel_scrolls_the_container_under_the_pointer_unless_cancelled ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.27s
+
+     Running tests/native_forms_editing.rs (target/debug/deps/native_forms_editing-2809133d238721bb)
+
+running 3 tests
+test native_form_controls_variety_and_disabled_behavior ... ok
+test native_login_form_chrome_visual_and_geometry_comparison ... ok
+test native_login_form_editing_tabbing_and_submission ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.49s
+
+error: 2 targets failed:
+    `-p wega-engine --test events`
+    `-p wega-engine --test forms`

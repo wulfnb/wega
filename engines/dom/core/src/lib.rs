@@ -279,6 +279,29 @@ pub fn preorder<D: DocumentView>(doc: &D, root: NodeKey) -> impl Iterator<Item =
     })
 }
 
+/// Ownership traversal for allocation accounting, cloning and collection. Unlike
+/// DOM traversal this includes template fragments without exposing parent edges.
+pub fn owned_subtree<D: DocumentView>(
+    doc: &D,
+    root: NodeKey,
+) -> impl Iterator<Item = NodeKey> + '_ {
+    let mut pending = vec![root];
+    let mut seen = std::collections::HashSet::new();
+    std::iter::from_fn(move || {
+        while let Some(key) = pending.pop() {
+            if !seen.insert(key) {
+                continue;
+            }
+            if let Some(node) = doc.node(key) {
+                pending.extend(node.children().rev());
+                pending.extend(doc.owned_fragment(key));
+                return Some(key);
+            }
+        }
+        None
+    })
+}
+
 /// The DOM `Node` interface facts for `nodeType`, `nodeName`, `localName`, `namespaceURI`
 /// and `prefix`.
 #[derive(Debug, PartialEq, Eq)]

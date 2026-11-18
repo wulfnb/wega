@@ -2,6 +2,35 @@
 
 ## Continuation from `2d067b2` (2026-11-18)
 
+### M2 input/identity/selection integration
+
+- All production host identities, focus, Parley editor selection, key/IME default
+  actions, events, forms and synchronous geometry use Wega keys/owned state.
+  No concrete reference event/document path remains in View/V8/frame code.
+- Broader run: 82/84 passed initially; both diagnosed failures are repaired.
+  The event/form rerun passes all 24 original assertions. All 17 iframe tests
+  passed, including exact frame count/depth, origins, redirect principals,
+  sandbox restrictions and credential isolation. Native form editing/tabbing
+  passes; the opt-in Chrome test still needs the mandatory acceptance runner.
+- A paired Chrome/native reduction proves the submit miss: checkboxes inherited
+  185x24px textbox sizing, placing the button at y=84. Native checkboxes now
+  match Chrome's 13x13px defaults and the hit reaches the button. Native button
+  y=28 still differs from Chrome y=22 because textbox/baseline defaults remain
+  partial; no geometry or pixel tolerances changed.
+- Template ownership is now counted separately from observable DOM ancestry.
+  Parser fragments, lazy content fragments, deep clones and fragment insertion
+  share the existing quota. Collection follows ownership without upgrading
+  inert template contents as connected custom elements. The pinned accounting
+  gap test was replaced with stronger exact-charge/over-quota assertions, and
+  new checks prove rejected parses preserve the live tree and stop later scripts.
+- Selected host paths stay only in native submission state; JS FormData retains
+  its prior empty file-entry representation and cannot see the absolute path.
+  A production V8 regression verifies this and basename-only File metadata.
+- Verified ownership/quota suites: 15 passed; core/parser/reference oracles:
+  115 passed, 2 existing ignored. Strict library/ownership/quota-test Clippy and
+  rustfmt pass. The reference test backend-selector adaptation
+  and full all-target production validation remain M4/M5 tasks.
+
 ### M1: production owner switched
 
 - Production `View`, `Dom`, V8 `HostContext`, navigation parser and all frame

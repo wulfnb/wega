@@ -278,3 +278,37 @@ fn production_view_uses_the_owned_arena_and_never_converts_its_keys() {
     assert!(current.borrow().node(key).is_none());
     assert!(owner.borrow().node(replacement).is_none());
 }
+
+#[test]
+fn production_formdata_never_exposes_a_chosen_host_file_path() {
+    let engine =
+        wega_engine::Engine::new(Default::default(), Default::default(), Arc::new(|| {})).unwrap();
+    let mut view = engine
+        .create_view(url::Url::parse("about:blank").unwrap())
+        .unwrap();
+    view.set_html("<form id=f><input id=file type=file name=upload></form>")
+        .unwrap();
+    view.poll();
+    view.events.clear();
+    let key = view.node_id("#file").unwrap();
+    view.accessibility_action("click", key.as_u64(), None);
+    let dialog = view
+        .events
+        .iter()
+        .find_map(|event| match event {
+            wega_engine::PageEvent::FileDialog { id, .. } => Some(*id),
+            _ => None,
+        })
+        .unwrap();
+    view.file_selected(dialog, vec!["/private/tmp/wega-private-upload.txt".into()]);
+    assert_eq!(
+        view.evaluate_json("[...new FormData(document.getElementById('f'))]")
+            .unwrap(),
+        "[[\"upload\",\"\"]]"
+    );
+    assert_eq!(
+        view.evaluate_json("document.getElementById('file').files[0].name")
+            .unwrap(),
+        "\"wega-private-upload.txt\""
+    );
+}
