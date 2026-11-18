@@ -2,6 +2,36 @@
 
 ## Continuation from `2d067b2` (2026-11-18)
 
+- Lifecycle follow-up: XML overflow now explicitly aborts resources discovered
+  before the budget rejection, since the view has not installed that controller
+  yet. A production-construction test observes the actual stylesheet request's
+  signal on success/rejection and passes. New source checkpoint follows the
+  previously fully tested `2d38821`; results must retain their exact heads.
+- Full `2d38821` validation: engine 895/0/25 existing ignored, root 233/0/1,
+  native broker/security 57/0/1, both signed sandbox checks, strict Clippy/fmt and
+  three release fixtures passed. Component independence passes; browser graph
+  still fails with four reference packages. No native-only browser exists yet.
+- Explicit complete Chrome/WPT run: 44 passed, 3 failed; pinned DOM WPT
+  1685/1685. Root scrollbar pixels/gutters differ from current Chrome. The common
+  scrolling pin differs by exactly 6300 pixels (15x420 strip), auto-minimum pin
+  by 9000 (600x15 strip), and legacy scrolling also has 15px geometry displacement.
+  Isolated Chrome reports client width 585 for inner width 600, in dark and light
+  emulation. All tolerances and assertions remain unchanged; no scrollbar-hiding
+  flags or fixture edits were introduced. The gate now runs all independent
+  suites with `--no-fail-fast` and still returns failure.
+- Fresh native and real Chrome captures exist for example.com, CERN, Rust and
+  rustdoc at 800x600. All load; visual/font/decoration/toolbar/scrollbar gaps remain.
+  Second/third disk manifests preserve nine old integration and twelve old
+  engine executables removed only after inventory and open-file checks.
+
+- Current source checkpoint: `2d38821` (owned production image decoders).
+- Full sequential validation is running via
+  `/private/tmp/wega-owner-validation-20261118.py`; command ledger, active command
+  and completion records are under
+  `/private/tmp/wega-blitz-removal-20261118-validation/`. Progress log:
+  `/private/tmp/wega-owner-validation-20261118.log`. Resume this exact run/head
+  before repeating any passing checks. No active source edits during validation.
+
 - Verified clean `feature/dom-rounds-9-12` at the requested starting commit.
 - M1 in progress: production blank/one-shot HTML and XML constructors now use
   Wega's generic mutation sink. XML preserves the existing xml5ever namespace,

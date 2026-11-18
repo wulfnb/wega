@@ -750,10 +750,16 @@ impl View {
             navigation_provider: Some(Arc::new(Navigation(sender, self.network.wake.clone()))),
         };
         let document = Rc::new(RefCell::new(BlitzDocument::empty(setup)));
-        if xml {
-            wega_html::parse_xml(document.clone(), html, self.limits.dom_nodes, HtmlReport)
-                .map_err(|_| "XML document exceeded the DOM node limit".to_string())?;
-        }
+        let abort = if xml {
+            crate::html_report::parse_xml_document(
+                document.clone(),
+                html,
+                self.limits.dom_nodes,
+                abort,
+            )?
+        } else {
+            abort
+        };
         // A new document tears down every child browsing context of the old one.
         self.frames = Default::default();
         self.frame_shared = Default::default();

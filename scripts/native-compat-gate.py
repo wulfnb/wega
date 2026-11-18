@@ -23,7 +23,9 @@ def main():
     env = dict(os.environ, WEGA_CHROME_BIN=str(chrome), WEGA_NATIVE_PINNED='1',
                WEGA_TEST_BROKER='1', WEGA_RENDER_BACKEND='native',
                WEGA_NATIVE_EVIDENCE_DIR=str(output))
-    command = ['cargo', 'test', '--manifest-path', 'engines/Cargo.toml',
+    # Exercise every independent suite even when one fails; Cargo's final exit
+    # remains nonzero and no fixture assertion or comparison tolerance changes.
+    command = ['cargo', 'test', '--no-fail-fast', '--manifest-path', 'engines/Cargo.toml',
                '-p', 'wega-engine', '--offline']
     for suite in ['native_public_layout', 'native_chrome_compatibility', 'native_graphics_acceptance',
                   'native_forms_editing', 'native_css_layout_acceptance',
