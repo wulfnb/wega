@@ -251,9 +251,89 @@ impl Policy {
                 }
             }
         }
+        // Mixed Content Level 2: Block active mixed content from HTTPS initiator
+        let origin_is_https = request.origin.starts_with("https://")
+            || request
+                .initiator
+                .as_ref()
+                .is_some_and(|i| i.scheme() == "https");
+        if origin_is_https && url.scheme() == "http" {
+            let active = matches!(
+                request.destination,
+                ResourceDestination::Script
+                    | ResourceDestination::Module
+                    | ResourceDestination::Style
+                    | ResourceDestination::Iframe
+                    | ResourceDestination::Fetch
+                    | ResourceDestination::Xhr
+                    | ResourceDestination::WebSocket
+            );
+            if active {
+                return Err(format!(
+                    "Active mixed content blocked: {:?} request to '{}' from HTTPS initiator",
+                    request.destination, url
+                ));
+            }
+        }
         Ok(())
     }
 }
+
+pub fn compute_referrer(
+    referrer_url: &Url,
+    target_url: &Url,
+    policy: &str,
+) -> Option<String> {
+    let policy = policy.trim().to_ascii_lowercase();
+    let is_downgrade = referrer_url.scheme() == "https" && target_url.scheme() == "http";
+    let is_same_origin = referrer_url.origin() == target_url.origin();
+    let mut clean_url = referrer_url.clone();
+    clean_url.set_fragment(None);
+    let _ = clean_url.set_username("");
+    let _ = clean_url.set_password(None);
+    let clean_str = clean_url.to_string();
+    let mut origin_str = referrer_url.origin().ascii_serialization();
+    if !origin_str.ends_with('/') {
+        origin_str.push('/');
+    }
+
+    match policy.as_str() {
+        "no-referrer" => None,
+        "no-referrer-when-downgrade" => {
+            if is_downgrade { None } else { Some(clean_str) }
+        }
+        "same-origin" => {
+            if is_same_origin { Some(clean_str) } else { None }
+        }
+        "origin" => Some(origin_str),
+        "strict-origin" => {
+            if is_downgrade { None } else { Some(origin_str) }
+        }
+        "origin-when-cross-origin" => {
+            if is_same_origin { Some(clean_str) } else { Some(origin_str) }
+        }
+        "strict-origin-when-cross-origin" | "" => {
+            if is_same_origin {
+                Some(clean_str)
+            } else if is_downgrade {
+                None
+            } else {
+                Some(origin_str)
+            }
+        }
+        "unsafe-url" => Some(clean_str),
+        _ => {
+            if is_same_origin {
+                Some(clean_str)
+            } else if is_downgrade {
+                None
+            } else {
+                Some(origin_str)
+            }
+        }
+    }
+}
+
 fn default_mode() -> String {
     "cors".into()
 }
@@ -505,7 +585,7 @@ impl LocalClient {
             .timeout(Duration::from_secs(15))
             .connect_timeout(Duration::from_secs(5))
             .pool_max_idle_per_host(2)
-            .user_agent("Wega/0.1 (Blitz/V8)")
+            .user_agent("Wega/0.1 (Native/V8)")
             .build()
             .map(Self)
             .map_err(|e| e.to_string())
@@ -618,7 +698,7 @@ impl LocalClient {
                     .timeout(Duration::from_secs(15))
                     .connect_timeout(Duration::from_secs(5))
                     .resolve_to_addrs(url.host_str().ok_or("Missing request host")?, &addresses)
-                    .user_agent("Wega/0.1 (Blitz/V8)")
+                    .user_agent("Wega/0.1 (Native/V8)")
                     .build()
                     .map_err(|error| error.to_string())?;
                 &pinned
@@ -707,12 +787,26 @@ impl LocalClient {
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .permits_request(request, &next)?;
                     if next.origin() != url.origin() {
-                        headers.retain(|(name, _)| !name.eq_ignore_ascii_case("authorization"));
+                        headers.retain(|(name, _)| {
+                            !name.eq_ignore_ascii_case("authorization")
+                                && !name.eq_ignore_ascii_case("proxy-authorization")
+                                && !name.eq_ignore_ascii_case("cookie")
+                        });
+                        if !matches!(request.mode.as_str(), "cors") {
+                            headers.retain(|(name, _)| !name.eq_ignore_ascii_case("origin"));
+                        }
                     }
                     if status == 303 || ((status == 301 || status == 302) && method == "POST") {
-                        method = "GET".into();
+                        if status == 303 && method != "HEAD" {
+                            method = "GET".into();
+                        } else if status == 301 || status == 302 {
+                            method = "GET".into();
+                        }
                         body.clear();
-                        headers.retain(|(name, _)| !name.eq_ignore_ascii_case("content-type"));
+                        headers.retain(|(name, _)| {
+                            !name.eq_ignore_ascii_case("content-type")
+                                && !name.eq_ignore_ascii_case("content-length")
+                        });
                     }
                     url = next;
                     continue;
@@ -739,10 +833,27 @@ impl LocalClient {
             }
             let mut bytes = Vec::new();
             if !attachment {
+                let has_encoding = response_headers.iter().any(|(name, val)| {
+                    name.eq_ignore_ascii_case("content-encoding")
+                        && !val.eq_ignore_ascii_case("identity")
+                });
+                let content_len = response.content_length();
                 response
                     .take(request.limit as u64 + 1)
                     .read_to_end(&mut bytes)
                     .map_err(|error| error.to_string())?;
+                if has_encoding
+                    && let Some(compressed_len) = content_len
+                    && compressed_len > 0
+                {
+                    let ratio = bytes.len() as u64 / compressed_len;
+                    if ratio > 100 && bytes.len() > 512 * 1024 {
+                        return Err(
+                            "Decompression bomb detected: expansion ratio exceeded safety limit"
+                                .into(),
+                        );
+                    }
+                }
             }
             if bytes.len() > request.limit {
                 return Err("Response exceeds its size limit".into());

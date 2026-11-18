@@ -325,11 +325,98 @@ impl Csp {
             .iter()
             .any(|directive| self.allows_url(directive, url, document, None))
     }
+    pub fn report_uri(&self) -> Option<String> {
+        self.policies.iter().find_map(|p| {
+            p.get("report-uri").and_then(|uris| uris.first().cloned())
+        })
+    }
+
+    pub fn build_violation_report(
+        &self,
+        document_uri: &str,
+        referrer: &str,
+        violated_directive: &str,
+        blocked_uri: &str,
+    ) -> Option<CspViolationReport> {
+        let _uri = self.report_uri()?;
+        let original_policy = self
+            .policies
+            .iter()
+            .map(|p| {
+                p.directives
+                    .iter()
+                    .map(|(d, vals)| {
+                        if vals.is_empty() {
+                            d.clone()
+                        } else {
+                            format!("{d} {}", vals.join(" "))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        Some(CspViolationReport {
+            report: CspReportBody {
+                document_uri: document_uri.to_string(),
+                referrer: referrer.to_string(),
+                violated_directive: violated_directive.to_string(),
+                effective_directive: violated_directive.to_string(),
+                original_policy,
+                blocked_uri: blocked_uri.to_string(),
+                status_code: 200,
+            },
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CspViolationReport {
+    #[serde(rename = "csp-report")]
+    pub report: CspReportBody,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CspReportBody {
+    #[serde(rename = "document-uri")]
+    pub document_uri: String,
+    #[serde(rename = "referrer")]
+    pub referrer: String,
+    #[serde(rename = "violated-directive")]
+    pub violated_directive: String,
+    #[serde(rename = "effective-directive")]
+    pub effective_directive: String,
+    #[serde(rename = "original-policy")]
+    pub original_policy: String,
+    #[serde(rename = "blocked-uri")]
+    pub blocked_uri: String,
+    #[serde(rename = "status-code")]
+    pub status_code: u16,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn csp_violation_reporting_and_report_uri() {
+        let mut csp = Csp::default();
+        csp.add("default-src 'self'; report-uri /csp-report");
+        assert_eq!(csp.report_uri(), Some("/csp-report".into()));
+        let report = csp.build_violation_report(
+            "https://app.example/page",
+            "https://app.example/",
+            "script-src",
+            "https://evil.example/malicious.js",
+        ).expect("report generated");
+        assert_eq!(report.report.document_uri, "https://app.example/page");
+        assert_eq!(report.report.violated_directive, "script-src");
+        assert_eq!(report.report.blocked_uri, "https://evil.example/malicious.js");
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("csp-report"));
+        assert!(json.contains("violated-directive"));
+    }
     fn url(text: &str) -> Url {
         Url::parse(text).unwrap()
     }

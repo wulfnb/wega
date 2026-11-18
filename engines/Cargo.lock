@@ -6994,6 +6994,8 @@ dependencies = [
 name = "wega-security"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "sha2 0.11.1",
  "url",
 ]
