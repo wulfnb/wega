@@ -508,18 +508,6 @@ impl<D: NativeResources> NativeDocument<D> {
         let start = std::time::Instant::now();
         let mut scene = anyrender::Scene::new();
         use anyrender::PaintScene;
-        scene.fill(
-            peniko::Fill::NonZero,
-            kurbo::Affine::IDENTITY,
-            peniko::Color::WHITE,
-            None,
-            &kurbo::Rect::new(
-                0.0,
-                0.0,
-                viewport.width_px as f64,
-                viewport.height_px as f64,
-            ),
-        );
         // CSS canvas background propagates from the root, or the body when
         // the root is transparent, including otherwise empty child documents.
         let backdrop = {

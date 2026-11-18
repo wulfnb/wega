@@ -1,16 +1,18 @@
 use std::{cell::RefCell, rc::Rc};
-use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
 use wega_dom::DocumentView;
-use wega_engine::native_engine::*;
-fn document(html: &str) -> NativeDocument {
-    let mut d = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+use wega_engine::{
+    document::{DocumentSetup, WegaDocument},
+    native_engine::*,
+};
+fn document(html: &str) -> NativeDocument<WegaDocument> {
+    let mut d = NativeDocument::new(Rc::new(RefCell::new(WegaDocument::from_html(
         html,
         DocumentSetup::default(),
     ))));
     d.flush_layout();
     d
 }
-fn rect(d: &NativeDocument, id: &str) -> wega_dom::layout::Rect {
+fn rect(d: &NativeDocument<WegaDocument>, id: &str) -> wega_dom::layout::Rect {
     let key = d.doc.borrow().element_by_id(id).unwrap();
     d.bounding_rect(key).unwrap()
 }

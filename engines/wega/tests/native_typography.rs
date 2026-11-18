@@ -1,11 +1,13 @@
 use anyrender::{ImageRenderer, PaintScene};
 use std::{cell::RefCell, rc::Rc};
-use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
 use wega_dom::DocumentView;
-use wega_engine::native_engine::*;
+use wega_engine::{
+    document::{DocumentSetup, WegaDocument},
+    native_engine::*,
+};
 
-fn document(html: &str) -> NativeDocument {
-    let mut doc = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+fn document(html: &str) -> NativeDocument<WegaDocument> {
+    let mut doc = NativeDocument::new(Rc::new(RefCell::new(WegaDocument::from_html(
         html,
         DocumentSetup::default(),
     ))));

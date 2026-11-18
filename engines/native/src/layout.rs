@@ -558,6 +558,8 @@ fn build_box_node<D: DocumentView>(
             if text.is_empty() {
                 return None;
             }
+            let mut style = style;
+            style.position = Position::Static;
             let mut text_box = LayoutBox::new(Some(node_key), BoxType::Text, style);
             text_box.text_content = Some(text.to_string());
             Some(Box::new(text_box))
@@ -1269,7 +1271,7 @@ fn intrinsic_width(b: &LayoutBox, min: bool) -> f64 {
     // context. Measuring that atom before its own layout reads a zero/stale
     // width; measure its contents for shrink-to-fit instead.
     let runs = super::text::shape_inline(
-        if b.box_type == BoxType::InlineBlock {
+        if b.box_type != BoxType::Text && !b.children.is_empty() {
             &b.children
         } else {
             std::slice::from_ref(b)

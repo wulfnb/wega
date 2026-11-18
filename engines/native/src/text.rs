@@ -163,10 +163,12 @@ fn append_inline(
     owner: Option<NodeKey>,
     alpha: f32,
 ) {
-    if matches!(
-        b.style.position,
-        super::css::Position::Absolute | super::css::Position::Fixed
-    ) {
+    if b.box_type != super::layout::BoxType::Text
+        && matches!(
+            b.style.position,
+            super::css::Position::Absolute | super::css::Position::Fixed
+        )
+    {
         return;
     }
     if b.box_type == super::layout::BoxType::InlineBlock

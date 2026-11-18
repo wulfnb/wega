@@ -1,20 +1,22 @@
 use anyrender::{ImageRenderer, PaintScene};
 use std::{cell::RefCell, rc::Rc};
-use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
 use wega_dom::{
     DocumentView, NodeView,
     layout::{Point, ViewportConfig},
 };
-use wega_engine::native_engine::*;
-fn document(html: &str) -> NativeDocument {
-    let mut d = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+use wega_engine::{
+    document::{DocumentSetup, WegaDocument},
+    native_engine::*,
+};
+fn document(html: &str) -> NativeDocument<WegaDocument> {
+    let mut d = NativeDocument::new(Rc::new(RefCell::new(WegaDocument::from_html(
         html,
         DocumentSetup::default(),
     ))));
     d.flush_layout();
     d
 }
-fn render(d: &mut NativeDocument) -> Vec<u8> {
+fn render(d: &mut NativeDocument<WegaDocument>) -> Vec<u8> {
     let scene = d.record_scene(&ViewportConfig {
         width_px: 200,
         height_px: 200,
@@ -30,12 +32,12 @@ fn render(d: &mut NativeDocument) -> Vec<u8> {
     );
     p
 }
-fn pixel(p: &[u8], x: usize, y: usize) -> [u8; 4] {
-    p[(y * 200 + x) * 4..(y * 200 + x) * 4 + 4]
+fn pixel(bytesbytes: &[u8], x: usize, y: usize) -> [u8; 4] {
+    bytesbytes[(y * 200 + x) * 4..(y * 200 + x) * 4 + 4]
         .try_into()
         .unwrap()
 }
-fn hit(d: &NativeDocument, x: f64, y: f64) -> String {
+fn hit(d: &NativeDocument<WegaDocument>, x: f64, y: f64) -> String {
     let Some(k) = d.element_at(Point { x, y }) else {
         return String::new();
     };

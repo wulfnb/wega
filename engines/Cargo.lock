@@ -492,7 +492,6 @@ dependencies = [
 name = "blitz-dom"
 version = "0.3.0-beta.4"
 dependencies = [
- "accesskit",
  "app_units",
  "atomic_refcell",
  "bitflags 2.13.2",
@@ -517,7 +516,6 @@ dependencies = [
  "percent-encoding",
  "rayon",
  "selectors",
- "serde_json",
  "skrifa",
  "slotmap",
  "smallvec",
@@ -534,7 +532,6 @@ dependencies = [
  "usvg",
  "web-time",
  "wega-native",
- "wuff",
 ]
 
 [[package]]
@@ -6868,8 +6865,6 @@ dependencies = [
  "anyrender",
  "anyrender_skia",
  "base64 0.23.1",
- "blitz-dom",
- "blitz-traits",
  "cssparser 0.38.0",
  "data-url",
  "deno_core",

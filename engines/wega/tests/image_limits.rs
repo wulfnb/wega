@@ -1,7 +1,7 @@
 //! Malformed and oversized SVG inputs must fail before native expansion.
 #[test]
 fn svg_limits_reject_dimensions_nodes_and_input_without_poisoning_later_images() {
-    use blitz_dom::node::SvgImageData;
+    use wega_native::images::SvgImageData;
     let parse_svg_image = |bytes: &[u8]| SvgImageData::from_data(bytes, &Default::default());
     let oversized = br#"<svg xmlns="http://www.w3.org/2000/svg" width="9000" height="20"/>"#;
     assert!(parse_svg_image(oversized).is_err());

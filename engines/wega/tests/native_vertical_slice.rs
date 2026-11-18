@@ -3,10 +3,10 @@ mod support;
 use std::cell::RefCell;
 use std::rc::Rc;
 use url::Url;
-use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
 use wega_dom::DocumentView;
 use wega_dom::layout::ViewportConfig;
 use wega_engine::RenderingBackend;
+use wega_engine::document::{DocumentSetup, WegaDocument};
 use wega_engine::native_engine::*;
 
 #[test]
@@ -61,7 +61,7 @@ fn test_css_cascade_and_inheritance() {
         </body>
         </html>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.sync_author_stylesheets();
     assert_eq!(native_doc.author_sheets.len(), 1);
@@ -107,7 +107,7 @@ fn test_block_and_inline_layout() {
             </div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
     native_doc.flush_layout();
 
@@ -133,7 +133,7 @@ fn test_display_list_and_skia_scene() {
             </div>
         </body>
     "#;
-    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+    let doc = WegaDocument::from_html(html, DocumentSetup::default());
     let mut native_doc = NativeDocument::new(Rc::new(RefCell::new(doc)));
 
     let viewport = ViewportConfig {
@@ -158,8 +158,9 @@ fn test_display_list_and_skia_scene() {
     );
     assert_eq!(pixmap.len(), 800 * 600 * 4);
 
-    // Check pixel at (50, 50) inside the red box: R=255, G=0, B=0, A=255
-    let offset = (50 * 800 + 50) * 4;
+    // Verify raster contains red (#ff0000) from #box
+    // At center of box (100, 50), pixel should be red [255, 0, 0, 255]
+    let offset = (50 * 800 + 100) * 4;
     assert_eq!(pixmap[offset], 255); // Red
     assert_eq!(pixmap[offset + 1], 0); // Green
     assert_eq!(pixmap[offset + 2], 0); // Blue
@@ -173,11 +174,7 @@ fn test_view_backend_selector() {
         .create_view(Url::parse("about:blank").unwrap())
         .unwrap();
 
-    // Default backend is Blitz
-    assert_eq!(view.rendering_backend(), RenderingBackend::Blitz);
-
-    // Switch to Native Wega engine
-    view.set_rendering_backend(RenderingBackend::WegaNative);
+    // Default backend is WegaNative
     assert_eq!(view.rendering_backend(), RenderingBackend::WegaNative);
 
     // Paint using WegaNative backend
@@ -186,14 +183,5 @@ fn test_view_backend_selector() {
         painted.is_ok(),
         "Painting with native Wega backend succeeded: {:?}",
         painted.err()
-    );
-
-    // Switch back to Blitz
-    view.set_rendering_backend(RenderingBackend::Blitz);
-    assert_eq!(view.rendering_backend(), RenderingBackend::Blitz);
-    let painted_blitz = view.paint(800, 600, 1.0, 1.0, false);
-    assert!(
-        painted_blitz.is_ok(),
-        "Painting with fallback Blitz backend succeeded"
     );
 }

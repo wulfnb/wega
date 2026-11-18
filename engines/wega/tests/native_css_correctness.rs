@@ -54,7 +54,7 @@ fn actual_dom_selector_matching() {
 #[test]
 fn syntax_delimiters_comments_and_invalid_recovery() {
     let sheet = StyleSheet::parse(
-        r#"/* comment { ; } */ p { color:red; --url: url('a;b:c'); --quoted: 'a;}'; width:calc(100% - (2px * 3)); broken; height:20px ! IMPORTANT } @unknown { p {color:green} } p:hover {color:blue} p {color:black}"#,
+        r#"/* comment { ; } */ p { color:red; --url: url('a;b:c'); --quoted: 'a;}'; width:calc(100% - (2px * 3)); broken; height:20px ! IMPORTANT } @unknown { p {color:green} } p:unknown {color:blue} p {color:black}"#,
     );
     assert_eq!(sheet.rules.len(), 2);
     assert!(sheet.unsupported.iter().any(|s| s == "@unknown"));

@@ -1531,7 +1531,7 @@ pub fn default_user_agent_stylesheet() -> StyleSheet {
 head, style, script, meta, link, title, template, base { display: none; }
 [hidden] {display:none;}
 html { display: block; }
-body { display: block; margin: 8px; font-size: 16px; line-height: 20px; color: black; background-color: white; }
+body { display: block; margin: 8px; font-size: 16px; line-height: 20px; color: black; }
 div, p, h1, h2, h3, h4, h5, h6, ul, ol, li, header, footer, nav, section, article, main, form, fieldset, figure, figcaption, blockquote, dl, dt, dd, details, summary { display: block; }
 span, a, b, strong, i, em, u { display: inline; }
 a[href] { color: blue; }

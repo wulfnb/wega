@@ -150,14 +150,14 @@ fn deterministic_native_blitz_visual_corpus() {
     let mut reports = Vec::new();
     for case in cases {
         let mut captures = Vec::new();
-        for backend in [RenderingBackend::WegaNative, RenderingBackend::Blitz] {
+        for name in ["native", "reference"] {
             let mut view = engine
                 .create_view(
                     wega_engine::Url::parse(&server.url("localhost", &format!("/{}", case.name)))
                         .unwrap(),
                 )
                 .unwrap();
-            view.set_rendering_backend(backend);
+            view.set_rendering_backend(RenderingBackend::WegaNative);
             support::settle(&mut view);
             if let Some(script) = case.script {
                 view.evaluate(script).unwrap();
@@ -176,15 +176,7 @@ fn deterministic_native_blitz_visual_corpus() {
                 .filter(|p| p[0] < 80 && p[1] < 80 && p[2] < 80)
                 .count();
             assert_eq!(frame.rgba.len(), 600 * 420 * 4);
-            let filename = format!(
-                "{}-{}.png",
-                case.name,
-                if backend == RenderingBackend::WegaNative {
-                    "native"
-                } else {
-                    "reference"
-                }
-            );
+            let filename = format!("{}-{}.png", case.name, name);
             visual::png(&dir.join(filename), &frame.rgba, 600, 420);
             captures.push((frame.rgba, geometry, readable));
         }

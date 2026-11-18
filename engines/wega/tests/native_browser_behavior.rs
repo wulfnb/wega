@@ -131,12 +131,11 @@ fn iframe_real_child_content_clipping_transform_and_input() {
 }
 
 #[test]
-fn backend_switch_restores_reference_layout_and_input() {
+fn native_rendering_layout_and_input() {
     let (_server, mut view) = native_page(
         "<body style='margin:0'><div id=box style='width:80px;height:60px;background:red'></div></body>",
     );
-    view.set_rendering_backend(RenderingBackend::Blitz);
-    assert!(view.native_document.is_none());
+    assert!(view.native_document.is_some());
     let frame = view.paint(300, 200, 1.0, 1.0, false).unwrap();
     assert_eq!(
         &frame.rgba[(30 * 300 + 30) * 4..(30 * 300 + 30) * 4 + 4],
@@ -148,8 +147,4 @@ fn backend_switch_restores_reference_layout_and_input() {
     .unwrap();
     view.click(30.0, 30.0);
     assert_eq!(view.evaluate_json("count").unwrap(), "1");
-    view.set_rendering_backend(RenderingBackend::WegaNative);
-    view.paint(300, 200, 1.0, 1.0, false).unwrap();
-    view.click(30.0, 30.0);
-    assert_eq!(view.evaluate_json("count").unwrap(), "2");
 }
