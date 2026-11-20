@@ -28,6 +28,14 @@ pub enum DisplayItem {
         color: Color,
         width: f64,
     },
+    /// A linear gradient filling `rect` between two points.
+    LinearGradient {
+        rect: Rect,
+        start: (f64, f64),
+        end: (f64, f64),
+        stops: Vec<(f32, Color)>,
+        border_radius: f64,
+    },
     BoxShadow {
         rect: Rect,
         offset_x: f64,
@@ -35,6 +43,9 @@ pub enum DisplayItem {
         blur_radius: f64,
         color: Color,
         border_radius: f64,
+        /// The casting box's border box: outer shadows are never painted
+        /// beneath it, even when its background is transparent.
+        clip_out: Rect,
     },
     Image {
         rect: Rect,
@@ -132,6 +143,30 @@ impl DisplayList {
                     None,
                     &kurbo::RoundedRect::from_rect(kr(*rect), *border_radius),
                 ),
+                DisplayItem::LinearGradient {
+                    rect,
+                    start,
+                    end,
+                    stops,
+                    border_radius,
+                } => {
+                    let stops: Vec<peniko::ColorStop> = stops
+                        .iter()
+                        .map(|(offset, c)| peniko::ColorStop::from((*offset, color(*c))))
+                        .collect();
+                    let gradient = peniko::Gradient::new_linear(
+                        kurbo::Point::new(start.0, start.1),
+                        kurbo::Point::new(end.0, end.1),
+                    )
+                    .with_stops(stops.as_slice());
+                    scene.fill(
+                        peniko::Fill::NonZero,
+                        current,
+                        &gradient,
+                        None,
+                        &kurbo::RoundedRect::from_rect(kr(*rect), *border_radius),
+                    );
+                }
                 DisplayItem::StrokeRect {
                     rect,
                     color: c,
@@ -170,7 +205,21 @@ impl DisplayList {
                     blur_radius,
                     color: c,
                     border_radius,
+                    clip_out,
                 } => {
+                    // Clip to everything outside the border box (even-odd).
+                    let reach = blur_radius.max(0.0) * 2.0 + offset_x.abs() + offset_y.abs() + 1.0;
+                    let mut clip = kurbo::Rect::new(
+                        rect.x - reach,
+                        rect.y - reach,
+                        rect.x + rect.width + reach,
+                        rect.y + rect.height + reach,
+                    )
+                    .to_path(0.1);
+                    clip.extend(
+                        kurbo::RoundedRect::from_rect(kr(*clip_out), *border_radius).to_path(0.1),
+                    );
+                    scene.push_clip_layer(peniko::Fill::EvenOdd, current, &clip);
                     // CSS blur radius is twice the Gaussian standard deviation.
                     scene.draw_box_shadow(
                         current * Affine::translate((*offset_x, *offset_y)),
@@ -179,6 +228,7 @@ impl DisplayList {
                         *border_radius,
                         blur_radius.max(0.0) / 2.0,
                     );
+                    scene.pop_layer();
                 }
                 DisplayItem::Image { rect, image } => {
                     let brush = peniko::ImageBrush::new(image.clone());
@@ -395,7 +445,7 @@ fn push_contents(b: &LayoutBox, list: &mut DisplayList, s: f64) {
     if clipped(b) {
         list.items.push(DisplayItem::PushClip {
             rect: scaled(b.padding_box(), s),
-            border_radius: (b.style.border_radius - b.border.left.max(b.border.top)).max(0.0) * s,
+            border_radius: (b.radius() - b.border.left.max(b.border.top)).max(0.0) * s,
         });
     }
     list.items.push(DisplayItem::PushTransform {
@@ -419,7 +469,7 @@ fn decorations(b: &LayoutBox, list: &mut DisplayList, s: f64) {
     };
     for rect in rects {
         let rect = scaled(*rect, s);
-        let radius = b.style.border_radius * s;
+        let radius = b.radius() * s;
         if let Some(k) = b.node {
             list.items.push(DisplayItem::HitRegion {
                 node: k,
@@ -444,12 +494,28 @@ fn decorations(b: &LayoutBox, list: &mut DisplayList, s: f64) {
                 blur_radius: shadow.blur_radius * s,
                 color: shadow.color,
                 border_radius: radius,
+                clip_out: rect,
             });
         }
         if b.style.background_color.a > 0 {
             list.items.push(DisplayItem::FillRect {
                 rect,
                 color: b.style.background_color,
+                border_radius: radius,
+            });
+        }
+        if let Some(gradient) = &b.style.background_gradient {
+            // CSS gradient line: through the center at `angle`, long enough
+            // that the corners reach the 0% and 100% stops.
+            let a = (gradient.angle as f64).to_radians();
+            let (dx, dy) = (a.sin(), -a.cos());
+            let half = (rect.width * dx.abs() + rect.height * dy.abs()) / 2.0;
+            let (cx, cy) = (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+            list.items.push(DisplayItem::LinearGradient {
+                rect,
+                start: (cx - dx * half, cy - dy * half),
+                end: (cx + dx * half, cy + dy * half),
+                stops: gradient.resolved_stops(),
                 border_radius: radius,
             });
         }
@@ -603,7 +669,7 @@ fn content(
         if needs_clip {
             list.items.push(DisplayItem::PushClip {
                 rect: scaled(c, s),
-                border_radius: b.style.border_radius * s,
+                border_radius: b.radius() * s,
             });
         }
         list.items.push(DisplayItem::Image {
@@ -962,7 +1028,7 @@ fn background(b: &LayoutBox, list: &mut DisplayList, s: f64) {
     };
     list.items.push(DisplayItem::PushClip {
         rect: scaled(b.border_box, s),
-        border_radius: b.style.border_radius * s,
+        border_radius: b.radius() * s,
     });
     let mut budget = 4096;
     for row in 0..ny {

@@ -25,6 +25,12 @@ pub fn length(value: Length) -> String {
         Length::Calc([px, percent, em, rem]) => {
             format!("calc({px}px + {percent}% + {em}em + {rem}rem)")
         }
+        Length::Clamp(terms) => {
+            let [lo, value, hi] = terms.map(|[px, percent, em, rem]| {
+                format!("calc({px}px + {percent}% + {em}em + {rem}rem)")
+            });
+            format!("clamp({lo}, {value}, {hi})")
+        }
     }
 }
 pub fn scalar(style: &ComputedStyle, property: &str) -> Option<String> {
@@ -33,6 +39,17 @@ pub fn scalar(style: &ComputedStyle, property: &str) -> Option<String> {
             Display::InlineBlock => "inline-block".into(),
             Display::TableRow => "table-row".into(),
             Display::TableCell => "table-cell".into(),
+            Display::InlineFlex => "inline-flex".into(),
+            Display::InlineGrid => "inline-grid".into(),
+            Display::InlineTable => "inline-table".into(),
+            Display::ListItem => "list-item".into(),
+            Display::FlowRoot => "flow-root".into(),
+            Display::TableRowGroup => "table-row-group".into(),
+            Display::TableHeaderGroup => "table-header-group".into(),
+            Display::TableFooterGroup => "table-footer-group".into(),
+            Display::TableCaption => "table-caption".into(),
+            Display::TableColumn => "table-column".into(),
+            Display::TableColumnGroup => "table-column-group".into(),
             value => format!("{value:?}").to_ascii_lowercase(),
         },
         "position" => format!("{:?}", style.position).to_ascii_lowercase(),

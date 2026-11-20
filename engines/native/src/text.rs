@@ -171,11 +171,7 @@ fn append_inline(
     {
         return;
     }
-    if b.box_type == super::layout::BoxType::InlineBlock
-        || b.form_state.is_some()
-        || b.image.is_some()
-        || b.svg.is_some()
-    {
+    if b.is_atomic_inline() || b.form_state.is_some() || b.image.is_some() || b.svg.is_some() {
         let id = b.node.map(|k| k.as_u64()).unwrap_or(0);
         let vertical_align = match b.style.vertical_align {
             super::css::VerticalAlign::Baseline => parley::VerticalAlign::default(),
@@ -211,7 +207,7 @@ fn append_inline(
             width: (b.border_box.width + b.margin.left + b.margin.right) as f32,
             height: (b.border_box.height + b.margin.top + b.margin.bottom) as f32,
             kind: parley::InlineBoxKind::InFlow,
-            baseline: if b.box_type == super::layout::BoxType::InlineBlock
+            baseline: if b.is_atomic_inline()
                 && b.style.overflow_x == super::css::Overflow::Visible
                 && b.style.overflow_y == super::css::Overflow::Visible
             {
@@ -240,14 +236,53 @@ fn append_inline(
         style.white_space_collapse = parley::WhiteSpaceCollapse::Preserve;
     }
     builder.push_style_span(style);
+    // Horizontal margin, border and padding of an inline element occupy line
+    // space at its start and end; reserve it with empty spacer boxes.
+    let edges = if b.box_type == super::layout::BoxType::Inline {
+        let (fs, rfs) = (b.style.font_size, b.style.root_font_size);
+        let side = |m: &super::css::Length, p: &super::css::Length, border: f64| {
+            (m.resolve(0.0, fs, rfs) + p.resolve(0.0, fs, rfs) + border) as f32
+        };
+        (
+            side(
+                &b.style.margin.left,
+                &b.style.padding.left,
+                b.style.borders.left.width,
+            ),
+            side(
+                &b.style.margin.right,
+                &b.style.padding.right,
+                b.style.borders.right.width,
+            ),
+        )
+    } else {
+        (0.0, 0.0)
+    };
+    let spacer = |builder: &mut parley::TreeBuilder<'_, TextBrush>, width: f32| {
+        if width.is_finite() && width.abs() > 0.01 {
+            builder.push_inline_box(parley::InlineBox {
+                id: INLINE_SPACER,
+                index: 0,
+                width: width.max(0.0),
+                height: 0.0,
+                kind: parley::InlineBoxKind::InFlow,
+                baseline: None,
+                vertical_align: parley::VerticalAlign::default(),
+            });
+        }
+    };
+    spacer(builder, edges.0);
     if let Some(text) = &b.text_content {
         builder.push_text(text);
     }
     for child in &b.children {
         append_inline(builder, child, owner, alpha);
     }
+    spacer(builder, edges.1);
     builder.pop_style_span();
 }
+/// Inline-box id reserved for inline edge spacers; never a node key.
+pub const INLINE_SPACER: u64 = u64::MAX;
 
 pub fn shaping_nanos() -> u128 {
     SHAPING_NANOS.with(Cell::get)
@@ -288,7 +323,7 @@ pub fn shape_inline_with_style(
         }
         let (mut shaped, text) = builder.build();
         fn has_atomic(b: &LayoutBox) -> bool {
-            b.box_type == super::layout::BoxType::InlineBlock
+            b.is_atomic_inline()
                 || b.form_state.is_some()
                 || b.image.is_some()
                 || b.svg.is_some()
@@ -297,7 +332,9 @@ pub fn shape_inline_with_style(
         if text.is_empty() && !children.iter().any(has_atomic) {
             return Vec::new();
         }
-        shaped.break_all_lines(Some(width.max(0.0) as f32));
+        // Half a pixel of slack: content measured at its max-content width must
+        // not wrap from float rounding when laid out at exactly that width.
+        shaped.break_all_lines(Some((width.max(0.0) + 0.5) as f32));
         shaped.align(
             match align {
                 TextAlign::Left => parley::Alignment::Left,
@@ -307,7 +344,7 @@ pub fn shape_inline_with_style(
             },
             parley::AlignmentOptions::default(),
         );
-        shaped
+        let mut lines: Vec<LineBox> = shaped
             .lines()
             .map(|line| {
                 let m = line.metrics();
@@ -379,7 +416,18 @@ pub fn shape_inline_with_style(
                     inline_boxes,
                 }
             })
-            .collect()
+            .collect();
+        // A final forced break (`<br>` or a preserved newline) ends the last
+        // line; it does not open an empty line box after it.
+        if text.ends_with('\n')
+            && lines.len() > 1
+            && lines
+                .last()
+                .is_some_and(|l| l.text_runs.is_empty() && l.inline_boxes.is_empty())
+        {
+            lines.pop();
+        }
+        lines
     });
     SHAPING_NANOS.with(|n| n.set(n.get() + start.elapsed().as_nanos()));
     result

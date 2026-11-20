@@ -69,7 +69,8 @@ fn table_intrinsic_columns_spanning_and_real_row_height() {
         rect(&d, "b").height + rect(&d, "c").height
     );
     assert_eq!(rect(&d, "d").width, 300.0);
-    assert_eq!(rect(&d, "d").height, 20.0);
+    // One 20px line plus the UA's 1px cell padding above and below.
+    assert_eq!(rect(&d, "d").height, 22.0);
 }
 
 #[test]

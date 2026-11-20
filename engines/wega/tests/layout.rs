@@ -185,7 +185,9 @@ fn transforms_are_applied_to_geometry() {
     let mut v = page(BOXES);
     assert_eq!(
         js(&mut v, "const t=$('tf');return [r(t),t.offsetWidth]"),
-        "[[5,253.25,20,20],10]",
+        // `<p>` has Chrome's 1em block margins (16px), placing #tf 8px lower than
+        // the former 12px UA margins did.
+        "[[5,261.25,20,20],10]",
         "known gap: getBoundingClientRect ignores transforms (the box is untransformed)"
     );
 }

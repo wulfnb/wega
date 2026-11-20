@@ -81,6 +81,9 @@ pub struct LayoutBox {
     pub scroll_width: f64,
     pub scroll_height: f64,
     pub form_state: Option<FormState>,
+    /// An inline-level flex, grid or table container (`inline-flex` etc.):
+    /// laid out by its inner formatting context, placed as an atomic inline.
+    pub inline_level: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -134,7 +137,38 @@ impl LayoutBox {
             scroll_width: 0.0,
             scroll_height: 0.0,
             form_state: None,
+            inline_level: false,
         }
+    }
+    /// Used corner radius; percentages resolve against the border box.
+    pub fn radius(&self) -> f64 {
+        let short = self.border_box.width.min(self.border_box.height).max(0.0);
+        (self.style.border_radius + self.style.border_radius_percent / 100.0 * short)
+            .min(short / 2.0)
+            .max(0.0)
+    }
+    /// A float taken out of normal flow (absolute positioning wins over float).
+    pub fn is_floating(&self) -> bool {
+        self.style.float != Float::None
+            && !matches!(self.style.position, Position::Absolute | Position::Fixed)
+            && !self.is_root
+            && self.box_type != BoxType::Text
+    }
+    /// Atomic inline-level boxes participate in their parent's line boxes.
+    pub fn is_atomic_inline(&self) -> bool {
+        self.box_type == BoxType::InlineBlock || self.inline_level
+    }
+    pub fn is_block_level(&self) -> bool {
+        !self.inline_level
+            && matches!(
+                self.box_type,
+                BoxType::Block
+                    | BoxType::Flex
+                    | BoxType::Grid
+                    | BoxType::Table
+                    | BoxType::TableRow
+                    | BoxType::AnonymousBlock
+            )
     }
 
     pub fn content_box(&self) -> Rect {
@@ -268,18 +302,27 @@ pub fn build_box_tree<D: DocumentView>(
                 );
             }
         } else {
-            let children = node
+            let children: Vec<LayoutBox> = node
                 .children()
-                .filter_map(|child| built.remove(&child).map(|b: Box<LayoutBox>| *b))
+                .filter_map(|child| built.remove(&child))
+                .flatten()
                 .collect();
             let style = parent.unwrap();
             let style = Rc::try_unwrap(style).unwrap_or_else(|s| (*s).clone());
-            if let Some(b) = build_box_node(doc, key, style, children) {
-                built.insert(key, b);
+            if style.display == Display::Contents
+                && node.kind() == NodeKind::Element
+                && key != node_key
+            {
+                // `display: contents` boxes are replaced by their children.
+                built.insert(key, children);
+            } else if let Some(b) = build_box_node(doc, key, style, children) {
+                built.insert(key, vec![*b]);
             }
         }
     }
-    built.remove(&node_key).map(|b| *b)
+    built
+        .remove(&node_key)
+        .and_then(|mut b| (b.len() == 1).then(|| b.remove(0)))
 }
 fn build_box_node<D: DocumentView>(
     doc: &D,
@@ -294,19 +337,44 @@ fn build_box_node<D: DocumentView>(
                 return None;
             }
 
-            let box_type = match style.display {
-                Display::Block => BoxType::Block,
+            let mut box_type = match style.display {
+                Display::Block
+                | Display::ListItem
+                | Display::FlowRoot
+                | Display::Contents
+                | Display::TableCaption
+                | Display::TableRowGroup
+                | Display::TableHeaderGroup
+                | Display::TableFooterGroup => BoxType::Block,
                 Display::Inline => BoxType::Inline,
                 Display::InlineBlock => BoxType::InlineBlock,
-                Display::Flex => BoxType::Flex,
-                Display::Grid => BoxType::Grid,
-                Display::Table => BoxType::Table,
+                Display::Flex | Display::InlineFlex => BoxType::Flex,
+                Display::Grid | Display::InlineGrid => BoxType::Grid,
+                Display::Table | Display::InlineTable => BoxType::Table,
                 Display::TableRow => BoxType::TableRow,
                 Display::TableCell => BoxType::TableCell,
-                Display::None => return None,
+                Display::None | Display::TableColumn | Display::TableColumnGroup => return None,
             };
+            // Block-in-inline: an inline that contains block-level boxes is
+            // split around them in CSS 2.1 §9.2.1.1. Approximate the split by
+            // making the inline itself block-level, so its block children
+            // stack instead of being shaped as inline content.
+            if box_type == BoxType::Inline && raw_children.iter().any(LayoutBox::is_block_level) {
+                box_type = BoxType::Block;
+            }
+            // Floats are blockified (CSS 2.1 §9.7).
+            let floating = style.float != Float::None
+                && !matches!(style.position, Position::Absolute | Position::Fixed);
+            if floating && matches!(box_type, BoxType::Inline | BoxType::InlineBlock) {
+                box_type = BoxType::Block;
+            }
 
             let mut layout_box = Box::new(LayoutBox::new(Some(node_key), box_type, style.clone()));
+            layout_box.inline_level = !floating
+                && matches!(
+                    style.display,
+                    Display::InlineFlex | Display::InlineGrid | Display::InlineTable
+                );
             layout_box.is_root = node.element_name().is_some_and(|n| n.local == "html")
                 && node
                     .parent()
@@ -481,9 +549,7 @@ fn build_box_node<D: DocumentView>(
 
             // Whitespace-only anonymous items between block/flex/grid/table children
             // do not generate boxes. Keep them inside an inline formatting context.
-            let has_block = raw_children
-                .iter()
-                .any(|c| !matches!(c.box_type, BoxType::Text | BoxType::Inline));
+            let has_block = raw_children.iter().any(LayoutBox::is_block_level);
             if has_block
                 || matches!(
                     box_type,
@@ -503,22 +569,43 @@ fn build_box_node<D: DocumentView>(
                 });
             }
 
+            // Flex and grid items: each contiguous run of text becomes an
+            // anonymous block item, and inline children are blockified.
+            if matches!(box_type, BoxType::Flex | BoxType::Grid) {
+                let mut items = Vec::with_capacity(raw_children.len());
+                let mut run: Vec<LayoutBox> = Vec::new();
+                let flush = |run: &mut Vec<LayoutBox>, items: &mut Vec<LayoutBox>| {
+                    if !run.is_empty() {
+                        let mut anon =
+                            LayoutBox::new(None, BoxType::AnonymousBlock, anonymous_style(&style));
+                        anon.children = std::mem::take(run);
+                        items.push(anon);
+                    }
+                };
+                for mut child in raw_children.drain(..) {
+                    if child.box_type == BoxType::Text {
+                        run.push(child);
+                        continue;
+                    }
+                    flush(&mut run, &mut items);
+                    if !matches!(child.style.position, Position::Absolute | Position::Fixed) {
+                        if child.box_type == BoxType::Inline && child.text_content.is_none() {
+                            child.box_type = BoxType::Block;
+                        }
+                        child.inline_level = false;
+                    }
+                    items.push(child);
+                }
+                flush(&mut run, &mut items);
+                raw_children = items;
+            }
+
             // Anonymous block box generation for mixed inline and block siblings
             if box_type == BoxType::Block
                 || box_type == BoxType::TableCell
                 || box_type == BoxType::InlineBlock
             {
-                let is_block_level = |c: &LayoutBox| {
-                    matches!(
-                        c.box_type,
-                        BoxType::Block
-                            | BoxType::Flex
-                            | BoxType::Grid
-                            | BoxType::Table
-                            | BoxType::TableRow
-                            | BoxType::AnonymousBlock
-                    )
-                };
+                let is_block_level = LayoutBox::is_block_level;
                 let has_block_child = raw_children.iter().any(is_block_level);
                 let has_inline_child = raw_children.iter().any(|c| !is_block_level(c));
                 if has_block_child && has_inline_child {
@@ -800,12 +887,16 @@ fn layout_block_or_flow(
                         .min(effective_cb.width)
                         .max(intrinsic_width(box_node, true))
                 }
-            } else if box_node.box_type == BoxType::Block
-                || box_node.box_type == BoxType::AnonymousBlock
-                || box_node.box_type == BoxType::TableCell
-                || box_node.box_type == BoxType::Flex
-                || box_node.box_type == BoxType::Grid
-                || box_node.box_type == BoxType::Table
+            } else if !box_node.inline_level
+                && !box_node.is_floating()
+                && matches!(
+                    box_node.box_type,
+                    BoxType::Block
+                        | BoxType::AnonymousBlock
+                        | BoxType::TableCell
+                        | BoxType::Flex
+                        | BoxType::Grid
+                )
             {
                 (cb_w
                     - box_node.margin.left
@@ -819,7 +910,12 @@ fn layout_block_or_flow(
                     .max(intrinsic_width(box_node, true))
             }
         }
-        Length::Em(_) | Length::Rem(_) | Length::Calc(_) | Length::Vw(_) | Length::Vh(_) => {
+        Length::Em(_)
+        | Length::Rem(_)
+        | Length::Calc(_)
+        | Length::Clamp(_)
+        | Length::Vw(_)
+        | Length::Vh(_) => {
             let width = box_node.style.width.resolve(cb_w, fs, rfs);
             if box_node.style.box_sizing == BoxSizing::BorderBox {
                 (width - total_border_w - total_padding_w).max(0.0)
@@ -954,9 +1050,7 @@ fn layout_block_or_flow(
     };
 
     let is_inline_level = |c: &LayoutBox| {
-        c.box_type == BoxType::Inline
-            || c.box_type == BoxType::Text
-            || c.box_type == BoxType::InlineBlock
+        c.box_type == BoxType::Inline || c.box_type == BoxType::Text || c.is_atomic_inline()
     };
     let is_ifc = !box_node.children.is_empty() && box_node.children.iter().all(is_inline_level);
 
@@ -980,10 +1074,7 @@ fn layout_block_or_flow(
             height: 0.0,
         };
         fn prepare_inline(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
-            if b.box_type == BoxType::InlineBlock
-                || b.form_state.is_some()
-                || b.replaced_size().is_some()
-            {
+            if b.is_atomic_inline() || b.form_state.is_some() || b.replaced_size().is_some() {
                 layout_box(b, cb, positioned, ctx);
             } else {
                 for child in &mut b.children {
@@ -1010,6 +1101,28 @@ fn layout_block_or_flow(
         };
         let mut previous_bottom: f64 = 0.0;
         let mut first = true;
+        // Margin boxes of floats placed in this block, with their side.
+        let mut floats: Vec<(Rect, bool)> = Vec::new();
+        let edges = |floats: &[(Rect, bool)], top: f64, bottom: f64| {
+            let (mut left, mut right) = (inner_cb.x, inner_cb.x + inner_cb.width);
+            for (f, is_left) in floats {
+                if f.y < bottom && f.bottom() > top {
+                    if *is_left {
+                        left = left.max(f.right());
+                    } else {
+                        right = right.min(f.x);
+                    }
+                }
+            }
+            (left, right)
+        };
+        let clearance = |floats: &[(Rect, bool)], clear: (bool, bool)| {
+            floats
+                .iter()
+                .filter(|(_, is_left)| if *is_left { clear.0 } else { clear.1 })
+                .map(|(f, _)| f.bottom())
+                .fold(f64::NEG_INFINITY, f64::max)
+        };
         for child in &mut box_node.children {
             let child_is_out_of_flow = child.style.position == Position::Absolute
                 || child.style.position == Position::Fixed;
@@ -1017,16 +1130,88 @@ fn layout_block_or_flow(
             if child_is_out_of_flow {
                 continue;
             }
+            if child.is_floating() {
+                let is_left = child.style.float == Float::Left;
+                let probe = Rect {
+                    x: inner_cb.x,
+                    y: cursor_y,
+                    width: inner_cb.width,
+                    height: inner_cb.height,
+                };
+                layout_box(child, probe, next_positioned_cb, ctx);
+                let w = child.border_box.width + child.margin.left + child.margin.right;
+                let h = child.border_box.height + child.margin.top + child.margin.bottom;
+                // A float's top is no higher than earlier floats or its clearance.
+                let mut top = floats
+                    .iter()
+                    .map(|(f, _)| f.y)
+                    .fold(cursor_y, f64::max)
+                    .max(clearance(&floats, child.style.clear));
+                let mut x = if is_left {
+                    inner_cb.x
+                } else {
+                    inner_cb.x + inner_cb.width - w
+                };
+                for _ in 0..64 {
+                    let (left, right) = edges(&floats, top, top + h.max(0.01));
+                    let blocked = floats
+                        .iter()
+                        .any(|(f, _)| f.y < top + h.max(0.01) && f.bottom() > top);
+                    if right - left >= w || !blocked {
+                        x = if is_left { left } else { right - w };
+                        break;
+                    }
+                    let next = floats
+                        .iter()
+                        .map(|(f, _)| f.bottom())
+                        .filter(|b| *b > top)
+                        .fold(f64::INFINITY, f64::min);
+                    if !next.is_finite() {
+                        break;
+                    }
+                    top = next;
+                }
+                let dx = x - (child.border_box.x - child.margin.left);
+                let dy = top - (child.border_box.y - child.margin.top);
+                translate_tree(child, dx, dy);
+                floats.push((
+                    Rect {
+                        x,
+                        y: top,
+                        width: w,
+                        height: h,
+                    },
+                    is_left,
+                ));
+                continue;
+            }
+            let cleared = clearance(&floats, child.style.clear);
+            if cleared > cursor_y {
+                cursor_y = cleared;
+                previous_bottom = 0.0;
+                first = true;
+            }
             let top = collapsed_top(child, content_w, ctx);
             if !first {
                 let collapsed =
                     previous_bottom.max(top).max(0.0) + previous_bottom.min(top).min(0.0);
                 cursor_y += collapsed - previous_bottom - top;
             }
+            // Content beside a float is narrowed by the part of the float that
+            // reaches past the box's own margin (approximating short lines).
+            let (left_edge, right_edge) = edges(&floats, cursor_y, cursor_y + 1.0);
+            let margins = resolve_insets(
+                &child.style.margin,
+                inner_cb.width,
+                child.style.font_size,
+                ctx.font_size_root,
+            );
+            let intrude_left = (left_edge - inner_cb.x - margins.left).max(0.0);
+            let intrude_right = (inner_cb.x + inner_cb.width - right_edge - margins.right).max(0.0);
             let child_cb = Rect {
-                x: inner_cb.x,
+                x: inner_cb.x + intrude_left,
                 y: cursor_y - if first && collapse_children { top } else { 0.0 },
-                width: inner_cb.width,
+                width: (inner_cb.width - intrude_left - intrude_right).max(0.0),
                 height: inner_cb.height,
             };
             layout_box(child, child_cb, next_positioned_cb, ctx);
@@ -1044,6 +1229,16 @@ fn layout_block_or_flow(
                 previous_bottom = child.margin.bottom;
                 first = false;
             }
+        }
+        // Blocks grow to contain their floats. Strictly only formatting-context
+        // roots do; this also stands in for clearfix pseudo-elements, which
+        // are not generated yet.
+        let float_bottom = floats
+            .iter()
+            .map(|(f, _)| f.bottom())
+            .fold(f64::NEG_INFINITY, f64::max);
+        if float_bottom.is_finite() {
+            content_h = content_h.max(float_bottom - inner_cb.y);
         }
     }
 
@@ -1071,6 +1266,17 @@ fn layout_block_or_flow(
                     Some(FormControlKind::Checkbox | FormControlKind::Radio)
                 ) {
                     13.0
+                } else if !matches!(
+                    form.kind,
+                    Some(FormControlKind::TextInput {
+                        is_textarea: true,
+                        ..
+                    })
+                ) && content_h < fs * box_node.style.line_height_factor.unwrap_or(1.25)
+                    && !is_absolute
+                {
+                    // Empty single-line controls keep one line of height.
+                    fs * box_node.style.line_height_factor.unwrap_or(1.25)
                 } else if is_absolute
                     && box_node.style.top != Length::Auto
                     && box_node.style.bottom != Length::Auto
@@ -1106,7 +1312,12 @@ fn layout_block_or_flow(
                 content_h
             }
         }
-        Length::Em(_) | Length::Rem(_) | Length::Calc(_) | Length::Vw(_) | Length::Vh(_) => {
+        Length::Em(_)
+        | Length::Rem(_)
+        | Length::Calc(_)
+        | Length::Clamp(_)
+        | Length::Vw(_)
+        | Length::Vh(_) => {
             let height = box_node.style.height.resolve(cb_h, fs, rfs);
             if box_node.style.box_sizing == BoxSizing::BorderBox {
                 (height - total_border_h - total_padding_h).max(0.0)
@@ -1155,16 +1366,43 @@ fn layout_block_or_flow(
         )
         && !box_node.lines.is_empty()
     {
+        // Single-line controls center their text in the content box. Glyphs
+        // are positioned individually, so move the runs, not just the line.
         let cb = box_node.content_box();
-        let cb_h = cb.height;
-        let cb_w = cb.width;
         let is_button = matches!(form.kind, Some(FormControlKind::Button));
-        let line = &mut box_node.lines[0];
-        if cb_h > line.rect.height {
-            line.rect.y = ((cb_h - line.rect.height) / 2.0).max(0.0);
-        }
-        if is_button && cb_w > line.rect.width {
-            line.rect.x = ((cb_w - line.rect.width) / 2.0).max(0.0);
+        let lines_h: f64 = box_node.lines.iter().map(|l| l.rect.height).sum();
+        let top = box_node.lines[0].rect.y;
+        let dy = if cb.height > lines_h {
+            (cb.height - lines_h) / 2.0 - top
+        } else {
+            0.0
+        };
+        let runs = || box_node.lines.iter().flat_map(|l| &l.text_runs);
+        let left = runs().map(|r| r.rect.x).fold(f64::INFINITY, f64::min);
+        let right = runs()
+            .map(|r| r.rect.right())
+            .fold(f64::NEG_INFINITY, f64::max);
+        let dx = if is_button && left.is_finite() && cb.width > right - left {
+            (cb.width - (right - left)) / 2.0 - left
+        } else {
+            0.0
+        };
+        if dx != 0.0 || dy != 0.0 {
+            for line in &mut box_node.lines {
+                line.rect.y += dy;
+                for run in &mut line.text_runs {
+                    run.rect.x += dx;
+                    run.rect.y += dy;
+                    for g in &mut run.glyphs {
+                        g.x += dx as f32;
+                        g.y += dy as f32;
+                    }
+                }
+                for ib in &mut line.inline_boxes {
+                    ib.rect.x += dx;
+                    ib.rect.y += dy;
+                }
+            }
         }
     }
 
@@ -1237,9 +1475,42 @@ fn layout_inline_formatting_context(
 // Initialize the container through the same block sizing/positioning code used
 // elsewhere; layout algorithms below only decide the positions of its contents.
 fn init_container(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) -> Rect {
+    // Inline-level containers and auto-width tables shrink to fit their contents. Measure while the
+    // children are still attached; the container is then sized without them.
+    let width = b.style.width;
+    let absolute = matches!(b.style.position, Position::Absolute | Position::Fixed);
+    if (b.inline_level || b.is_floating() || (b.box_type == BoxType::Table && !absolute))
+        && width == Length::Auto
+    {
+        let padding = resolve_insets(
+            &b.style.padding,
+            cb.width,
+            b.style.font_size,
+            ctx.font_size_root,
+        );
+        let frame =
+            padding.left + padding.right + b.style.borders.left.width + b.style.borders.right.width;
+        let margin = resolve_insets(
+            &b.style.margin,
+            cb.width,
+            b.style.font_size,
+            ctx.font_size_root,
+        );
+        let available = (cb.width - frame - margin.left - margin.right).max(0.0);
+        let fit = intrinsic_width(b, false)
+            .min(available)
+            .max(intrinsic_width(b, true));
+        let extra = if b.style.box_sizing == BoxSizing::BorderBox {
+            frame
+        } else {
+            0.0
+        };
+        b.style.width = Length::Px(fit + extra);
+    }
     let children = std::mem::take(&mut b.children);
     layout_block_or_flow(b, cb, positioned, ctx);
     b.children = children;
+    b.style.width = width;
     b.content_box()
 }
 fn translate_tree(b: &mut LayoutBox, dx: f64, dy: f64) {
@@ -1265,24 +1536,177 @@ fn translate_tree(b: &mut LayoutBox, dx: f64, dy: f64) {
         }
     }
 }
+/// Min-content (`min`) or max-content width of `b`'s content box. The box's
+/// own `width` is the caller's concern; descendants contribute their outer
+/// sizes, honouring definite widths. Atomic inlines are measured from their
+/// contents because their own geometry is not laid out yet.
 fn intrinsic_width(b: &LayoutBox, min: bool) -> f64 {
+    intrinsic_content(b, min, 0)
+}
+/// Shape as layout will: with the owning block's style as the root, so the
+/// measured width matches the width the line breaker later sees.
+fn shaped_width(children: &[LayoutBox], min: bool, owner: &ComputedStyle) -> f64 {
+    super::text::shape_inline_with_style(
+        children,
+        if min { 0.0 } else { 1e7 },
+        TextAlign::Left,
+        Some(owner),
+    )
+    .iter()
+    .map(|l| l.rect.width)
+    .fold(0.0, f64::max)
+}
+fn definite(length: Length, b: &LayoutBox) -> Option<f64> {
+    match length {
+        Length::Auto | Length::Percent(_) => None,
+        Length::Calc(v) if v[1] != 0.0 => None,
+        Length::Clamp(v) if v.iter().any(|t| t[1] != 0.0) => None,
+        l => Some(l.resolve(0.0, b.style.font_size, b.style.root_font_size)),
+    }
+}
+fn has_atomic_inline(children: &[LayoutBox]) -> bool {
+    children.iter().any(|c| {
+        c.is_atomic_inline()
+            || c.form_state.is_some()
+            || (c.box_type == BoxType::Inline && has_atomic_inline(&c.children))
+    })
+}
+fn intrinsic_content(b: &LayoutBox, min: bool, depth: usize) -> f64 {
     if let Some((iw, _)) = b.replaced_size() {
         return iw;
     }
-    // Shape with Unicode break opportunities, rather than counting characters.
-    // An inline-block is atomic only in its parent's inline formatting
-    // context. Measuring that atom before its own layout reads a zero/stale
-    // width; measure its contents for shrink-to-fit instead.
-    let runs = super::text::shape_inline(
-        if b.box_type != BoxType::Text && !b.children.is_empty() {
-            &b.children
+    if b.box_type == BoxType::Text || b.text_content.is_some() {
+        return shaped_width(std::slice::from_ref(b), min, &b.style);
+    }
+    if b.children.is_empty() {
+        return 0.0;
+    }
+    // Controls whose content is generated text (an input's value, a select's
+    // label) are measured as that text; a <button> with element content is
+    // measured like any other box.
+    if b.form_state.is_some() && b.children.iter().all(|c| c.box_type == BoxType::Text) {
+        return shaped_width(&b.children, min, &b.style);
+    }
+    if depth > 96 {
+        return shaped_width(&b.children, min, &b.style);
+    }
+    let in_flow = || {
+        b.children
+            .iter()
+            .filter(|c| !matches!(c.style.position, Position::Absolute | Position::Fixed))
+    };
+    let row_flex = b.box_type == BoxType::Flex
+        && matches!(
+            b.style.flex_direction,
+            FlexDirection::Row | FlexDirection::RowReverse
+        );
+    if row_flex || b.box_type == BoxType::TableRow {
+        let sizes: Vec<f64> = in_flow().map(|c| outer_intrinsic(c, min, depth)).collect();
+        return if min && b.style.flex_wrap {
+            sizes.into_iter().fold(0.0, f64::max)
         } else {
-            std::slice::from_ref(b)
-        },
-        if min { 0.0 } else { 1e7 },
-        TextAlign::Left,
-    );
-    runs.iter().map(|l| l.rect.width).fold(0.0, f64::max)
+            let gaps = b.style.column_gap * sizes.len().saturating_sub(1) as f64;
+            sizes.into_iter().sum::<f64>() + gaps
+        };
+    }
+    if b.box_type == BoxType::Grid && b.style.grid_template_columns.len() > 1 {
+        let columns = b.style.grid_template_columns.len();
+        let sizes: Vec<f64> = in_flow().map(|c| outer_intrinsic(c, min, depth)).collect();
+        let gaps = b.style.column_gap * (columns.min(sizes.len()).saturating_sub(1)) as f64;
+        return sizes
+            .chunks(columns)
+            .map(|row| row.iter().sum::<f64>())
+            .fold(0.0, f64::max)
+            + gaps;
+    }
+    let inline_level = |c: &LayoutBox| {
+        matches!(c.box_type, BoxType::Inline | BoxType::Text) || c.is_atomic_inline()
+    };
+    if b.box_type != BoxType::Flex && b.children.iter().all(inline_level) {
+        if !has_atomic_inline(&b.children) {
+            return shaped_width(&b.children, min, &b.style);
+        }
+        return inline_pieces(&b.children, min, depth);
+    }
+    in_flow()
+        .map(|c| outer_intrinsic(c, min, depth))
+        .fold(0.0, f64::max)
+}
+/// Inline content containing atomic boxes: text runs are shaped on their own
+/// and atoms contribute their outer sizes. Max-content sums the pieces on one
+/// line; min-content is the widest unbreakable piece.
+fn inline_pieces(children: &[LayoutBox], min: bool, depth: usize) -> f64 {
+    let mut total = 0.0;
+    let mut widest: f64 = 0.0;
+    for c in children {
+        if matches!(c.style.position, Position::Absolute | Position::Fixed) {
+            continue;
+        }
+        let w = if c.is_atomic_inline() || c.form_state.is_some() || c.replaced_size().is_some() {
+            outer_intrinsic(c, min, depth)
+        } else if c.box_type == BoxType::Inline && has_atomic_inline(&c.children) {
+            let frame = resolve_insets(
+                &c.style.padding,
+                0.0,
+                c.style.font_size,
+                c.style.root_font_size,
+            );
+            let margin = resolve_insets(
+                &c.style.margin,
+                0.0,
+                c.style.font_size,
+                c.style.root_font_size,
+            );
+            let edges = frame.left
+                + frame.right
+                + margin.left
+                + margin.right
+                + c.style.borders.left.width
+                + c.style.borders.right.width;
+            inline_pieces(&c.children, min, depth + 1) + if min { 0.0 } else { edges }
+        } else {
+            shaped_width(std::slice::from_ref(c), min, &c.style)
+        };
+        total += w;
+        widest = widest.max(w);
+    }
+    if min { widest } else { total }
+}
+/// Margin-box contribution of a child to its parent's intrinsic width.
+fn outer_intrinsic(c: &LayoutBox, min: bool, depth: usize) -> f64 {
+    if c.box_type == BoxType::Text {
+        return shaped_width(std::slice::from_ref(c), min, &c.style);
+    }
+    let fs = c.style.font_size;
+    let rfs = c.style.root_font_size;
+    let padding = resolve_insets(&c.style.padding, 0.0, fs, rfs);
+    let margin = resolve_insets(&c.style.margin, 0.0, fs, rfs);
+    let frame =
+        padding.left + padding.right + c.style.borders.left.width + c.style.borders.right.width;
+    let content = match definite(c.style.width, c) {
+        Some(w) if c.style.box_sizing == BoxSizing::BorderBox => (w - frame).max(0.0),
+        Some(w) => w,
+        None => {
+            let mut w = intrinsic_content(c, min, depth + 1);
+            let border_box = c.style.box_sizing == BoxSizing::BorderBox;
+            if let Some(max) = definite(c.style.max_width, c) {
+                w = w.min(if border_box {
+                    (max - frame).max(0.0)
+                } else {
+                    max
+                });
+            }
+            if let Some(lo) = definite(c.style.min_width, c) {
+                w = w.max(if border_box {
+                    (lo - frame).max(0.0)
+                } else {
+                    lo
+                });
+            }
+            w
+        }
+    };
+    content + frame + margin.left.max(0.0) + margin.right.max(0.0)
 }
 fn border_main_limit(
     b: &LayoutBox,
@@ -1455,6 +1879,7 @@ fn layout_flex(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContex
             && match c.style.flex_basis {
                 Length::Percent(_) => true,
                 Length::Calc(v) => v[1] != 0.0,
+                Length::Clamp(v) => v.iter().any(|t| t[1] != 0.0),
                 _ => false,
             };
         let base = if c.style.flex_basis != Length::Auto && !indefinite_basis {
@@ -1742,6 +2167,7 @@ fn track_sizes(
                     .max(if min == Length::Auto { 0.0 } else { minimum })
             }
             GridTrack::MinMax(_, _) => sizes[i] = minimum, // nested minmax is rejected by syntax
+            GridTrack::AutoRepeat(_) => sizes[i] = minimum, // expanded before sizing
         }
     }
     if let Some(available) = available {
@@ -1774,8 +2200,19 @@ fn track_sizes(
                 break;
             }
         }
-        if flex.iter().all(|f| *f == 0.0) && !autos.is_empty() {
-            let extra = ((room - sizes.iter().sum::<f64>()) / autos.len() as f64).max(0.0);
+        let total: f64 = sizes.iter().sum();
+        if total > room && !autos.is_empty() {
+            // Auto tracks start at max-content but give back space down to
+            // their min-content contribution when the grid would overflow.
+            let slack: f64 = autos.iter().map(|&i| (sizes[i] - mins[i]).max(0.0)).sum();
+            if slack > 0.0 {
+                let shrink = ((total - room) / slack).min(1.0);
+                for &i in &autos {
+                    sizes[i] -= (sizes[i] - mins[i]).max(0.0) * shrink;
+                }
+            }
+        } else if flex.iter().all(|f| *f == 0.0) && !autos.is_empty() {
+            let extra = ((room - total) / autos.len() as f64).max(0.0);
             for i in autos {
                 sizes[i] += extra;
             }
@@ -1807,6 +2244,109 @@ fn update_overflow(b: &mut LayoutBox) {
     b.scroll_width = width + b.padding.left + b.padding.right;
     b.scroll_height = height + b.padding.top + b.padding.bottom;
 }
+/// Expand `repeat(auto-fill, …)` to as many repetitions as fit `available`.
+fn expand_auto_repeat(
+    tracks: &[GridTrack],
+    available: f64,
+    gap: f64,
+    fs: f64,
+    rfs: f64,
+) -> Vec<GridTrack> {
+    let size = |t: &GridTrack| match t {
+        GridTrack::Length(l) | GridTrack::MinMax(l, _) if *l != Length::Auto => {
+            l.resolve(available, fs, rfs).max(0.0)
+        }
+        GridTrack::MinMax(_, max) => match **max {
+            GridTrack::Length(l) if l != Length::Auto => l.resolve(available, fs, rfs).max(0.0),
+            _ => 0.0,
+        },
+        _ => 0.0,
+    };
+    let fixed: f64 = tracks
+        .iter()
+        .filter(|t| !matches!(t, GridTrack::AutoRepeat(_)))
+        .map(|t| size(t) + gap)
+        .sum();
+    let mut out = Vec::new();
+    for t in tracks {
+        if let GridTrack::AutoRepeat(items) = t {
+            let unit: f64 = items.iter().map(|t| size(t) + gap).sum();
+            let count = if unit > gap * items.len() as f64 {
+                (((available - fixed + gap) / unit).floor() as usize).clamp(1, 256)
+            } else {
+                1
+            };
+            for _ in 0..count {
+                out.extend(items.iter().cloned());
+            }
+        } else {
+            out.push(t.clone());
+        }
+    }
+    out.truncate(256);
+    out
+}
+/// Turn named areas and end lines into the start/span form placement uses.
+fn resolve_grid_item(c: &mut LayoutBox, areas: &[Vec<String>], cols: usize, rows: usize) {
+    let find = |name: &str| {
+        let mut bounds: Option<(usize, usize, usize, usize)> = None;
+        for (r, row) in areas.iter().enumerate() {
+            for (col, cell) in row.iter().enumerate() {
+                if cell == name {
+                    let b = bounds.get_or_insert((r, r, col, col));
+                    *b = (b.0.min(r), b.1.max(r), b.2.min(col), b.3.max(col));
+                }
+            }
+        }
+        bounds
+    };
+    let style = &mut c.style;
+    if let Some(name) = style.grid_row_name.clone()
+        && let Some((r0, r1, _, _)) = find(&name)
+    {
+        style.grid_row_start = Some(r0 as i32 + 1);
+        style.grid_row_span = r1 - r0 + 1;
+    }
+    if let Some(name) = style.grid_column_name.clone()
+        && let Some((_, _, c0, c1)) = find(&name)
+    {
+        style.grid_column_start = Some(c0 as i32 + 1);
+        style.grid_column_span = c1 - c0 + 1;
+    }
+    let line = |n: i32, count: usize| if n < 0 { count as i32 + 2 + n } else { n };
+    if let Some(end) = style.grid_column_end {
+        let end = line(end, cols);
+        match style.grid_column_start {
+            Some(start) => {
+                let start = line(start, cols);
+                let (a, b) = (start.min(end), start.max(end));
+                style.grid_column_start = Some(a.max(1));
+                style.grid_column_span = ((b - a).max(1) as usize).min(256);
+            }
+            None => {
+                style.grid_column_start = Some((end - style.grid_column_span as i32).max(1));
+            }
+        }
+    } else if let Some(start) = style.grid_column_start {
+        style.grid_column_start = Some(line(start, cols).max(1));
+    }
+    if let Some(end) = style.grid_row_end {
+        let end = line(end, rows);
+        match style.grid_row_start {
+            Some(start) => {
+                let start = line(start, rows);
+                let (a, b) = (start.min(end), start.max(end));
+                style.grid_row_start = Some(a.max(1));
+                style.grid_row_span = ((b - a).max(1) as usize).min(256);
+            }
+            None => {
+                style.grid_row_start = Some((end - style.grid_row_span as i32).max(1));
+            }
+        }
+    } else if let Some(start) = style.grid_row_start {
+        style.grid_row_start = Some(line(start, rows).max(1));
+    }
+}
 fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
     let inner = init_container(b, cb, positioned, ctx);
     let positioned = if b.style.position != Position::Static {
@@ -1814,10 +2354,20 @@ fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContex
     } else {
         positioned
     };
-    let cols = b
-        .style
-        .grid_template_columns
-        .len()
+    let columns = expand_auto_repeat(
+        &b.style.grid_template_columns,
+        inner.width,
+        b.style.column_gap,
+        b.style.font_size,
+        ctx.font_size_root,
+    );
+    let areas = b.style.grid_template_areas.clone();
+    let template_cols = columns.len().max(areas.first().map_or(0, Vec::len));
+    let template_rows = b.style.grid_template_rows.len().max(areas.len());
+    for c in &mut b.children {
+        resolve_grid_item(c, &areas, template_cols, template_rows);
+    }
+    let cols = template_cols
         .max(
             b.children
                 .iter()
@@ -1833,7 +2383,7 @@ fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContex
     let mut occupied = std::collections::HashSet::new();
     let mut cursor = 0;
     let mut places = Vec::new();
-    let mut rows = b.style.grid_template_rows.len().max(1);
+    let mut rows = template_rows.max(1);
     for (i, c) in b.children.iter_mut().enumerate() {
         if matches!(c.style.position, Position::Absolute | Position::Fixed) {
             layout_box(c, inner, positioned, ctx);
@@ -1896,7 +2446,7 @@ fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContex
         }
     }
     let widths = track_sizes(
-        &b.style.grid_template_columns,
+        &columns,
         &mins,
         &maxs,
         Some(inner.width),
@@ -2031,6 +2581,8 @@ fn layout_table(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutConte
     }
     let mut mins = vec![0.0_f64; cols];
     let mut maxs = mins.clone();
+    // Columns with an authored width keep it; only auto columns absorb space.
+    let mut sized = vec![false; cols];
     for (r, i, col, _, cs) in &places {
         let c = &at_path(b, &paths[*r]).children[*i];
         let padding = resolve_insets(
@@ -2050,6 +2602,9 @@ fn layout_table(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutConte
         };
         let min = (intrinsic_width(c, true) + extra).max(explicit) / *cs as f64;
         let max = (intrinsic_width(c, false) + extra).max(explicit) / *cs as f64;
+        if c.style.width != Length::Auto && *cs == 1 {
+            sized[*col] = true;
+        }
         for cc in *col..col + cs {
             mins[cc] = mins[cc].max(min);
             maxs[cc] = maxs[cc].max(max);
@@ -2066,9 +2621,23 @@ fn layout_table(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutConte
                 widths[c] += factor * (maxs[c] - mins[c]);
             }
         } else {
-            let extra = (room - max_sum) / cols as f64;
-            for c in 0..cols {
-                widths[c] = maxs[c] + extra;
+            // Spare width goes to auto columns in proportion to their
+            // max-content widths (all columns if every one is sized).
+            let extra = room - max_sum;
+            let pool: Vec<usize> = (0..cols).filter(|c| !sized[*c]).collect();
+            let pool = if pool.is_empty() {
+                (0..cols).collect()
+            } else {
+                pool
+            };
+            let weight: f64 = pool.iter().map(|c| maxs[*c]).sum();
+            widths.clone_from(&maxs);
+            for &c in &pool {
+                widths[c] += if weight > 0.0 {
+                    extra * maxs[c] / weight
+                } else {
+                    extra / pool.len() as f64
+                };
             }
         }
     }
@@ -2169,9 +2738,7 @@ fn assign_inline_geometry(children: &mut [LayoutBox], lines: &[LineBox], x: f64,
         if matches!(child.style.position, Position::Absolute | Position::Fixed) {
             continue;
         }
-        if child.box_type == BoxType::InlineBlock
-            || child.form_state.is_some()
-            || child.replaced_size().is_some()
+        if child.is_atomic_inline() || child.form_state.is_some() || child.replaced_size().is_some()
         {
             if let Some(ibox) = lines
                 .iter()
