@@ -4858,8 +4858,10 @@ name = "wega-network"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bytes",
  "fontdb",
  "getrandom 0.3.4",
+ "http",
  "reqwest",
  "rusqlite",
  "serde",
@@ -4871,6 +4873,7 @@ dependencies = [
  "wega-cookies",
  "wega-platform",
  "wega-protocol",
+ "wega-security",
  "wega-storage",
 ]
 
@@ -4891,6 +4894,15 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "url",
+]
+
+[[package]]
+name = "wega-security"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sha2 0.11.1",
  "url",
 ]
 

@@ -1,0 +1,551 @@
+[
+  {
+    "name": "engine-workspace",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "--workspace",
+      "--offline",
+      "--",
+      "--test-threads=4"
+    ],
+    "environment": {
+      "RUST_MIN_STACK": "8388608"
+    },
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/engine-workspace.log",
+    "exit_code": 0,
+    "seconds": 648.02,
+    "log_sha256": "7d8319ddf82e4c8e14c576c3bd54100ab64744d59a95a3d2a5b0f160acdbe77a",
+    "cargo_test_totals": {
+      "passed": 879,
+      "failed": 0,
+      "ignored": 25
+    }
+  },
+  {
+    "name": "root-tests",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "test",
+      "--offline"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/root-tests.log",
+    "exit_code": 0,
+    "seconds": 10.971,
+    "log_sha256": "ec9d4d10a07af7ddf0baf8dc77aa00ce0010384cf4172a1c5279c186261b562b",
+    "cargo_test_totals": {
+      "passed": 233,
+      "failed": 0,
+      "ignored": 1
+    }
+  },
+  {
+    "name": "engine-clippy",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "clippy",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "--workspace",
+      "--all-targets",
+      "--offline",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/engine-clippy.log",
+    "exit_code": 0,
+    "seconds": 13.695,
+    "log_sha256": "625fe3f8a1f2244a15cbc5339f3d019baeb324a12e5045d13124df65a3cf2f32",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "root-clippy",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--offline",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/root-clippy.log",
+    "exit_code": 0,
+    "seconds": 0.637,
+    "log_sha256": "fe368598dee37a838fc947bb61fdf7683a67dd9c56d87bf1c158f0d080cf0571",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "engine-fmt",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/engine-fmt.log",
+    "exit_code": 0,
+    "seconds": 1.341,
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "root-fmt",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/root-fmt.log",
+    "exit_code": 0,
+    "seconds": 1.721,
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "diff-check",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/diff-check.log",
+    "exit_code": 0,
+    "seconds": 0.024,
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "native-security",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--offline",
+      "--test",
+      "native_browser_behavior",
+      "--test",
+      "native_stylesheets",
+      "--test",
+      "native_images",
+      "--test",
+      "iframes",
+      "--test",
+      "same_origin_dom",
+      "--test",
+      "iframe_wpt",
+      "--test",
+      "isolate_safety",
+      "--test",
+      "security",
+      "--test",
+      "inherited_broker",
+      "--test",
+      "native_resource_redirects",
+      "--test",
+      "native_accessibility",
+      "--",
+      "--test-threads=4"
+    ],
+    "environment": {
+      "WEGA_RENDER_BACKEND": "native",
+      "WEGA_TEST_BROKER": "1",
+      "RUST_MIN_STACK": "8388608"
+    },
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/native-security.log",
+    "exit_code": 0,
+    "seconds": 118.451,
+    "log_sha256": "82ffe19c52d9df30eafa5b2bb8de749505520ea545351da7b12629a497c6bd04",
+    "cargo_test_totals": {
+      "passed": 57,
+      "failed": 0,
+      "ignored": 1
+    }
+  },
+  {
+    "name": "worker-build",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "build",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--bin",
+      "wega-engine",
+      "--no-default-features",
+      "--offline"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/worker-build.log",
+    "exit_code": 0,
+    "seconds": 12.623,
+    "log_sha256": "5ddbd795a24a7eb4f13ecb5744a4da07f53773612ac390fa94cdf5f875a94eca",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "sandbox-bundle",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "engines/target/debug/wega-content-bundle",
+      "engines/target/debug/wega-engine",
+      "/private/tmp/WegaBlitzCampaign-d4d2098.app"
+    ],
+    "environment": {
+      "WEGA_CODESIGN_IDENTITY": "-"
+    },
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/sandbox-bundle.log",
+    "exit_code": 0,
+    "seconds": 1.294,
+    "log_sha256": "d7e8d3f357358280afaf65b2c7762c39102b02e0dd967324db3c42963b7abd4d",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "codesign-verify",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "codesign",
+      "--verify",
+      "--strict",
+      "--verbose=2",
+      "/private/tmp/WegaBlitzCampaign-d4d2098.app/Contents/Helpers/WegaContent.app"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/codesign-verify.log",
+    "exit_code": 0,
+    "seconds": 0.223,
+    "log_sha256": "ea923398804235f7a0c33e2863160ef2284ad02b64727f215931936ff368e2a2",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "required-sandbox",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--offline",
+      "--test",
+      "inherited_broker",
+      "--",
+      "--ignored",
+      "--exact",
+      "a_required_worker_runs_jit_storage_cookies_and_frames_through_grants",
+      "--nocapture"
+    ],
+    "environment": {
+      "WEGA_RENDER_BACKEND": "native",
+      "WEGA_CONTENT_HELPER": "/private/tmp/WegaBlitzCampaign-d4d2098.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine"
+    },
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/required-sandbox.log",
+    "exit_code": 0,
+    "seconds": 13.566,
+    "log_sha256": "e389f19c26beb3da845b87d26b94ddd0de00f6cd7245b6c61825b071ec17eb25",
+    "cargo_test_totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "existing-inspector-sandbox",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--offline",
+      "--test",
+      "inspector_sandbox",
+      "--",
+      "--ignored",
+      "--nocapture"
+    ],
+    "environment": {
+      "WEGA_CONTENT_HELPER": "/private/tmp/WegaBlitzCampaign-d4d2098.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine"
+    },
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/existing-inspector-sandbox.log",
+    "exit_code": 0,
+    "seconds": 11.589,
+    "log_sha256": "b68a1327fde371442c4d41cd92b8374a6b886f29bd9894a695a0d59e21e45667",
+    "cargo_test_totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "chrome-wpt",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "python3",
+      "scripts/native-compat-gate.py",
+      "--chrome-bin",
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "--output",
+      "/private/tmp/wega-blitz-final-validation/chrome"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/chrome-wpt.log",
+    "exit_code": 0,
+    "seconds": 113.9,
+    "log_sha256": "c6cebcdaadfe94411e0687aaf457217f9073f35017b7f6e1f159c771f996358c",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "public-pages",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--offline",
+      "--test",
+      "native_public_compat",
+      "--",
+      "--nocapture"
+    ],
+    "environment": {
+      "WEGA_PUBLIC_COMPAT": "1",
+      "WEGA_TEST_BROKER": "1",
+      "WEGA_RENDER_BACKEND": "native",
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-blitz-final-validation/public"
+    },
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/public-pages.log",
+    "exit_code": 0,
+    "seconds": 27.825,
+    "log_sha256": "23ae648c309cae3cd943a7afb69717c0540d9ee8362aef789252235ef9fcbb74",
+    "cargo_test_totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "independent-build",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "cargo",
+      "build",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-native",
+      "--no-default-features",
+      "--locked",
+      "--offline"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/independent-build.log",
+    "exit_code": 0,
+    "seconds": 2.094,
+    "log_sha256": "35ba9ac61cbcc1c2fcaf260c89b83b85cee4f4354443e15c203a395a41d5b552",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "independent-graph",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "python3",
+      "scripts/check-blitz-independence.py",
+      "--package",
+      "wega-native",
+      "--output",
+      "/private/tmp/wega-blitz-final-validation/independent-graph.json"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/independent-graph.log",
+    "exit_code": 0,
+    "seconds": 0.326,
+    "log_sha256": "1b2142ffae4cb065af8f78b58e400ca7223caf4212646de833720b2d3a9b6e54",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "production-graph",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "python3",
+      "scripts/check-blitz-independence.py",
+      "--output",
+      "/private/tmp/wega-blitz-final-validation/production-graph.json"
+    ],
+    "environment": {},
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/production-graph.log",
+    "exit_code": 1,
+    "seconds": 0.621,
+    "log_sha256": "817da6faa361d87b1e55c2139d1e7a4717188d3a72276117076339cb0e2d1384",
+    "cargo_test_totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "release-comparable",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "/usr/bin/time",
+      "-l",
+      "cargo",
+      "test",
+      "--release",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--offline",
+      "--test",
+      "native_benchmark",
+      "--test",
+      "native_stage_profile",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-blitz-final-validation/release"
+    },
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/release-comparable.log",
+    "exit_code": 0,
+    "seconds": 34.929,
+    "log_sha256": "79f8faea1b0cd39cd8d4eb2c1d53b014598f090cfd924ba61c909a5d5aea0d13",
+    "cargo_test_totals": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  {
+    "name": "release-independent",
+    "head": "d4d209834ad88db268787010d0670905fced1d08",
+    "command": [
+      "/usr/bin/time",
+      "-l",
+      "cargo",
+      "test",
+      "--release",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-native",
+      "--offline",
+      "--test",
+      "benchmark",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-blitz-final-validation/release-independent"
+    },
+    "active": false,
+    "log": "/private/tmp/wega-blitz-final-validation/release-independent.log",
+    "exit_code": 0,
+    "seconds": 8.133,
+    "log_sha256": "a76a69561e627fa7e0441dcb4f93a7e1e6afa48b12b15e07ab0f95c3d3d52ed9",
+    "cargo_test_totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    }
+  }
+]

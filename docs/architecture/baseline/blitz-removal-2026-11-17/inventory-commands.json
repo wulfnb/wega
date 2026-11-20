@@ -1,0 +1,76 @@
+{
+  "production-tree": {
+    "command": [
+      "cargo",
+      "tree",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--locked",
+      "--offline",
+      "-e",
+      "normal,build",
+      "--prefix",
+      "depth"
+    ],
+    "exit_code": 0,
+    "sha256": "e1089cda22e5d7641d16492051840da2864543a0a1ef5d0381b0f4693ef24409"
+  },
+  "test-tree": {
+    "command": [
+      "cargo",
+      "tree",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--locked",
+      "--offline",
+      "-e",
+      "normal,build,dev",
+      "--prefix",
+      "depth"
+    ],
+    "exit_code": 0,
+    "sha256": "dad636f53bfe4bb3275b8aaed742d64c667c2c3b97907a83481821ca85c942ab"
+  },
+  "metadata": {
+    "command": [
+      "cargo",
+      "metadata",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "--locked",
+      "--offline",
+      "--format-version",
+      "1"
+    ],
+    "exit_code": 0,
+    "sha256": "e8abeb90588bf237716390ede6d124f00faed37e7445c176dbc4924f1f173e8f"
+  },
+  "blitz-source-references": {
+    "command": [
+      "rg",
+      "-n",
+      "--hidden",
+      "blitz|Blitz",
+      "engines",
+      "Cargo.toml",
+      "Cargo.lock",
+      "build.rs",
+      "scripts",
+      ".github",
+      "--glob",
+      "!target/**",
+      "--glob",
+      "!engines/target/**",
+      "--glob",
+      "!engines/vendor/**",
+      "--glob",
+      "!.git/**"
+    ],
+    "exit_code": 0,
+    "sha256": "82a3de66c9641bc56382a63b2cc31beb26ca674ebcb77dc8c2885c8d46a9f865"
+  }
+}

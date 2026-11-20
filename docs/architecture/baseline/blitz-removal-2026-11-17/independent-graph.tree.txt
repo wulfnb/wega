@@ -1,0 +1,284 @@
+0wega-native v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/native)
+1anyrender v0.14.0
+2kurbo v0.13.1
+3arrayvec v0.7.8
+3polycool v0.4.0
+4arrayvec v0.7.8
+3smallvec v1.16.4
+2peniko v0.6.1
+3color v0.3.3
+3kurbo v0.13.1 (*)
+3linebender_resource_handle v0.1.1
+3smallvec v1.16.4
+2raw-window-handle v0.6.2
+2smallvec v1.16.4
+1anyrender_svg v0.15.0
+2anyrender v0.14.0 (*)
+2image v0.25.10
+3bytemuck v1.25.2
+4bytemuck_derive v1.12.1 (proc-macro)
+5proc-macro2 v1.0.107
+6unicode-ident v1.0.27
+5quote v1.0.47
+6proc-macro2 v1.0.107 (*)
+5syn v3.0.9
+6proc-macro2 v1.0.107 (*)
+6quote v1.0.47 (*)
+6unicode-ident v1.0.27
+3byteorder-lite v0.1.0
+3color_quant v1.1.0
+3gif v0.14.2
+4color_quant v1.1.0
+4weezl v0.1.12
+3image-webp v0.2.4
+4byteorder-lite v0.1.0
+4quick-error v2.0.1
+3moxcms v0.8.1
+4num-traits v0.2.19
+5autocfg v1.5.1
+4pxfm v0.1.30
+3num-traits v0.2.19 (*)
+3png v0.18.1
+4bitflags v2.13.2
+4crc32fast v1.5.3
+5cfg-if v1.0.5
+4fdeflate v0.3.7
+5simd-adler32 v0.3.10
+4flate2 v1.1.10
+5crc32fast v1.5.3 (*)
+5miniz_oxide v0.9.1
+6adler2 v2.0.1
+6simd-adler32 v0.3.10
+4miniz_oxide v0.8.9
+5adler2 v2.0.1
+5simd-adler32 v0.3.10
+3zune-core v0.5.3
+3zune-jpeg v0.5.15
+4zune-core v0.5.3
+2kurbo v0.13.1 (*)
+2peniko v0.6.1 (*)
+2usvg v0.48.1
+3base64 v0.23.1
+3data-url v0.3.1
+3flate2 v1.1.10 (*)
+3fontdb v0.24.0
+4log v0.4.34
+4memmap2 v0.9.12
+5libc v0.2.191
+4slotmap v1.1.1
+5version_check v0.9.5
+4tinyvec v1.13.3
+3harfrust v0.12.0
+4bitflags v2.13.2
+4bytemuck v1.25.2 (*)
+4read-fonts v0.41.0
+5bytemuck v1.25.2 (*)
+5font-types v0.12.7
+6bytemuck v1.25.2 (*)
+5once_cell v1.21.4
+4smallvec v1.16.4
+3imagesize v0.15.0
+3kurbo v0.13.1 (*)
+3log v0.4.34
+3pico-args v0.5.0
+3roxmltree v0.21.1
+4memchr v2.8.3
+3simplecss v0.2.2
+4log v0.4.34
+3siphasher v1.0.4
+3skrifa v0.44.0
+4bytemuck v1.25.2 (*)
+4read-fonts v0.41.0 (*)
+3strict-num v0.1.1
+4float-cmp v0.9.0
+3svgtypes v0.16.1
+4kurbo v0.13.1 (*)
+4siphasher v1.0.4
+3tiny-skia-path v0.12.0
+4arrayref v0.3.9
+4bytemuck v1.25.2 (*)
+4strict-num v0.1.1 (*)
+3unicode-bidi v0.3.18
+3unicode-script v0.5.8
+3unicode-vo v0.1.0
+3xmlwriter v0.1.0
+1cssparser v0.38.0
+2cssparser-macros v0.7.1 (proc-macro)
+3quote v1.0.47 (*)
+3syn v3.0.9 (*)
+2dtoa-short v0.3.5
+3dtoa v1.0.11
+2itoa v1.0.18
+2phf v0.14.0
+3phf_macros v0.14.0 (proc-macro)
+4phf_generator v0.14.0
+5fastrand v2.5.0
+5phf_shared v0.14.0
+6siphasher v1.0.4
+4phf_shared v0.14.0 (*)
+4proc-macro2 v1.0.107 (*)
+4quote v1.0.47 (*)
+4syn v2.0.119
+5proc-macro2 v1.0.107 (*)
+5quote v1.0.47 (*)
+5unicode-ident v1.0.27
+3phf_shared v0.14.0 (*)
+2smallvec v1.16.4
+1kurbo v0.13.1 (*)
+1parley v0.12.0
+2fontique v0.12.0
+3hashbrown v0.17.1
+4foldhash v0.2.0
+3linebender_resource_handle v0.1.1
+3memmap2 v0.9.12 (*)
+3objc2 v0.6.5
+4objc2-encode v4.1.0
+3objc2-core-foundation v0.3.2
+4bitflags v2.13.2
+3objc2-core-text v0.3.2
+4bitflags v2.13.2
+4objc2-core-foundation v0.3.2 (*)
+3objc2-foundation v0.3.2
+4bitflags v2.13.2
+4objc2 v0.6.5 (*)
+3parlance v0.1.1
+3read-fonts v0.41.0 (*)
+3smallvec v1.16.4
+2hashbrown v0.17.1 (*)
+2linebender_resource_handle v0.1.1
+2parlance v0.1.1
+2parley_engine v0.12.0
+3fontique v0.12.0 (*)
+3harfrust v0.12.0 (*)
+3hashbrown v0.17.1 (*)
+3icu_locale_core v2.4.0
+4displaydoc v0.2.7 (proc-macro)
+5proc-macro2 v1.0.107 (*)
+5quote v1.0.47 (*)
+5syn v3.0.9 (*)
+4litemap v0.8.3
+4tinystr v0.8.5
+5displaydoc v0.2.7 (proc-macro) (*)
+5zerovec v0.11.9
+6yoke v0.8.4
+7stable_deref_trait v1.2.1
+7yoke-derive v0.8.4 (proc-macro)
+8proc-macro2 v1.0.107 (*)
+8quote v1.0.47 (*)
+8syn v3.0.9 (*)
+8synstructure v0.14.0
+9proc-macro2 v1.0.107 (*)
+9quote v1.0.47 (*)
+9syn v3.0.9 (*)
+7zerofrom v0.1.8
+8zerofrom-derive v0.1.8 (proc-macro)
+9proc-macro2 v1.0.107 (*)
+9quote v1.0.47 (*)
+9syn v3.0.9 (*)
+9synstructure v0.14.0 (*)
+6zerofrom v0.1.8 (*)
+6zerovec-derive v0.11.7 (proc-macro)
+7proc-macro2 v1.0.107 (*)
+7quote v1.0.47 (*)
+7syn v3.0.9 (*)
+4writeable v0.6.4
+4zerovec v0.11.9 (*)
+3icu_normalizer v2.4.0
+4icu_collections v2.4.0
+5displaydoc v0.2.7 (proc-macro) (*)
+5potential_utf v0.1.6
+6writeable v0.6.4
+6zerovec v0.11.9 (*)
+5utf8_iter v1.0.4
+5yoke v0.8.4 (*)
+5zerofrom v0.1.8 (*)
+5zerovec v0.11.9 (*)
+4icu_normalizer_data v2.4.0
+4icu_provider v2.4.0
+5displaydoc v0.2.7 (proc-macro) (*)
+5icu_locale_core v2.4.0 (*)
+5stable_deref_trait v1.2.1
+5writeable v0.6.4
+5yoke v0.8.4 (*)
+5zerofrom v0.1.8 (*)
+5zerotrie v0.2.5
+6displaydoc v0.2.7 (proc-macro) (*)
+6yoke v0.8.4 (*)
+6zerofrom v0.1.8 (*)
+5zerovec v0.11.9 (*)
+4smallvec v1.16.4
+4zerovec v0.11.9 (*)
+3icu_properties v2.4.0
+4displaydoc v0.2.7 (proc-macro) (*)
+4icu_collections v2.4.0 (*)
+4icu_locale_core v2.4.0 (*)
+4icu_properties_data v2.4.0
+4icu_provider v2.4.0 (*)
+4zerotrie v0.2.5 (*)
+4zerovec v0.11.9 (*)
+3icu_segmenter v2.4.0
+4icu_collections v2.4.0 (*)
+4icu_locale_fallback v2.4.0
+5icu_locale_core v2.4.0 (*)
+5icu_locale_fallback_data v2.4.0
+5icu_provider v2.4.0 (*)
+5potential_utf v0.1.6 (*)
+5tinystr v0.8.5 (*)
+5zerovec v0.11.9 (*)
+4icu_provider v2.4.0 (*)
+4icu_segmenter_data v2.4.0
+4potential_utf v0.1.6 (*)
+4smallvec v1.16.4
+4utf8_iter v1.0.4
+4zerotrie v0.2.5 (*)
+4zerovec v0.11.9 (*)
+3linebender_resource_handle v0.1.1
+3parlance v0.1.1
+3parley_data v0.12.0
+4icu_collections v2.4.0 (*)
+4icu_properties v2.4.0 (*)
+3parley_emoji v0.12.0
+3skrifa v0.44.0 (*)
+2smallvec v1.16.4
+1peniko v0.6.1 (*)
+1svgtypes v0.16.1 (*)
+1usvg v0.48.1 (*)
+1wega-dom v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/dom/core)
+2html5ever v0.40.1
+3log v0.4.34
+3markup5ever v0.40.0
+4log v0.4.34
+4tendril v0.5.1
+5new_debug_unreachable v1.0.6
+4web_atoms v0.3.0
+5phf v0.14.0 (*)
+5string_cache v0.11.0
+6new_debug_unreachable v1.0.6
+6parking_lot v0.12.5
+7lock_api v0.4.14
+8scopeguard v1.2.0
+7parking_lot_core v0.9.12
+8cfg-if v1.0.5
+8libc v0.2.191
+8smallvec v1.16.4
+6phf_shared v0.14.0 (*)
+6precomputed-hash v0.1.1
+5phf_codegen v0.14.0
+6phf_generator v0.14.0 (*)
+6phf_shared v0.14.0 (*)
+5string_cache_codegen v0.11.2
+6phf_generator v0.14.0 (*)
+6phf_shared v0.14.0 (*)
+6proc-macro2 v1.0.107 (*)
+6quote v1.0.47 (*)
+3memchr v2.8.3
+2url v2.5.8
+3form_urlencoded v1.2.2
+4percent-encoding v2.3.2
+3idna v1.1.0
+4idna_adapter v1.2.2
+5icu_normalizer v2.4.0 (*)
+5icu_properties v2.4.0 (*)
+4smallvec v1.16.4
+4utf8_iter v1.0.4
+3percent-encoding v2.3.2

@@ -75,6 +75,28 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
             return;
         };
 
+        if element_data.has_attr(local_name!("disabled")) {
+            return;
+        }
+
+        let is_readonly = element_data.has_attr(local_name!("readonly"));
+        if is_readonly {
+            if let KeyboardOrTextInputEvent::KeyPress(ref k) = event {
+                let is_mutating = match &k.key {
+                    Key::Character(c) => !k.modifiers.contains(ACTION_MOD) || matches!(c.to_lowercase().as_str(), "x" | "v"),
+                    Key::Named(NamedKey::Backspace | NamedKey::Delete | NamedKey::Enter) => true,
+                    _ => false,
+                };
+                if is_mutating {
+                    return;
+                }
+            } else if let KeyboardOrTextInputEvent::AppleStandardKeyBinding(ref cmd) = event {
+                if cmd.starts_with("delete") || cmd.starts_with("insert") || cmd == "yank:" {
+                    return;
+                }
+            }
+        }
+
         if let Some(input_data) = element_data.text_input_data_mut() {
             let generated_event = match event {
                 KeyboardOrTextInputEvent::KeyPress(blitz_key_event) => input_data

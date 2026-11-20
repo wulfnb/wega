@@ -5,23 +5,27 @@ edition = "2024"
 rust-version = "1.98"
 license = "MPL-2.0"
 publish = false
-description = "Wega's experimental Blitz-based page engine"
+description = "Wega-owned DOM, V8 and native page engine"
 
 [dependencies]
+wega-native = { path = "../native" }
 wega-protocol = { path = "../protocol" }
 wega-network = {path="../network"}
 wega-security = { path = "../services/security" }
 wega-permissions = { path = "../services/permissions" }
 wega-adapter-skia = { path = "../adapters/skia" }
 wega-adapter-v8 = { path = "../adapters/v8" }
-wega-adapter-blitz = { path = "../adapters/blitz" }
 wega-dom = { path = "../dom/core" }
 wega-html = { path = "../html/parser" }
 wega-platform = {path="../platform"}
+anyrender = "=0.14.0"
+usvg = "=0.48.1"
+cssparser = "=0.38.0"
+parley = { version = "=0.12.0", features = ["system", "complex-scripts"] }
+kurbo = "=0.13.1"
+peniko = "=0.6.1" 
 tokio = {version="1",features=["rt","time","net","sync"]}
 base64 = "0.23"
-blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars", "floats", "error-diagnostics", "accessibility", "file-input"] }
-blitz-traits = "=0.3.0-beta.4"
 accesskit = { version = "=0.25.2", features = ["serde"] }
 skia-safe = "=0.153.3"
 html5ever = "0.40.1"
@@ -34,14 +38,17 @@ encoding_rs = "0.8.35"
 
 sha2 = "0.11"
 
-
-
 style = {package="stylo",version="=0.22.0"}
 
-selectors = "=0.42.0"
+style_config = { package="stylo_static_prefs", version="=0.22.0" }
+style_traits = {package="stylo_traits", version="=0.22.0"}
+wuff = "=0.2.9"
+selectors = "=0.41.0"
 style_dom = {package="stylo_dom",version="=0.22.0"}
 
 keyboard-types = "=0.8.3"
+smol_str = "0.3"
+percent-encoding = "2"
 
 [build-dependencies]
 sha2 = "0.11"
@@ -51,6 +58,8 @@ serde_json = "1"
 url = "2.5"
 
 [dev-dependencies]
+wega-adapter-blitz = { path = "../adapters/blitz" }
+anyrender_skia = "=0.12.0"
 # Only the packaging test in dom_host.rs uses deno_core's include_js_files! macro.
 deno_core = "=0.413.0"
 sha1 = "0.11"

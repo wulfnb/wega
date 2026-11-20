@@ -4,12 +4,18 @@
 //! architecture checker. Extend the lists deliberately, with the architecture docs.
 const ALLOWED: &[&str] = &[
     "wega-dom",
+    "wega-native",
     "blitz-dom",
-    "blitz-html",
+    "wega-html",
     "blitz-traits",
     // The painter and its display-list crate: recording a scene is the `PaintSource` contract.
     "blitz-paint",
     "anyrender",
+    // Geometry and fill types of the display list, needed to composite a nested frame's
+    // recording into its parent (`PaintSource::compose_child`). Already in the lockfile via
+    // anyrender; versions follow it.
+    "kurbo",
+    "peniko",
     "html5ever",
     "url",
     // Stylo is hosted by the Blitz document (stylist, lock and sheets are its fields), so the
@@ -18,7 +24,7 @@ const ALLOWED: &[&str] = &[
     "style_traits",
     "cssparser",
 ];
-const ALLOWED_DEV: &[&str] = &["wega-html"];
+const ALLOWED_DEV: &[&str] = &["blitz-html"];
 
 /// Dependency names declared in the given Cargo.toml tables.
 fn dependencies(manifest: &str, tables: &[&str]) -> Vec<String> {
@@ -79,8 +85,10 @@ fn sources_do_not_name_the_engine_or_other_document_engines() {
                     n + 1
                 );
                 assert!(
-                    !code.contains("wega_html"),
-                    "{}:{} the adapter does not use the parser",
+                    // Constructors now use the Wega generic mutation sink. The
+                    // concrete reference parser is confined to oracle tests.
+                    !code.contains("blitz_html"),
+                    "{}:{} the reference parser must stay test-only",
                     path.display(),
                     n + 1
                 );

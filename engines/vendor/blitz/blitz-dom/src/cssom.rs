@@ -283,6 +283,38 @@ fn rule_attributes(rule: &CssRule, guard: &SharedRwLockReadGuard) -> Vec<(&'stat
 }
 
 impl BaseDocument {
+    pub fn stylesheet_url(&self, node_id: NodeId) -> Option<url::Url> {
+        let sheet = self.nodes_to_stylesheet.get(&node_id)?;
+        Some((*sheet.contents(&self.guard.read()).url_data.0).clone())
+    }
+    /// Serialize the authoritative rules for the native renderer. Imported
+    /// sheets are included only after the existing authorized loader completed.
+    /// This is a rendering bridge, never a script-visible cross-origin read.
+    pub fn native_stylesheet_text(&self, node_id: NodeId) -> Option<String> {
+        fn append(rules: &[CssRule], guard: &SharedRwLockReadGuard, out: &mut String, depth: usize, remaining: &mut usize) {
+            if depth > 8 { return; }
+            for rule in rules {
+                if *remaining == 0 || out.len() > 8 * 1024 * 1024 { break; }
+                *remaining -= 1;
+                if let CssRule::Import(import) = rule {
+                    let import = import.read_with(guard);
+                    if !matches!(import.layer, style::stylesheets::import_rule::ImportLayer::None) { continue; }
+                    let media = import.stylesheet.media(guard).map(|m| m.to_css_string()).unwrap_or_default();
+                    if !media.is_empty() { out.push_str("@media "); out.push_str(&media); out.push('{'); }
+                    append(import.stylesheet.rules(guard), guard, out, depth + 1, remaining);
+                    if !media.is_empty() { out.push('}'); }
+                } else {
+                    let _ = rule.to_css(guard, out);
+                    out.push('\n');
+                }
+            }
+        }
+        let sheet = self.nodes_to_stylesheet.get(&node_id)?;
+        let guard = self.guard.read();
+        let mut text = String::new();
+        append(sheet.contents(&guard).rules(&guard), &guard, &mut text, 0, &mut 16384);
+        Some(text)
+    }
     /// The owner nodes (`<style>` / `<link>` elements) of the document's author
     /// stylesheets (`document.styleSheets`).
     ///
@@ -324,6 +356,7 @@ impl BaseDocument {
             return false;
         };
         if sheet.0.set_disabled(disabled) {
+            self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
             self.stylist
                 .force_stylesheet_origins_dirty(OriginSet::all());
         }
@@ -536,6 +569,7 @@ impl BaseDocument {
         let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
         self.stylist
             .rule_changed(&sheet, &new_rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(index)
     }
 
@@ -588,6 +622,7 @@ impl BaseDocument {
         let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
         self.stylist
             .rule_changed(&sheet, &removed_rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(())
     }
 
@@ -799,6 +834,7 @@ impl BaseDocument {
         let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
         self.stylist
             .rule_changed(&sheet, &rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(())
     }
 
@@ -853,6 +889,7 @@ impl BaseDocument {
         let ancestor_refs: Vec<CssRuleRef> = ancestors.iter().map(CssRuleRef::from).collect();
         self.stylist
             .rule_changed(&sheet, &rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(removed_value)
     }
 
@@ -930,6 +967,7 @@ impl BaseDocument {
             RuleChangeKind::Generic,
             &ancestor_refs,
         );
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(())
     }
 
@@ -967,6 +1005,7 @@ impl BaseDocument {
         };
         self.stylist
             .rule_changed(&sheet, &rule, &guard, change_kind, &ancestor_refs);
+        self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
         Ok(())
     }
 }

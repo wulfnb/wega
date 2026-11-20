@@ -1,0 +1,12 @@
+{
+  "channel_tolerance": 8,
+  "pixel_threshold_fraction": 0.01,
+  "geometry_tolerance_px": 0.5,
+  "differing_pixels": 275,
+  "total_pixels": 252000,
+  "mismatch_fraction": 0.0010912698412698413,
+  "mean_absolute_channel_error": 0.01801388888888889,
+  "max_channel_error": 78,
+  "geometry_max_error_px": 0.0,
+  "within_tolerance": true
+}

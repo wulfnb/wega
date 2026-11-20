@@ -78,6 +78,7 @@ fn main() {
         ("cache", "cache.js"),
         ("xhr", "xhr.js"),
         ("forms", "forms.js"),
+        ("cssom", "cssom.js"),
         ("worker", "worker.js"),
     ] {
         let path = PathBuf::from("src/dom").join(file);

@@ -200,7 +200,10 @@ impl Broker {
         response.headers.retain(|(name, _)| {
             !name.eq_ignore_ascii_case("set-cookie") && !name.eq_ignore_ascii_case("set-cookie2")
         });
-        if request.top_level {
+        if request.top_level
+            || request.destination == ResourceDestination::Document
+            || request.destination == ResourceDestination::Iframe
+        {
             return Ok(());
         }
         let target = Url::parse(&response.url).map_err(|error| error.to_string())?;
@@ -232,6 +235,45 @@ impl Broker {
                 || mime.ends_with("+xml") && mime != "image/svg+xml";
             if sensitive {
                 return Err("Cross-origin document data cannot be read as a subresource".into());
+            }
+        }
+        let nosniff = header(response, "x-content-type-options")
+            .is_some_and(|v| v.eq_ignore_ascii_case("nosniff"));
+        if nosniff {
+            let mime = header(response, "content-type")
+                .unwrap_or_default()
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            if matches!(
+                request.destination,
+                ResourceDestination::Script | ResourceDestination::Module
+            ) {
+                let is_js = matches!(
+                    mime.as_str(),
+                    "application/javascript"
+                        | "text/javascript"
+                        | "application/ecmascript"
+                        | "text/ecmascript"
+                        | "application/x-javascript"
+                        | "text/x-javascript"
+                        | "application/x-ecmascript"
+                        | "text/javascript1.0"
+                        | "text/javascript1.1"
+                        | "text/javascript1.2"
+                        | "text/javascript1.3"
+                        | "text/javascript1.4"
+                        | "text/javascript1.5"
+                        | "text/jscript"
+                        | "text/livescript"
+                );
+                if !is_js {
+                    return Err(format!("Script MIME type '{}' blocked by nosniff", mime));
+                }
+            } else if request.destination == ResourceDestination::Style && mime != "text/css" {
+                return Err(format!("Style MIME type '{}' blocked by nosniff", mime));
             }
         }
         Ok(())

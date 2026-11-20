@@ -8,34 +8,43 @@
     clippy::manual_strip,
     clippy::manual_slice_fill
 )]
-//! Owned page orchestration on Blitz, independent of Servo and SpiderMonkey.
+//! Wega-owned DOM, V8 host and native page orchestration.
 #![deny(unsafe_code)]
-pub use blitz_traits::events;
-pub use blitz_traits::shell::{ColorScheme, Viewport};
+pub mod events;
 pub use url::Url;
 
 pub mod canvas;
 mod components;
+mod console;
 mod cookies;
 mod csp;
 #[path = "../../../src/diagnostic_event.rs"]
 pub mod diagnostics;
+pub mod document;
 mod dom;
 mod dom_host;
 mod encoding;
 mod event_loop;
 mod frame;
 mod html_report;
+pub mod inspector;
 pub mod media;
+pub mod native_engine;
 mod native_event;
 mod network;
 pub mod permissions;
 mod script;
 mod view;
 pub mod webgl;
+pub use native_engine::{NativeDocument, RenderingBackend};
 pub mod workers;
+/// The native stack of the `wega-dom` thread that owns every `View`. `MAX_LAYOUT_DEPTH` is only
+/// valid for this size; tests spawn their engine threads with it.
+pub const ENGINE_THREAD_STACK: usize = 8 * 1024 * 1024;
 pub use dom::{DialogHandler, DocumentDialogHandler};
+pub use inspector::PagePort;
 pub use network::NetworkPolicy;
+pub use view::frames::{FrameDescription, InspectedFrame};
 pub use view::{Frame, View};
 pub use view::{PageEvent, Pointer, PointerKind};
 pub use wega_adapter_skia::{FrameRequest, FrameTarget, Painted, Pixels};

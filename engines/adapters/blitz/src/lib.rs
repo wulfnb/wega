@@ -1,9 +1,10 @@
 //! The only mapping from Blitz's document onto the Wega document contract (`wega-dom`).
 #![forbid(unsafe_code)]
+mod inspect;
+mod native;
 use blitz_dom::{
     BaseDocument, DocumentConfig, DocumentMutator, Node, NodeId, node::Attribute, node::NodeData,
 };
-use blitz_html::HtmlDocument;
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
@@ -12,14 +13,15 @@ use html5ever::{LocalName, QualName, ns};
 use url::Url;
 use wega_dom::input::{FocusState, HoverChange, InputControl};
 use wega_dom::layout::{
-    ClientBox, ContentBox, GeometryAccess, HitTest, LayoutControl, LayoutError, OffsetBox, Point,
-    Rect, Size, ViewportConfig, ViewportGeometry,
+    BoxModel, ClientBox, ContentBox, Geometry, GeometryAccess, HitTest, Insets, LayoutControl,
+    LayoutError, MAX_LAYOUT_DEPTH, OffsetBox, PaintMapping, Point, Rect, Size, UnsupportedPaint,
+    ViewportConfig, ViewportGeometry,
 };
 use wega_dom::render::PaintSource;
 use wega_dom::style::{StyleAccess, StyleControl, StyleError};
 use wega_dom::{
-    DocumentMutation, DocumentView, MutationError, Mutator, NewAttribute, NodeKey, NodeKind,
-    NodeView,
+    DocumentMutation, DocumentView, MutationClock, MutationEpoch, MutationError, Mutator,
+    NewAttribute, NodeKey, NodeKind, NodeView,
 };
 
 /// `NodeKey` and Blitz's `NodeId` are both foreign to this module's eventual crate, so they
@@ -44,22 +46,61 @@ impl ToNodeId for NodeKey {
     }
 }
 
+static LAYOUT_DEPTH_PROBE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// The effective depth limit: [`MAX_LAYOUT_DEPTH`] unless a probe lifted it.
+fn layout_depth_limit() -> usize {
+    match LAYOUT_DEPTH_PROBE.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => MAX_LAYOUT_DEPTH,
+        probe => probe,
+    }
+}
+/// **Measurement only.** Replaces the layout depth limit process-wide so a test can find the
+/// unguarded stack cliff of the real pipeline in a child process. Never called by the engine;
+/// `None` restores [`MAX_LAYOUT_DEPTH`].
+#[doc(hidden)]
+pub fn set_layout_depth_limit_for_probe(limit: Option<usize>) {
+    LAYOUT_DEPTH_PROBE.store(limit.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
+}
+
 /// The document the engine owns: Blitz's `BaseDocument`, held by value (no second tree, no
 /// extra allocation or indirection) in a local type so the Wega contract can be implemented
 /// for it. It dereferences to `BaseDocument`, so the layout, paint, style and form APIs that
 /// are not behind the contract yet stay reachable.
-pub struct BlitzDocument(BaseDocument);
+pub struct BlitzDocument(BaseDocument, u64);
 impl BlitzDocument {
     pub fn new(document: BaseDocument) -> Self {
-        Self(document)
+        Self(document, 0)
     }
     pub fn into_inner(self) -> BaseDocument {
         self.0
     }
+    /// Record that a state-changing operation was applied to the document *outside* the Wega
+    /// mutation contract (a Wega-owned wrapper over a Blitz API reached through `DerefMut`, such
+    /// as a future stylesheet-rule edit). Blitz does not bump its stylesheet generation for edits
+    /// inside an existing sheet, so such a wrapper must call this once per successful change.
+    pub fn record_external_mutation(&mut self) {
+        self.1 = self.1.wrapping_add(1);
+    }
+    /// Start the mutation counter at `epoch`. Only for tests of its wrap-around behaviour.
+    #[doc(hidden)]
+    pub fn with_mutation_epoch(mut self, epoch: u64) -> Self {
+        self.1 = epoch;
+        self
+    }
+}
+
+impl MutationClock for BlitzDocument {
+    /// The adapter's own count of successful mutations through the Wega contract, plus Blitz's
+    /// stylesheet-set generation, so CSSOM changes (which also reach the document through
+    /// `DerefMut`) are covered too. Both only ever step forward, so their sum changes whenever
+    /// either does.
+    fn mutation_epoch(&self) -> MutationEpoch {
+        MutationEpoch::from_u64(self.1.wrapping_add(self.0.stylesheet_generation()))
+    }
 }
 impl From<BaseDocument> for BlitzDocument {
     fn from(document: BaseDocument) -> Self {
-        Self(document)
+        Self(document, 0)
     }
 }
 impl std::ops::Deref for BlitzDocument {
@@ -75,6 +116,9 @@ impl std::ops::DerefMut for BlitzDocument {
         &mut self.0
     }
 }
+
+/// Past Blitz's `MAX_SUBDOCUMENT_DEPTH` (10): its iframe loader refuses to run.
+const DISABLE_BLITZ_SUBDOCUMENTS: usize = 1 << 20;
 
 /// What the engine decides about a new document. The adapter turns it into Blitz's own
 /// configuration, so the engine neither builds a `DocumentConfig` nor chooses how a
@@ -102,6 +146,11 @@ impl DocumentSetup {
             abort_signal: self.abort_signal,
             net_provider: self.net_provider,
             navigation_provider: self.navigation_provider,
+            // Blitz can load <iframe> content into static sub-documents through the same
+            // net provider. Wega owns browsing contexts (sandbox, principals, frame-src,
+            // X-Frame-Options, credentials), so Blitz's own loader is switched off by
+            // starting past its nesting limit. There must be exactly one iframe path.
+            subdocument_depth: DISABLE_BLITZ_SUBDOCUMENTS,
             ..Default::default()
         }
     }
@@ -109,16 +158,61 @@ impl DocumentSetup {
 impl BlitzDocument {
     /// A document parsed from `html` in one pass (the engine's initial blank page).
     pub fn from_html(html: &str, setup: DocumentSetup) -> Self {
-        Self(HtmlDocument::from_html(html, setup.config()).into_inner())
+        // Preserve the reference constructor's XHTML sniffing. Actual browser
+        // navigation uses the MIME/extension decision in `encoding`.
+        let root = html.trim_start_matches('\u{feff}').trim_start();
+        let xhtml_root = root
+            .strip_prefix("<html")
+            .and_then(|r| r.split_once('>'))
+            .is_some_and(|(attrs, _)| {
+                attrs.contains("xmlns=\"http://www.w3.org/1999/xhtml\"")
+                    || attrs.contains("xmlns='http://www.w3.org/1999/xhtml'")
+            });
+        if html.starts_with("<?xml")
+            || (html.starts_with("<!DOCTYPE")
+                && html
+                    .lines()
+                    .next()
+                    .is_some_and(|s| s.contains("XHTML") || s.contains("xhtml")))
+            || xhtml_root
+        {
+            return Self::from_xml(html, setup);
+        }
+        let document = std::rc::Rc::new(std::cell::RefCell::new(Self::empty(setup)));
+        {
+            let mut parser = wega_html::Parser::with_scripting(
+                document.clone(),
+                html,
+                usize::MAX,
+                ConstructionReport,
+                false,
+            );
+            while let wega_html::Step::Script(_) = parser.step() {}
+        }
+        std::rc::Rc::try_unwrap(document)
+            .ok()
+            .expect("parser released document")
+            .into_inner()
     }
     /// A document parsed from XML in one pass.
     pub fn from_xml(xml: &str, setup: DocumentSetup) -> Self {
-        Self(HtmlDocument::from_xml(xml, setup.config()).into_inner())
+        let document = std::rc::Rc::new(std::cell::RefCell::new(Self::empty(setup)));
+        wega_html::parse_xml(document.clone(), xml, usize::MAX, ConstructionReport)
+            .expect("unbounded reference constructor");
+        std::rc::Rc::try_unwrap(document)
+            .ok()
+            .expect("parser released document")
+            .into_inner()
     }
     /// An empty document that the incremental HTML parser then fills.
     pub fn empty(setup: DocumentSetup) -> Self {
-        Self(BaseDocument::new(setup.config()))
+        Self(BaseDocument::new(setup.config()), 0)
     }
+}
+
+struct ConstructionReport;
+impl wega_html::ParseReport for ConstructionReport {
+    fn warning(&self, _: wega_html::HtmlDiagnostic<'_>) {}
 }
 
 /// A borrowed node of a [`BlitzDocument`].
@@ -133,6 +227,13 @@ impl<'a> BlitzNode<'a> {
 
 impl DocumentView for BlitzDocument {
     type Node<'a> = BlitzNode<'a>;
+    fn owned_fragment(&self, key: NodeKey) -> Option<NodeKey> {
+        self.0
+            .get_node(key.node_id())?
+            .element_data()?
+            .template_contents
+            .map(ToKey::key)
+    }
     #[inline]
     fn node(&self, key: NodeKey) -> Option<BlitzNode<'_>> {
         self.0.get_node(key.node_id()).map(BlitzNode)
@@ -149,6 +250,13 @@ impl DocumentView for BlitzDocument {
 }
 
 impl<'a> NodeView<'a> for BlitzNode<'a> {
+    fn text(self) -> Option<&'a str> {
+        match &self.0.data {
+            NodeData::Text(text) => Some(&text.content),
+            NodeData::Comment { contents } => Some(contents),
+            _ => None,
+        }
+    }
     #[inline]
     fn kind(self) -> NodeKind {
         match &self.0.data {
@@ -199,7 +307,7 @@ impl<'a> NodeView<'a> for BlitzNode<'a> {
 impl DocumentMutation for BlitzDocument {
     type Mutator<'a> = BlitzMutator<'a>;
     fn mutate(&mut self) -> BlitzMutator<'_> {
-        BlitzMutator(BaseDocument::mutate(&mut self.0))
+        BlitzMutator(BaseDocument::mutate(&mut self.0), &mut self.1)
     }
     fn refresh_style_element(&mut self, key: NodeKey) {
         // A `<style>` outside the document (a fragment, a template, a shadow tree) has no
@@ -272,7 +380,48 @@ fn rect(r: blitz_dom::BoundingRect) -> Rect {
         height: r.height,
     }
 }
+fn intersect(a: Rect, b: Rect) -> Rect {
+    let x = a.x.max(b.x);
+    let y = a.y.max(b.y);
+    let right = (a.x + a.width).min(b.x + b.width);
+    let bottom = (a.y + a.height).min(b.y + b.height);
+    Rect {
+        x,
+        y,
+        width: (right - x).max(0.0),
+        height: (bottom - y).max(0.0),
+    }
+}
 impl BlitzDocument {
+    /// The padding box of the element `id` in viewport coordinates, from cached layout.
+    fn padding_box_of(&self, id: NodeId) -> Result<Rect, ()> {
+        let outer = self.0.get_client_bounding_rect(id).map(rect).ok_or(())?;
+        let layout = self.0.get_node(id).ok_or(())?.final_layout();
+        Ok(Rect {
+            x: outer.x + layout.border.left as f64,
+            y: outer.y + layout.border.top as f64,
+            width: (outer.width - (layout.border.left + layout.border.right) as f64).max(0.0),
+            height: (outer.height - (layout.border.top + layout.border.bottom) as f64).max(0.0),
+        })
+    }
+    /// Whether any node is more than `limit` levels below the document root. Iterative (the whole
+    /// point is that it cannot overflow itself) and exits on the first violation; a tree with no
+    /// more than `limit` nodes cannot be that deep and is not walked.
+    fn nests_deeper_than(&self, limit: usize) -> bool {
+        if self.0.tree().len() <= limit {
+            return false;
+        }
+        let mut pending = vec![(self.0.root_node().id, 0usize)];
+        while let Some((id, depth)) = pending.pop() {
+            if depth > limit {
+                return true;
+            }
+            if let Some(node) = self.0.get_node(id) {
+                pending.extend(node.children.iter().map(|child| (*child, depth + 1)));
+            }
+        }
+        false
+    }
     fn laid_out(&self, key: NodeKey) -> Result<&Node, LayoutError> {
         self.0
             .get_node(key.node_id())
@@ -365,6 +514,124 @@ impl GeometryAccess for BlitzDocument {
             padding_top: layout.padding.top as f64,
         })
     }
+    fn layout_refused(&self) -> bool {
+        self.nests_deeper_than(layout_depth_limit())
+    }
+    fn paint_mapping(&self, key: NodeKey) -> PaintMapping {
+        use style::values::generics::box_::Perspective;
+        let mut clip: Option<Rect> = None;
+        let mut positioned = false;
+        let mut current = Some(key.node_id());
+        let mut first = true;
+        // Walk to the root through *layout* parents (the DOM tree Blitz lays out).
+        for _ in 0..=MAX_LAYOUT_DEPTH + 2 {
+            let Some(id) = current else { break };
+            let Some(node) = self.0.get_node(id) else {
+                return PaintMapping::Unsupported(UnsupportedPaint::Unknown);
+            };
+            if node.is_element() {
+                let Some(style) = node.primary_styles() else {
+                    return PaintMapping::Unsupported(UnsupportedPaint::Unknown);
+                };
+                let b = style.get_box();
+                let transformed = !b.transform.0.is_empty()
+                    || !matches!(b.translate, style::values::computed::Translate::None)
+                    || !matches!(b.rotate, style::values::computed::Rotate::None)
+                    || !matches!(b.scale, style::values::computed::Scale::None)
+                    || !matches!(b.perspective, Perspective::None);
+                if transformed {
+                    return PaintMapping::Unsupported(UnsupportedPaint::Transform);
+                }
+                use style::computed_values::position::T as Position;
+                if matches!(b.position, Position::Absolute | Position::Fixed) {
+                    positioned = true;
+                }
+                // `html` and `body` propagate their overflow to the viewport.
+                let propagates = node
+                    .element_data()
+                    .is_some_and(|e| matches!(&*e.name.local, "html" | "body"));
+                let clips = {
+                    use style::values::specified::box_::Overflow;
+                    !matches!(b.overflow_x, Overflow::Visible)
+                        || !matches!(b.overflow_y, Overflow::Visible)
+                };
+                if !first && clips && !propagates {
+                    if let Ok(boxes) = self.padding_box_of(id) {
+                        clip = Some(match clip {
+                            None => boxes,
+                            Some(old) => intersect(old, boxes),
+                        });
+                    } else {
+                        return PaintMapping::Unsupported(UnsupportedPaint::Unknown);
+                    }
+                }
+                first = false;
+            }
+            current = node.parent;
+        }
+        if clip.is_some() && positioned {
+            return PaintMapping::Unsupported(UnsupportedPaint::ClipPositioned);
+        }
+        PaintMapping::Exact { clip }
+    }
+    fn inspect_geometry(&self, key: NodeKey) -> Geometry {
+        let Some(node) = self.0.get_node(key.node_id()) else {
+            return Geometry::Invalid;
+        };
+        let pending = self.layout_pending();
+        if pending && self.layout_refused() {
+            return Geometry::Refused;
+        }
+        if !matches!(self.has_boxes(key), Ok(true)) || !node.is_element() {
+            return if pending && node.primary_styles().is_none() {
+                Geometry::Pending
+            } else {
+                Geometry::NoBoxes
+            };
+        }
+        let Ok(border_box) = self.bounding_rect(key) else {
+            return Geometry::Invalid;
+        };
+        let layout = node.final_layout();
+        macro_rules! insets {
+            ($r:expr) => {
+                Insets {
+                    top: $r.top as f64,
+                    right: $r.right as f64,
+                    bottom: $r.bottom as f64,
+                    left: $r.left as f64,
+                }
+            };
+        }
+        let boxes = BoxModel {
+            border_box,
+            border: insets!(layout.border),
+            padding: insets!(layout.padding),
+            margin: insets!(layout.margin),
+        };
+        if pending {
+            Geometry::Stale(boxes)
+        } else {
+            Geometry::Current(boxes)
+        }
+    }
+    fn layout_pending(&self) -> bool {
+        let root = self.0.root_node();
+        // Before the first resolve no element has a style; afterwards pending work shows as
+        // dirty descendants or damage on the root, and a document waiting on render-blocking
+        // resources is not resolved at all.
+        // `root_element()` unwraps, and an empty document (before parsing) has no element child.
+        let unresolved = root
+            .children
+            .iter()
+            .filter_map(|id| self.0.get_node(*id))
+            .find(|node| node.is_element())
+            .is_none_or(|element| element.primary_styles().is_none());
+        unresolved
+            || self.0.has_pending_critical_resources()
+            || root.has_dirty_descendants()
+            || root.damage().is_some_and(|damage| !damage.is_empty())
+    }
     fn viewport(&self) -> ViewportGeometry {
         let viewport = self.0.viewport();
         let scale = (viewport.hidpi_scale * viewport.zoom) as f64;
@@ -412,6 +679,12 @@ impl HitTest for BlitzDocument {
 }
 impl LayoutControl for BlitzDocument {
     fn flush_layout(&mut self, animation_time: f64) {
+        // Style and layout recurse per nesting level: past the limit they overflow the native
+        // stack, and a stack overflow here does not abort but spins forever (the "depth-122
+        // hang"). Refuse instead; the document keeps its previous (or no) layout.
+        if self.nests_deeper_than(layout_depth_limit()) {
+            return;
+        }
         self.0.resolve(animation_time);
     }
     fn set_viewport(&mut self, viewport: ViewportConfig) {
@@ -471,8 +744,20 @@ impl PaintSource for BlitzDocument {
         self.flush_layout(animation_time);
     }
     fn record_scene(&mut self, viewport: &ViewportConfig) -> Self::Scene {
+        self.record_scene_with_children(viewport, Vec::new())
+    }
+    fn record_scene_with_children(
+        &mut self,
+        viewport: &ViewportConfig,
+        children: Vec<(wega_dom::NodeKey, Self::Scene)>,
+    ) -> Self::Scene {
+        use std::collections::HashMap;
+        let mut embedded = HashMap::new();
+        for (key, scene) in children {
+            embedded.insert(key.node_id(), scene);
+        }
         let mut scene = anyrender::Scene::new();
-        blitz_paint::paint_scene(
+        blitz_paint::paint_scene_with_embedded(
             &mut scene,
             &mut self.0,
             (viewport.scale * viewport.zoom) as f64,
@@ -480,8 +765,20 @@ impl PaintSource for BlitzDocument {
             viewport.height_px,
             0,
             0,
+            embedded,
         );
         scene
+    }
+    fn compose_child(
+        scene: &mut Self::Scene,
+        child: Self::Scene,
+        rect: wega_dom::render::DeviceRect,
+    ) {
+        use anyrender::PaintScene as _;
+        let area = kurbo::Rect::new(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
+        scene.push_clip_layer(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, &area);
+        scene.append_scene(child, kurbo::Affine::translate((rect.x, rect.y)));
+        scene.pop_layer();
     }
     fn is_animating(&self) -> bool {
         self.0.is_animating()
@@ -656,7 +953,7 @@ impl StyleControl for BlitzDocument {
 
 /// Blitz's `DocumentMutator` behind the Wega mutation contract. It has no `Drop` of its
 /// own: dropping it drops the inner mutator, which runs Blitz's deferred work.
-pub struct BlitzMutator<'a>(DocumentMutator<'a>);
+pub struct BlitzMutator<'a>(DocumentMutator<'a>, &'a mut u64);
 
 fn attributes(attrs: impl IntoIterator<Item = NewAttribute>) -> Vec<Attribute> {
     attrs
@@ -669,6 +966,19 @@ fn attributes(attrs: impl IntoIterator<Item = NewAttribute>) -> Vec<Attribute> {
 }
 
 impl BlitzMutator<'_> {
+    /// One successful, state-changing operation happened (see `MutationEpoch`).
+    fn stepped(&mut self) {
+        *self.1 = self.1.wrapping_add(1);
+    }
+    /// The element's current value of attribute `name`, if it has one.
+    fn attribute_value(&self, key: NodeKey, name: &QualName) -> Option<&str> {
+        let node = self.0.doc.get_node(key.node_id())?;
+        node.element_data()?
+            .attrs
+            .iter()
+            .find(|attr| attr.name == *name)
+            .map(|attr| &*attr.value)
+    }
     fn node(&self, key: NodeKey) -> Result<&Node, MutationError> {
         self.0
             .doc
@@ -730,6 +1040,12 @@ fn with_ids<R>(children: &[NodeKey], f: impl FnOnce(&[NodeId]) -> R) -> R {
 }
 
 impl Mutator for BlitzMutator<'_> {
+    fn create_document(&mut self) -> NodeKey {
+        self.0
+            .doc
+            .create_node(NodeData::Document(Box::default()))
+            .key()
+    }
     fn parent(&self, key: NodeKey) -> Option<NodeKey> {
         self.node(key).ok()?.parent.map(ToKey::key)
     }
@@ -772,6 +1088,9 @@ impl Mutator for BlitzMutator<'_> {
         let parent_id = self.container(parent)?;
         self.check_children(parent, children)?;
         with_ids(children, |ids| self.0.append_children(parent_id, ids));
+        if !children.is_empty() {
+            self.stepped();
+        }
         Ok(())
     }
     fn insert_before(
@@ -783,6 +1102,9 @@ impl Mutator for BlitzMutator<'_> {
         let parent = self.parent(anchor).ok_or(MutationError::Detached(anchor))?;
         self.check_children(parent, children)?;
         with_ids(children, |ids| self.0.insert_nodes_before(anchor_id, ids));
+        if !children.is_empty() {
+            self.stepped();
+        }
         Ok(())
     }
     fn replace_children(
@@ -792,7 +1114,12 @@ impl Mutator for BlitzMutator<'_> {
     ) -> Result<(), MutationError> {
         let parent_id = self.container(parent)?;
         self.check_children(parent, children)?;
+        // Replacing nothing with nothing changes nothing.
+        let had_children = !self.node(parent)?.children.is_empty();
         with_ids(children, |ids| self.0.replace_children(parent_id, ids));
+        if had_children || !children.is_empty() {
+            self.stepped();
+        }
         Ok(())
     }
     fn clone_node(&mut self, key: NodeKey, deep: bool) -> Result<NodeKey, MutationError> {
@@ -821,11 +1148,13 @@ impl Mutator for BlitzMutator<'_> {
     fn remove(&mut self, key: NodeKey) -> Result<(), MutationError> {
         let id = self.live(key)?;
         self.0.remove_node(id);
+        self.stepped();
         Ok(())
     }
     fn remove_and_drop(&mut self, key: NodeKey) -> Result<(), MutationError> {
         let id = self.live(key)?;
         self.0.remove_and_drop_node(id);
+        self.stepped();
         Ok(())
     }
     fn reparent_children(&mut self, from: NodeKey, to: NodeKey) -> Result<(), MutationError> {
@@ -837,16 +1166,26 @@ impl Mutator for BlitzMutator<'_> {
                 child: from,
             });
         }
+        let moves = !self.node(from)?.children.is_empty();
         self.0.reparent_children(from_id, to_id);
+        if moves {
+            self.stepped();
+        }
         Ok(())
     }
 
     fn set_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError> {
         let id = self.live(node)?;
-        if BlitzNode(self.node(node)?).kind() != NodeKind::Text {
+        let current = self.node(node)?;
+        if BlitzNode(current).kind() != NodeKind::Text {
             return Err(MutationError::NotText(node));
         }
+        let unchanged =
+            matches!(&current.data, blitz_dom::node::NodeData::Text(t) if &*t.content == text);
         self.0.set_node_text(id, text);
+        if !unchanged {
+            self.stepped();
+        }
         Ok(())
     }
     fn append_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError> {
@@ -856,7 +1195,26 @@ impl Mutator for BlitzMutator<'_> {
         }
         self.0
             .append_text_to_node(id, text)
-            .map_err(|_| MutationError::NotText(node))
+            .map_err(|_| MutationError::NotText(node))?;
+        if !text.is_empty() {
+            self.stepped();
+        }
+        Ok(())
+    }
+    fn set_comment(&mut self, key: NodeKey, text: &str) -> Result<(), MutationError> {
+        let NodeData::Comment { contents } = &self.node(key)?.data else {
+            return Err(MutationError::NotText(key));
+        };
+        if contents != text {
+            let NodeData::Comment { contents } =
+                &mut self.0.doc.get_node_mut(key.node_id()).unwrap().data
+            else {
+                unreachable!()
+            };
+            *contents = text.into();
+            self.stepped();
+        }
+        Ok(())
     }
     fn set_attribute(
         &mut self,
@@ -865,12 +1223,22 @@ impl Mutator for BlitzMutator<'_> {
         value: &str,
     ) -> Result<(), MutationError> {
         let id = self.element(node)?;
+        let unchanged = self
+            .attribute_value(node, &name)
+            .is_some_and(|current| current == value);
         self.0.set_attribute(id, name, value);
+        if !unchanged {
+            self.stepped();
+        }
         Ok(())
     }
     fn clear_attribute(&mut self, node: NodeKey, name: QualName) -> Result<(), MutationError> {
         let id = self.element(node)?;
+        let present = self.attribute_value(node, &name).is_some();
         self.0.clear_attribute(id, name);
+        if present {
+            self.stepped();
+        }
         Ok(())
     }
     fn add_attributes_if_missing(
@@ -879,7 +1247,14 @@ impl Mutator for BlitzMutator<'_> {
         attrs: impl IntoIterator<Item = NewAttribute>,
     ) -> Result<(), MutationError> {
         let id = self.element(node)?;
-        self.0.add_attrs_if_missing(id, attributes(attrs));
+        let attrs = attributes(attrs);
+        let adds = attrs
+            .iter()
+            .any(|attr| self.attribute_value(node, &attr.name).is_none());
+        self.0.add_attrs_if_missing(id, attrs);
+        if adds {
+            self.stepped();
+        }
         Ok(())
     }
 }

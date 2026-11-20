@@ -48,6 +48,26 @@ with (profile / 'browser.log').open('w') as log:
         assert session['capabilities']['browserVersion'].startswith('0.1.0')
         sid = session['sessionId']
         root = f'/session/{sid}'
+
+        # Trust boundary (D3.0): browser-origin and DNS-rebinding requests are refused
+        # before any command runs, so a web page cannot drive the endpoint.
+        def refused(headers, path='/status', method='GET', body=b''):
+            import http.client
+            h = {'Content-Type': 'application/json', 'Host': f'127.0.0.1:{port}'}
+            h.update(headers)
+            conn = http.client.HTTPConnection('127.0.0.1', port, timeout=10)
+            conn.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+            for k, v in h.items():
+                conn.putheader(k, v)
+            conn.putheader('Content-Length', str(len(body)))
+            conn.endheaders(body)
+            reply = conn.getresponse()
+            message = json.loads(reply.read())['value']['message']
+            assert reply.status >= 400 and message.startswith('Invalid'), (headers, reply.status, message)
+        refused({'Origin': 'https://evil.example'})
+        refused({'Origin': 'null'})
+        refused({'Host': 'evil.example'})
+        refused({'Content-Type': 'text/plain'}, root + '/execute/sync', 'POST', b'{"script":"return 1","args":[]}')
         assert request('POST', root + '/url', {'url': 'javascript://blocked'}, 400)['error'] == 'invalid argument'
         request('POST', root + '/url', {'url': 'wega://newtab'})
         assert request('GET', root + '/url') == 'wega://newtab'

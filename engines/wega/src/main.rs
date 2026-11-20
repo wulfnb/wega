@@ -53,7 +53,7 @@ fn main() {
             eprintln!("Wega content startup: native entry policy verified");
             std::thread::Builder::new()
                 .name("wega-dom".into())
-                .stack_size(8 * 1024 * 1024)
+                .stack_size(wega_engine::ENGINE_THREAD_STACK)
                 .spawn(|| run().map_err(|error| error.to_string()))
                 .map_err(|error| error.to_string())
                 .and_then(|thread| {
@@ -146,6 +146,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             Command::CaptureDocument { .. } | Command::NavigateDocument { .. }
                         ) {
                             protocol::HARNESS_TIMEOUT_MS
+                        } else if let Command::Inspector { request, .. } = &command {
+                            request
+                                .command_hint()
+                                .map_or(protocol::inspector::INSPECTOR_TIMEOUT_MS, |c| {
+                                    c.timeout_ms()
+                                })
                         } else {
                             protocol::EVALUATION_TIMEOUT_MS
                         };
@@ -359,6 +365,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut sampled = std::time::Instant::now() - interval;
     let mut rss_bytes = wega_platform::resident_bytes();
     let mut metrics = (0, 0);
+    // Present only for session-protocol workers that can be addressed by a TargetId.
+    let mut inspector = identity.map(|identity| {
+        wega_engine::inspector::Backend::new(protocol::inspector::TargetId::of(&identity), version)
+    });
+    let mut frame_inspectors: std::collections::BTreeMap<
+        protocol::identity::FrameId,
+        wega_engine::inspector::Backend,
+    > = std::collections::BTreeMap::new();
     let output = Rc::new(RefCell::new(std::io::stdout().lock()));
     let event_output = output.clone();
     let write = move |event: &Event| {
@@ -569,6 +583,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         view.poll();
         report_commit(&view, serial)?;
+        if version >= 22
+            && let Some(backend) = &mut inspector
+        {
+            // One branch when no session is subscribed; never queues anything.
+            let context = document_context(&view, serial, version);
+            for (session, seq, event) in backend.observe(context, view.loading, &view) {
+                write(&Event::InspectorEvent {
+                    context,
+                    session,
+                    seq,
+                    event,
+                })?;
+            }
+        }
+        if version >= 22 {
+            for (frame_id, frame_backend) in &mut frame_inspectors {
+                if let Some(target) = view.frame_target(frame_id.0) {
+                    for (session, seq, event) in
+                        frame_backend.observe(target.context, target.loading, target.port)
+                    {
+                        write(&Event::InspectorEvent {
+                            context: target.context,
+                            session,
+                            seq,
+                            event,
+                        })?;
+                    }
+                }
+            }
+        }
         if let Some(reason) = view.take_script_failure() {
             write(&protocol::content_event(
                 version,
@@ -645,9 +689,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     })?;
                 }
                 PageEvent::FrameDetached { frame } => {
+                    frame_inspectors.remove(&frame);
                     write(&Event::FrameDetached { frame })?;
                 }
                 PageEvent::FrameNavigated { frame, url, origin } => {
+                    frame_inspectors.remove(&frame);
                     write(&Event::FrameNavigated { frame, url, origin })?;
                 }
                 PageEvent::FramePostMessage {
@@ -814,6 +860,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         let resource_delay = interval.saturating_sub(sampled.elapsed());
         delay = Some(delay.map_or(resource_delay, |delay| delay.min(resource_delay)));
+        // A console backlog is drained in small batches between other work, not by sleeping
+        // until something unrelated wakes the loop.
+        if version >= 23
+            && inspector
+                .as_ref()
+                .is_some_and(|backend| backend.has_backlog(&view))
+        {
+            let pace = Duration::from_millis(2);
+            delay = Some(delay.map_or(pace, |delay| delay.min(pace)));
+        }
         let queued = deferred.borrow_mut().pop_front();
         let work = if let Some(work) = queued {
             work
@@ -853,447 +909,574 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Work::Invalid(error) => return Err(error.into()),
             Work::Wake => {}
             Work::Rejected(context, error) => write(&Event::RequestFailed { context, error })?,
-            Work::Command(command) => match command {
-                Command::Activate {
-                    context,
-                    activation: token,
-                } => {
-                    if context == document_context(&view, serial, version) {
-                        activation = Some((context, token));
-                    }
-                }
-                Command::Session { .. } => return Err("Nested session command".into()),
-                Command::CancelRequest(_) => {} // Consumed by the input thread.
-                Command::AnswerDialog { .. } => {} // A late answer has no authority over another prompt.
-                Command::Capabilities => {
-                    write(&Event::Capabilities {
-                        version,
-                        supported: protocol::capabilities(version)
-                            .into_iter()
-                            .filter(|capability| {
-                                cfg!(any(unix, windows))
-                                    || !matches!(
-                                        capability,
-                                        protocol::Capability::InheritedBroker
-                                            | protocol::Capability::InheritedFrames
-                                    )
-                            })
-                            .collect(),
-                    })?;
-                }
-                Command::EvaluateDocument { context, source } => {
-                    if context.document != DocumentId(serial)
-                        || (version >= 7 && context.revision.0 != view.document_revision())
-                    {
-                        write(&Event::RequestFailed {
-                            context,
-                            error: ProtocolError::new(
-                                ErrorCode::StaleDocument,
-                                "Document navigated before evaluation",
-                            ),
-                        })?;
-                        continue;
-                    }
-                    // Navigation can retain the old DOM until the replacement commits.
-                    // Never execute a new-generation request against that retained DOM.
-                    if view.loading {
-                        write(&Event::RequestFailed {
-                            context,
-                            error: ProtocolError::new(
-                                ErrorCode::InvalidRequest,
-                                "Document has not finished loading",
-                            ),
-                        })?;
-                        continue;
-                    }
-                    let result = match view.evaluate_json(&source) {
-                        Ok(value) if value.len() <= protocol::MAX_RESULT_BYTES => Ok(value),
-                        Ok(_) => Err(ProtocolError::new(
-                            ErrorCode::ResourceLimit,
-                            "Evaluation result exceeds the IPC budget",
-                        )),
-                        Err(error) if error == "Evaluation result exceeds the IPC budget" => {
-                            Err(ProtocolError::new(ErrorCode::ResourceLimit, error))
+            Work::Command(command) => {
+                match command {
+                    Command::Activate {
+                        context,
+                        activation: token,
+                    } => {
+                        if context == document_context(&view, serial, version) {
+                            activation = Some((context, token));
                         }
-                        Err(error) => Err(ProtocolError::new(ErrorCode::ScriptException, error)),
-                    };
-                    write(&Event::DocumentEvaluated { context, result })?;
-                }
-                Command::CheckDocumentState(context) => {
-                    if context.document != DocumentId(serial)
-                        || (version >= 7 && context.revision.0 != view.document_revision())
-                    {
-                        write(&Event::RequestFailed {
-                            context,
-                            error: ProtocolError::new(
-                                ErrorCode::StaleDocument,
-                                "Document navigated before state check",
-                            ),
-                        })?;
-                        continue;
                     }
-                    if view.loading {
-                        write(&Event::RequestFailed {
-                            context,
-                            error: ProtocolError::new(
-                                ErrorCode::InvalidRequest,
-                                "Document has not finished loading",
-                            ),
+                    Command::Session { .. } => return Err("Nested session command".into()),
+                    Command::CancelRequest(_) => {} // Consumed by the input thread.
+                    Command::AnswerDialog { .. } => {} // A late answer has no authority over another prompt.
+                    Command::Capabilities => {
+                        write(&Event::Capabilities {
+                            version,
+                            supported: protocol::capabilities(version)
+                                .into_iter()
+                                .filter(|capability| {
+                                    cfg!(any(unix, windows))
+                                        || !matches!(
+                                            capability,
+                                            protocol::Capability::InheritedBroker
+                                                | protocol::Capability::InheritedFrames
+                                        )
+                                })
+                                .collect(),
                         })?;
-                        continue;
                     }
-                    let dirty =
-                        view.evaluate_json("__wega_page_has_edits()").as_deref() != Ok("false");
-                    write(&Event::DocumentState { context, dirty })?;
-                }
-                Command::CaptureDocument { context } => {
-                    if context.document != DocumentId(serial)
-                        || (version >= 7 && context.revision.0 != view.document_revision())
-                    {
-                        write(&Event::RequestFailed {
-                            context,
-                            error: ProtocolError::new(
-                                ErrorCode::StaleDocument,
-                                "Document navigated before capture",
-                            ),
-                        })?;
-                        continue;
-                    }
-                    if view.loading {
-                        write(&Event::RequestFailed {
-                            context,
-                            error: ProtocolError::new(
-                                ErrorCode::InvalidRequest,
-                                "Document has not finished loading",
-                            ),
-                        })?;
-                        continue;
-                    }
-                    if view.paint_pending() {
-                        let _ = view.wait_painted();
-                        if let Some((slot, sequence)) = pending_target.take()
-                            && credits[slot as usize] == Some(sequence)
+                    Command::EvaluateDocument { context, source } => {
+                        if context.document != DocumentId(serial)
+                            || (version >= 7 && context.revision.0 != view.document_revision())
                         {
-                            credits[slot as usize] = None;
-                        }
-                        let _ = pending_revision.take();
-                    }
-                    let (width, height) = (800, 600);
-                    let result = view.paint(width, height, 1.0, 1.0, false);
-                    match result {
-                        Ok(frame) => {
-                            use sha2::{Digest, Sha256};
-                            let mut hasher = Sha256::new();
-                            hasher.update(&frame.rgba);
-                            let hash = hasher
-                                .finalize()
-                                .iter()
-                                .map(|byte| format!("{byte:02x}"))
-                                .collect::<String>();
-                            write(&Event::DocumentCaptured {
-                                context,
-                                width: frame.width,
-                                height: frame.height,
-                                hash,
-                            })?;
-                        }
-                        Err(e) => {
                             write(&Event::RequestFailed {
                                 context,
-                                error: ProtocolError::new(ErrorCode::ResourceLimit, e),
+                                error: ProtocolError::new(
+                                    ErrorCode::StaleDocument,
+                                    "Document navigated before evaluation",
+                                ),
                             })?;
+                            continue;
                         }
+                        // Navigation can retain the old DOM until the replacement commits.
+                        // Never execute a new-generation request against that retained DOM.
+                        if view.loading {
+                            write(&Event::RequestFailed {
+                                context,
+                                error: ProtocolError::new(
+                                    ErrorCode::InvalidRequest,
+                                    "Document has not finished loading",
+                                ),
+                            })?;
+                            continue;
+                        }
+                        let result = match view.evaluate_json(&source) {
+                            Ok(value) if value.len() <= protocol::MAX_RESULT_BYTES => Ok(value),
+                            Ok(_) => Err(ProtocolError::new(
+                                ErrorCode::ResourceLimit,
+                                "Evaluation result exceeds the IPC budget",
+                            )),
+                            Err(error) if error == "Evaluation result exceeds the IPC budget" => {
+                                Err(ProtocolError::new(ErrorCode::ResourceLimit, error))
+                            }
+                            Err(error) => {
+                                Err(ProtocolError::new(ErrorCode::ScriptException, error))
+                            }
+                        };
+                        write(&Event::DocumentEvaluated { context, result })?;
                     }
-                }
-                Command::NavigateDocument { context, url } => {
-                    if context.document != DocumentId(serial)
-                        || (version >= 7 && context.revision.0 != view.document_revision())
-                    {
-                        write(&Event::RequestFailed {
+                    Command::Inspector { context, request } => {
+                        if context.document != DocumentId(serial)
+                            || context.revision.0 != view.document_revision()
+                        {
+                            write(&Event::RequestFailed {
+                                context,
+                                error: ProtocolError::new(
+                                    ErrorCode::StaleDocument,
+                                    "Document navigated before the inspector request",
+                                ),
+                            })?;
+                            continue;
+                        }
+                        let Some(backend) = inspector.as_mut().filter(|_| version >= 22) else {
+                            write(&Event::RequestFailed {
+                                context,
+                                error: ProtocolError::new(
+                                    ErrorCode::Unsupported,
+                                    "Inspector is not offered by this session",
+                                ),
+                            })?;
+                            continue;
+                        };
+                        match request.decode().and_then(|decoded| {
+                        if decoded.command.needs_style_version() && version < 25 {
+                            Err(protocol::inspector::InspectorError::new(
+                                protocol::inspector::InspectorErrorCode::UnsupportedVersion,
+                                "Styles need protocol 25",
+                            ))
+                        } else if decoded.command.needs_dom_version() && version < 24 {
+                            Err(protocol::inspector::InspectorError::new(
+                                protocol::inspector::InspectorErrorCode::UnsupportedVersion,
+                                "DOM inspection needs protocol version 24",
+                            ))
+                        } else if decoded.command.needs_console_version() && version < 23 {
+                            Err(protocol::inspector::InspectorError::new(
+                                protocol::inspector::InspectorErrorCode::UnsupportedVersion,
+                                "Console and evaluation need protocol version 23",
+                            ))
+                        } else {
+                            Ok(decoded)
+                        }
+                    }) {
+                        // The whole payload is unusable, so no session can be named.
+                        Err(error) => write(&Event::RequestFailed {
                             context,
                             error: ProtocolError::new(
-                                ErrorCode::StaleDocument,
-                                "Document navigated before navigate command",
+                                if error.code
+                                    == protocol::inspector::InspectorErrorCode::UnsupportedVersion
+                                {
+                                    ErrorCode::Unsupported
+                                } else {
+                                    ErrorCode::InvalidRequest
+                                },
+                                error.message,
                             ),
-                        })?;
-                        continue;
-                    }
-                    let parsed = Url::parse(&url);
-                    match parsed {
-                        Ok(parsed_url) => {
-                            serial = serial
-                                .checked_add(1)
-                                .ok_or("Navigation identity exhausted")?;
-                            let res = view
-                                .load_for_navigation(parsed_url, serial)
-                                .map_err(|e| ProtocolError::new(ErrorCode::InvalidRequest, e));
-                            write(&Event::DocumentNavigated {
-                                context,
-                                status: res,
-                            })?;
+                        })?,
+                        Ok(request) => {
+                            let session = request.session;
+                            let is_top = identity.as_ref().is_none_or(|id| request.target.frame == id.frame);
+                            if is_top {
+                                let current = (document_context(&view, serial, version), view.loading);
+                                let sampled = wega_engine::inspector::Sampled {
+                                    nodes: metrics.0 as u64,
+                                    js_heap_bytes: metrics.1 as u64,
+                                    viewport: {
+                                        let (w, h, scale, zoom, _) = viewport;
+                                        let dpr = f64::from(scale) * f64::from(zoom);
+                                        (dpr.is_finite() && dpr > 0.0 && w > 0 && h > 0)
+                                            .then(|| (f64::from(w) / dpr, f64::from(h) / dpr, dpr))
+                                    },
+                                };
+                                let result = backend.handle(&request, current, sampled, &mut view);
+                                write(&Event::InspectorResponse {
+                                    context,
+                                    session,
+                                    result,
+                                })?;
+                            } else {
+                                let frame_key = request.target.frame.0;
+                                if let Some(target) = view.frame_target(frame_key) {
+                                    let frame_backend = frame_inspectors.entry(request.target.frame).or_insert_with(|| {
+                                        wega_engine::inspector::Backend::new(request.target, version)
+                                    });
+                                    let current = (target.context, target.loading);
+                                    let sampled = wega_engine::inspector::Sampled {
+                                        nodes: 0,
+                                        js_heap_bytes: 0,
+                                        viewport: None,
+                                    };
+                                    let result = frame_backend.handle(&request, current, sampled, target.port);
+                                    write(&Event::InspectorResponse {
+                                        context,
+                                        session,
+                                        result,
+                                    })?;
+                                } else {
+                                    write(&Event::InspectorResponse {
+                                        context,
+                                        session,
+                                        result: Err(protocol::inspector::InspectorError::new(
+                                            protocol::inspector::InspectorErrorCode::UnknownTarget,
+                                            "Frame target not found",
+                                        )),
+                                    })?;
+                                }
+                            }
                         }
-                        Err(e) => {
-                            write(&Event::DocumentNavigated {
+                    }
+                    }
+                    Command::InspectorDetach { session } => {
+                        if let Some(backend) = &mut inspector {
+                            backend.detach(session);
+                        }
+                        for backend in frame_inspectors.values_mut() {
+                            backend.detach(session);
+                        }
+                    }
+                    Command::CheckDocumentState(context) => {
+                        if context.document != DocumentId(serial)
+                            || (version >= 7 && context.revision.0 != view.document_revision())
+                        {
+                            write(&Event::RequestFailed {
                                 context,
-                                status: Err(ProtocolError::new(
+                                error: ProtocolError::new(
+                                    ErrorCode::StaleDocument,
+                                    "Document navigated before state check",
+                                ),
+                            })?;
+                            continue;
+                        }
+                        if view.loading {
+                            write(&Event::RequestFailed {
+                                context,
+                                error: ProtocolError::new(
                                     ErrorCode::InvalidRequest,
-                                    e.to_string(),
-                                )),
+                                    "Document has not finished loading",
+                                ),
                             })?;
+                            continue;
+                        }
+                        let dirty =
+                            view.evaluate_json("__wega_page_has_edits()").as_deref() != Ok("false");
+                        write(&Event::DocumentState { context, dirty })?;
+                    }
+                    Command::CaptureDocument { context } => {
+                        if context.document != DocumentId(serial)
+                            || (version >= 7 && context.revision.0 != view.document_revision())
+                        {
+                            write(&Event::RequestFailed {
+                                context,
+                                error: ProtocolError::new(
+                                    ErrorCode::StaleDocument,
+                                    "Document navigated before capture",
+                                ),
+                            })?;
+                            continue;
+                        }
+                        if view.loading {
+                            write(&Event::RequestFailed {
+                                context,
+                                error: ProtocolError::new(
+                                    ErrorCode::InvalidRequest,
+                                    "Document has not finished loading",
+                                ),
+                            })?;
+                            continue;
+                        }
+                        if view.paint_pending() {
+                            let _ = view.wait_painted();
+                            if let Some((slot, sequence)) = pending_target.take()
+                                && credits[slot as usize] == Some(sequence)
+                            {
+                                credits[slot as usize] = None;
+                            }
+                            let _ = pending_revision.take();
+                        }
+                        let (width, height) = (800, 600);
+                        let result = view.paint(width, height, 1.0, 1.0, false);
+                        match result {
+                            Ok(frame) => {
+                                use sha2::{Digest, Sha256};
+                                let mut hasher = Sha256::new();
+                                hasher.update(&frame.rgba);
+                                let hash = hasher
+                                    .finalize()
+                                    .iter()
+                                    .map(|byte| format!("{byte:02x}"))
+                                    .collect::<String>();
+                                write(&Event::DocumentCaptured {
+                                    context,
+                                    width: frame.width,
+                                    height: frame.height,
+                                    hash,
+                                })?;
+                            }
+                            Err(e) => {
+                                write(&Event::RequestFailed {
+                                    context,
+                                    error: ProtocolError::new(ErrorCode::ResourceLimit, e),
+                                })?;
+                            }
                         }
                     }
-                }
-                Command::FrameNavigate { frame: _, url: _ } => {
-                    write(&protocol::content_event(
-                        version,
-                        DocumentContext {
-                            document: DocumentId(serial),
-                            revision: protocol::DocumentRevision(view.document_revision()),
-                        },
-                        ContentEvent::Notice(
-                            "Nested browsing contexts are not available in this worker".into(),
-                        ),
-                    ))?;
-                }
-                Command::FramePostMessage {
-                    target,
-                    origin,
-                    target_origin,
-                    message,
-                } => {
-                    view.post_frame_message(target, &origin, target_origin.as_deref(), &message);
-                    write(&protocol::content_event(
-                        version,
-                        DocumentContext {
-                            document: DocumentId(serial),
-                            revision: protocol::DocumentRevision(view.document_revision()),
-                        },
-                        ContentEvent::Notice(
-                            "Nested browsing contexts are not available in this worker".into(),
-                        ),
-                    ))?;
-                }
-                Command::Shutdown => break,
-                Command::CheckPageState(request) => {
-                    let dirty =
-                        view.evaluate_json("__wega_page_has_edits()").as_deref() != Ok("false");
-                    write(&Event::PageState { request, dirty })?;
-                }
-                Command::Load {
-                    url,
-                    serial: requested,
-                    bypass_cache,
-                } => {
-                    if version >= 11 && serial.checked_add(1) != Some(requested) {
-                        return Err("Reused or out-of-order navigation identity".into());
+                    Command::NavigateDocument { context, url } => {
+                        if context.document != DocumentId(serial)
+                            || (version >= 7 && context.revision.0 != view.document_revision())
+                        {
+                            write(&Event::RequestFailed {
+                                context,
+                                error: ProtocolError::new(
+                                    ErrorCode::StaleDocument,
+                                    "Document navigated before navigate command",
+                                ),
+                            })?;
+                            continue;
+                        }
+                        let parsed = Url::parse(&url);
+                        match parsed {
+                            Ok(parsed_url) => {
+                                serial = serial
+                                    .checked_add(1)
+                                    .ok_or("Navigation identity exhausted")?;
+                                let res = view
+                                    .load_for_navigation(parsed_url, serial)
+                                    .map_err(|e| ProtocolError::new(ErrorCode::InvalidRequest, e));
+                                write(&Event::DocumentNavigated {
+                                    context,
+                                    status: res,
+                                })?;
+                            }
+                            Err(e) => {
+                                write(&Event::DocumentNavigated {
+                                    context,
+                                    status: Err(ProtocolError::new(
+                                        ErrorCode::InvalidRequest,
+                                        e.to_string(),
+                                    )),
+                                })?;
+                            }
+                        }
                     }
-                    serial = requested;
-                    if let Err(error) =
-                        Url::parse(&url).map_err(|e| e.to_string()).and_then(|url| {
-                            view.load_for_navigation_bypass_cache(url, requested, bypass_cache)
-                        })
-                    {
-                        view.stop_for_navigation(requested);
-                        report_commit(&view, serial)?;
+                    Command::FrameNavigate { frame: _, url: _ } => {
                         write(&protocol::content_event(
                             version,
-                            document_context(&view, serial, version),
-                            ContentEvent::Notice(error),
+                            DocumentContext {
+                                document: DocumentId(serial),
+                                revision: protocol::DocumentRevision(view.document_revision()),
+                            },
+                            ContentEvent::Notice(
+                                "Nested browsing contexts are not available in this worker".into(),
+                            ),
                         ))?;
                     }
-                }
-                Command::Resize {
-                    width,
-                    height,
-                    scale,
-                    zoom,
-                    dark,
-                } => {
-                    protocol::frame_bytes(width, height)?;
-                    viewport = (width, height, scale, zoom, dark);
-                    view.request_redraw();
-                }
-                Command::Click { x, y } => view.click(x, y),
-                Command::Pointer {
-                    kind,
-                    x,
-                    y,
-                    button,
-                    buttons,
-                    modifiers,
-                    delta_x,
-                    delta_y,
-                } => {
-                    let kind = match kind.as_str() {
-                        "move" => Some(PointerKind::Move),
-                        "down" => Some(PointerKind::Down),
-                        "up" => Some(PointerKind::Up),
-                        "leave" => Some(PointerKind::Leave),
-                        "wheel" => Some(PointerKind::Wheel),
-                        _ => None,
-                    };
-                    if let Some(kind) = kind
-                        && x.is_finite()
-                        && y.is_finite()
-                        && delta_x.is_finite()
-                        && delta_y.is_finite()
-                    {
-                        view.pointer(Pointer {
-                            kind,
-                            x,
-                            y,
-                            button,
-                            buttons,
-                            modifiers,
-                            delta_x,
-                            delta_y,
-                        });
+                    Command::FramePostMessage {
+                        target,
+                        origin,
+                        target_origin,
+                        message,
+                    } => {
+                        view.post_frame_message(
+                            target,
+                            &origin,
+                            target_origin.as_deref(),
+                            &message,
+                        );
+                        write(&protocol::content_event(
+                            version,
+                            DocumentContext {
+                                document: DocumentId(serial),
+                                revision: protocol::DocumentRevision(view.document_revision()),
+                            },
+                            ContentEvent::Notice(
+                                "Nested browsing contexts are not available in this worker".into(),
+                            ),
+                        ))?;
                     }
-                }
-                Command::Traverse(delta) => view.traverse(delta),
-                // A late answer after the dialog timed out.
-                Command::DialogReply(_) => {}
-                Command::Key {
-                    key,
-                    code,
-                    text,
-                    pressed,
-                    modifiers,
-                    repeat,
-                } => {
-                    use keyboard_types::{Code, Key, Location, Modifiers};
-                    use wega_engine::events::{BlitzKeyEvent, KeyState};
-                    let mut flags = Modifiers::empty();
-                    for (bit, flag) in [
-                        (1, Modifiers::SHIFT),
-                        (2, Modifiers::CONTROL),
-                        (4, Modifiers::ALT),
-                        (8, Modifiers::META),
-                    ] {
-                        if modifiers & bit != 0 {
-                            flags.insert(flag);
+                    Command::Shutdown => break,
+                    Command::CheckPageState(request) => {
+                        let dirty =
+                            view.evaluate_json("__wega_page_has_edits()").as_deref() != Ok("false");
+                        write(&Event::PageState { request, dirty })?;
+                    }
+                    Command::Load {
+                        url,
+                        serial: requested,
+                        bypass_cache,
+                    } => {
+                        if version >= 11 && serial.checked_add(1) != Some(requested) {
+                            return Err("Reused or out-of-order navigation identity".into());
+                        }
+                        serial = requested;
+                        if let Err(error) =
+                            Url::parse(&url).map_err(|e| e.to_string()).and_then(|url| {
+                                view.load_for_navigation_bypass_cache(url, requested, bypass_cache)
+                            })
+                        {
+                            view.stop_for_navigation(requested);
+                            report_commit(&view, serial)?;
+                            write(&protocol::content_event(
+                                version,
+                                document_context(&view, serial, version),
+                                ContentEvent::Notice(error),
+                            ))?;
                         }
                     }
-                    view.key(BlitzKeyEvent {
-                        key: key.parse().unwrap_or(Key::Character(key)),
-                        code: code.parse().unwrap_or(Code::Unidentified),
-                        text: text.map(Into::into),
-                        state: if pressed {
-                            KeyState::Pressed
-                        } else {
-                            KeyState::Released
-                        },
-                        location: Location::Standard,
-                        modifiers: flags,
-                        is_auto_repeating: repeat,
-                        is_composing: false,
-                    });
-                }
-                Command::Ime {
-                    text,
-                    preedit,
-                    cursor,
-                } => view.ime(if preedit {
-                    wega_engine::events::BlitzImeEvent::Preedit(text, cursor)
-                } else {
-                    wega_engine::events::BlitzImeEvent::Commit(text)
-                }),
-                Command::Scroll {
-                    x,
-                    y,
-                    pointer_x,
-                    pointer_y,
-                } => view.scroll_at(x, y, pointer_x, pointer_y),
-                Command::FrameConsumed { slot, sequence } => {
-                    if let Some(credit) = credits.get_mut(slot as usize)
-                        && *credit == Some(sequence)
-                    {
-                        *credit = None;
+                    Command::Resize {
+                        width,
+                        height,
+                        scale,
+                        zoom,
+                        dark,
+                    } => {
+                        protocol::frame_bytes(width, height)?;
+                        viewport = (width, height, scale, zoom, dark);
+                        view.request_redraw();
                     }
-                }
-                Command::Freeze(value) => {
-                    frozen = value;
-                    view.freeze(value);
-                    sampled = std::time::Instant::now() - interval;
-                }
-                Command::Stop => view.stop(),
-                Command::Redraw => view.request_redraw(),
-                Command::ClearHistory => view.clear_history(),
-                Command::Policy {
-                    offline,
-                    blocked_hosts,
-                    allowed_hosts,
-                    user_script,
-                } => {
-                    engine.set_policy(NetworkPolicy {
+                    Command::Click { x, y } => view.click(x, y),
+                    Command::Pointer {
+                        kind,
+                        x,
+                        y,
+                        button,
+                        buttons,
+                        modifiers,
+                        delta_x,
+                        delta_y,
+                    } => {
+                        let kind = match kind.as_str() {
+                            "move" => Some(PointerKind::Move),
+                            "down" => Some(PointerKind::Down),
+                            "up" => Some(PointerKind::Up),
+                            "leave" => Some(PointerKind::Leave),
+                            "wheel" => Some(PointerKind::Wheel),
+                            _ => None,
+                        };
+                        if let Some(kind) = kind
+                            && x.is_finite()
+                            && y.is_finite()
+                            && delta_x.is_finite()
+                            && delta_y.is_finite()
+                        {
+                            view.pointer(Pointer {
+                                kind,
+                                x,
+                                y,
+                                button,
+                                buttons,
+                                modifiers,
+                                delta_x,
+                                delta_y,
+                            });
+                        }
+                    }
+                    Command::Traverse(delta) => view.traverse(delta),
+                    // A late answer after the dialog timed out.
+                    Command::DialogReply(_) => {}
+                    Command::Key {
+                        key,
+                        code,
+                        text,
+                        pressed,
+                        modifiers,
+                        repeat,
+                    } => {
+                        use keyboard_types::{Code, Key, Location, Modifiers};
+                        use wega_engine::events::{BlitzKeyEvent, KeyState};
+                        let mut flags = Modifiers::empty();
+                        for (bit, flag) in [
+                            (1, Modifiers::SHIFT),
+                            (2, Modifiers::CONTROL),
+                            (4, Modifiers::ALT),
+                            (8, Modifiers::META),
+                        ] {
+                            if modifiers & bit != 0 {
+                                flags.insert(flag);
+                            }
+                        }
+                        view.key(BlitzKeyEvent {
+                            key: key.parse().unwrap_or(Key::Character(key)),
+                            code: code.parse().unwrap_or(Code::Unidentified),
+                            text: text.map(Into::into),
+                            state: if pressed {
+                                KeyState::Pressed
+                            } else {
+                                KeyState::Released
+                            },
+                            location: Location::Standard,
+                            modifiers: flags,
+                            is_auto_repeating: repeat,
+                            is_composing: false,
+                        });
+                    }
+                    Command::Ime {
+                        text,
+                        preedit,
+                        cursor,
+                    } => view.ime(if preedit {
+                        wega_engine::events::BlitzImeEvent::Preedit(text, cursor)
+                    } else {
+                        wega_engine::events::BlitzImeEvent::Commit(text)
+                    }),
+                    Command::Scroll {
+                        x,
+                        y,
+                        pointer_x,
+                        pointer_y,
+                    } => view.scroll_at(x, y, pointer_x, pointer_y),
+                    Command::FrameConsumed { slot, sequence } => {
+                        if let Some(credit) = credits.get_mut(slot as usize)
+                            && *credit == Some(sequence)
+                        {
+                            *credit = None;
+                        }
+                    }
+                    Command::Freeze(value) => {
+                        frozen = value;
+                        view.freeze(value);
+                        sampled = std::time::Instant::now() - interval;
+                    }
+                    Command::Stop => view.stop(),
+                    Command::Redraw => view.request_redraw(),
+                    Command::ClearHistory => view.clear_history(),
+                    Command::Policy {
                         offline,
                         blocked_hosts,
                         allowed_hosts,
-                        allow_loopback: true,
-                        ..Default::default()
-                    });
-                    view.set_user_script(user_script);
-                    // Apply live permissions without discarding the current DOM/input state.
+                        user_script,
+                    } => {
+                        engine.set_policy(NetworkPolicy {
+                            offline,
+                            blocked_hosts,
+                            allowed_hosts,
+                            allow_loopback: true,
+                            ..Default::default()
+                        });
+                        view.set_user_script(user_script);
+                        // Apply live permissions without discarding the current DOM/input state.
+                    }
+                    Command::Evaluate(source) => {
+                        let result = view.evaluate_json(&source);
+                        let event = match result {
+                            Ok(value) => Event::Evaluated { value, error: None },
+                            Err(error) => Event::Evaluated {
+                                value: String::new(),
+                                error: Some(error),
+                            },
+                        };
+                        write(&event)?;
+                    }
+                    Command::Init { .. } => {
+                        return Err("Worker was initialized more than once".into());
+                    }
+                    Command::EnableAccessibility(enabled) => {
+                        view.set_accessibility_enabled(enabled);
+                    }
+                    Command::AccessibilityAction {
+                        action,
+                        target,
+                        data,
+                    } => {
+                        view.accessibility_action(&action, target, data.as_deref());
+                    }
+                    Command::FileSelected { id, paths } => {
+                        view.file_selected(id, paths);
+                    }
+                    Command::Copy => {
+                        view.copy();
+                    }
+                    Command::Cut => {
+                        view.cut();
+                    }
+                    Command::Paste(text) => {
+                        view.paste(&text);
+                    }
+                    Command::SelectAll => {
+                        view.select_all();
+                    }
+                    Command::FindInPage {
+                        query,
+                        backwards,
+                        case_sensitive,
+                    } => {
+                        view.find_in_page(&query, backwards, case_sensitive);
+                    }
+                    Command::MediaSessionAction(action) => {
+                        view.notify_media_session_action(action);
+                    }
+                    Command::AnswerPermission { id, allow } => {
+                        view.answer_permission(id, allow);
+                    }
+                    Command::RevokePermission { origin, feature } => {
+                        view.revoke_permission(&origin, feature);
+                    }
+                    Command::ExitFullscreen => {
+                        view.exit_fullscreen();
+                    }
                 }
-                Command::Evaluate(source) => {
-                    let result = view.evaluate_json(&source);
-                    let event = match result {
-                        Ok(value) => Event::Evaluated { value, error: None },
-                        Err(error) => Event::Evaluated {
-                            value: String::new(),
-                            error: Some(error),
-                        },
-                    };
-                    write(&event)?;
-                }
-                Command::Init { .. } => {
-                    return Err("Worker was initialized more than once".into());
-                }
-                Command::EnableAccessibility(enabled) => {
-                    view.set_accessibility_enabled(enabled);
-                }
-                Command::AccessibilityAction {
-                    action,
-                    target,
-                    data,
-                } => {
-                    view.accessibility_action(&action, target, data.as_deref());
-                }
-                Command::FileSelected { id, paths } => {
-                    view.file_selected(id, paths);
-                }
-                Command::Copy => {
-                    view.copy();
-                }
-                Command::Cut => {
-                    view.cut();
-                }
-                Command::Paste(text) => {
-                    view.paste(&text);
-                }
-                Command::SelectAll => {
-                    view.select_all();
-                }
-                Command::FindInPage {
-                    query,
-                    backwards,
-                    case_sensitive,
-                } => {
-                    view.find_in_page(&query, backwards, case_sensitive);
-                }
-                Command::MediaSessionAction(action) => {
-                    view.notify_media_session_action(action);
-                }
-                Command::AnswerPermission { id, allow } => {
-                    view.answer_permission(id, allow);
-                }
-                Command::RevokePermission { origin, feature } => {
-                    view.revoke_permission(&origin, feature);
-                }
-                Command::ExitFullscreen => {
-                    view.exit_fullscreen();
-                }
-            },
+            }
         }
     }
     drop(view);

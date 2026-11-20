@@ -10,4 +10,5 @@ description = "Wega's incremental HTML parser: tree construction into a wega-dom
 [dependencies]
 wega-dom = { path = "../../dom/core" }
 html5ever = "0.40.1"
+xml5ever = "0.40.0"
 url = "2.5"

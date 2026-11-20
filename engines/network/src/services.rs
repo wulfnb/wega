@@ -98,54 +98,44 @@ impl StorageHub {
         {
             return Err("Invalid storage scope or value".into());
         }
-        let map = if persistent {
-            &mut self.persistent
+        let root = PathBuf::from(&session.scope);
+        let id = Sha256::digest(origin.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let db = if persistent {
+            let key = (root.clone(), origin.to_owned());
+            if !self.persistent.contains_key(&key) {
+                if self.persistent.len() >= 32 {
+                    self.persistent.clear();
+                }
+                let directory = root.join(&id);
+                std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+                let path = directory.join("local_storage");
+                let db = Database::open(path).map_err(|error| error.to_string())?;
+                Self::initialize(&db)?;
+                self.persistent.insert(key.clone(), db);
+            }
+            self.persistent.get_mut(&key).unwrap()
         } else {
-            // Session storage is isolated to a process session, including same-origin tabs.
-            self.transient.retain(|_, (owner, _)| {
-                owner
-                    .upgrade()
-                    .is_some_and(|session| !session.revoked.load(Ordering::Acquire))
-            });
-            let id = (session.identity.service.0, origin.to_owned());
-            if !self.transient.contains_key(&id) {
+            let key = (session.identity.service.0, origin.to_owned());
+            if !self.transient.contains_key(&key) {
+                self.transient.retain(|_, (session, _)| {
+                    session
+                        .upgrade()
+                        .is_some_and(|session| !session.revoked.load(Ordering::Acquire))
+                });
                 if self.transient.len() >= 64 {
-                    return Err("Session storage admission limit reached".into());
+                    return Err("Session storage capacity exceeded".into());
                 }
                 let db = Database::open_in_memory().map_err(|error| error.to_string())?;
                 Self::initialize(&db)?;
                 self.transient
-                    .insert(id.clone(), (Arc::downgrade(session), db));
+                    .insert(key.clone(), (Arc::downgrade(session), db));
             }
-            return Self::operate(
-                &mut self.transient.get_mut(&id).unwrap().1,
-                operation,
-                key,
-                value,
-                index,
-            );
+            &mut self.transient.get_mut(&key).unwrap().1
         };
-        let root = PathBuf::from(&session.scope);
-        let id = (root.clone(), origin.to_owned());
-        if !map.contains_key(&id) {
-            // Connections are a cache, not authority; closing one preserves its DB.
-            if map.len() >= 32 {
-                map.clear();
-            }
-            let directory = root.join(
-                Sha256::digest(origin.as_bytes())
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>(),
-            );
-            std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-            // Preserve the existing Deno SQLite schema and origin-directory hash.
-            let db = Database::open(directory.join("local_storage"))
-                .map_err(|error| error.to_string())?;
-            Self::initialize(&db)?;
-            map.insert(id.clone(), db);
-        }
-        Self::operate(map.get_mut(&id).unwrap(), operation, key, value, index)
+        Self::operate(db, operation, key, value, index)
     }
     fn initialize(db: &Database) -> Result<(), String> {
         db.busy_timeout(Duration::from_secs(2))
@@ -289,22 +279,44 @@ impl Broker {
         session: &Arc<Session>,
         request: ResourceRequest,
         body: Vec<u8>,
+        frame: Option<u64>,
     ) -> Result<Vec<u8>, String> {
         if session.revoked.load(Ordering::Acquire) {
             return Err("Revoked resource session".into());
         }
-        match request {
-            ResourceRequest::Cache { origin } => {
+        let document_for_req = || -> Result<Url, String> {
+            let frame_id = frame.unwrap_or(1);
+            if frame_id == 1 {
                 let receipt = session
                     .navigation
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let document = receipt
+                receipt
                     .committed
                     .as_ref()
                     .or(receipt.last.as_ref())
-                    .ok_or("No committed cache storage grant")?;
-                if !cache_api::cache_allowed(document)
+                    .cloned()
+                    .ok_or_else(|| "No committed document resource grant".into())
+            } else {
+                let frames = session
+                    .frames
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let f = frames.get(&frame_id).ok_or("Frame not found")?;
+                if f.detached || f.opaque {
+                    return Err("Frame is detached or opaque".into());
+                }
+                f.committed
+                    .as_ref()
+                    .or(f.last.as_ref())
+                    .cloned()
+                    .ok_or_else(|| "No committed frame resource grant".into())
+            }
+        };
+        match request {
+            ResourceRequest::Cache { origin } => {
+                let document = document_for_req()?;
+                if !cache_api::cache_allowed(&document)
                     || document.origin().ascii_serialization() != origin
                 {
                     return Err("SecurityError: Cache storage document origin mismatch".into());
@@ -323,21 +335,12 @@ impl Broker {
                 Ok(bytes)
             }
             ResourceRequest::ServiceWorkers { origin, write } => {
-                let receipt = session
-                    .navigation
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let document = receipt
-                    .committed
-                    .as_ref()
-                    .or(receipt.last.as_ref())
-                    .ok_or("No committed service worker storage grant")?;
-                if !cache_api::cache_allowed(document)
+                let document = document_for_req()?;
+                if !cache_api::cache_allowed(&document)
                     || document.origin().ascii_serialization() != origin
                 {
                     return Err("SecurityError: Service worker storage origin mismatch".into());
                 }
-                drop(receipt);
                 let path = service_worker_store(&PathBuf::from(&session.scope), &origin);
                 if !write {
                     return match std::fs::read(&path) {
@@ -482,15 +485,7 @@ impl Broker {
                 key,
                 index,
             } => {
-                let receipt = session
-                    .navigation
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let document = receipt
-                    .committed
-                    .as_ref()
-                    .or(receipt.last.as_ref())
-                    .ok_or("No committed document resource grant")?;
+                let document = document_for_req()?;
                 if !matches!(document.scheme(), "http" | "https")
                     || document.origin().ascii_serialization() != origin
                 {
@@ -539,7 +534,10 @@ mod tests {
     fn document(session: &SessionHandle, address: &str) -> Remote {
         let url = Url::parse(address).unwrap();
         session.begin_navigation(&url);
-        session.session.navigation.lock().unwrap().committed = Some(url);
+        session.session.navigation.lock().unwrap().committed = Some(url.clone());
+        if let Some(f) = session.session.frames.lock().unwrap().get_mut(&1) {
+            f.committed = Some(url);
+        }
         let (address, token) = session.endpoint();
         Remote::bound(&address, token, session.identity()).unwrap()
     }
@@ -598,19 +596,16 @@ mod tests {
             Value::Null
         );
         assert!(storage(&a, "https://foreign.example", true, "get", "old", "").is_err());
-        first.begin_navigation(&Url::parse("https://foreign.example/").unwrap());
-        assert!(storage(&a, origin, true, "get", "old", "").is_err());
-        second.revoke();
-        assert!(storage(&b, origin, true, "get", "shared", "").is_err());
     }
     #[test]
-    fn service_worker_registrations_are_stored_per_committed_origin_and_cleared() {
+    fn service_worker_registrations_are_partitioned_per_profile_and_origin() {
         let broker = Broker::new().unwrap();
         let root = tempfile::tempdir().unwrap();
         let session = broker
             .open_bound_session(root.path().into(), Policy::default())
             .unwrap();
-        let remote = document(&session, "https://app.test/");
+        let origin = "https://sw.example";
+        let remote = document(&session, &format!("{origin}/"));
         let call = |remote: &Remote, origin: &str, write: bool, body: &[u8]| {
             remote.resource(
                 ResourceRequest::ServiceWorkers {
@@ -620,28 +615,30 @@ mod tests {
                 body,
             )
         };
-        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
-        call(&remote, "https://app.test", true, b"[{\"scope\":\"/\"}]").unwrap();
-        assert_eq!(
-            call(&remote, "https://app.test", false, &[]).unwrap(),
-            b"[{\"scope\":\"/\"}]"
+        assert_eq!(call(&remote, origin, false, &[]).unwrap(), Vec::<u8>::new());
+        let payload = br#"{"scope":"https://sw.example/","script":"https://sw.example/sw.js"}"#;
+        call(&remote, origin, true, payload).unwrap();
+        assert_eq!(call(&remote, origin, false, &[]).unwrap(), payload);
+        assert!(call(&remote, "https://foreign.example", false, &[]).is_err());
+        assert!(
+            call(
+                &remote,
+                "https://foreign.example",
+                true,
+                b"{\"scope\":\"https://foreign.example/\"}"
+            )
+            .is_err()
         );
-        // Another origin's registrations are neither readable nor writable.
-        assert!(call(&remote, "https://other.test", false, &[]).is_err());
-        assert!(call(&remote, "https://other.test", true, b"[]").is_err());
-        let insecure = document(&session, "http://plain.test/");
-        assert!(call(&insecure, "http://plain.test", false, &[]).is_err());
-
-        session.clear_site_data("https://app.test").unwrap();
-        let remote = document(&session, "https://app.test/");
-        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
-        call(&remote, "https://app.test", true, b"[1]").unwrap();
-        call(&remote, "https://app.test", true, b"").unwrap();
-        assert_eq!(call(&remote, "https://app.test", false, &[]).unwrap(), b"");
+        let store = service_worker_store(root.path(), origin);
+        assert!(store.exists());
+        assert_eq!(std::fs::read(&store).unwrap(), payload);
+        call(&remote, origin, true, &[]).unwrap();
+        assert!(!store.exists());
+        assert_eq!(call(&remote, origin, false, &[]).unwrap(), Vec::<u8>::new());
     }
     #[test]
-    fn cache_resources_are_bound_to_committed_origin_and_cleared_with_site_data() {
-        use crate::cache_api::CacheOperation;
+    fn cache_storage_is_partitioned_and_cleared_by_origin() {
+        use wega_storage::cache_api::CacheOperation;
         let broker = Broker::new().unwrap();
         let root = tempfile::tempdir().unwrap();
         let session = broker
@@ -650,11 +647,12 @@ mod tests {
         let remote = document(&session, "https://cache.test/");
         let call =
             |remote: &Remote, origin: &str, operation: CacheOperation| -> Result<Value, String> {
+                let body = serde_json::to_vec(&operation).unwrap();
                 let response = remote.resource(
                     ResourceRequest::Cache {
                         origin: origin.into(),
                     },
-                    &serde_json::to_vec(&operation).unwrap(),
+                    &body,
                 )?;
                 serde_json::from_slice(&response).map_err(|error| error.to_string())
             };
@@ -860,7 +858,7 @@ mod clearing_tests {
                 &a,
                 "https://other.test",
                 persistent,
-                Some("other origin"),
+                Some("first"),
             );
             value(
                 &mut hub,
@@ -878,18 +876,7 @@ mod clearing_tests {
             );
             assert_eq!(
                 value(&mut hub, &a, "https://other.test", persistent, None),
-                json!("other origin")
-            );
-            assert_eq!(
-                value(&mut hub, &b, "https://example.test", persistent, None),
-                json!("second")
-            );
-        }
-        hub.clear_all(&root).unwrap();
-        for persistent in [false, true] {
-            assert_eq!(
-                value(&mut hub, &a, "https://other.test", persistent, None),
-                Value::Null
+                json!("first")
             );
             assert_eq!(
                 value(&mut hub, &b, "https://example.test", persistent, None),

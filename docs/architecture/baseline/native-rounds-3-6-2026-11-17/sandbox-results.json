@@ -1,0 +1,83 @@
+[
+  {
+    "name": "debug-worker-build",
+    "command": [
+      "cargo",
+      "build",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--bin",
+      "wega-engine",
+      "--offline"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "seconds": 16.629509292004514,
+    "log": "/private/tmp/wega-rounds-final-debug-worker-build.log"
+  },
+  {
+    "name": "sandbox-bundle",
+    "command": [
+      "engines/target/debug/wega-content-bundle",
+      "engines/target/debug/wega-engine",
+      "/private/tmp/WegaNativeCampaign-7d21f5d.app"
+    ],
+    "environment": {
+      "WEGA_CODESIGN_IDENTITY": "-"
+    },
+    "exit_code": 0,
+    "seconds": 1.2967307500075549,
+    "log": "/private/tmp/wega-rounds-final-sandbox-bundle.log"
+  },
+  {
+    "name": "required-sandbox",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--test",
+      "inherited_broker",
+      "--offline",
+      "--",
+      "--ignored",
+      "--exact",
+      "a_required_worker_runs_jit_storage_cookies_and_frames_through_grants",
+      "--nocapture"
+    ],
+    "environment": {
+      "WEGA_RENDER_BACKEND": "native",
+      "WEGA_CONTENT_HELPER": "/private/tmp/WegaNativeCampaign-7d21f5d.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine"
+    },
+    "exit_code": 0,
+    "seconds": 19.02077770899632,
+    "log": "/private/tmp/wega-rounds-final-required-sandbox.log"
+  },
+  {
+    "name": "inspector-sandbox",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--test",
+      "inspector_sandbox",
+      "--offline",
+      "--",
+      "--ignored",
+      "--nocapture"
+    ],
+    "environment": {
+      "WEGA_CONTENT_HELPER": "/private/tmp/WegaNativeCampaign-7d21f5d.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine"
+    },
+    "exit_code": 0,
+    "seconds": 14.909495416999562,
+    "log": "/private/tmp/wega-rounds-final-inspector-sandbox.log"
+  }
+]

@@ -2,7 +2,7 @@
 use crate::{
     env::ScriptEnvironment,
     runtime::{RuntimeKind, RuntimeSpec, configure_secure_context, create_runtime},
-    script::{ScriptError, ScriptHost},
+    script::{InspectException, InspectOutcome, ScriptError, ScriptHost},
 };
 use deno_core::JsRuntime;
 use serde_json::json;
@@ -54,6 +54,32 @@ fn heap_bytes(runtime: &mut JsRuntime) -> usize {
         .used_heap_size()
         .saturating_add(stats.external_memory())
 }
+/// Leaves the entry rusty_v8 made at isolate creation (see `V8Host::new`).
+#[allow(unsafe_code)]
+fn raw_exit(isolate: &mut deno_core::v8::Isolate) {
+    // SAFETY: called once, on the creating thread, while this isolate is the current one
+    // (it was entered by its constructor and nothing else was entered since).
+    unsafe {
+        isolate.exit();
+    }
+}
+/// Re-enters an isolate so that its owner can dispose it (balances `raw_exit`).
+#[allow(unsafe_code)]
+fn raw_enter_ptr(isolate: deno_core::v8::UnsafeRawIsolatePtr) {
+    // SAFETY: the isolate is alive; the matching exit is the one inside `OwnedIsolate::drop`.
+    // `Isolate` is a non-owning wrapper over the V8-owned pointer, which does not move when
+    // the `JsRuntime` value does.
+    unsafe {
+        deno_core::v8::Isolate::from_raw_isolate_ptr(isolate).enter();
+    }
+}
+impl<E: ScriptEnvironment> Drop for V8Host<E> {
+    fn drop(&mut self) {
+        // SAFETY of the pointer: the isolate is still owned by `self` (field or pending future).
+        raw_enter_ptr(self.isolate);
+    }
+}
+
 /// Makes an isolate the thread's current isolate for the guard's lifetime.
 ///
 /// This is the adapter's only `unsafe` code (the engine itself has none). Entering is needed because garbage
@@ -80,16 +106,27 @@ fn heap_bytes(runtime: &mut JsRuntime) -> usize {
 ///    the host is single-threaded and the watchdog uses a separate thread-safe
 ///    `IsolateHandle`).
 #[allow(unsafe_code)]
-struct RawIsolateGuard(*mut deno_core::v8::Isolate);
+struct RawIsolateGuard(deno_core::v8::UnsafeRawIsolatePtr);
 
 #[allow(unsafe_code)]
 impl RawIsolateGuard {
+    /// Enter the isolate behind `ptr`, which a `V8Host` keeps for its whole life. Needed when
+    /// the `JsRuntime` is temporarily owned by a module-loading future.
+    fn from_ptr(ptr: deno_core::v8::UnsafeRawIsolatePtr) -> Self {
+        // SAFETY: the host owns the isolate (in its field or inside its pending future) for as
+        // long as it exists, so the pointer is valid; invariants 1, 3 and 4 hold as for `new`.
+        // The V8-owned pointer is stable even when the `JsRuntime` value moves.
+        unsafe {
+            deno_core::v8::Isolate::from_raw_isolate_ptr(ptr).enter();
+        }
+        Self(ptr)
+    }
     fn new(isolate: &mut deno_core::v8::Isolate) -> Self {
         // SAFETY: invariants 1-4 above; the matching `exit` is in `Drop`.
         unsafe {
             isolate.enter();
+            Self(isolate.as_raw_isolate_ptr())
         }
-        Self(isolate as *mut _)
     }
 }
 
@@ -98,7 +135,7 @@ impl Drop for RawIsolateGuard {
     fn drop(&mut self) {
         // SAFETY: the isolate outlives the guard (invariant 2) and this thread entered it (invariant 1).
         unsafe {
-            (*self.0).exit();
+            deno_core::v8::Isolate::from_raw_isolate_ptr(self.0).exit();
         }
     }
 }
@@ -211,6 +248,9 @@ impl Drop for Watchdog {
 
 pub struct V8Host<E: ScriptEnvironment> {
     runtime: Option<JsRuntime>,
+    /// The runtime's isolate, valid while the host lives even when `runtime` is moved into the
+    /// module-loading future.
+    isolate: deno_core::v8::UnsafeRawIsolatePtr,
     loading_module: Option<ModuleLoad>,
     evaluating_modules: Vec<ModuleEvaluation>,
     queued: std::collections::VecDeque<(String, String, bool)>,
@@ -227,6 +267,9 @@ pub struct V8Host<E: ScriptEnvironment> {
     heap_limit: usize,
     timer: Option<Instant>,
     polled_at: Instant,
+    /// The preview generator, captured before any page script ran and removed from the
+    /// global, so a page can neither call it nor replace it.
+    preview: Option<deno_core::v8::Global<deno_core::v8::Function>>,
 }
 impl<E: ScriptEnvironment> V8Host<E> {
     /// The document environment is created and owned by the view and injected here;
@@ -262,6 +305,7 @@ impl<E: ScriptEnvironment> V8Host<E> {
             .map_err(|error| error.to_string())?;
         runtime.op_state().borrow_mut().put(String::new());
         configure_secure_context(&mut runtime, &document_url)?;
+        let preview = capture_preview(&mut runtime);
         let bootstrap_heap = heap_bytes(&mut runtime);
         let oom = Arc::new(AtomicBool::new(false));
         let flag = oom.clone();
@@ -273,8 +317,22 @@ impl<E: ScriptEnvironment> V8Host<E> {
         });
         let watchdog = Watchdog::new(runtime.v8_isolate().thread_safe_handle())?;
         drop(entered);
+        // rusty_v8 enters an isolate when it is created and requires reverse-order disposal.
+        // Several documents (a page and its frames) share this thread, so no host may stay
+        // entered: every operation enters its own isolate through `RawIsolateGuard`, and
+        // `Drop` re-enters it so disposal is balanced whatever order hosts die in.
+        let isolate = {
+            let isolate: &mut deno_core::v8::Isolate = runtime.v8_isolate();
+            raw_exit(isolate);
+            // SAFETY: the pointer is only used while this host (which owns the runtime) lives.
+            #[allow(unsafe_code)]
+            unsafe {
+                isolate.as_raw_isolate_ptr()
+            }
+        };
         Ok(Self {
             runtime: Some(runtime),
+            isolate,
             loading_module: None,
             evaluating_modules: vec![],
             queued: Default::default(),
@@ -291,6 +349,7 @@ impl<E: ScriptEnvironment> V8Host<E> {
             heap_limit: bootstrap_heap.saturating_add(limits.js_heap_bytes),
             timer: None,
             polled_at: Instant::now(),
+            preview,
         })
     }
     /// Run one bounded step of script; reports a notice when it is slow.
@@ -298,10 +357,7 @@ impl<E: ScriptEnvironment> V8Host<E> {
         self.env.begin_task();
         let started = Instant::now();
         self.watchdog.arm(self.budget);
-        let _guard = self
-            .runtime
-            .as_mut()
-            .map(|rt| RawIsolateGuard::new(rt.v8_isolate()));
+        let _guard = RawIsolateGuard::from_ptr(self.isolate);
         let result = run(self);
         drop(_guard);
         let fired = self.watchdog.disarm();
@@ -313,6 +369,22 @@ impl<E: ScriptEnvironment> V8Host<E> {
             ));
         }
         (result, fired)
+    }
+    /// A heap or deadline overrun: fatal for the realm.
+    fn limit_failure(&self, name: &str, timed_out: bool) -> Option<ScriptError> {
+        if self.oom.load(Ordering::Relaxed) || self.heap > self.heap_limit {
+            return Some(ScriptError {
+                fatal: true,
+                message: format!(
+                    "{name}: V8 heap limit exceeded ({} > {} bytes including bootstrap)",
+                    self.heap, self.heap_limit
+                ),
+            });
+        }
+        timed_out.then(|| ScriptError {
+            fatal: true,
+            message: format!("{name}: Script deadline exceeded"),
+        })
     }
     fn execute_value(
         &mut self,
@@ -340,20 +412,8 @@ impl<E: ScriptEnvironment> V8Host<E> {
             self.heap = heap_bytes(self.runtime.as_mut().unwrap());
         }
         drop(entered);
-        if self.oom.load(Ordering::Relaxed) || self.heap > self.heap_limit {
-            return Err(ScriptError {
-                fatal: true,
-                message: format!(
-                    "{name}: V8 heap limit exceeded ({} > {} bytes including bootstrap)",
-                    self.heap, self.heap_limit
-                ),
-            });
-        }
-        if timed_out {
-            return Err(ScriptError {
-                fatal: true,
-                message: format!("{name}: Script deadline exceeded"),
-            });
+        if let Some(failure) = self.limit_failure(name, timed_out) {
+            return Err(failure);
         }
         result.map_err(|error| {
             let text = error.to_string();
@@ -368,6 +428,23 @@ impl<E: ScriptEnvironment> V8Host<E> {
             .map(|value| format!("{value:?}"))
     }
 }
+const UNAVAILABLE_PREVIEW: &str = r#"{"kind":"Unavailable","text":"preview unavailable"}"#;
+
+/// Take the preview generator out of the global before any page script can see it.
+fn capture_preview(
+    runtime: &mut JsRuntime,
+) -> Option<deno_core::v8::Global<deno_core::v8::Function>> {
+    deno_core::scope!(scope, runtime);
+    let context = scope.get_current_context();
+    let global = context.global(scope);
+    let key = deno_core::v8::String::new(scope, "__wega_preview")?;
+    let value = global.get(scope, key.into())?;
+    let function = deno_core::v8::Local::<deno_core::v8::Function>::try_from(value).ok()?;
+    let handle = deno_core::v8::Global::new(scope, function);
+    global.delete(scope, key.into());
+    Some(handle)
+}
+
 impl<E: ScriptEnvironment> ScriptHost for V8Host<E> {
     type Requests = E::Requests;
     fn checkpoint(&mut self) -> Result<(), ScriptError> {
@@ -503,6 +580,89 @@ impl<E: ScriptEnvironment> ScriptHost for V8Host<E> {
         Ok(output?
             .filter(|text| text != "undefined")
             .unwrap_or_else(|| "null".into()))
+    }
+    fn evaluate_inspect(&mut self, source: &str) -> Result<InspectOutcome, ScriptError> {
+        const NAME: &str = "devtools:evaluate";
+        if self.runtime.is_none() {
+            return Err(ScriptError {
+                fatal: false,
+                message: "Module graph is loading".into(),
+            });
+        }
+        let executor = self.executor.clone();
+        let entered = executor.enter();
+        let (result, timed_out) = self.bounded(NAME, |host| {
+            host.runtime
+                .as_mut()
+                .unwrap()
+                .execute_script(NAME, source.to_owned())
+        });
+        self.polled_at = Instant::now();
+        self.heap = heap_bytes(self.runtime.as_mut().unwrap());
+        if self.heap > self.heap_limit && !self.oom.load(Ordering::Relaxed) {
+            collect_garbage(self.runtime.as_mut().unwrap(), false);
+            self.heap = heap_bytes(self.runtime.as_mut().unwrap());
+        }
+        drop(entered);
+        if let Some(failure) = self.limit_failure(NAME, timed_out) {
+            return Err(failure);
+        }
+        let value = match result {
+            Ok(value) => value,
+            Err(error) => {
+                let text = error.to_string();
+                if text.contains("Maximum call stack size exceeded") {
+                    return Err(ScriptError {
+                        fatal: true,
+                        message: format!("{NAME}: {text}"),
+                    });
+                }
+                let frame = error.frames.first();
+                return Ok(InspectOutcome::Exception(InspectException {
+                    name: error.name.clone().unwrap_or_else(|| "Error".into()),
+                    message: error
+                        .message
+                        .clone()
+                        .unwrap_or_else(|| error.exception_message.clone()),
+                    stack: error.stack.clone(),
+                    url: frame.and_then(|f| f.file_name.clone()),
+                    line: frame
+                        .and_then(|f| f.line_number)
+                        .map_or(0, |n| n.clamp(0, i64::from(u32::MAX)) as u32),
+                    column: frame
+                        .and_then(|f| f.column_number)
+                        .map_or(0, |n| n.clamp(0, i64::from(u32::MAX)) as u32),
+                }));
+            }
+        };
+        let Some(function) = self.preview.clone() else {
+            return Ok(InspectOutcome::Value {
+                preview_json: UNAVAILABLE_PREVIEW.into(),
+            });
+        };
+        let executor = self.executor.clone();
+        let entered = executor.enter();
+        let (text, timed_out) = self.bounded("devtools:preview", |host| {
+            deno_core::scope!(scope, host.runtime.as_mut().unwrap());
+            deno_core::v8::tc_scope!(let scope, scope);
+            let function = deno_core::v8::Local::new(scope, &function);
+            let argument = deno_core::v8::Local::new(scope, &value);
+            let receiver = deno_core::v8::undefined(scope).into();
+            function
+                .call(scope, receiver, &[argument])
+                .filter(|result| result.is_string())
+                .map(|result| result.to_rust_string_lossy(scope))
+        });
+        self.heap = heap_bytes(self.runtime.as_mut().unwrap());
+        drop(entered);
+        if let Some(failure) = self.limit_failure("devtools:preview", timed_out) {
+            return Err(failure);
+        }
+        Ok(InspectOutcome::Value {
+            preview_json: text
+                .filter(|text| text.len() <= 32 * 1024)
+                .unwrap_or_else(|| UNAVAILABLE_PREVIEW.into()),
+        })
     }
     fn tick(&mut self) -> Result<(), ScriptError> {
         if self.frozen {

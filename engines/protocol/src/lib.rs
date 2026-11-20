@@ -5,13 +5,14 @@ use std::io::{self, Read, Write};
 pub mod authority;
 pub mod browsing;
 pub mod identity;
+pub mod inspector;
 pub mod lifecycle;
 pub mod media;
 pub mod permissions;
 pub mod queue;
 pub mod requests;
 pub mod storage;
-pub const VERSION: u32 = 21;
+pub const VERSION: u32 = 26;
 pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_PIXELS: usize = 4096 * 2160;
 pub const MAX_RESULT_BYTES: usize = 128 * 1024;
@@ -228,6 +229,11 @@ pub enum Capability {
     AuthoritativeStorage,
     MediaPlayback,
     PermissionsRevocation,
+    Inspector,
+    InspectorConsole,
+    InspectorDom,
+    InspectorStyles,
+    InspectorGeometry,
 }
 
 pub const CAPABILITIES: &[Capability] = &[
@@ -249,6 +255,11 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability::AuthoritativeStorage,
     Capability::MediaPlayback,
     Capability::PermissionsRevocation,
+    Capability::Inspector,
+    Capability::InspectorConsole,
+    Capability::InspectorDom,
+    Capability::InspectorStyles,
+    Capability::InspectorGeometry,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,6 +336,11 @@ pub fn capabilities(version: u32) -> Vec<Capability> {
                     Capability::AuthoritativeStorage => 16,
                     Capability::MediaPlayback => 20,
                     Capability::PermissionsRevocation => 21,
+                    Capability::Inspector => 22,
+                    Capability::InspectorConsole => 23,
+                    Capability::InspectorDom => 24,
+                    Capability::InspectorStyles => 25,
+                    Capability::InspectorGeometry => 26,
                 }
         })
         .collect()
@@ -335,7 +351,8 @@ pub fn scoped_context(command: &Command) -> Option<RequestContext> {
         Command::EvaluateDocument { context, .. }
         | Command::CheckDocumentState(context)
         | Command::CaptureDocument { context, .. }
-        | Command::NavigateDocument { context, .. } => Some(*context),
+        | Command::NavigateDocument { context, .. }
+        | Command::Inspector { context, .. } => Some(*context),
         _ => None,
     }
 }
@@ -367,6 +384,19 @@ pub enum Command {
     NavigateDocument {
         context: RequestContext,
         url: String,
+    },
+    /// Trusted-browser inspector request. Scoped like every document operation, so it
+    /// inherits correlation, deadlines, cancellation and replay rejection. The payload is
+    /// decoded by the receiver (`InspectorPayload::decode`) so a malformed request is
+    /// answered, not fatal.
+    Inspector {
+        context: RequestContext,
+        request: inspector::InspectorPayload,
+    },
+    /// Idempotent revocation of an inspector session. Unscoped on purpose: a scoped detach
+    /// could be discarded by stale-document admission and leave a revoked session live.
+    InspectorDetach {
+        session: inspector::InspectorSessionId,
     },
     /// Cancels a queued operation. Already-running script side effects cannot be rolled back.
     CancelRequest(RequestContext),
@@ -560,6 +590,18 @@ pub enum Event {
     },
     Ready {
         version: u32,
+    },
+    InspectorResponse {
+        context: RequestContext,
+        session: inspector::InspectorSessionId,
+        result: Result<inspector::InspectorResponse, inspector::InspectorError>,
+    },
+    /// Pushed only to a session the browser attached and subscribed.
+    InspectorEvent {
+        context: DocumentContext,
+        session: inspector::InspectorSessionId,
+        seq: u64,
+        event: inspector::InspectorEvent,
     },
     State {
         serial: u64,
@@ -1048,13 +1090,23 @@ mod tests {
     }
     #[test]
     fn authoritative_storage_capability_and_version() {
-        assert_eq!(VERSION, 21);
+        assert_eq!(VERSION, 26);
+        assert!(capabilities(25).contains(&Capability::InspectorStyles));
+        assert!(!capabilities(24).contains(&Capability::InspectorStyles));
+        assert!(capabilities(26).contains(&Capability::InspectorGeometry));
+        assert!(!capabilities(25).contains(&Capability::InspectorGeometry));
+        assert!(capabilities(24).contains(&Capability::InspectorDom));
+        assert!(!capabilities(23).contains(&Capability::InspectorDom));
         assert!(capabilities(16).contains(&Capability::AuthoritativeStorage));
         assert!(!capabilities(15).contains(&Capability::AuthoritativeStorage));
         assert!(capabilities(20).contains(&Capability::MediaPlayback));
         assert!(!capabilities(19).contains(&Capability::MediaPlayback));
         assert!(capabilities(21).contains(&Capability::PermissionsRevocation));
         assert!(!capabilities(20).contains(&Capability::PermissionsRevocation));
+        assert!(capabilities(22).contains(&Capability::Inspector));
+        assert!(!capabilities(21).contains(&Capability::Inspector));
+        assert!(capabilities(23).contains(&Capability::InspectorConsole));
+        assert!(!capabilities(22).contains(&Capability::InspectorConsole));
     }
     #[test]
     fn media_session_command_and_event_transport() {

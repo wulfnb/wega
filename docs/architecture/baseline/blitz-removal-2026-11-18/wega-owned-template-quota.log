@@ -1,0 +1,107 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-dom v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/dom/core)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+   Compiling wega-native v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/native)
+   Compiling wega-html v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/html/parser)
+   Compiling blitz-dom v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-dom)
+   Compiling blitz-paint v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint)
+   Compiling wega-adapter-blitz v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/adapters/blitz)
+    Finished `test` profile [unoptimized] target(s) in 19.90s
+     Running tests/custom_elements.rs (engines/target/debug/deps/custom_elements-e5c855ce2a245c38)
+
+running 12 tests
+test component_library_template_cloning_and_nested_shadow_dom ... ok
+test custom_element_definition_and_instantiation ... ok
+test custom_element_lifecycle_connected_disconnected_and_attribute_changed ... ok
+test custom_element_observed_attributes_and_property_reflection ... ok
+test custom_element_when_defined_and_late_upgrade ... ok
+test delegates_focus_and_event_composed_path_retargeting ... ok
+test disconnected_upgrade_failure_and_definition_callbacks_are_stable ... ok
+test event_retargeting_and_composed_path_across_shadow_boundary ... ok
+test invalid_registration_does_not_read_user_callbacks_and_closed_paths_hide_internals ... ok
+test security_and_spec_conformance_fail_closed ... ok
+test shadow_root_open_and_closed_encapsulation ... ok
+test shadow_root_slot_assignment_named_default_and_flatten ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.30s
+
+     Running tests/dom_budgets.rs (engines/target/debug/deps/dom_budgets-1b0e61dd0510adcd)
+
+running 6 tests
+test after_a_fatal_script_stop_there_is_nothing_left_to_charge ... ok
+test every_script_route_that_adds_nodes_or_text_is_bounded ... ok
+test known_gap_script_nesting_depth_has_no_budget ... ok
+test native_edit_reservations_check_nodes_text_and_depth_and_fail_without_side_effects ... ok
+test native_edits_share_the_scripts_counters ... ok
+test template_contents_are_charged_by_the_shared_node_budget ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.82s
+
+     Running tests/dom_identity.rs (engines/target/debug/deps/dom_identity-a7911daef8146f0b)
+
+running 5 tests
+test comment_writes_preserve_identity_and_step_the_authoritative_mutation_clock ... ok
+test each_document_gets_a_fresh_identity_space ... ok
+test node_info_matches_the_dom_interface ... ok
+test removed_nodes_stay_usable_until_dropped_and_ids_resolve_by_current_state ... ok
+test wrappers_keep_their_identity_across_mutation_and_reparenting ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+

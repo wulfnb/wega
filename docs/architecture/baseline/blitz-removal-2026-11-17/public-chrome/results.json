@@ -1,0 +1,54 @@
+[
+  {
+    "page": "example",
+    "url": "https://example.com/",
+    "exit_code": 0,
+    "command": [
+      "node",
+      "engines/wega/tests/support/chrome_public_capture.mjs",
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/wega-chrome-public-d4sg93uu",
+      "https://example.com/",
+      "/private/tmp/wega-blitz-final-validation/public-chrome/public-example-chrome.png"
+    ]
+  },
+  {
+    "page": "cern",
+    "url": "http://info.cern.ch/hypertext/WWW/TheProject.html",
+    "exit_code": 0,
+    "command": [
+      "node",
+      "engines/wega/tests/support/chrome_public_capture.mjs",
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/wega-chrome-public-w4paqhz3",
+      "http://info.cern.ch/hypertext/WWW/TheProject.html",
+      "/private/tmp/wega-blitz-final-validation/public-chrome/public-cern-chrome.png"
+    ]
+  },
+  {
+    "page": "rust",
+    "url": "https://www.rust-lang.org/",
+    "exit_code": 0,
+    "command": [
+      "node",
+      "engines/wega/tests/support/chrome_public_capture.mjs",
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/wega-chrome-public-t_bn9vt1",
+      "https://www.rust-lang.org/",
+      "/private/tmp/wega-blitz-final-validation/public-chrome/public-rust-chrome.png"
+    ]
+  },
+  {
+    "page": "rust-std",
+    "url": "https://doc.rust-lang.org/std/",
+    "exit_code": 0,
+    "command": [
+      "node",
+      "engines/wega/tests/support/chrome_public_capture.mjs",
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/var/folders/b4/kw13h6p52_xcjbgyvdbt1th40000gn/T/wega-chrome-public-_7dq5r1o",
+      "https://doc.rust-lang.org/std/",
+      "/private/tmp/wega-blitz-final-validation/public-chrome/public-rust-std-chrome.png"
+    ]
+  }
+]

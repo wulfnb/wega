@@ -492,7 +492,6 @@ dependencies = [
 name = "blitz-dom"
 version = "0.3.0-beta.4"
 dependencies = [
- "accesskit",
  "app_units",
  "atomic_refcell",
  "bitflags 2.13.2",
@@ -516,8 +515,7 @@ dependencies = [
  "parley",
  "percent-encoding",
  "rayon",
- "selectors 0.41.0",
- "serde_json",
+ "selectors",
  "skrifa",
  "slotmap",
  "smallvec",
@@ -533,7 +531,7 @@ dependencies = [
  "url",
  "usvg",
  "web-time",
- "wuff",
+ "wega-native",
 ]
 
 [[package]]
@@ -5093,28 +5091,10 @@ dependencies = [
  "new_debug_unreachable",
  "precomputed-hash",
  "rustc-hash 2.1.3",
- "servo_arc 0.5.0",
+ "servo_arc",
  "smallvec",
  "to_shmem",
  "to_shmem_derive",
-]
-
-[[package]]
-name = "selectors"
-version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "284ac2879477575f13b22201f7e98aa33aacc765b790536808cf580fd79339f1"
-dependencies = [
- "bitflags 2.13.2",
- "cssparser 0.38.0",
- "derive_more",
- "hashbrown 0.17.1",
- "log",
- "new_debug_unreachable",
- "precomputed-hash",
- "rustc-hash 2.1.3",
- "servo_arc 0.6.0",
- "smallvec",
 ]
 
 [[package]]
@@ -5238,15 +5218,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4eceb519ec34d8290aaf6e46f435102f2bfa63f22b05a144fb16ab266d3b198"
 dependencies = [
  "serde",
- "stable_deref_trait",
-]
-
-[[package]]
-name = "servo_arc"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f121f129345b5201873a0e253f630413d750b9d799613e2873fb768e592c2a7"
-dependencies = [
  "stable_deref_trait",
 ]
 
@@ -5670,9 +5641,9 @@ dependencies = [
  "rayon",
  "rayon-core",
  "rustc-hash 2.1.3",
- "selectors 0.41.0",
+ "selectors",
  "serde",
- "servo_arc 0.5.0",
+ "servo_arc",
  "smallbitvec",
  "smallvec",
  "static_assertions",
@@ -5738,8 +5709,8 @@ dependencies = [
  "cssparser 0.38.0",
  "euclid",
  "parking_lot",
- "selectors 0.41.0",
- "servo_arc 0.5.0",
+ "selectors",
+ "servo_arc",
  "smallbitvec",
  "smallvec",
  "string_cache",
@@ -5779,9 +5750,9 @@ dependencies = [
  "cssparser 0.38.0",
  "euclid",
  "malloc_size_of_derive",
- "selectors 0.41.0",
+ "selectors",
  "serde",
- "servo_arc 0.5.0",
+ "servo_arc",
  "stylo_atoms",
  "stylo_malloc_size_of",
  "thin-vec",
@@ -6177,7 +6148,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbf077da8dd01cc18453bd7d9bc3a945c262f5f344562e5f6deb3914b4dd6f14"
 dependencies = [
  "cssparser 0.38.0",
- "servo_arc 0.5.0",
+ "servo_arc",
  "smallbitvec",
  "smallvec",
  "string_cache",
@@ -6820,11 +6791,14 @@ dependencies = [
  "blitz-traits",
  "cssparser 0.38.0",
  "html5ever",
+ "kurbo",
+ "peniko",
  "stylo",
  "stylo_traits",
  "url",
  "wega-dom",
  "wega-html",
+ "wega-native",
 ]
 
 [[package]]
@@ -6888,36 +6862,47 @@ name = "wega-engine"
 version = "0.1.0"
 dependencies = [
  "accesskit",
+ "anyrender",
+ "anyrender_skia",
  "base64 0.23.1",
- "blitz-dom",
- "blitz-traits",
+ "cssparser 0.38.0",
  "data-url",
  "deno_core",
  "encoding_rs",
  "html5ever",
  "keyboard-types",
+ "kurbo",
+ "parley",
+ "peniko",
+ "percent-encoding",
  "reqwest",
- "selectors 0.42.0",
+ "selectors",
  "serde",
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.1",
  "skia-safe",
+ "smol_str",
  "stylo",
  "stylo_dom",
+ "stylo_static_prefs",
+ "stylo_traits",
  "tempfile",
  "tokio",
  "url",
+ "usvg",
  "wega-adapter-blitz",
  "wega-adapter-skia",
  "wega-adapter-v8",
  "wega-dom",
  "wega-html",
+ "wega-native",
  "wega-network",
  "wega-permissions",
  "wega-platform",
  "wega-protocol",
  "wega-security",
+ "wuff",
 ]
 
 [[package]]
@@ -6927,6 +6912,28 @@ dependencies = [
  "html5ever",
  "url",
  "wega-dom",
+ "xml5ever",
+]
+
+[[package]]
+name = "wega-native"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_skia",
+ "anyrender_svg",
+ "cssparser 0.38.0",
+ "flate2",
+ "html5ever",
+ "image",
+ "kurbo",
+ "parley",
+ "peniko",
+ "svgtypes",
+ "url",
+ "usvg",
+ "wega-dom",
+ "wega-html",
 ]
 
 [[package]]
@@ -6934,8 +6941,10 @@ name = "wega-network"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bytes",
  "fontdb",
  "getrandom 0.3.4",
+ "http",
  "reqwest",
  "rusqlite",
  "serde",
@@ -6948,6 +6957,7 @@ dependencies = [
  "wega-cookies",
  "wega-platform",
  "wega-protocol",
+ "wega-security",
  "wega-storage",
 ]
 
@@ -6984,6 +6994,8 @@ dependencies = [
 name = "wega-security"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "sha2 0.11.1",
  "url",
 ]

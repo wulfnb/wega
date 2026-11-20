@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><style>
+body { margin:24px; color:#172030; background:white; font-family:Arial,sans-serif; font-size:18px; line-height:26px }
+h1 { font-size:28px; line-height:36px; margin:0 0 16px }
+p { margin:0 0 16px; width:640px }
+pre { margin:0; font-size:16px; line-height:24px }
+</style>
+<h1>Wega native: real, readable glyphs</h1>
+<p>English paragraphs wrap using shaped font advances. <b>Bold words</b> and <i>italic words</i> share a baseline with <span style="font-size:26px">larger text</span>.</p>
+<p>Nested <span>inline <b>elements</b> preserve</span> meaningful spaces. Unicode: café café naïve — العربية שלום 你好.</p>
+<p>A long paragraph wraps consistently between layout and painting. Text is shaped once; the same glyph IDs and baseline positions reach the rasterizer. No placeholder bars remain.</p>
+<p style="font-family:Georgia,serif">Serif fallback: The quick brown fox jumps over the lazy dog.</p>
+<pre>Preserved  spaces
+and explicit line breaks.
+0123456789  monospace</pre>
+<p>LongUnbrokenWordsRemainUnbrokenWithoutOverflowWrapInsteadOfBreakingCodepoints</p>

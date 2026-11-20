@@ -1,0 +1,43 @@
+{
+  "head": "d4d209834ad88db268787010d0670905fced1d08",
+  "status": " M docs/architecture/module-map.md\n?? docs/architecture/baseline/blitz-removal-2026-11-17/obsolete-test-executables.json\n?? docs/architecture/baseline/blitz-removal-2026-11-17/run-validation.py\n?? docs/architecture/baseline/wega-blitz-removal-evidence.json\n?? docs/architecture/wega-blitz-removal-report.md\n?? docs/architecture/wega-native-compatibility-report.md\n?? docs/architecture/wega-native-performance-report.md\n",
+  "command": [
+    "cargo",
+    "test",
+    "--manifest-path",
+    "engines/Cargo.toml",
+    "-p",
+    "wega-engine",
+    "--offline",
+    "--test",
+    "native_public_layout",
+    "--test",
+    "native_chrome_compatibility",
+    "--test",
+    "native_graphics_acceptance",
+    "--test",
+    "native_forms_editing",
+    "--test",
+    "native_css_layout_acceptance",
+    "--test",
+    "native_css_at_rules_acceptance",
+    "--test",
+    "native_browser_behavior",
+    "--test",
+    "wpt",
+    "--test",
+    "iframe_wpt",
+    "--test",
+    "native_visual_corpus",
+    "--",
+    "--test-threads=4",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "seconds": 113.815,
+  "thresholds": {
+    "channel": 8,
+    "pixel_fraction": 0.01,
+    "geometry_px": 0.5
+  }
+}

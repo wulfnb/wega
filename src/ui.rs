@@ -598,6 +598,7 @@ impl Browser {
                     });
                 });
         }
+        self.devtools_sync();
         if self.chrome.show_console {
             self.devtools(ui);
         }

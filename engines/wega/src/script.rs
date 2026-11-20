@@ -1,16 +1,16 @@
 //! Script host contract. Fatal limits tear down a host; ordinary exceptions do not.
-use blitz_dom::NodeId;
+use crate::document::WegaDocument;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     time::Instant,
 };
-use wega_adapter_blitz::BlitzDocument;
 use wega_adapter_v8::{HostConfig, RuntimeLimits, ScriptError, ScriptHost, V8Host};
+use wega_dom::NodeKey;
 /// Everything a script host shares with its view.
 #[derive(Clone)]
 pub(crate) struct HostContext {
-    pub document: Rc<RefCell<BlitzDocument>>,
+    pub document: Rc<RefCell<WegaDocument>>,
     pub navigate: Rc<RefCell<Vec<url::Url>>>,
     pub network: crate::network::Network,
     pub hubs: crate::workers::Hubs,
@@ -20,8 +20,16 @@ pub(crate) struct HostContext {
     pub document_revision: u64,
     pub activation: Rc<Cell<Option<Instant>>>,
     /// Script elements already prepared ("already started"), shared with the view.
-    pub started_scripts: Rc<RefCell<std::collections::HashSet<NodeId>>>,
+    pub started_scripts: Rc<RefCell<std::collections::HashSet<NodeKey>>>,
     pub permissions: Rc<RefCell<crate::permissions::PermissionRegistry>>,
+    /// This document's console history, owned by the view and dropped with the document.
+    pub console: Rc<RefCell<crate::console::ConsoleLog>>,
+    /// Sandbox/origin-class limits of this document.
+    pub restrictions: crate::view::frames::Restrictions,
+    /// The browsing-context table this document's script reads and writes.
+    pub frames: Rc<RefCell<crate::view::frames::FrameShared>>,
+    /// Frame identity if this document is loaded inside an iframe.
+    pub frame_id: Option<u64>,
 }
 
 /// Trusted bootstrap factories shared by document and worker realms, built by `build.rs`.

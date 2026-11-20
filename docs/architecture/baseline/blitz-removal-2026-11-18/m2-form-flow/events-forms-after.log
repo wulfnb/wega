@@ -1,0 +1,136 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-native v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/native)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+   Compiling blitz-dom v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-dom)
+   Compiling blitz-paint v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint)
+   Compiling wega-adapter-blitz v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/adapters/blitz)
+    Finished `test` profile [unoptimized] target(s) in 18.53s
+     Running tests/events.rs (engines/target/debug/deps/events-3e6bebf9e589a99a)
+
+running 20 tests
+test a_click_targets_the_innermost_element_and_bubbles_to_ancestors ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test blur_clears_the_active_element_and_a_fresh_document_has_the_body_active ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test capture_target_bubble_order_and_phases_through_a_deep_tree ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test clicking_a_non_focusable_element_blurs_the_focused_one ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test detached_nodes_dispatch_to_their_own_tree_only ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test focus_transitions_have_one_order_trusted_related_targets_and_a_single_owner ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test keyboard_events_go_to_the_focused_element_else_the_body ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test native_events_for_dropped_nodes_are_ignored_without_error ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test native_events_have_the_right_cancelable_and_bubbles_flags ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test native_input_events_are_trusted_and_script_events_are_not ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test navigation_reload_and_error_pages_replace_the_document_cleanly ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63127/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63127/two","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63127/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:1/","line":1,"column":null,"truncated":false}
+ok
+test once_passive_cancelable_and_prevent_default ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test preventing_a_click_stops_its_default_action_and_preventing_keydown_stops_typing ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test replacing_a_document_mid_parse_tears_the_parser_down ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test replacing_the_document_drops_listeners_focus_and_old_state ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test shadow_dom_composed_and_non_composed_events_retarget_at_the_host ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test shadow_dom_focus_retargets_active_element_and_focusin_crosses_the_boundary ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test shadow_dom_slotted_events_pass_through_the_slot_and_closed_roots_hide_internals ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+test stale_ids_removed_nodes_and_recreated_nodes_do_not_alias ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: ReferenceError: __wega_nodeId is not defined\n    at evaluate_json:1:1","url":"https://events.test/","line":null,"column":null,"truncated":false}
+ok
+test stop_propagation_and_stop_immediate_propagation ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://events.test/","line":1,"column":null,"truncated":false}
+ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.23s
+
+     Running tests/forms.rs (engines/target/debug/deps/forms-b5d3d408aadf4247)
+
+running 4 tests
+test clicking_submit_posts_an_urlencoded_body_and_shows_the_response ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63137/","line":1,"column":null,"truncated":false}
+OWNED_FORM_PROBE {"geometry":[["",0,4,185,24,"","",""],["",189,3,13,13,"","",""],["",209,3,13,13,"","",""],["go",0,28,100,40,"","",""],["",0,68,185,24,"","",""],["nope",0,92,100,40,"","",""],["field",0,132,185,24,"","",""]],"target":"go","viewport":[300,300]}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63137/submit","line":1,"column":null,"truncated":false}
+ok
+test enter_in_a_single_field_submits_its_form ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63141/","line":1,"column":null,"truncated":false}
+ok
+test multipart_and_formdata_use_the_form_entry_list ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63143/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63143/submit","line":1,"column":null,"truncated":false}
+ok
+test submit_events_can_cancel_and_submit_skips_them ... WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63146/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63146/submit","line":1,"column":null,"truncated":false}
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+

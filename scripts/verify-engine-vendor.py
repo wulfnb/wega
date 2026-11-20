@@ -29,7 +29,8 @@ def verify(cache=None, vendor=VENDOR):
                 source.extractall(scratch, filter='data')
             pristine = scratch / f'{name}-{spec["version"]}'
             for patch in spec['patches']:
-                subprocess.run(['patch', '--batch', '--forward', '-p1', '-d', str(pristine),
+                # BSD patch otherwise leaves an empty file for /dev/null deletions.
+                subprocess.run(['patch', '--batch', '--forward', '-E', '-p1', '-d', str(pristine),
                                 '-i', str(vendor / patch)], check=True, capture_output=True)
             ignored = {'.cargo-ok', '.cargo_vcs_info.json', 'Cargo.toml.orig', *spec.get('extra_licenses', [])}
             def contents(directory):

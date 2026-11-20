@@ -1,0 +1,193 @@
+[
+  {
+    "name": "native-security",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--test",
+      "native_browser_behavior",
+      "--test",
+      "native_stylesheets",
+      "--test",
+      "native_images",
+      "--test",
+      "iframes",
+      "--test",
+      "same_origin_dom",
+      "--test",
+      "iframe_wpt",
+      "--test",
+      "isolate_safety",
+      "--test",
+      "security",
+      "--test",
+      "inherited_broker",
+      "--test",
+      "native_resource_redirects",
+      "--test",
+      "native_accessibility",
+      "--offline",
+      "--",
+      "--test-threads=4"
+    ],
+    "environment": {
+      "WEGA_RENDER_BACKEND": "native",
+      "WEGA_TEST_BROKER": "1",
+      "RUST_MIN_STACK": "8388608"
+    },
+    "exit_code": 0,
+    "seconds": 112.502,
+    "log": "/private/tmp/wega-rounds-final-native-security.log",
+    "archived_log": "native-security.log.gz"
+  },
+  {
+    "name": "public",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--test",
+      "native_public_compat",
+      "--offline",
+      "--",
+      "--nocapture"
+    ],
+    "environment": {
+      "WEGA_PUBLIC_COMPAT": "1",
+      "WEGA_TEST_BROKER": "1",
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-rounds-final-public",
+      "RUST_MIN_STACK": "8388608"
+    },
+    "exit_code": 0,
+    "seconds": 27.119,
+    "log": "/private/tmp/wega-rounds-final-public.log",
+    "archived_log": "public.log.gz"
+  },
+  {
+    "name": "release-build",
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "-p",
+      "wega-engine",
+      "--test",
+      "native_benchmark",
+      "--test",
+      "native_stage_profile",
+      "--offline",
+      "--no-run"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "seconds": 50.984,
+    "log": "/private/tmp/wega-rounds-final-release-build.log",
+    "archived_log": "release-build.log.gz"
+  },
+  {
+    "name": "release-native_benchmark",
+    "command": [
+      "/usr/bin/time",
+      "-l",
+      "/Users/noufalbabu/dev/personal/wega/engines/target/release/deps/native_benchmark-4f17fb00697b87d5",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-rounds-final-release"
+    },
+    "exit_code": 0,
+    "seconds": 4.355,
+    "log": "/private/tmp/wega-rounds-final-release-native_benchmark.log",
+    "archived_log": "release-native_benchmark.log.gz"
+  },
+  {
+    "name": "release-native_stage_profile",
+    "command": [
+      "/usr/bin/time",
+      "-l",
+      "/Users/noufalbabu/dev/personal/wega/engines/target/release/deps/native_stage_profile-ca7672d2beb664fb",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "WEGA_NATIVE_EVIDENCE_DIR": "/private/tmp/wega-rounds-final-release"
+    },
+    "exit_code": 0,
+    "seconds": 1.127,
+    "log": "/private/tmp/wega-rounds-final-release-native_stage_profile.log",
+    "archived_log": "release-native_stage_profile.log.gz"
+  },
+  {
+    "name": "root-clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--offline",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "seconds": 3.486,
+    "log": "/private/tmp/wega-rounds-final-root-clippy.log",
+    "archived_log": "root-clippy.log.gz"
+  },
+  {
+    "name": "root-fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "seconds": 1.821,
+    "log": "/private/tmp/wega-rounds-final-root-fmt.log",
+    "archived_log": "root-fmt.log.gz"
+  },
+  {
+    "name": "engine-fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "engines/Cargo.toml",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "seconds": 1.287,
+    "log": "/private/tmp/wega-rounds-final-engine-fmt.log",
+    "archived_log": "engine-fmt.log.gz"
+  },
+  {
+    "name": "diff-check",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "environment": {},
+    "exit_code": 0,
+    "seconds": 0.025,
+    "log": "/private/tmp/wega-rounds-final-diff-check.log",
+    "archived_log": "diff-check.log.gz"
+  }
+]

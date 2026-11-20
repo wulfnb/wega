@@ -2,7 +2,6 @@
 use blitz_traits::node_id::NodeId;
 use cssparser::Parser;
 use kurbo::{Affine, Rect as KurboRect};
-use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, QualName, local_name};
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use std::cell::Cell;
@@ -597,7 +596,15 @@ impl ElementData {
     pub fn checkbox_input_checked(&self) -> Option<bool> {
         match self.special_data {
             SpecialElementData::CheckboxInput(checked) => Some(checked),
-            _ => None,
+            _ => {
+                if self.name.local == local_name!("input") {
+                    let kind = self.attr(local_name!("type")).unwrap_or("text").to_ascii_lowercase();
+                    if matches!(kind.as_str(), "checkbox" | "radio") {
+                        return Some(self.attr(local_name!("checked")).is_some());
+                    }
+                }
+                None
+            }
         }
     }
 
@@ -614,6 +621,8 @@ impl ElementData {
     pub fn set_checkbox_input_checked(&mut self, checked: bool) {
         if let Some(is_checked) = self.checkbox_input_checked_mut() {
             *is_checked = checked;
+        } else {
+            self.special_data = SpecialElementData::CheckboxInput(checked);
         }
         self.element_state.set(ElementState::CHECKED, checked);
     }
@@ -834,24 +843,7 @@ impl ElementData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct RasterImageData {
-    /// The width of the image
-    pub width: u32,
-    /// The height of the image
-    pub height: u32,
-    /// The raw image data in RGBA8 format
-    pub data: Blob<u8>,
-}
-impl RasterImageData {
-    pub fn new(width: u32, height: u32, data: Arc<Vec<u8>>) -> Self {
-        Self {
-            width,
-            height,
-            data: Blob::new(data),
-        }
-    }
-}
+pub use wega_native::images::RasterImageData;
 
 #[derive(Debug, Clone)]
 pub enum ImageData {

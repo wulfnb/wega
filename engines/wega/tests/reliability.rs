@@ -79,24 +79,7 @@ fn deep_nesting_within_the_supported_depth_lays_out_and_paints() {
     }
 }
 
-#[test]
-fn known_gap_nesting_of_122_blocks_never_finishes_layout() {
-    // Pre-existing, found by the Round 12 review: 122 or more nested block elements keep the
-    // engine busy in Taffy block layout (vendored Blitz) for minutes (sampled: all time in
-    // taffy `compute_block_layout` recursion) where 121 take ~22 ms.
-    // The script watchdog does not cover layout, so a ~1 KB page can hang its tab's engine
-    // process. Pinned (the layout does NOT finish within the window; the spinning thread ends
-    // with the test process) so that a fix is noticed: the correct result is that it finishes.
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut v = view();
-        v.set_html(&nested(122)).unwrap();
-        v.poll();
-        let _ = v.evaluate_json("document.body.getBoundingClientRect().height");
-        let _ = tx.send(());
-    });
-    assert!(
-        rx.recv_timeout(std::time::Duration::from_secs(5)).is_err(),
-        "layout of 122 nested blocks finished: the hang is fixed, update this test and the audit"
-    );
-}
+// The two pins for the "depth-122 hang" (paint-first lays out, script-first never finishes) were
+// replaced in D3-C.0 by `layout_depth.rs`: the hang was a native stack overflow on a 2 MiB thread,
+// not a layout loop, and `MAX_LAYOUT_DEPTH` now refuses documents that would overflow the engine
+// thread. Those tests run each depth in a killable child process on the engine's stack size.

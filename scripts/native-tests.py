@@ -52,6 +52,11 @@ def main():
         command = [str(Path(args.binary).resolve()), f'--{suite}-test', '--profile-dir', str(profile), f'http://127.0.0.1:{server.server_port}/{fixture}']
         environment = os.environ.copy()
         environment['WEGA_TEST_ALLOW_LOOPBACK']='1'
+        # Use the same signed/required helper as the engine sandbox suites. An
+        # unbundled desktop otherwise discovers an unsigned adjacent worker and
+        # navigation never reaches the fixture (the title remains "New tab").
+        if environment.get('WEGA_CONTENT_HELPER'):
+            environment.setdefault('WEGA_ENGINE_BINARY', environment['WEGA_CONTENT_HELPER'])
         if suite in ('engine','smoke','download'):
             command.insert(1,'--engine');command.insert(2,'wega')
             helper=Path(args.binary).resolve().parent/('wega-engine.exe' if os.name=='nt' else 'wega-engine')

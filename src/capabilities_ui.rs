@@ -288,6 +288,7 @@ impl Browser {
                     self.devtools_contents(ui);
                 });
             self.features.diagnostics = open;
+            self.devtools_sync();
         }
         if self.features.find_open {
             let mut open = true;

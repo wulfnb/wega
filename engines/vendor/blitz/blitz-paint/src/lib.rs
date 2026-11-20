@@ -49,12 +49,34 @@ pub fn paint_scene(
     x_offset: u32,
     y_offset: u32,
 ) {
-    // Run `.paint()` on every custom widget in the document (and all subdocuments) ahead of time.
-    // This helps us avoid borrow-checker issues as we recurse down the tree (`.paint()` require `&mut self`).
-    //
-    // TODO: Take widget and sub-document visibility into account
+    paint_scene_with_embedded(
+        scene,
+        doc,
+        scale,
+        width,
+        height,
+        x_offset,
+        y_offset,
+        HashMap::new(),
+    )
+}
+
+pub fn paint_scene_with_embedded(
+    scene: &mut impl PaintScene,
+    doc: &mut BaseDocument,
+    scale: f64,
+    width: u32,
+    height: u32,
+    x_offset: u32,
+    y_offset: u32,
+    embedded: HashMap<NodeId, Scene>,
+) {
     #[allow(unused_mut)]
     let mut custom_widget_scenes: CustomWidgetSceneMap = HashMap::new();
+    let doc_id = doc.id();
+    for (node_id, s) in embedded {
+        custom_widget_scenes.insert((doc_id, node_id), s);
+    }
     #[cfg(feature = "custom-widget")]
     build_custom_widget_scenes(&mut custom_widget_scenes, doc, scene, scale);
 

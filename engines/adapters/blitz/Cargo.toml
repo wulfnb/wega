@@ -8,11 +8,14 @@ publish = false
 description = "Wega's Blitz adapter: the Blitz document behind the wega-dom contract"
 
 [dependencies]
+wega-native = { path = "../../native" }
 wega-dom = { path = "../../dom/core" }
 blitz-dom = { version = "=0.3.0-beta.4", default-features = false }
-blitz-html = "=0.3.0-beta.4"
+wega-html = { path = "../../html/parser" }
 blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
 anyrender = "=0.14.0"
+kurbo = "0.13"
+peniko = "0.6"
 blitz-traits = "=0.3.0-beta.4"
 html5ever = "0.40.1"
 url = "2.5"
@@ -21,4 +24,4 @@ style_traits = { package = "stylo_traits", version = "=0.22.0" }
 cssparser = "=0.38.0"
 
 [dev-dependencies]
-wega-html = { path = "../../html/parser" }
+blitz-html = "=0.3.0-beta.4"

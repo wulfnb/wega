@@ -1,0 +1,3237 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-17",
+  "status": "PARTIAL",
+  "branch": "feature/dom-rounds-9-12",
+  "starting_commit": "d909d41",
+  "tested_implementation_commit": "7d21f5db9ea520417b0f860b967e5ee351e95776",
+  "closure_scope": "Report/evidence and unchanged iframe assertion diagnostics only; final commit identifies itself through Git, not an embedded self-hash.",
+  "no_push": true,
+  "devtools_d4_started": false,
+  "inspector_source_diff_from_start_empty": true,
+  "recovery": {
+    "original_modified_files": 9,
+    "staged_files": 0,
+    "untracked_source_files": 0,
+    "original_manifest": "recovery-manifest.json",
+    "snapshot": "/private/tmp/wega-gemini-recovery-20261117-205428",
+    "durable_snapshot": "/Users/noufalbabu/Documents/wega-gemini-recovery-20261117-205428",
+    "all_nine_original_hashes_verified": true,
+    "no_original_work_lost": true,
+    "no_active_gemini_build_process_at_recovery": true
+  },
+  "commits": [
+    {
+      "commit": "de8d9b8",
+      "scope": "Round 3 recovery and CSS at-rules/fonts/CSSOM"
+    },
+    {
+      "commit": "91a185c",
+      "scope": "Round 4 SVG/canvas/graphics"
+    },
+    {
+      "commit": "a5f760a",
+      "scope": "Round 5 mandatory compatibility gates/root fixes"
+    },
+    {
+      "commit": "0fe87e2",
+      "scope": "Round 6 accessibility/adapter isolation/caches"
+    },
+    {
+      "commit": "7d21f5d",
+      "scope": "Final redirect CSP and native stack audit fixes"
+    }
+  ],
+  "source_files_changed": [
+    "docs/architecture/wega-native-engine-progress.md",
+    "engines/Cargo.lock",
+    "engines/vendor/blitz/blitz-dom/src/cssom.rs",
+    "engines/vendor/blitz/blitz-dom/src/document.rs",
+    "engines/vendor/blitz/blitz-dom/src/image_budget.rs",
+    "engines/vendor/blitz/blitz-dom/src/net.rs",
+    "engines/vendor/blitz/blitz-dom/src/node/svg.rs",
+    "engines/wega/Cargo.toml",
+    "engines/wega/build.rs",
+    "engines/wega/src/canvas/context.rs",
+    "engines/wega/src/canvas/host.rs",
+    "engines/wega/src/dom.rs",
+    "engines/wega/src/dom/bootstrap.js",
+    "engines/wega/src/dom/cssom.js",
+    "engines/wega/src/dom/semantics.js",
+    "engines/wega/src/native_engine/accessibility.rs",
+    "engines/wega/src/native_engine/backend.rs",
+    "engines/wega/src/native_engine/css.rs",
+    "engines/wega/src/native_engine/display_list.rs",
+    "engines/wega/src/native_engine/dom_adapter.rs",
+    "engines/wega/src/native_engine/graphics.rs",
+    "engines/wega/src/native_engine/layout.rs",
+    "engines/wega/src/native_engine/mod.rs",
+    "engines/wega/src/native_engine/syntax.rs",
+    "engines/wega/src/native_engine/text.rs",
+    "engines/wega/src/network.rs",
+    "engines/wega/src/view.rs",
+    "engines/wega/tests/native_accessibility.rs",
+    "engines/wega/tests/native_chrome_compatibility.rs",
+    "engines/wega/tests/native_css_at_rules_acceptance.rs",
+    "engines/wega/tests/native_css_correctness.rs",
+    "engines/wega/tests/native_css_layout_acceptance.rs",
+    "engines/wega/tests/native_forms_editing.rs",
+    "engines/wega/tests/native_graphics_acceptance.rs",
+    "engines/wega/tests/native_public_compat.rs",
+    "engines/wega/tests/native_resource_redirects.rs",
+    "engines/wega/tests/native_stage_profile.rs",
+    "engines/wega/tests/native_vertical_slice.rs",
+    "engines/wega/tests/native_visual_corpus.rs",
+    "engines/wega/tests/support/native_visual.rs",
+    "scripts/native-compat-gate.py"
+  ],
+  "capabilities": [
+    {
+      "feature": "Round 3 supported media/import/font/CSSOM slice",
+      "status": "COMPLETE",
+      "scope": "Viewport/orientation/scheme/resolution; broker imports depth8/provider expansion512; actual downloaded font shaping/layout/pixels; live owner-backed sheets/insert/delete/disabled/media; exceptions and origin restrictions."
+    },
+    {
+      "feature": "CSS and CSSOM overall",
+      "status": "PARTIAL",
+      "remaining": "Constructed sheets, mutable full CSSRule APIs, complete CSS grammar/properties and font lifecycle."
+    },
+    {
+      "feature": "Round 4 SVG and graphics",
+      "status": "PARTIAL",
+      "scope": "Inline/broker SVG, shapes/paths/viewBox/clipping/fill/stroke/2D transforms; bounded backgrounds, outer shadow, native Canvas surface paint/resize/taint.",
+      "remaining": "Advanced SVG DOM/CSS, external nested resources, 3D, multiple/inset shadows/backgrounds, full Canvas."
+    },
+    {
+      "feature": "Genuine video frames",
+      "status": "UNSUPPORTED",
+      "scope": "Existing synthetic generator was not presented as decoding support."
+    },
+    {
+      "feature": "Round 5 pinned regression gates",
+      "status": "COMPLETE",
+      "scope": "16 mandatory selected Chrome gates, 1685 upstream DOM WPT assertions, frame groups and unchanged overflow reftest."
+    },
+    {
+      "feature": "General website compatibility",
+      "status": "PARTIAL",
+      "remaining": "4/12 legacy reference joint gates fail; public Rust pages show major layout failures."
+    },
+    {
+      "feature": "Round 6 native accessibility",
+      "status": "PARTIAL",
+      "scope": "AccessKit roles/names/labels/values/focus/actions/native bounds from authoritative DOM.",
+      "remaining": "Complete AccName/ARIA, text navigation, cross-frame grafts."
+    },
+    {
+      "feature": "Round 6 DOM independence",
+      "status": "PARTIAL",
+      "scope": "NativeResources bridge isolates Blitz-specific resources/CSSOM/fonts/controls.",
+      "remaining": "Shared authoritative Rc<RefCell<BlitzDocument>> remains; no second DOM was introduced."
+    },
+    {
+      "feature": "Round 6 measured local caches",
+      "status": "COMPLETE",
+      "scope": "Geometry and compiled stylesheet invalidation caches; debug before/after and final release fixtures; no whole-browser speedup."
+    },
+    {
+      "feature": "Default 2MiB reference test stack",
+      "status": "PARTIAL",
+      "scope": "Depth121 reference test stalls; unchanged production-stack test and explicit small-stack characterization pass."
+    }
+  ],
+  "tests": {
+    "workspace": {
+      "command": "RUST_MIN_STACK=8388608 cargo test --manifest-path engines/Cargo.toml --workspace --offline -- --test-threads=4",
+      "exit_code": 0,
+      "log": "workspace-engine-stack.log.gz",
+      "passed": 849,
+      "failed": 0,
+      "ignored": 25
+    },
+    "root": {
+      "command": "cargo test --offline",
+      "exit_code": 0,
+      "log": "root.log.gz",
+      "passed": 233,
+      "failed": 0,
+      "ignored": 1
+    },
+    "native_broker_security": {
+      "exit_code": 0,
+      "log": "native-security.log.gz",
+      "command_record": "remaining-validation-results.json",
+      "passed": 57,
+      "failed": 0,
+      "ignored": 1
+    },
+    "pinned_chrome_wpt": {
+      "exit_code": 0,
+      "log": "gate.log.gz",
+      "command_record": "gate.json",
+      "passed": 38,
+      "failed": 0,
+      "ignored": 0
+    },
+    "required_native_sandbox": {
+      "exit_code": 0,
+      "log": "required-sandbox.log.gz",
+      "command_record": "sandbox-results.json",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "existing_inspector_sandbox_reference_backend": {
+      "exit_code": 0,
+      "log": "inspector-sandbox.log.gz",
+      "command_record": "sandbox-results.json",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "public": {
+      "exit_code": 0,
+      "log": "public.log.gz",
+      "command_record": "remaining-validation-results.json",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "release_benchmark": {
+      "exit_code": 0,
+      "log": "release-native_benchmark.log.gz",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "release_native_profile": {
+      "exit_code": 0,
+      "log": "release-native_stage_profile.log.gz",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "engine_clippy": {
+      "exit_code": 0,
+      "command": "cargo clippy --manifest-path engines/Cargo.toml --workspace --all-targets --offline -- -D warnings",
+      "log": "clippy.log.gz"
+    },
+    "root-clippy": {
+      "exit_code": 0,
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "log": "root-clippy.log.gz"
+    },
+    "root-fmt": {
+      "exit_code": 0,
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "log": "root-fmt.log.gz"
+    },
+    "engine-fmt": {
+      "exit_code": 0,
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "engines/Cargo.toml",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "log": "engine-fmt.log.gz"
+    },
+    "diff-check": {
+      "exit_code": 0,
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "log": "diff-check.log.gz"
+    }
+  },
+  "test_count_limits": "Cargo totals overlap. Existing opt-in wrappers can return without exercising their environment; Chrome/public/required sandbox explicitly invoked separately. No assertions, deadlines or tolerances weakened; no new ignored tests. Final workspace matches the application 8MiB engine thread stack, not default 2MiB harness.",
+  "earlier_failures": [
+    {
+      "kind": "disk exhaustion",
+      "resolution": "Removed only 94 obsolete generated executables after process checks; 18077042432 bytes.",
+      "log": "earlier-workspace.log.gz"
+    },
+    {
+      "kind": "native depth124 deadline",
+      "resolution": "Fixed recursive box-builder stack frames with heap traversal; original limits/deadline unchanged.",
+      "log": "earlier-workspace-retry.log.gz"
+    },
+    {
+      "kind": "iframe fixture timeout under concurrent validation",
+      "resolution": "Exact32 assertion passed on isolated full runs; failure message improved, no deadline/assertion change.",
+      "log": "earlier-workspace-verified.log.gz"
+    },
+    {
+      "kind": "default2MiB reference/Taffy depth121 stall",
+      "resolution": "Saved sample and terminated stalled child. Unchanged test passes on production8MiB stack; explicit2MiB safety characterization retained. Default-stack limitation remains.",
+      "log": "workspace-default-stack-stalled.log.gz",
+      "sample": "default-stack-reference-stall.txt.gz"
+    }
+  ],
+  "visual": {
+    "chrome_version": "157.0.8103.79",
+    "chrome_gates_passed": 16,
+    "chrome_gates_total": 16,
+    "new_pins": [
+      {
+        "name": "flex",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "f",
+            0,
+            0,
+            300,
+            80
+          ],
+          [
+            "a",
+            0,
+            0,
+            60,
+            80
+          ],
+          [
+            "b",
+            70,
+            0,
+            230,
+            80
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "f",
+            0,
+            0,
+            300,
+            80
+          ],
+          [
+            "a",
+            0,
+            0,
+            60,
+            80
+          ],
+          [
+            "b",
+            70,
+            0,
+            230,
+            80
+          ]
+        ]
+      },
+      {
+        "name": "grid",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "g",
+            0,
+            0,
+            320,
+            110
+          ],
+          [
+            "a",
+            0,
+            0,
+            100,
+            40
+          ],
+          [
+            "b",
+            110,
+            0,
+            210,
+            40
+          ],
+          [
+            "c",
+            0,
+            50,
+            320,
+            60
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "g",
+            0,
+            0,
+            320,
+            110
+          ],
+          [
+            "a",
+            0,
+            0,
+            100,
+            40
+          ],
+          [
+            "b",
+            110,
+            0,
+            210,
+            40
+          ],
+          [
+            "c",
+            0,
+            50,
+            320,
+            60
+          ]
+        ]
+      },
+      {
+        "name": "table",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "t",
+            0,
+            0,
+            300,
+            40
+          ],
+          [
+            "a",
+            0,
+            0,
+            100,
+            40
+          ],
+          [
+            "b",
+            100,
+            0,
+            200,
+            40
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "t",
+            0,
+            0,
+            300,
+            40
+          ],
+          [
+            "a",
+            0,
+            0,
+            100,
+            40
+          ],
+          [
+            "b",
+            100,
+            0,
+            200,
+            40
+          ]
+        ]
+      },
+      {
+        "name": "responsive-cssom",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "a",
+            0,
+            0,
+            220,
+            65
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "a",
+            0,
+            0,
+            220,
+            65
+          ]
+        ]
+      },
+      {
+        "name": "forms",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 1042,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0041349206349206346,
+          "mean_absolute_channel_error": 0.3889285714285714,
+          "max_channel_error": 255,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "i",
+            0,
+            0,
+            200,
+            32
+          ],
+          [
+            "a",
+            0,
+            32,
+            200,
+            60
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "i",
+            0,
+            0,
+            200,
+            32
+          ],
+          [
+            "a",
+            0,
+            32,
+            200,
+            60
+          ]
+        ]
+      },
+      {
+        "name": "svg",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "s",
+            0,
+            0,
+            160,
+            100
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "s",
+            0,
+            0,
+            160,
+            100
+          ]
+        ]
+      },
+      {
+        "name": "canvas",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "c",
+            0,
+            0,
+            140,
+            70
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "c",
+            0,
+            0,
+            140,
+            70
+          ]
+        ]
+      },
+      {
+        "name": "scrolling",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 1200,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.004761904761904762,
+          "mean_absolute_channel_error": 0.42314583333333333,
+          "max_channel_error": 119,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "a",
+            20,
+            20,
+            100,
+            60
+          ],
+          [
+            "b",
+            250,
+            10,
+            80,
+            40
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "a",
+            20,
+            20,
+            100,
+            60
+          ],
+          [
+            "b",
+            250,
+            10,
+            80,
+            40
+          ]
+        ]
+      },
+      {
+        "name": "mutations-events",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "a",
+            0,
+            0,
+            180,
+            40
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "a",
+            0,
+            0,
+            180,
+            40
+          ]
+        ]
+      },
+      {
+        "name": "iframe",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "f",
+            0,
+            0,
+            160,
+            90
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "f",
+            0,
+            0,
+            160,
+            90
+          ]
+        ]
+      },
+      {
+        "name": "webfont",
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "native_geometry": [
+          [
+            "a",
+            0,
+            0,
+            200,
+            60
+          ]
+        ],
+        "chrome_geometry": [
+          [
+            "a",
+            0,
+            0,
+            200,
+            60
+          ]
+        ]
+      }
+    ],
+    "graphics": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 275,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0010912698412698413,
+      "mean_absolute_channel_error": 0.01801388888888889,
+      "max_channel_error": 78,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "legacy_corpus": [
+      {
+        "page": "boxes",
+        "chrome": {
+          "geometry": [
+            [
+              "a",
+              0,
+              0,
+              120,
+              70
+            ],
+            [
+              "b",
+              0,
+              70,
+              180,
+              50
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 12,
+            "total_pixels": 252000,
+            "mismatch_fraction": 4.761904761904762e-05,
+            "mean_absolute_channel_error": 0.0019940476190476192,
+            "max_channel_error": 171,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          }
+        },
+        "loads": true,
+        "native_ink_pixels": 0,
+        "native_geometry": [
+          [
+            "a",
+            0,
+            0,
+            120,
+            70
+          ],
+          [
+            "b",
+            0,
+            70,
+            180,
+            50
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "a",
+            0,
+            0,
+            120,
+            70
+          ],
+          [
+            "b",
+            0,
+            70,
+            180,
+            50
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 13,
+          "total_pixels": 252000,
+          "mismatch_fraction": 5.1587301587301586e-05,
+          "mean_absolute_channel_error": 0.003017857142857143,
+          "max_channel_error": 255,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "known_limitations": [],
+        "status": "COMPLETE"
+      },
+      {
+        "page": "article",
+        "chrome": {
+          "geometry": [
+            [
+              "article",
+              0,
+              0,
+              520,
+              164
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 2407,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.009551587301587302,
+            "mean_absolute_channel_error": 0.6005565476190476,
+            "max_channel_error": 255,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          }
+        },
+        "loads": true,
+        "native_ink_pixels": 8124,
+        "native_geometry": [
+          [
+            "article",
+            0,
+            0,
+            520,
+            164
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "article",
+            0,
+            0,
+            520,
+            164
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "known_limitations": [
+          "font rasterization and UA typography differences"
+        ],
+        "status": "COMPLETE"
+      },
+      {
+        "page": "navigation",
+        "chrome": null,
+        "loads": true,
+        "native_ink_pixels": 224,
+        "native_geometry": [
+          [
+            "nav",
+            0,
+            0,
+            560,
+            64
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "nav",
+            0,
+            0,
+            560,
+            64
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 685,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0027182539682539682,
+          "mean_absolute_channel_error": 0.06355952380952382,
+          "max_channel_error": 154,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "known_limitations": [
+          "anonymous flex inline item blockification"
+        ],
+        "status": "COMPLETE"
+      },
+      {
+        "page": "login",
+        "chrome": null,
+        "loads": true,
+        "native_ink_pixels": 1813,
+        "native_geometry": [
+          [
+            "form",
+            0,
+            0,
+            300,
+            224
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "form",
+            0,
+            0,
+            300,
+            224
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 4612,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0183015873015873,
+          "mean_absolute_channel_error": 1.195529761904762,
+          "max_channel_error": 255,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": false
+        },
+        "known_limitations": [
+          "control typography and UA appearance remain partial"
+        ],
+        "status": "PARTIAL"
+      },
+      {
+        "page": "dashboard",
+        "chrome": null,
+        "loads": true,
+        "native_ink_pixels": 1641,
+        "native_geometry": [
+          [
+            "dashboard",
+            0,
+            0,
+            560,
+            120
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "dashboard",
+            0,
+            0,
+            560,
+            120
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 1540,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.006111111111111111,
+          "mean_absolute_channel_error": 0.2959325396825397,
+          "max_channel_error": 200,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "known_limitations": [
+          "intrinsic grid and anonymous flex sizing partial"
+        ],
+        "status": "COMPLETE"
+      },
+      {
+        "page": "scrolling",
+        "chrome": {
+          "geometry": [
+            [
+              "card",
+              0,
+              20,
+              600,
+              80
+            ],
+            [
+              "fixed",
+              400,
+              10,
+              100,
+              30
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 1004,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.003984126984126984,
+            "mean_absolute_channel_error": 0.20242063492063492,
+            "max_channel_error": 255,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          }
+        },
+        "loads": true,
+        "native_ink_pixels": 531,
+        "native_geometry": [
+          [
+            "card",
+            0,
+            20,
+            600,
+            80
+          ],
+          [
+            "fixed",
+            400,
+            10,
+            100,
+            30
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "card",
+            0,
+            20,
+            600,
+            80
+          ],
+          [
+            "fixed",
+            400,
+            -170,
+            100,
+            30
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 266,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0010555555555555555,
+          "mean_absolute_channel_error": 0.041873015873015874,
+          "max_channel_error": 255,
+          "geometry_max_error_px": 180.0,
+          "within_tolerance": false
+        },
+        "known_limitations": [
+          "root margin propagation partial"
+        ],
+        "status": "PARTIAL"
+      },
+      {
+        "page": "positioned",
+        "chrome": null,
+        "loads": true,
+        "native_ink_pixels": 0,
+        "native_geometry": [
+          [
+            "outer",
+            0,
+            0,
+            400,
+            250
+          ],
+          [
+            "inner",
+            260,
+            140,
+            120,
+            80
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "outer",
+            0,
+            0,
+            400,
+            250
+          ],
+          [
+            "inner",
+            260,
+            140,
+            120,
+            80
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 527,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0020912698412698413,
+          "mean_absolute_channel_error": 0.19159126984126984,
+          "max_channel_error": 255,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "known_limitations": [],
+        "status": "COMPLETE"
+      },
+      {
+        "page": "table",
+        "chrome": null,
+        "loads": true,
+        "native_ink_pixels": 908,
+        "native_geometry": [
+          [
+            "table",
+            0,
+            0,
+            500,
+            88
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "table",
+            0,
+            0,
+            500,
+            94
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 3300,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.013095238095238096,
+          "mean_absolute_channel_error": 1.5037470238095239,
+          "max_channel_error": 255,
+          "geometry_max_error_px": 6.0,
+          "within_tolerance": false
+        },
+        "known_limitations": [
+          "CSS table intrinsic distribution and header styling partial"
+        ],
+        "status": "PARTIAL"
+      },
+      {
+        "page": "image",
+        "chrome": null,
+        "loads": true,
+        "native_ink_pixels": 469,
+        "native_geometry": [
+          [
+            "media",
+            0,
+            0,
+            320,
+            180
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "media",
+            0,
+            0,
+            320,
+            180
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 1076,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.00426984126984127,
+          "mean_absolute_channel_error": 0.38750595238095237,
+          "max_channel_error": 221,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "known_limitations": [
+          "SVG image supported; inline formatting and UA defaults may differ"
+        ],
+        "status": "COMPLETE"
+      },
+      {
+        "page": "dynamic",
+        "chrome": null,
+        "loads": true,
+        "native_ink_pixels": 805,
+        "native_geometry": [
+          [
+            "target",
+            0,
+            0,
+            260,
+            50
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "target",
+            0,
+            0,
+            260,
+            50
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "known_limitations": [],
+        "status": "COMPLETE"
+      },
+      {
+        "page": "iframe",
+        "chrome": null,
+        "loads": true,
+        "native_ink_pixels": 599,
+        "native_geometry": [
+          [
+            "f",
+            0,
+            0,
+            250,
+            120
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "f",
+            0,
+            0,
+            250,
+            120
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 1104,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.004380952380952381,
+          "mean_absolute_channel_error": 0.12193253968253968,
+          "max_channel_error": 255,
+          "geometry_max_error_px": 0.0,
+          "within_tolerance": true
+        },
+        "known_limitations": [],
+        "status": "COMPLETE"
+      },
+      {
+        "page": "overlap",
+        "chrome": {
+          "geometry": [
+            [
+              "one",
+              28.76275634765625,
+              28.76275634765625,
+              122.4744873046875,
+              122.4744873046875
+            ],
+            [
+              "two",
+              80,
+              60,
+              100,
+              100
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 0,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.0,
+            "mean_absolute_channel_error": 0.0,
+            "max_channel_error": 0,
+            "geometry_max_error_px": 1.6552861836771626e-07,
+            "within_tolerance": true
+          }
+        },
+        "loads": true,
+        "native_ink_pixels": 0,
+        "native_geometry": [
+          [
+            "one",
+            28.762756430420538,
+            28.762756430420538,
+            122.47448713915891,
+            122.47448713915888
+          ],
+          [
+            "two",
+            80,
+            60,
+            100,
+            100
+          ]
+        ],
+        "reference_geometry": [
+          [
+            "one",
+            40,
+            40,
+            100,
+            100
+          ],
+          [
+            "two",
+            80,
+            60,
+            100,
+            100
+          ]
+        ],
+        "diff": {
+          "channel_tolerance": 8,
+          "pixel_threshold_fraction": 0.01,
+          "geometry_tolerance_px": 0.5,
+          "differing_pixels": 0,
+          "total_pixels": 252000,
+          "mismatch_fraction": 0.0,
+          "mean_absolute_channel_error": 0.0,
+          "max_channel_error": 0,
+          "geometry_max_error_px": 22.47448713915891,
+          "within_tolerance": false
+        },
+        "known_limitations": [],
+        "status": "PARTIAL"
+      }
+    ],
+    "reference_joint_passed": 8,
+    "reference_joint_total": 12,
+    "thresholds": {
+      "channel_tolerance": 8,
+      "pixel_fraction": 0.01,
+      "geometry_px": 0.5
+    },
+    "pinned_upstream_dom_wpt_assertions": {
+      "passed": 1685,
+      "total": 1685
+    },
+    "overflow_reftest": "Unmodified upstream overflow:clip fixture and reference; byte-identical native pixels."
+  },
+  "public_compatibility": [
+    {
+      "page": "example",
+      "url": "https://example.com/",
+      "final_url": "https://example.com/",
+      "status": "PARTIAL",
+      "loads": true,
+      "title": "\"Example Domain\"",
+      "text_prefix": "\"svg{display:block;margin:-2.75em auto 0;opacity:.55}p+p{font-size:.875em;opacity:.6}This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.\"",
+      "positioned_glyphs": 900,
+      "missing_glyphs": 0,
+      "readable_glyph_candidate": true,
+      "document_height": 681.9999961853027,
+      "scroll_y_after_100px": "81.99999618530273",
+      "unsupported_css": [
+        "property:color-scheme"
+      ],
+      "expected_interactions": "not exercised on public origins",
+      "layout_coherence": "requires visual inspection of saved image",
+      "no_crash_or_hang": true,
+      "notices": []
+    },
+    {
+      "page": "cern",
+      "url": "http://info.cern.ch/hypertext/WWW/TheProject.html",
+      "final_url": "http://info.cern.ch/hypertext/WWW/TheProject.html",
+      "status": "PARTIAL",
+      "loads": true,
+      "title": "\"The World Wide Web project\"",
+      "text_prefix": "\"\\nThe World Wide Web project\\n\\n\\n\\nWorld Wide WebThe WorldWideWeb (W3) is a wide-area\\nhypermedia information retrieval\\ninitiative aiming to give universal\\naccess to a large universe of documents.\\nEverything there is online about\\nW3 is linked di\"",
+      "positioned_glyphs": 961,
+      "missing_glyphs": 0,
+      "readable_glyph_candidate": true,
+      "document_height": 555.0,
+      "scroll_y_after_100px": "0",
+      "unsupported_css": [],
+      "expected_interactions": "not exercised on public origins",
+      "layout_coherence": "requires visual inspection of saved image",
+      "no_crash_or_hang": true,
+      "notices": []
+    },
+    {
+      "page": "rust",
+      "url": "https://www.rust-lang.org/",
+      "final_url": "https://rust-lang.org/",
+      "status": "PARTIAL",
+      "loads": true,
+      "title": "\"Rust Programming Language\"",
+      "text_prefix": "\"\\n    \\n      \\n        \\n          \\n        \\n      \\n    \\n      \\n        Install\\n        Learn\\n        Playground\\n        Tools\\n        Governance\\n        Funding\\n        Community\\n        Blog\\n      \\n    \\n      \\n        \\n          Language\\n   \"",
+      "positioned_glyphs": 3122,
+      "missing_glyphs": 0,
+      "readable_glyph_candidate": true,
+      "document_height": 3911.080020904541,
+      "scroll_y_after_100px": "100",
+      "unsupported_css": [
+        "property:align-content",
+        "property:align-self",
+        "property:appearance",
+        "property:backface-visibility",
+        "property:border-bottom-left-radius",
+        "property:border-bottom-right-radius",
+        "property:border-bottom-style",
+        "property:border-bottom-width",
+        "property:border-collapse",
+        "property:border-left-style",
+        "property:border-left-width",
+        "property:border-right-style",
+        "property:border-right-width",
+        "property:border-style",
+        "property:border-top-left-radius",
+        "property:border-top-right-radius",
+        "property:border-top-style",
+        "property:border-top-width",
+        "property:clear",
+        "property:clip",
+        "property:float",
+        "property:font-variant",
+        "property:inset",
+        "property:letter-spacing",
+        "property:list-style-type",
+        "property:order",
+        "property:outline",
+        "property:outline-offset",
+        "property:table-layout",
+        "property:text-decoration",
+        "property:text-indent",
+        "property:text-overflow",
+        "property:text-transform",
+        "property:transition",
+        "selector",
+        "property:appearance",
+        "property:border-bottom-left-radius",
+        "property:border-bottom-right-radius",
+        "property:border-image",
+        "property:border-style",
+        "property:border-top-left-radius",
+        "property:border-top-right-radius",
+        "property:clip",
+        "property:cursor",
+        "property:letter-spacing",
+        "property:list-style",
+        "property:list-style-type",
+        "property:text-decoration",
+        "property:text-transform",
+        "property:transition",
+        "selector"
+      ],
+      "expected_interactions": "not exercised on public origins",
+      "layout_coherence": "requires visual inspection of saved image",
+      "no_crash_or_hang": true,
+      "notices": []
+    },
+    {
+      "page": "rust-std",
+      "url": "https://doc.rust-lang.org/std/",
+      "final_url": "https://doc.rust-lang.org/std/",
+      "status": "PARTIAL",
+      "loads": true,
+      "title": "\"std - Rust\"",
+      "text_prefix": "\"Skip to main contentCrate stdstd1.100.0(0ef1bc386\\t2026-11-09)All ItemsSectionsThe Rust Standard LibraryHow to read this documentationWhat is in the standard library documentation?Contributing changes to the documentationA Tour of The Rust S\"",
+      "positioned_glyphs": 19714,
+      "missing_glyphs": 0,
+      "readable_glyph_candidate": true,
+      "document_height": 60281.500000000015,
+      "scroll_y_after_100px": "100",
+      "unsupported_css": [
+        "property:appearance",
+        "property:border-style",
+        "property:outline-offset",
+        "property:text-decoration",
+        "property:text-transform",
+        "@keyframes",
+        "property:align-self",
+        "property:animation",
+        "property:appearance",
+        "property:background-clip",
+        "property:border-bottom-right-radius",
+        "property:border-collapse",
+        "property:border-image",
+        "property:border-style",
+        "property:border-top-color",
+        "property:clear",
+        "property:contain",
+        "property:content",
+        "property:cursor",
+        "property:filter",
+        "property:flex-flow",
+        "property:float",
+        "property:font-feature-settings",
+        "property:font-variant-numeric",
+        "property:grid-area",
+        "property:grid-template",
+        "property:grid-template-areas",
+        "property:list-style",
+        "property:margin-inline-start",
+        "property:outline",
+        "property:overflow-wrap",
+        "property:overscroll-behavior",
+        "property:scrollbar-color",
+        "property:scrollbar-width",
+        "property:tab-size",
+        "property:text-decoration",
+        "property:text-indent",
+        "property:text-overflow",
+        "property:text-shadow",
+        "property:touch-action",
+        "property:transition",
+        "property:user-select",
+        "property:word-break",
+        "selector"
+      ],
+      "expected_interactions": "not exercised on public origins",
+      "layout_coherence": "requires visual inspection of saved image",
+      "no_crash_or_hang": true,
+      "notices": []
+    }
+  ],
+  "public_visual_review": {
+    "tested_head": "7d21f5db9ea520417b0f860b967e5ee351e95776",
+    "method": "Manual inspection of four initial 800x600 native screenshots after bounded broker navigation; no reference browser capture or public interaction.",
+    "pages": {
+      "example": "Readable multilingual text and SVG icon; no full-page parity claim.",
+      "cern": "Readable document, links and sections; no interactions exercised.",
+      "rust": "Severe overlapping hero/footer and navigation crowding; general site rendering fails.",
+      "rust-std": "Only sidebar visible in initial viewport; main content absent there; general site rendering fails."
+    },
+    "status": "PARTIAL"
+  },
+  "benchmark": {
+    "profile": "release",
+    "method": "five warmups; alternating backend order; comparable-work pixel and geometry gate; cold document construction and warm records separated",
+    "gate": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 144000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_glyphs": 44,
+    "reference_glyphs": 44,
+    "sampled_process_rss_high_water_bytes": 53100544,
+    "allocation_counts": "unmeasured",
+    "scope": "bounded deterministic fixture only; no whole-browser speedup claim; reference parse uses shared DOM adapter; text timing is a subset of layout",
+    "timings": {
+      "native.cold_dom_parse": {
+        "n": 50,
+        "p50_ms": 27.285625,
+        "p95_ms": 34.017958,
+        "p99_ms": 35.059582999999996
+      },
+      "native.cold_style_layout": {
+        "n": 50,
+        "p50_ms": 0.266959,
+        "p95_ms": 0.346292,
+        "p99_ms": 0.35024999999999995
+      },
+      "native.css_parse": {
+        "n": 50,
+        "p50_ms": 0.03725,
+        "p95_ms": 0.045625,
+        "p99_ms": 0.048875
+      },
+      "native.iframe_record": {
+        "n": 50,
+        "p50_ms": 0.008208,
+        "p95_ms": 0.009584,
+        "p99_ms": 0.010958
+      },
+      "native.layout_including_shape": {
+        "n": 50,
+        "p50_ms": 0.159,
+        "p95_ms": 0.214959,
+        "p99_ms": 0.22429200000000002
+      },
+      "native.mutation_relayout": {
+        "n": 50,
+        "p50_ms": 0.12487500000000001,
+        "p95_ms": 0.149791,
+        "p99_ms": 0.153041
+      },
+      "native.raster": {
+        "n": 50,
+        "p50_ms": 0.103042,
+        "p95_ms": 0.121125,
+        "p99_ms": 0.123416
+      },
+      "native.scroll_record": {
+        "n": 50,
+        "p50_ms": 0.005167,
+        "p95_ms": 0.006416,
+        "p99_ms": 0.007375
+      },
+      "native.shaping_subset": {
+        "n": 50,
+        "p50_ms": 0.154042,
+        "p95_ms": 0.208166,
+        "p99_ms": 0.217083
+      },
+      "native.style_box_tree": {
+        "n": 50,
+        "p50_ms": 0.059417,
+        "p95_ms": 0.068458,
+        "p99_ms": 0.069083
+      },
+      "native.warm_record": {
+        "n": 50,
+        "p50_ms": 0.010625,
+        "p95_ms": 0.014791,
+        "p99_ms": 0.016291
+      },
+      "reference.cold_dom_parse": {
+        "n": 50,
+        "p50_ms": 27.179375,
+        "p95_ms": 28.592791,
+        "p99_ms": 28.906083
+      },
+      "reference.cold_style_layout": {
+        "n": 50,
+        "p50_ms": 0.239208,
+        "p95_ms": 0.300875,
+        "p99_ms": 0.313583
+      },
+      "reference.iframe_record": {
+        "n": 50,
+        "p50_ms": 0.009625,
+        "p95_ms": 0.010792,
+        "p99_ms": 0.011916999999999999
+      },
+      "reference.mutation_relayout": {
+        "n": 50,
+        "p50_ms": 0.070292,
+        "p95_ms": 0.088375,
+        "p99_ms": 0.092708
+      },
+      "reference.raster": {
+        "n": 50,
+        "p50_ms": 0.08620799999999999,
+        "p95_ms": 0.0945,
+        "p99_ms": 0.117083
+      },
+      "reference.scroll_record": {
+        "n": 50,
+        "p50_ms": 0.006875,
+        "p95_ms": 0.008416,
+        "p99_ms": 0.008708
+      },
+      "reference.warm_record": {
+        "n": 50,
+        "p50_ms": 0.01825,
+        "p95_ms": 0.023083,
+        "p99_ms": 0.02525
+      }
+    }
+  },
+  "native_stage_profile": {
+    "profile": "release",
+    "fixture": {
+      "nodes": 200,
+      "author_rules": 200,
+      "samples": 10
+    },
+    "cold_ms": 41.918916,
+    "geometry_200_queries": {
+      "p50_ms": 0.10229200000000001,
+      "p95_ms": 0.163041,
+      "n": 10
+    },
+    "mutation_relayout": {
+      "p50_ms": 4.739334,
+      "p95_ms": 4.940209,
+      "n": 10
+    },
+    "mutation_css_parse": {
+      "p50_ms": 0.0024590000000000002,
+      "p95_ms": 0.003666,
+      "n": 10
+    },
+    "scroll_record": {
+      "p50_ms": 0.16433299999999998,
+      "p95_ms": 0.21295799999999998,
+      "n": 10
+    },
+    "last_stages": {
+      "style_box_ms": 3.214041,
+      "layout_ms": 1.502416,
+      "shaping_ms": 1.413666,
+      "scene_ms": 0.108791
+    }
+  },
+  "debug_profile_before": {
+    "profile": "debug",
+    "fixture": {
+      "nodes": 200,
+      "author_rules": 200,
+      "samples": 10
+    },
+    "cold_ms": 137.17541699999998,
+    "geometry_200_queries": {
+      "p50_ms": 35.865083,
+      "p95_ms": 36.337250000000004,
+      "n": 10
+    },
+    "mutation_relayout": {
+      "p50_ms": 75.27675,
+      "p95_ms": 76.221,
+      "n": 10
+    },
+    "mutation_css_parse": {
+      "p50_ms": 6.432709,
+      "p95_ms": 6.517167,
+      "n": 10
+    },
+    "scroll_record": {
+      "p50_ms": 0.684333,
+      "p95_ms": 0.744875,
+      "n": 10
+    },
+    "last_stages": {
+      "style_box_ms": 30.444041000000002,
+      "layout_ms": 37.887833,
+      "shaping_ms": 36.875653,
+      "scene_ms": 0.511083
+    }
+  },
+  "debug_profile_after": {
+    "profile": "debug",
+    "fixture": {
+      "nodes": 200,
+      "author_rules": 200,
+      "samples": 10
+    },
+    "cold_ms": 140.72825,
+    "geometry_200_queries": {
+      "p50_ms": 0.851166,
+      "p95_ms": 0.9890000000000001,
+      "n": 10
+    },
+    "mutation_relayout": {
+      "p50_ms": 68.845292,
+      "p95_ms": 70.007833,
+      "n": 10
+    },
+    "mutation_css_parse": {
+      "p50_ms": 0.07058299999999999,
+      "p95_ms": 0.082291,
+      "n": 10
+    },
+    "scroll_record": {
+      "p50_ms": 0.6538750000000001,
+      "p95_ms": 0.73325,
+      "n": 10
+    },
+    "last_stages": {
+      "style_box_ms": 30.797209,
+      "layout_ms": 37.481083,
+      "shaping_ms": 36.513209,
+      "scene_ms": 0.498125
+    }
+  },
+  "benchmark_process_memory": {
+    "comparable_native_and_reference_max_rss_bytes": 53362688,
+    "native_stage_profile_max_rss_bytes": 28950528,
+    "method": "/usr/bin/time -l",
+    "limits": "One process per test binary; comparable fixture contains both backends. Not per-backend/whole-browser/GPU memory; allocation counts unmeasured."
+  },
+  "benchmark_limits": "Bounded deterministic fixtures; no whole-browser speedup. Native cold style/layout, mutation and raster p50 slower than reference; warm and scroll recording faster. Shaping is a subset of layout. Independent repeat-run confidence and process cold start unmeasured.",
+  "host": {
+    "os": "macOS 27.2.1 (26B131)",
+    "architecture": "aarch64",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "cargo": "1.98.0 (797e8a9bc 2026-08-05)"
+  },
+  "limits": {
+    "import_depth": 8,
+    "provider_resource_expansion_per_document": 512,
+    "native_serialized_rules": 16384,
+    "canvas_max_dimension": 8192,
+    "svg_decode_memory_limits": "Existing 256MiB aggregate retained; admission wait at most2s; nested SVG shares root reservation.",
+    "native_dom_depth": 128,
+    "native_node_limit": 30000,
+    "native_text_bytes": 4194304,
+    "native_serialized_css_threshold_bytes": 8388608,
+    "native_serialized_css_threshold_scope": "Checked between complete rules/groups; a single rule/group can cross the output threshold. Not a strict per-rule allocation cap.",
+    "native_serialized_rules_scope": "Serialization-loop iteration budget; nested atomic CSS groups can contain additional rules."
+  },
+  "artifacts_directory": "native-rounds-3-6-2026-11-17",
+  "artifact_manifest": "artifact-manifest.json",
+  "next_milestone": "Fix recorded real-site layout/reference regressions; broaden CSSOM/SVG/canvas/accessibility; implement decoded media; reduce remaining shared DOM dependency; independent stress/performance measurements.",
+  "historical_baseline": {
+    "schema_version": 1,
+    "date": "2026-11-17",
+    "status": "PARTIAL",
+    "branch": "feature/dom-rounds-9-12",
+    "starting_commit": "80bf07e7face7af87a04347ad715512a25c3488d",
+    "tested_implementation_commit": "6769d8aedc1a916dab846e6ac6ee74b1c05d0a73",
+    "closure_scope": "Documentation/evidence only after tested implementation commit; no source changes after frozen head.",
+    "commits": [
+      {
+        "hash": "61d4ca8f0117ad8f3b903e9d3f2702f47c41024d",
+        "subject": "feat(native): shape Unicode inline text and paint positioned glyphs"
+      },
+      {
+        "hash": "4cbed589499507bd825d577e9997efb8059dc20d",
+        "subject": "feat(native): tokenize CSS and integrate authorized linked stylesheets"
+      },
+      {
+        "hash": "c7bc16e415cf1e8fd17a70f40e36966530f297a2",
+        "subject": "fix(native): size flex grid and table content with real geometry"
+      },
+      {
+        "hash": "1bca499f8a2bdd2def8bb5f734d9b3bcd3d01d3e",
+        "subject": "fix(native): unify paint geometry input and automatic DOM invalidation"
+      },
+      {
+        "hash": "ece03e1e941de2ed9e9b47ed360a6ea490193c06",
+        "subject": "fix(native): harden resource authority layout bounds and rendering behavior"
+      },
+      {
+        "hash": "1a794cf7b7c3a738aea87343688563edcff640fb",
+        "subject": "fix(native): correct constrained sizing and resource destination checks"
+      },
+      {
+        "hash": "6769d8aedc1a916dab846e6ac6ee74b1c05d0a73",
+        "subject": "test(native): add visual compatibility corpus and comparable-work benchmarks"
+      }
+    ],
+    "source_files_changed": [
+      "engines/Cargo.lock",
+      "engines/services/security/src/csp.rs",
+      "engines/vendor/blitz/blitz-dom/src/document.rs",
+      "engines/vendor/blitz/blitz-dom/src/mutator.rs",
+      "engines/vendor/blitz/blitz-dom/src/net.rs",
+      "engines/wega/Cargo.toml",
+      "engines/wega/src/dom.rs",
+      "engines/wega/src/frames.rs",
+      "engines/wega/src/native_engine/backend.rs",
+      "engines/wega/src/native_engine/css.rs",
+      "engines/wega/src/native_engine/display_list.rs",
+      "engines/wega/src/native_engine/layout.rs",
+      "engines/wega/src/native_engine/mod.rs",
+      "engines/wega/src/native_engine/syntax.rs",
+      "engines/wega/src/native_engine/text.rs",
+      "engines/wega/src/view.rs",
+      "engines/wega/tests/fixtures/native-typography.html",
+      "engines/wega/tests/native_advanced_rendering.rs",
+      "engines/wega/tests/native_benchmark.rs",
+      "engines/wega/tests/native_browser_behavior.rs",
+      "engines/wega/tests/native_css_correctness.rs",
+      "engines/wega/tests/native_dynamic_integration.rs",
+      "engines/wega/tests/native_images.rs",
+      "engines/wega/tests/native_layout_correctness.rs",
+      "engines/wega/tests/native_paint_correctness.rs",
+      "engines/wega/tests/native_public_compat.rs",
+      "engines/wega/tests/native_stability.rs",
+      "engines/wega/tests/native_stylesheets.rs",
+      "engines/wega/tests/native_typography.rs",
+      "engines/wega/tests/native_visual_corpus.rs",
+      "engines/wega/tests/support/chrome_capture.mjs",
+      "engines/wega/tests/support/native_visual.rs"
+    ],
+    "no_push": {
+      "git_push_issued": false,
+      "stored_upstream_ref": "refs/remotes/origin/feature/dom-rounds-9-12",
+      "stored_upstream_sha": "6b2e9d119a4e662769dbce9163e92e585d020a27",
+      "live_remote_checked": false
+    },
+    "devtools_d4_started": false,
+    "inspector_source_diff_from_start_empty": true,
+    "capabilities": [
+      {
+        "capability": "Positioned glyph measurement and painting",
+        "status": "COMPLETE",
+        "scope": "Supported horizontal text uses Parley glyph IDs/metrics and Skia glyph painting; no text bars remain."
+      },
+      {
+        "capability": "Typography overall",
+        "status": "PARTIAL",
+        "scope": "System or broker supplied fonts, fallback, weight/style, Unicode/bidi, supported whitespace modes and wrapping; advanced CSS typography/web fonts remain."
+      },
+      {
+        "capability": "CSS parsing, matching and cascade",
+        "status": "PARTIAL",
+        "scope": "Token-based supported selectors, specificity, important ordering, inherited custom properties and bounded calc; at-rules and full property coverage remain."
+      },
+      {
+        "capability": "Authorized linked stylesheets",
+        "status": "PARTIAL",
+        "scope": "Ordered linked CSS, dynamic DOM changes, CSP destination checks, MIME/status checks and resource invalidation tested; media/import application and CSSOM edits remain."
+      },
+      {
+        "capability": "Block and positioned layout",
+        "status": "PARTIAL",
+        "scope": "Common sizing, top/sibling margin collapse, min/max, containing blocks and fixed/absolute slices; full formatting contexts/margin rules remain."
+      },
+      {
+        "capability": "Inline layout",
+        "status": "PARTIAL",
+        "scope": "Shared shaped line fragments and nested styled runs; advanced inline boxes, transformed inline text and strut details remain."
+      },
+      {
+        "capability": "Flexbox",
+        "status": "PARTIAL",
+        "scope": "Basis/grow/shrink/min-max redistribution, wrapping/gaps/reverse and descendant relayout; full intrinsic algorithm remains."
+      },
+      {
+        "capability": "Grid",
+        "status": "PARTIAL",
+        "scope": "Bounded tracks, fractions, minmax, placement, spans/gaps; full intrinsic track algorithm remains."
+      },
+      {
+        "capability": "Tables",
+        "status": "PARTIAL",
+        "scope": "Content widths, sections, spans and row heights; border collapse and full table sizing remain."
+      },
+      {
+        "capability": "Painting, clipping, hit-testing and scrolling",
+        "status": "PARTIAL",
+        "scope": "Paint-order regions share transforms/clips, rounded clips, opacity, blur, per-side borders and nested scroll; compound/3D transforms and advanced shadows remain."
+      },
+      {
+        "capability": "Authorized raster images",
+        "status": "COMPLETE",
+        "scope": "Supported decoded RGBA image content, intrinsic aspect ratio and broker invalidation tested; this status excludes SVG/media."
+      },
+      {
+        "capability": "Iframe scenes and input",
+        "status": "PARTIAL",
+        "scope": "Actual child scene pixels/clipping and transformed child pointer delivery tested; wider frame/layout combinations remain."
+      },
+      {
+        "capability": "Automatic DOM invalidation",
+        "status": "COMPLETE",
+        "scope": "Supported DOM/style/text/class mutations, linked/style node changes, resource completion, viewport and scroll updates rebuild synchronously without manual invalidate calls."
+      },
+      {
+        "capability": "Geometry and computed-style APIs",
+        "status": "PARTIAL",
+        "scope": "Synchronous native rectangles, offset parent, inherited supported resolved values; full serialization/advanced geometry remains."
+      },
+      {
+        "capability": "Pointer events",
+        "status": "PARTIAL",
+        "scope": "Observable target/bubbling/down/up/click state, transformed/clipped/scrolled elements and frames; full input/default-action behavior remains."
+      },
+      {
+        "capability": "Downloaded fonts and runtime font availability invalidation",
+        "status": "UNSUPPORTED",
+        "scope": "Only startup supplied/system font collection is supported."
+      },
+      {
+        "capability": "Editable control values, caret and selection painting",
+        "status": "UNSUPPORTED",
+        "scope": "Basic control geometry and button clicks exist; full native editing display does not."
+      },
+      {
+        "capability": "SVG, video and canvas native painting",
+        "status": "UNSUPPORTED",
+        "scope": "Raster image content is supported separately."
+      },
+      {
+        "capability": "Native accessibility",
+        "status": "UNSUPPORTED",
+        "scope": "Returns explicit absence rather than invoking reference layout."
+      },
+      {
+        "capability": "DOM adapter independence",
+        "status": "PARTIAL",
+        "scope": "Native visible CSS/layout/painting are owned by Wega; authoritative DOM/CSSOM validation/resource decoding/control defaults still use BlitzDocument adapter."
+      },
+      {
+        "capability": "Differential capture framework",
+        "status": "COMPLETE",
+        "scope": "12 local fixtures, geometry/pixel metrics and configurable tolerance; four optional sandbox-enabled Chrome comparisons captured."
+      },
+      {
+        "capability": "Rendering parity and website compatibility",
+        "status": "PARTIAL",
+        "scope": "7/12 joint Blitz comparisons, 4/4 selected Chrome comparisons; two public pages readable but partial. No general parity claim."
+      },
+      {
+        "capability": "Performance and memory evidence",
+        "status": "PARTIAL",
+        "scope": "Equivalent-work release fixture, interleaved samples and p50/p95/p99; combined process peak only, no allocation/per-backend peak/process cold-start measurement."
+      },
+      {
+        "capability": "Broker/frame/isolate security regression scope",
+        "status": "COMPLETE",
+        "scope": "Existing authority/isolation/security suites plus destination/CSP checks and real required-sandbox worker passed; not a full standards/security proof."
+      },
+      {
+        "capability": "Native stability bounds",
+        "status": "PARTIAL",
+        "scope": "Node/depth/text/CSS/expansion limits and bounded hostile input tests; broader stress/fuzz coverage remains."
+      }
+    ],
+    "tests": {
+      "workspace": {
+        "command": "cargo test --manifest-path engines/Cargo.toml --workspace --offline -- --test-threads=4",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-final-full-regression.log",
+        "log_sha256": "1c67f48c8d446108704bc434f79c8492c6649aae7df3a8a93d80d5791647b3a1",
+        "passed": 820,
+        "failed": 0,
+        "ignored": 25
+      },
+      "native_broker_security": {
+        "command": "WEGA_RENDER_BACKEND=native WEGA_TEST_BROKER=1 cargo test --manifest-path engines/Cargo.toml -p wega-engine --test native_browser_behavior --test native_stylesheets --test native_images --test iframes --test same_origin_dom --test iframe_wpt --test isolate_safety --test security --test inherited_broker --offline -- --test-threads=4",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-broker-security.log",
+        "log_sha256": "4a1e2f5000bd2f87b53596e50f527d35847fb5ca6d976e494fc73373effa93fb",
+        "passed": 53,
+        "failed": 0,
+        "ignored": 1
+      },
+      "required_sandbox": {
+        "command": "WEGA_RENDER_BACKEND=native WEGA_CONTENT_HELPER=/private/tmp/WegaNativeCampaign-6769d8a.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine cargo test --manifest-path engines/Cargo.toml -p wega-engine --test inherited_broker --offline -- --ignored --exact a_required_worker_runs_jit_storage_cookies_and_frames_through_grants --nocapture",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-required-sandbox.log",
+        "log_sha256": "f02321b02cc989d7daeaed069fd53f636cf40dd89b9a4ee4711b183d8f139488",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "inspector_sandbox": {
+        "command": "WEGA_CONTENT_HELPER=/private/tmp/WegaNativeCampaign-6769d8a.app/Contents/Helpers/WegaContent.app/Contents/MacOS/wega-engine cargo test --manifest-path engines/Cargo.toml -p wega-engine --test inspector_sandbox --offline -- --ignored --nocapture",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-inspector-sandbox.log",
+        "log_sha256": "05fc17c98f80867e05b1bd966f024b5feffb4dabc60723d429902f93042e0f7a",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "visual": {
+        "command": "WEGA_NATIVE_EVIDENCE_DIR=/private/tmp/wega-native-evidence WEGA_CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' cargo test --manifest-path engines/Cargo.toml -p wega-engine --test native_visual_corpus --test native_typography --offline -- --nocapture",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-final-visual.log",
+        "log_sha256": "20d2d277acf2437cbee54d9fb304fbdadca62b326cd17eb707c6543c72da65b8",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "public": {
+        "command": "WEGA_PUBLIC_COMPAT=1 WEGA_TEST_BROKER=1 cargo test --manifest-path engines/Cargo.toml -p wega-engine --test native_public_compat --offline -- --nocapture",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-final-public-compat.log",
+        "log_sha256": "5c24eea283c3f39dc74dde913938eecfba11d073dc358024808015ddf789714f",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "release_run": {
+        "command": "engines/target/release/deps/native_benchmark-02ee9e75238e9b3d --exact comparable_native_blitz_stage_benchmark --nocapture",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-benchmark-release.log",
+        "log_sha256": "4951b94974de73f40a16dceaf102fe676dd7438cdfb0443c80783f0ff4eed44d",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "clippy": {
+        "command": "cargo clippy --manifest-path engines/Cargo.toml -p wega-engine --lib --tests --offline -- -D warnings",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-clippy-final.log",
+        "log_sha256": "60fe47319c9ee95b1e613823f710ddd134621bac4bc1d8eb869d454242df9688"
+      },
+      "format": {
+        "command": "cargo fmt --manifest-path engines/Cargo.toml -p wega-engine -p wega-security -- --check",
+        "result": "PASS",
+        "log_local_path": "/private/tmp/wega-native-fmt-final.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "additional_commands": {
+      "sandbox_bundle": "WEGA_CODESIGN_IDENTITY=- engines/target/debug/wega-content-bundle engines/target/debug/wega-engine /private/tmp/WegaNativeCampaign-6769d8a.app",
+      "release_build": "cargo test --release --manifest-path engines/Cargo.toml -p wega-engine --test native_benchmark --offline --no-run"
+    },
+    "test_count_limits": "Cargo-reported counts; suites overlap, existing opt-in wrappers can return early, ignored tests were not newly added. Explicit broker/public/sandbox runs cover selected opt-in paths.",
+    "visual": {
+      "viewport": [
+        600,
+        420
+      ],
+      "device_scale": 1,
+      "channel_tolerance": 8,
+      "differing_pixel_fraction_threshold": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "masking": "none",
+      "fixture_count": 12,
+      "blitz_joint_passes": 7,
+      "blitz_pixel_passes": 9,
+      "chrome_joint_passes": 4,
+      "chrome_metadata": {
+        "boxes": {
+          "geometry": [
+            [
+              "a",
+              0,
+              0,
+              120,
+              70
+            ],
+            [
+              "b",
+              0,
+              70,
+              180,
+              50
+            ]
+          ],
+          "viewport": [
+            600,
+            420,
+            0
+          ],
+          "browser": "Chrome/157.0.8103.79"
+        },
+        "article": {
+          "geometry": [
+            [
+              "article",
+              0,
+              0,
+              520,
+              164
+            ]
+          ],
+          "viewport": [
+            600,
+            420,
+            0
+          ],
+          "browser": "Chrome/157.0.8103.79"
+        },
+        "scrolling": {
+          "geometry": [
+            [
+              "card",
+              0,
+              20,
+              600,
+              80
+            ],
+            [
+              "fixed",
+              400,
+              10,
+              100,
+              30
+            ]
+          ],
+          "viewport": [
+            600,
+            420,
+            180
+          ],
+          "browser": "Chrome/157.0.8103.79"
+        },
+        "overlap": {
+          "geometry": [
+            [
+              "one",
+              28.76275634765625,
+              28.76275634765625,
+              122.4744873046875,
+              122.4744873046875
+            ],
+            [
+              "two",
+              80,
+              60,
+              100,
+              100
+            ]
+          ],
+          "viewport": [
+            600,
+            420,
+            0
+          ],
+          "browser": "Chrome/157.0.8103.79"
+        }
+      },
+      "test_enforcement": "Capture test hard-asserts control boxes, not parity of all fixtures. Other observed gates are metrics, with known failures retained. Typography/browser behavior/paint tests provide separate assertions.",
+      "fixtures": [
+        {
+          "page": "boxes",
+          "chrome": {
+            "geometry": [
+              [
+                "a",
+                0,
+                0,
+                120,
+                70
+              ],
+              [
+                "b",
+                0,
+                70,
+                180,
+                50
+              ]
+            ],
+            "diff": {
+              "channel_tolerance": 8,
+              "pixel_threshold_fraction": 0.01,
+              "geometry_tolerance_px": 0.5,
+              "differing_pixels": 12,
+              "total_pixels": 252000,
+              "mismatch_fraction": 4.761904761904762e-05,
+              "mean_absolute_channel_error": 0.0019940476190476192,
+              "max_channel_error": 171,
+              "geometry_max_error_px": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "loads": true,
+          "native_ink_pixels": 0,
+          "native_geometry": [
+            [
+              "a",
+              0,
+              0,
+              120,
+              70
+            ],
+            [
+              "b",
+              0,
+              70,
+              180,
+              50
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "a",
+              0,
+              0,
+              120,
+              70
+            ],
+            [
+              "b",
+              0,
+              70,
+              180,
+              50
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 13,
+            "total_pixels": 252000,
+            "mismatch_fraction": 5.1587301587301586e-05,
+            "mean_absolute_channel_error": 0.003017857142857143,
+            "max_channel_error": 255,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          },
+          "known_limitations": [],
+          "status": "COMPLETE",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "article",
+          "chrome": {
+            "geometry": [
+              [
+                "article",
+                0,
+                0,
+                520,
+                164
+              ]
+            ],
+            "diff": {
+              "channel_tolerance": 8,
+              "pixel_threshold_fraction": 0.01,
+              "geometry_tolerance_px": 0.5,
+              "differing_pixels": 2407,
+              "total_pixels": 252000,
+              "mismatch_fraction": 0.009551587301587302,
+              "mean_absolute_channel_error": 0.6005565476190476,
+              "max_channel_error": 255,
+              "geometry_max_error_px": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "loads": true,
+          "native_ink_pixels": 8124,
+          "native_geometry": [
+            [
+              "article",
+              0,
+              0,
+              520,
+              164
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "article",
+              0,
+              0,
+              520,
+              164
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 0,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.0,
+            "mean_absolute_channel_error": 0.0,
+            "max_channel_error": 0,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          },
+          "known_limitations": [
+            "font rasterization and UA typography differences"
+          ],
+          "status": "COMPLETE",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "navigation",
+          "chrome": null,
+          "loads": true,
+          "native_ink_pixels": 224,
+          "native_geometry": [
+            [
+              "nav",
+              0,
+              0,
+              560,
+              64
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "nav",
+              0,
+              0,
+              560,
+              64
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 685,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.0027182539682539682,
+            "mean_absolute_channel_error": 0.06355952380952382,
+            "max_channel_error": 154,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          },
+          "known_limitations": [
+            "anonymous flex inline item blockification"
+          ],
+          "status": "COMPLETE",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "login",
+          "chrome": null,
+          "loads": true,
+          "native_ink_pixels": 1269,
+          "native_geometry": [
+            [
+              "form",
+              0,
+              0,
+              300,
+              224
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "form",
+              0,
+              0,
+              300,
+              224
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 4036,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.016015873015873015,
+            "mean_absolute_channel_error": 0.9797648809523809,
+            "max_channel_error": 255,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": false
+          },
+          "known_limitations": [
+            "native input widgets and editable text painting unsupported"
+          ],
+          "status": "PARTIAL",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "dashboard",
+          "chrome": null,
+          "loads": true,
+          "native_ink_pixels": 1641,
+          "native_geometry": [
+            [
+              "dashboard",
+              0,
+              0,
+              560,
+              120
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "dashboard",
+              0,
+              0,
+              560,
+              120
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 1540,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.006111111111111111,
+            "mean_absolute_channel_error": 0.2959325396825397,
+            "max_channel_error": 200,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          },
+          "known_limitations": [
+            "intrinsic grid and anonymous flex sizing partial"
+          ],
+          "status": "COMPLETE",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "scrolling",
+          "chrome": {
+            "geometry": [
+              [
+                "card",
+                0,
+                20,
+                600,
+                80
+              ],
+              [
+                "fixed",
+                400,
+                10,
+                100,
+                30
+              ]
+            ],
+            "diff": {
+              "channel_tolerance": 8,
+              "pixel_threshold_fraction": 0.01,
+              "geometry_tolerance_px": 0.5,
+              "differing_pixels": 738,
+              "total_pixels": 252000,
+              "mismatch_fraction": 0.0029285714285714284,
+              "mean_absolute_channel_error": 0.16054761904761905,
+              "max_channel_error": 128,
+              "geometry_max_error_px": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "loads": true,
+          "native_ink_pixels": 665,
+          "native_geometry": [
+            [
+              "card",
+              0,
+              20,
+              600,
+              80
+            ],
+            [
+              "fixed",
+              400,
+              10,
+              100,
+              30
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "card",
+              0,
+              20,
+              600,
+              80
+            ],
+            [
+              "fixed",
+              400,
+              -170,
+              100,
+              30
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 0,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.0,
+            "mean_absolute_channel_error": 0.0,
+            "max_channel_error": 0,
+            "geometry_max_error_px": 180.0,
+            "within_tolerance": false
+          },
+          "known_limitations": [
+            "root margin propagation partial"
+          ],
+          "status": "PARTIAL",
+          "status_scope": "fixture comparison only, not feature completeness",
+          "interpretation": "Blitz geometry differs from native; native geometry agrees with Chrome within 0.5px"
+        },
+        {
+          "page": "positioned",
+          "chrome": null,
+          "loads": true,
+          "native_ink_pixels": 0,
+          "native_geometry": [
+            [
+              "outer",
+              0,
+              0,
+              400,
+              250
+            ],
+            [
+              "inner",
+              260,
+              140,
+              120,
+              80
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "outer",
+              0,
+              0,
+              400,
+              250
+            ],
+            [
+              "inner",
+              260,
+              140,
+              120,
+              80
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 0,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.0,
+            "mean_absolute_channel_error": 0.0,
+            "max_channel_error": 0,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          },
+          "known_limitations": [],
+          "status": "COMPLETE",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "table",
+          "chrome": null,
+          "loads": true,
+          "native_ink_pixels": 908,
+          "native_geometry": [
+            [
+              "table",
+              0,
+              0,
+              500,
+              88
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "table",
+              0,
+              0,
+              500,
+              94
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 3300,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.013095238095238096,
+            "mean_absolute_channel_error": 1.5037470238095239,
+            "max_channel_error": 255,
+            "geometry_max_error_px": 6.0,
+            "within_tolerance": false
+          },
+          "known_limitations": [
+            "CSS table intrinsic distribution and header styling partial"
+          ],
+          "status": "PARTIAL",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "image",
+          "chrome": null,
+          "loads": true,
+          "native_ink_pixels": 469,
+          "native_geometry": [
+            [
+              "media",
+              0,
+              0,
+              320,
+              180
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "media",
+              0,
+              0,
+              320,
+              180
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 11482,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.04556349206349206,
+            "mean_absolute_channel_error": 5.297960317460317,
+            "max_channel_error": 221,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": false
+          },
+          "known_limitations": [
+            "SVG image painting unsupported; separate authorized PNG test verifies raster image content"
+          ],
+          "status": "PARTIAL",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "dynamic",
+          "chrome": null,
+          "loads": true,
+          "native_ink_pixels": 805,
+          "native_geometry": [
+            [
+              "target",
+              0,
+              0,
+              260,
+              50
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "target",
+              0,
+              0,
+              260,
+              50
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 0,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.0,
+            "mean_absolute_channel_error": 0.0,
+            "max_channel_error": 0,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          },
+          "known_limitations": [],
+          "status": "COMPLETE",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "iframe",
+          "chrome": null,
+          "loads": true,
+          "native_ink_pixels": 599,
+          "native_geometry": [
+            [
+              "f",
+              0,
+              0,
+              250,
+              120
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "f",
+              0,
+              0,
+              250,
+              120
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 1104,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.004380952380952381,
+            "mean_absolute_channel_error": 0.12193253968253968,
+            "max_channel_error": 255,
+            "geometry_max_error_px": 0.0,
+            "within_tolerance": true
+          },
+          "known_limitations": [],
+          "status": "COMPLETE",
+          "status_scope": "fixture comparison only, not feature completeness"
+        },
+        {
+          "page": "overlap",
+          "chrome": {
+            "geometry": [
+              [
+                "one",
+                28.76275634765625,
+                28.76275634765625,
+                122.4744873046875,
+                122.4744873046875
+              ],
+              [
+                "two",
+                80,
+                60,
+                100,
+                100
+              ]
+            ],
+            "diff": {
+              "channel_tolerance": 8,
+              "pixel_threshold_fraction": 0.01,
+              "geometry_tolerance_px": 0.5,
+              "differing_pixels": 0,
+              "total_pixels": 252000,
+              "mismatch_fraction": 0.0,
+              "mean_absolute_channel_error": 0.0,
+              "max_channel_error": 0,
+              "geometry_max_error_px": 1.6552861836771626e-07,
+              "within_tolerance": true
+            }
+          },
+          "loads": true,
+          "native_ink_pixels": 0,
+          "native_geometry": [
+            [
+              "one",
+              28.762756430420538,
+              28.762756430420538,
+              122.47448713915891,
+              122.47448713915888
+            ],
+            [
+              "two",
+              80,
+              60,
+              100,
+              100
+            ]
+          ],
+          "reference_geometry": [
+            [
+              "one",
+              40,
+              40,
+              100,
+              100
+            ],
+            [
+              "two",
+              80,
+              60,
+              100,
+              100
+            ]
+          ],
+          "diff": {
+            "channel_tolerance": 8,
+            "pixel_threshold_fraction": 0.01,
+            "geometry_tolerance_px": 0.5,
+            "differing_pixels": 0,
+            "total_pixels": 252000,
+            "mismatch_fraction": 0.0,
+            "mean_absolute_channel_error": 0.0,
+            "max_channel_error": 0,
+            "geometry_max_error_px": 22.47448713915891,
+            "within_tolerance": false
+          },
+          "known_limitations": [],
+          "status": "PARTIAL",
+          "status_scope": "fixture comparison only, not feature completeness",
+          "interpretation": "Blitz geometry differs from native; native geometry agrees with Chrome within 0.5px"
+        }
+      ]
+    },
+    "public_compatibility": [
+      {
+        "page": "example",
+        "url": "https://example.com/",
+        "final_url": "https://example.com/",
+        "status": "PARTIAL",
+        "loads": true,
+        "title": "\"Example Domain\"",
+        "text_prefix": "\"svg{display:block;margin:-2.75em auto 0;opacity:.55}p+p{font-size:.875em;opacity:.6}This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.\"",
+        "positioned_glyphs": 900,
+        "missing_glyphs": 0,
+        "readable_glyph_candidate": true,
+        "document_height": 637.9999961853027,
+        "scroll_y_after_100px": "37.999996185302734",
+        "unsupported_css": [
+          "property:color-scheme"
+        ],
+        "expected_interactions": "not exercised on public origins",
+        "layout_coherence": "manually inspected saved native screenshot; coherent basic article layout, partial compatibility",
+        "no_crash_or_hang": true,
+        "notices": [],
+        "manual_visual_inspection": {
+          "readable_text": true,
+          "coherent_basic_layout": true,
+          "limitations": [
+            "SVG logo absent; color-scheme unsupported; interactions not exercised"
+          ]
+        }
+      },
+      {
+        "page": "cern",
+        "url": "http://info.cern.ch/hypertext/WWW/TheProject.html",
+        "final_url": "http://info.cern.ch/hypertext/WWW/TheProject.html",
+        "status": "PARTIAL",
+        "loads": true,
+        "title": "\"The World Wide Web project\"",
+        "text_prefix": "\"\\nThe World Wide Web project\\n\\n\\n\\nWorld Wide WebThe WorldWideWeb (W3) is a wide-area\\nhypermedia information retrieval\\ninitiative aiming to give universal\\naccess to a large universe of documents.\\nEverything there is online about\\nW3 is linked di\"",
+        "positioned_glyphs": 961,
+        "missing_glyphs": 0,
+        "readable_glyph_candidate": true,
+        "document_height": 555.0,
+        "scroll_y_after_100px": "0",
+        "unsupported_css": [],
+        "expected_interactions": "not exercised on public origins",
+        "layout_coherence": "manually inspected saved native screenshot; coherent basic article layout, partial compatibility",
+        "no_crash_or_hang": true,
+        "notices": [],
+        "manual_visual_inspection": {
+          "readable_text": true,
+          "coherent_basic_layout": true,
+          "limitations": [
+            "link decoration and default list spacing incomplete; interactions not exercised"
+          ]
+        }
+      }
+    ],
+    "benchmark": {
+      "profile": "release",
+      "method": "five warmups; alternating backend order; comparable-work pixel and geometry gate; cold document construction and warm records separated",
+      "gate": {
+        "channel_tolerance": 8,
+        "pixel_threshold_fraction": 0.01,
+        "geometry_tolerance_px": 0.5,
+        "differing_pixels": 0,
+        "total_pixels": 144000,
+        "mismatch_fraction": 0.0,
+        "mean_absolute_channel_error": 0.0,
+        "max_channel_error": 0,
+        "geometry_max_error_px": 0.0,
+        "within_tolerance": true
+      },
+      "native_glyphs": 44,
+      "reference_glyphs": 44,
+      "sampled_process_rss_high_water_bytes": 56377344,
+      "allocation_counts": "unmeasured",
+      "scope": "bounded deterministic fixture only; no whole-browser speedup claim; reference parse uses shared DOM adapter; text timing is a subset of layout",
+      "timings": {
+        "native.cold_dom_parse": {
+          "n": 50,
+          "p50_ms": 23.750125,
+          "p95_ms": 24.899916,
+          "p99_ms": 26.9265
+        },
+        "native.cold_style_layout": {
+          "n": 50,
+          "p50_ms": 0.087541,
+          "p95_ms": 0.141916,
+          "p99_ms": 0.146417
+        },
+        "native.css_parse": {
+          "n": 50,
+          "p50_ms": 0.010542,
+          "p95_ms": 0.017417,
+          "p99_ms": 0.0185
+        },
+        "native.iframe_record": {
+          "n": 50,
+          "p50_ms": 0.007500000000000001,
+          "p95_ms": 0.009542,
+          "p99_ms": 0.014957999999999999
+        },
+        "native.layout_including_shape": {
+          "n": 50,
+          "p50_ms": 0.028416999999999998,
+          "p95_ms": 0.064916,
+          "p99_ms": 0.079583
+        },
+        "native.mutation_relayout": {
+          "n": 50,
+          "p50_ms": 0.066042,
+          "p95_ms": 0.08804100000000001,
+          "p99_ms": 0.11349999999999999
+        },
+        "native.raster": {
+          "n": 50,
+          "p50_ms": 0.073791,
+          "p95_ms": 0.112875,
+          "p99_ms": 0.152959
+        },
+        "native.scroll_record": {
+          "n": 50,
+          "p50_ms": 0.004,
+          "p95_ms": 0.0050420000000000005,
+          "p99_ms": 0.005334
+        },
+        "native.shaping_subset": {
+          "n": 50,
+          "p50_ms": 0.025042,
+          "p95_ms": 0.058041,
+          "p99_ms": 0.069375
+        },
+        "native.style_box_tree": {
+          "n": 50,
+          "p50_ms": 0.047667,
+          "p95_ms": 0.063958,
+          "p99_ms": 0.064958
+        },
+        "native.warm_record": {
+          "n": 50,
+          "p50_ms": 0.007833,
+          "p95_ms": 0.013208,
+          "p99_ms": 0.015375000000000002
+        },
+        "reference.cold_dom_parse": {
+          "n": 50,
+          "p50_ms": 23.674332999999997,
+          "p95_ms": 26.464583,
+          "p99_ms": 27.988959
+        },
+        "reference.cold_style_layout": {
+          "n": 50,
+          "p50_ms": 0.204958,
+          "p95_ms": 0.332125,
+          "p99_ms": 0.40254199999999996
+        },
+        "reference.iframe_record": {
+          "n": 50,
+          "p50_ms": 0.009792,
+          "p95_ms": 0.012584,
+          "p99_ms": 0.014042
+        },
+        "reference.mutation_relayout": {
+          "n": 50,
+          "p50_ms": 0.056875,
+          "p95_ms": 0.085584,
+          "p99_ms": 0.10029199999999999
+        },
+        "reference.raster": {
+          "n": 50,
+          "p50_ms": 0.071916,
+          "p95_ms": 0.095709,
+          "p99_ms": 0.122667
+        },
+        "reference.scroll_record": {
+          "n": 50,
+          "p50_ms": 0.006083,
+          "p95_ms": 0.007625,
+          "p99_ms": 0.008333
+        },
+        "reference.warm_record": {
+          "n": 50,
+          "p50_ms": 0.013542,
+          "p95_ms": 0.026,
+          "p99_ms": 0.034249999999999996
+        }
+      }
+    },
+    "benchmark_process_memory": {
+      "method": "getrusage(RUSAGE_CHILDREN), one release benchmark child",
+      "platform": "darwin",
+      "peak_rss_bytes": 56655872,
+      "elapsed_seconds": 2.8683885829959763,
+      "exit_code": 0,
+      "scope": "combined benchmark process including both backends and harness; not per-backend peak",
+      "allocations": "unmeasured"
+    },
+    "benchmark_limits": [
+      "New-document construction inside a warmed process, not process cold-start.",
+      "Shared authoritative DOM adapter work remains in both parse measurements.",
+      "Native shape is a subset of layout; warm_record combines display-list generation and scene recording.",
+      "No standalone reference CSS/shape timing, no per-backend peak memory and no allocation count.",
+      "Only bounded fixture equivalent output established; previous 8.1 percent browser advantage claim withdrawn."
+    ],
+    "host": {
+      "os": "macOS 27.2.1",
+      "architecture": "arm64",
+      "rustc": "1.98.0",
+      "chrome": "157.0.8103.79"
+    },
+    "limits": {
+      "native_node_depth": 128,
+      "engine_stack_bytes": 8388608,
+      "nodes": 30000,
+      "dom_text_bytes": 4194304,
+      "css_source_bytes": 8388608,
+      "depth_note": "Actual node depth; not a promise of 128 nested blocks. Bounded block depth 124 accepted; 252/300 refused after an earlier 252-depth debug timeout."
+    },
+    "artifacts": [
+      {
+        "path": "baseline/native-engine-2026-11-17/typography-native.png",
+        "bytes": 88005,
+        "sha256": "cbcf27c973293db0042c5b217fcb66295ce8fce8c7773bb5aae7f89934c049ef"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/article-native.png",
+        "bytes": 34783,
+        "sha256": "bbc7fcc781f86262e880814e595555a762c866ca3689e615d69520fe727c38db"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/article-reference.png",
+        "bytes": 34783,
+        "sha256": "bbc7fcc781f86262e880814e595555a762c866ca3689e615d69520fe727c38db"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/article-diff.png",
+        "bytes": 30750,
+        "sha256": "ad0159d6e4c337d15ff1abf6ead953556f7f0e499fc2e375d7cfbb43bc2c603d"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/article-chrome.png",
+        "bytes": 27508,
+        "sha256": "54bfb261da01db74ba77ef4c616560f27bbfc181ec38af122bc4994d145f2dca"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/iframe-native.png",
+        "bytes": 4423,
+        "sha256": "5d4417770694bc59d96123c745d0042cadd4f1e1547f7d71d749fc78d921363b"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/iframe-reference.png",
+        "bytes": 4343,
+        "sha256": "7dc61b11680942a889b2bdd807ad0237756af2bb06dffa52d0b3ad99af98e883"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/iframe-diff.png",
+        "bytes": 3193,
+        "sha256": "c68bdebbdec1dd917a13a1bd42b2dfc26c1d715176ccc7912039f6f893fa3f1c"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/overlap-native.png",
+        "bytes": 4148,
+        "sha256": "513df99b12fd550b2f2ea1c764cd229df43358295c45017cc904a08e578bec1c"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/overlap-chrome.png",
+        "bytes": 3463,
+        "sha256": "29e5cf7f2d7154615543095d882f45a77161b0736e4dfc9e37a3ed10d575d0e2"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/login-diff.png",
+        "bytes": 7212,
+        "sha256": "9434718c63f44b0cdf10c4ff62c8f402e6fabe24216babcf7395cb3d15a792b7"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/public-example-native.png",
+        "bytes": 96270,
+        "sha256": "b76506fa990bf0a1156999e21ed8408cabd26ff21a81562d4ae32876c1c7a927"
+      },
+      {
+        "path": "baseline/native-engine-2026-11-17/public-cern-native.png",
+        "bytes": 105758,
+        "sha256": "c5455e7cdea56caed93775be6f9f0b7d782e235117a459d9d37fc113cfba516e"
+      }
+    ],
+    "artifact_bytes": 444639,
+    "next_milestone": "Native inline/replaced formatting and editable controls with pinned WPT-derived geometry/pixel gates, then at-rules/web fonts and broader layout correctness. Keep general browsing opt-in pending those gates."
+  },
+  "artifact_count": 136,
+  "artifact_bytes": 1001799
+}

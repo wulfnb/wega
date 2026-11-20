@@ -286,10 +286,23 @@
         }
       })
     : null;
+  function setOwner(node, owner) {
+    if (node && owner) {
+      Object.defineProperty(node, "_owner", {
+        value: owner,
+        writable: true,
+        configurable: true,
+        enumerable: false,
+      });
+    }
+  }
   function wrap(id, owner) {
     if (id === null || id === undefined) return null;
     let result = weak ? cache.get(id)?.deref() : cache.get(id);
-    if (result) return result;
+    if (result) {
+      if (owner && !result._owner) setOwner(result, owner);
+      return result;
+    }
     const info = host("info", id);
     if (info.nodeType === 11) {
       const owner = component("shadowHost", id);
@@ -335,7 +348,7 @@
     cache.set(id, weak ? new WeakRef(result) : result);
     host("retain", id);
     finalizer?.register(result, id);
-    if (owner) result._owner = owner;
+    if (owner) setOwner(result, owner);
     if (host("connected", id)) connected.set(id, result);
     if (info.nodeType === 1) {
       if (typeof customElements === "object") {
@@ -593,7 +606,7 @@
       return this.nodeType === 9 ? null : this._owner || document;
     }
     get parentNode() {
-      return wrap(host("parent", this._id));
+      return wrap(host("parent", this._id), this.ownerDocument || this);
     }
     get parentElement() {
       const parent = this.parentNode;
@@ -702,7 +715,7 @@
       return this.childNodes.length > 0;
     }
     getRootNode(options) {
-      return wrap(component("componentRoot", this._id, !!options?.composed));
+      return wrap(component("componentRoot", this._id, !!options?.composed), this.ownerDocument || this);
     }
     get baseURI() { return (this.ownerDocument || this).URL; }
     lookupNamespaceURI(prefix) {
@@ -787,7 +800,7 @@
         : this.childNodes.length - Number(oldParent === this);
       insertedRangeNode(this, index);
       host("insert", this._id, child._id, reference ? reference._id : "");
-      child._owner = this.ownerDocument || this;
+      setOwner(child, this.ownerDocument || this);
       retainTree(child, this.isConnected);
       if (wasConnected) triggerDisconnected(child);
       if (oldParent) {
@@ -1124,7 +1137,7 @@
       if (token !== shadowToken) fail("TypeError", "Illegal constructor");
       super(descriptor.root, host("info", descriptor.root));
       shadowDescriptors.set(this, descriptor);
-      this._owner = wrap(descriptor.host)?.ownerDocument || document;
+      setOwner(this, wrap(descriptor.host)?.ownerDocument || document);
     }
     get host() { return wrap(shadowDescriptors.get(this).host); }
     get activeElement() {
@@ -1522,10 +1535,10 @@
       return host("clientRects", this._id).map(rect=>DOMRect.fromRect(rect));
     }
     get clientWidth() {
-      return Math.round(host("clientBox", this._id).width);
+      return Math.floor(host("clientBox", this._id).width);
     }
     get clientHeight() {
-      return Math.round(host("clientBox", this._id).height);
+      return Math.floor(host("clientBox", this._id).height);
     }
     get clientLeft() {
       return Math.round(host("clientBox", this._id).left);
@@ -1569,7 +1582,10 @@
       if (this.localName === "select") {
         for (const option of this.options)
           option.selected = option.value === String(value);
-      } else this.setAttribute("value", String(value));
+      } else {
+        this.setAttribute("value", String(value));
+        host("setInputValue", this._id, String(value));
+      }
     }
     get checked() {
       return host("checked", this._id);
@@ -1879,7 +1895,7 @@
     constructor(token, state) {
       if (token !== internalToken) throw new TypeError("Illegal constructor");
       super("", { nodeType: 2, nodeName: state.name });
-      attrData.set(this, state); this._owner = state.document;
+      attrData.set(this, state); setOwner(this, state.document);
     }
     get namespaceURI() { return attrData.get(this).namespace; }
     get prefix() { return attrData.get(this).prefix; }
@@ -1930,7 +1946,7 @@
       const old = previous?.value;
       element.setAttributeNS(state.namespace, state.name, state.value);
       if (previous) { const s = attrData.get(previous); s.owner = null; s.value = old; }
-      state.owner = element; state.document = element.ownerDocument; attr._owner = state.document;
+      state.owner = element; state.document = element.ownerDocument; setOwner(attr, state.document);
       attributesFor(element).set(attributeKey(state.namespace, state.localName), attr);
       return previous;
     }
@@ -2026,11 +2042,113 @@
     tokenData.set(proxy, tokenData.get(target)); return proxy;
   }
 
-  // Nested documents are not exposed until a browser-issued frame context is
-  // bound to a real worker. A detached synthetic document is not an iframe.
+  // Cross-frame references are host-backed facades keyed by the browser-issued frame key, never
+  // the other realm's objects. The facade exposes only the cross-origin-safe Window surface;
+  // same-origin synchronous DOM access is not bridged (contentDocument is always null).
+  const frameProxies = new Map();
+  const SAFE_WINDOW_KEYS = new Set(["postMessage", "closed", "length", "frames", "parent", "top", "window", "self", "opener", "location", "focus", "blur"]);
+  const securityError = (what) => new DOMException(
+    `Blocked a frame from accessing a ${what}.`, "SecurityError");
+  function postToFrame(kind, key, message, targetOrigin, transfer) {
+    if (targetOrigin !== null && typeof targetOrigin === "object") {
+      transfer = targetOrigin.transfer || [];
+      targetOrigin = targetOrigin.targetOrigin === undefined ? "/" : targetOrigin.targetOrigin;
+    }
+    targetOrigin = String(targetOrigin);
+    if (targetOrigin !== "*" && targetOrigin !== "/") {
+      let parsed;
+      try { parsed = new URL(targetOrigin); } catch { throw new DOMException("Invalid target origin", "SyntaxError"); }
+      targetOrigin = parsed.origin;
+    }
+    if (transfer && transfer.length) throw new DOMException("Transfer lists are not supported across frames", "DataCloneError");
+    // Validate with the platform's structured clone, then carry the JSON-compatible form.
+    const cloned = web.structuredClone(message);
+    let json;
+    try { json = JSON.stringify(cloned); } catch { throw new DOMException("The message could not be cloned", "DataCloneError"); }
+    host("framePost", kind + ":" + key, targetOrigin, json === undefined ? "null" : json);
+  }
+  function windowProxy(kind, key) {
+    const id = kind + ":" + key;
+    const cached = frameProxies.get(id);
+    if (cached) return cached;
+    const info = () => kind === "child" ? host("frameInfo", String(key)) : null;
+    const location = {
+      set href(value) { if (kind === "child") host("frameNavigate", "child:" + key, String(value)); },
+      replace(value) { if (kind === "child") host("frameNavigate", "child:" + key, String(value)); },
+    };
+    const surface = {
+      postMessage(message, targetOrigin = "/", transfer = []) { postToFrame(kind, key, message, targetOrigin, transfer); },
+      get closed() { return kind === "child" ? info() === null : false; },
+      get length() { return kind === "child" ? (info()?.length ?? 0) : 0; },
+      get opener() { return null; },
+      get location() { return location; },
+      focus() {}, blur() {},
+    };
+    const proxy = new Proxy(Object.create(null), {
+      get(_, name, receiver) {
+        if (name === Symbol.toStringTag) return "Window";
+        if (name === "window" || name === "self" || name === "frames") return proxy;
+        if (name === "parent" || name === "top") return kind === "parent" || kind === "top" ? proxy : null;
+        if (typeof name === "string" && SAFE_WINDOW_KEYS.has(name)) return surface[name];
+        if (name === "document") {
+          const docId = kind === "child"
+            ? host("frameWindowDocument", String(key))
+            : (kind === "parent" || kind === "top" ? host("frameParentDocument") : null);
+          if (!docId) throw securityError("cross-origin frame");
+          const d = wrap(docId);
+          if (d) d._defaultView = proxy;
+          return d;
+        }
+        if (typeof name === "symbol") return undefined;
+        throw securityError(kind === "child" && info()?.sameOrigin
+          ? "same-origin frame property"
+          : "cross-origin frame");
+      },
+      set(_, name, value) {
+        if (name === "location") { location.href = value; return true; }
+        throw securityError("cross-origin frame");
+      },
+      has: (_, name) => typeof name === "string" && SAFE_WINDOW_KEYS.has(name),
+      ownKeys: () => [],
+      getOwnPropertyDescriptor: () => undefined,
+      getPrototypeOf: () => null,
+      setPrototypeOf: () => false,
+      defineProperty() { throw securityError("cross-origin frame"); },
+      deleteProperty() { throw securityError("cross-origin frame"); },
+    });
+    frameProxies.set(id, proxy);
+    return proxy;
+  }
+  globalThis.__wega_frame_message = function(origin, source, data) {
+    let parsed;
+    try { parsed = JSON.parse(data); } catch { return; }
+    const src = source === null ? null : source.kind === "child" ? windowProxy("child", source.key) : windowProxy("parent", "0");
+    // Delivered as a task, like every other message.
+    setTimeout(() => {
+      globalThis.dispatchEvent(new web.MessageEvent("message", { data: parsed, origin, source: src }));
+    }, 0);
+  };
   class HTMLIFrameElement extends HTMLElement {
-    get contentWindow() { return null; }
-    get contentDocument() { return null; }
+    get contentWindow() {
+      if (!this.isConnected) return null;
+      const info = host("frameWindow", this._id);
+      return info ? windowProxy("child", info.key) : null;
+    }
+    get contentDocument() {
+      if (!this.isConnected) return null;
+      const docId = host("frameDocument", this._id);
+      if (!docId) return null;
+      const d = wrap(docId);
+      if (d) d._defaultView = this.contentWindow;
+      return d;
+    }
+    get loading() { return this.getAttribute("loading") === "lazy" ? "lazy" : "eager"; }
+    set loading(value) { this.setAttribute("loading", String(value)); }
+    get referrerPolicy() { return this.getAttribute("referrerpolicy") || ""; }
+    set referrerPolicy(value) { this.setAttribute("referrerpolicy", String(value)); }
+    get allow() { return this.getAttribute("allow") || ""; }
+    set allow(value) { this.setAttribute("allow", String(value)); }
+    getSVGDocument() { return null; }
     get src() { return this.getAttribute("src") || ""; }
     set src(value) { this.setAttribute("src", String(value)); }
     get srcdoc() { return this.getAttribute("srcdoc") || ""; }
@@ -2067,9 +2185,241 @@
   });
   class HTMLInputElement extends HTMLElement {}
   class HTMLTextAreaElement extends HTMLElement {}
-  class HTMLSelectElement extends HTMLElement {}
-  class HTMLOptionElement extends HTMLElement {}
-  class HTMLButtonElement extends HTMLElement {}
+  for (const C of [HTMLInputElement, HTMLTextAreaElement]) {
+    Object.defineProperties(C.prototype, {
+      selectionStart: {
+        get() {
+          return host("selectionRange", this._id)[0];
+        },
+        set(val) {
+          const end = this.selectionEnd;
+          this.setSelectionRange(val, Math.max(val, end));
+        },
+      },
+      selectionEnd: {
+        get() {
+          return host("selectionRange", this._id)[1];
+        },
+        set(val) {
+          const start = this.selectionStart;
+          this.setSelectionRange(Math.min(start, val), val);
+        },
+      },
+      select: {
+        value() {
+          this.setSelectionRange(0, (this.value || "").length);
+        },
+      },
+      setSelectionRange: {
+        value(start, end) {
+          host("setSelectionRange", this._id, String(start), String(end));
+        },
+      },
+    });
+  }
+  class ValidityState {
+    constructor(element) {
+      this._element = element;
+    }
+    get valueMissing() {
+      const el = this._element;
+      if (!el.hasAttribute("required")) return false;
+      if (el.localName === "input") {
+        if (el.type === "checkbox") return !el.checked;
+        if (el.type === "radio") {
+          const form = el.form;
+          const group = form ? form.querySelectorAll(`input[type="radio"][name="${cssEscape(el.name)}"]`) : document.querySelectorAll(`input[type="radio"][name="${cssEscape(el.name)}"]`);
+          return ![...group].some(r => r.checked);
+        }
+        return !el.value;
+      }
+      if (el.localName === "select") return el.selectedIndex < 0 || (el.value === "" && !el.multiple);
+      if (el.localName === "textarea") return !el.value;
+      return false;
+    }
+    get typeMismatch() {
+      const el = this._element;
+      if (el.localName !== "input" || !el.value) return false;
+      if (el.type === "email") return !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(el.value);
+      if (el.type === "url") {
+        try { new URL(el.value); return false; } catch { return true; }
+      }
+      return false;
+    }
+    get patternMismatch() {
+      const el = this._element;
+      if (el.localName !== "input" || !el.hasAttribute("pattern") || !el.value) return false;
+      try {
+        const regex = new RegExp("^(?:" + el.getAttribute("pattern") + ")$", "u");
+        return !regex.test(el.value);
+      } catch { return false; }
+    }
+    get tooLong() {
+      const el = this._element;
+      if (!el.hasAttribute("maxlength")) return false;
+      const max = Number(el.getAttribute("maxlength"));
+      return !isNaN(max) && max >= 0 && el.value.length > max;
+    }
+    get tooShort() {
+      const el = this._element;
+      if (!el.hasAttribute("minlength")) return false;
+      const min = Number(el.getAttribute("minlength"));
+      return !isNaN(min) && min >= 0 && el.value.length > 0 && el.value.length < min;
+    }
+    get rangeUnderflow() {
+      const el = this._element;
+      if (el.localName !== "input" || !el.hasAttribute("min") || !el.value) return false;
+      const min = Number(el.getAttribute("min"));
+      const val = Number(el.value);
+      return !isNaN(min) && !isNaN(val) && val < min;
+    }
+    get rangeOverflow() {
+      const el = this._element;
+      if (el.localName !== "input" || !el.hasAttribute("max") || !el.value) return false;
+      const max = Number(el.getAttribute("max"));
+      const val = Number(el.value);
+      return !isNaN(max) && !isNaN(val) && val > max;
+    }
+    get stepMismatch() { return false; }
+    get badInput() { return false; }
+    get customError() { return !!this._element._customValidityMessage; }
+    get valid() {
+      return !this.valueMissing && !this.typeMismatch && !this.patternMismatch &&
+             !this.tooLong && !this.tooShort && !this.rangeUnderflow &&
+             !this.rangeOverflow && !this.stepMismatch && !this.badInput && !this.customError;
+    }
+  }
+
+  function setupFormValidation(proto) {
+    Object.defineProperties(proto, {
+      validity: {
+        get() {
+          return this._validityState || (this._validityState = new ValidityState(this));
+        }
+      },
+      validationMessage: {
+        get() {
+          if (this._customValidityMessage) return this._customValidityMessage;
+          const v = this.validity;
+          if (v.valid) return "";
+          if (v.valueMissing) return "Please fill out this field.";
+          if (v.typeMismatch) return "Please enter a valid value.";
+          if (v.patternMismatch) return "Please match the requested format.";
+          if (v.tooLong) return "Please shorten this text.";
+          if (v.tooShort) return "Please lengthen this text.";
+          if (v.rangeUnderflow || v.rangeOverflow) return "Value out of range.";
+          return "Constraints not satisfied.";
+        }
+      },
+      willValidate: {
+        get() {
+          if (this.disabled) return false;
+          if (this.hasAttribute("readonly")) return false;
+          if (this.localName === "input" && ["hidden", "button", "reset"].includes(this.type)) return false;
+          if (this.localName === "button" && this.type === "reset") return false;
+          return true;
+        }
+      },
+      checkValidity: {
+        value() {
+          if (!this.willValidate || this.validity.valid) return true;
+          this.dispatchEvent(new Event("invalid", { bubbles: false, cancelable: true }));
+          return false;
+        }
+      },
+      reportValidity: {
+        value() { return this.checkValidity(); }
+      },
+      setCustomValidity: {
+        value(msg) {
+          this._customValidityMessage = String(msg || "");
+        }
+      }
+    });
+  }
+
+  setupFormValidation(HTMLInputElement.prototype);
+  setupFormValidation(HTMLTextAreaElement.prototype);
+
+  class HTMLSelectElement extends HTMLElement {
+    get options() {
+      return this.querySelectorAll("option");
+    }
+    get length() {
+      return this.options.length;
+    }
+    get selectedOptions() {
+      return nodeList(() => [...this.options].filter(o => o.selected));
+    }
+    get selectedIndex() {
+      const opts = [...this.options];
+      return opts.findIndex(o => o.selected);
+    }
+    set selectedIndex(idx) {
+      const opts = [...this.options];
+      opts.forEach((o, i) => { o.selected = (i === Number(idx)); });
+    }
+    get value() {
+      const sel = [...this.options].find(o => o.selected);
+      return sel ? sel.value : "";
+    }
+    set value(val) {
+      val = String(val);
+      for (const o of this.options) {
+        o.selected = (o.value === val);
+      }
+    }
+    get multiple() { return this.hasAttribute("multiple"); }
+    set multiple(val) {
+      if (val) this.setAttribute("multiple", "");
+      else this.removeAttribute("multiple");
+    }
+    item(i) { return this.options[i] || null; }
+    namedItem(name) { return this.options.namedItem?.(name) || null; }
+  }
+  setupFormValidation(HTMLSelectElement.prototype);
+
+  class HTMLOptionElement extends HTMLElement {
+    get selected() {
+      if (this._selected !== undefined) return this._selected;
+      return this.hasAttribute("selected");
+    }
+    set selected(val) {
+      this._selected = !!val;
+      if (!this.closest("select")?.multiple && this._selected) {
+        for (const opt of (this.closest("select")?.options || [])) {
+          if (opt !== this) opt._selected = false;
+        }
+      }
+    }
+    get value() {
+      return this.getAttribute("value") ?? this.textContent ?? "";
+    }
+    set value(val) {
+      this.setAttribute("value", String(val));
+    }
+    get text() { return (this.textContent || "").trim(); }
+    set text(val) { this.textContent = String(val); }
+    get index() {
+      const select = this.closest("select");
+      if (!select) return 0;
+      return [...select.options].indexOf(this);
+    }
+    get form() {
+      return this.closest("select")?.form || null;
+    }
+  }
+
+  class HTMLButtonElement extends HTMLElement {
+    get type() {
+      const t = (this.getAttribute("type") || "submit").toLowerCase();
+      return ["submit", "reset", "button"].includes(t) ? t : "submit";
+    }
+    set type(val) { this.setAttribute("type", String(val)); }
+    get value() { return this.getAttribute("value") || ""; }
+    set value(val) { this.setAttribute("value", String(val)); }
+  }
+  setupFormValidation(HTMLButtonElement.prototype);
   class HTMLFormElement extends HTMLElement {
     // submit() skips the submit event and validation, per HTML.
     submit() {
@@ -2372,7 +2722,9 @@
         if (this._webglCtx) return null;
         if (!this._canvasId) {
           this._canvasId = host("canvasCreate", String(this.width), String(this.height), "false");
+          host("canvasAttach", this._id, String(this._canvasId));
         }
+        host("canvasAttach", this._id, String(this._canvasId));
         if (!this._context2d) {
           this._context2d = new CanvasRenderingContext2D(this, this._canvasId, false);
         }
@@ -2444,6 +2796,7 @@
       this._transferredToOffscreen = true;
       if (!this._canvasId) {
         this._canvasId = host("canvasCreate", String(this.width), String(this.height), "true");
+        host("canvasAttach", this._id, String(this._canvasId));
       }
       const offscreen = new OffscreenCanvas(this.width, this.height, this._canvasId);
       offscreen._placeholder = true;
@@ -4086,6 +4439,7 @@
   Object.defineProperty(ClipboardEvent.prototype, Symbol.toStringTag, { value: "ClipboardEvent" });
 
   class Document extends Node {
+    elementFromPoint(x,y) { return wrap(host("elementFromPoint",this._id,String(Number(x)),String(Number(y)))); }
     constructor(id, info) {
       if (id === undefined) return wrap(host("createDocument"));
       super(id, info);
@@ -4319,10 +4673,7 @@
       return nodeList(() => nodes);
     }
     getElementById(id) {
-      return this === document
-        ? wrap(host("getById", String(id)), this)
-        : [...this.querySelectorAll("[id]")].find((n) => n.id === String(id)) ||
-            null;
+      return wrap(host("getById", String(id), this._id), this);
     }
     getElementsByTagName(name) {
       return nodeList(() => [...this.querySelectorAll(String(name))], true);
@@ -4360,25 +4711,25 @@
       name = String(name).toLowerCase();
       if (!/^[a-z_][\w.:-]*$/i.test(name))
         fail("InvalidCharacterError", "Invalid element name");
-      const element = wrap(host("create", name), this);
+      const element = wrap(host("create", name, this._id), this);
       if (name === "script") element._forceAsync = true;
       return element;
     }
     createElementNS(namespace, name, options) {
       if ((typeof options === "string" && options) || options?.is) fail("NotSupportedError", "Customized built-in elements are not implemented");
       return wrap(
-        host("createNS", String(namespace || ""), String(name)),
+        host("createNS", String(namespace || ""), String(name), this._id),
         this,
       );
     }
     createTextNode(text) {
-      return wrap(host("createText", String(text)), this);
+      return wrap(host("createText", String(text), this._id), this);
     }
     createComment(text) {
-      return wrap(host("createComment", String(text)), this);
+      return wrap(host("createComment", String(text), this._id), this);
     }
     createDocumentFragment() {
-      return wrap(host("createFragment"), this);
+      return wrap(host("createFragment", this._id), this);
     }
     createEvent(name) {
       const event = new Event("uninitialized");
@@ -4398,14 +4749,14 @@
     }
     importNode(node, deep = false) {
       const clone = node.cloneNode(deep);
-      clone._owner = this;
+      setOwner(clone, this);
       return clone;
     }
     adoptNode(node) {
       const oldOwner = node.ownerDocument;
       node.remove();
       component("customAdopt", node._id, oldOwner?._id || "", this._id);
-      node._owner = this;
+      setOwner(node, this);
       flushComponents();
       return node;
     }
@@ -4722,6 +5073,7 @@
     SVGElement,
     HTMLIFrameElement,
     DOMTokenList,
+    ValidityState,
     HTMLInputElement,
     HTMLTextAreaElement,
     HTMLSelectElement,
@@ -4783,7 +5135,6 @@
     top: globalThis,
     parent: globalThis,
     frames: globalThis,
-    frameElement: null,
     postMessage(message, targetOrigin = "/", transfer = []) {
       if (targetOrigin !== null && typeof targetOrigin === "object") {
         transfer = targetOrigin.transfer || [];
@@ -4793,7 +5144,7 @@
       // V8/Deno owns serialization and transfer validation. Serialization errors
       // propagate synchronously; original objects are never delivered as fallback.
       const data = web.structuredClone(message, { transfer });
-      const origin = new URL(host("url")).origin;
+      const origin = host("origin");
       if (accepts) setTimeout(() => {
         const event = new web.MessageEvent("message", { data, origin, source: globalThis });
         globalThis.dispatchEvent(event);
@@ -4952,6 +5303,14 @@ return {
     clearTimeout: (id) => timers.delete(id),
     clearInterval: (id) => timers.delete(id),
   });
+  Object.defineProperty(globalThis, "frameElement", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      const id = host("frameElement");
+      return id ? wrap(id) : null;
+    },
+  });
   if (!globalThis.URL) {
     class URLFallback {
       constructor(value, base) {
@@ -5089,7 +5448,33 @@ return {
     mode: node => shadowDescriptors.get(node)?.mode || null,
     slot: node => node?._id ? wrap(component("assignedSlotInternal", node._id)) : null,
   });
-  Object.defineProperty(globalThis, "length", { get: () => 0, configurable: true });
+  {
+    const roleOf = () => host("frameRole");
+    const framesView = new Proxy(Object.create(null), {
+      get(_, name) {
+        if (name === "length") return host("frameList").length;
+        if (name === "window" || name === "self" || name === "frames") return framesView;
+        if (typeof name === "string" && /^(0|[1-9]\d*)$/.test(name)) {
+          const row = host("frameList")[Number(name)];
+          return row ? windowProxy("child", row.key) : undefined;
+        }
+        if (typeof name === "string") {
+          const row = host("frameList").find(candidate => candidate.name === name);
+          return row ? windowProxy("child", row.key) : undefined;
+        }
+        return undefined;
+      },
+    });
+    // `frames`, `parent` and `length` are [Replaceable]: assigning replaces the accessor.
+    const replaceable = (name, get) => ({ configurable: true, enumerable: true, get,
+      set(value) { Object.defineProperty(globalThis, name, { value, writable: true, configurable: true, enumerable: true }); } });
+    Object.defineProperties(globalThis, {
+      parent: replaceable("parent", () => roleOf().hasParent ? windowProxy("parent", "0") : globalThis),
+      top: { configurable: true, enumerable: true, get: () => roleOf().hasParent ? windowProxy("top", "0") : globalThis },
+      frames: replaceable("frames", () => framesView),
+      length: replaceable("length", () => host("frameList").length),
+    });
+  }
   const classes = { Node, Element, Document, DocumentFragment, CharacterData, Text, Comment, CDATASection, ProcessingInstruction, DocumentType,
     Attr, NamedNodeMap, NodeList, HTMLCollection, DOMTokenList, MutationObserver, MutationRecord,
     Location, Event, EventTarget: BaseTarget, HTMLElement, ...plainHtmlInterfaces,

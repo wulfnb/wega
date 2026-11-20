@@ -1,0 +1,932 @@
+[
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_css_layout_acceptance-f966b7b6332a3d35",
+    "bytes": 243966352,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-f966b7b6332a3d35/test-integration-test-native_css_layout_acceptance.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_visual_corpus-532dfc4ca6353215",
+    "bytes": 243266288,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-532dfc4ca6353215/test-integration-test-native_visual_corpus.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/webgl-ef3d8af88b4f82e9",
+    "bytes": 240812160,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ef3d8af88b4f82e9/test-integration-test-webgl.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/cache_api-f8e43cd2e040b4d7",
+    "bytes": 239340368,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-f8e43cd2e040b4d7/test-integration-test-cache_api.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_dom-53df9590f6792090",
+    "bytes": 105855984,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-53df9590f6792090/test-integration-test-inspector_dom.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/render_bench-b13ba875bda74943",
+    "bytes": 240525200,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b13ba875bda74943/test-integration-test-render_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_advanced_rendering-0a04a4d404562a9b",
+    "bytes": 104519600,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0a04a4d404562a9b/test-integration-test-native_advanced_rendering.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/reliability-4e04f891fa2a76b7",
+    "bytes": 240487952,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4e04f891fa2a76b7/test-integration-test-reliability.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_dynamic_integration-b8e2b391f0998185",
+    "bytes": 243303328,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b8e2b391f0998185/test-integration-test-native_dynamic_integration.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_styles-e1ca1a903f6b63b5",
+    "bytes": 106979328,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-e1ca1a903f6b63b5/test-integration-test-inspector_styles.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_layout_engine-220b306e594814cc",
+    "bytes": 102873568,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-220b306e594814cc/test-integration-test-native_layout_engine.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/epoch-b52efb44036d53d4",
+    "bytes": 238919920,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b52efb44036d53d4/test-integration-test-epoch.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/pages-05cca8e86511822f",
+    "bytes": 240765152,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-05cca8e86511822f/test-integration-test-pages.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/layout-e28917709ccfcaa2",
+    "bytes": 240629616,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-e28917709ccfcaa2/test-integration-test-layout.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_advanced_rendering-16aab1a759b66b25",
+    "bytes": 99200528,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-16aab1a759b66b25/test-integration-test-native_advanced_rendering.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/storage-48dae545d46cebfd",
+    "bytes": 239470544,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-48dae545d46cebfd/test-integration-test-storage.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/mutation_epoch_bench-0959c1d2d948e7e0",
+    "bytes": 45193904,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0959c1d2d948e7e0/test-integration-test-mutation_epoch_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/documents-b688a765e60b16b6",
+    "bytes": 241081792,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b688a765e60b16b6/test-integration-test-documents.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/permissions-dfe8bd604cd7c5c9",
+    "bytes": 239264656,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-dfe8bd604cd7c5c9/test-integration-test-permissions.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inherited_broker-ed3042b774703a9f",
+    "bytes": 29288608,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ed3042b774703a9f/test-integration-test-inherited_broker.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframe_bench-be929e50713082a2",
+    "bytes": 242675136,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-be929e50713082a2/test-integration-test-iframe_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_browser_behavior-b3064159485bf688",
+    "bytes": 242623312,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b3064159485bf688/test-integration-test-native_browser_behavior.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/web-27e02e7c2964c1fc",
+    "bytes": 239376224,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-27e02e7c2964c1fc/test-integration-test-web.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_layout_engine-8adc7e8d8b8aefcc",
+    "bytes": 99187456,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-8adc7e8d8b8aefcc/test-integration-test-native_layout_engine.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_dom_bench-da5077e6b5db3219",
+    "bytes": 102292048,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-da5077e6b5db3219/test-integration-test-inspector_dom_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_layout_correctness-66a0e641d216373d",
+    "bytes": 104621952,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-66a0e641d216373d/test-integration-test-native_layout_correctness.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/image_limits-ef6b861ffc0470f4",
+    "bytes": 16631312,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ef6b861ffc0470f4/test-integration-test-image_limits.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_benchmark-75b64259294b419c",
+    "bytes": 127619936,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-75b64259294b419c/test-integration-test-native_benchmark.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_stability-64a1982871412b88",
+    "bytes": 106727152,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-64a1982871412b88/test-integration-test-native_stability.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/frames-12a3eec4f23b0439",
+    "bytes": 240816640,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-12a3eec4f23b0439/test-integration-test-frames.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_forms_editing-1c06b0b07ad8b8af",
+    "bytes": 244069536,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-1c06b0b07ad8b8af/test-integration-test-native_forms_editing.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_typography-d72865ef21af1b5d",
+    "bytes": 109964816,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-d72865ef21af1b5d/test-integration-test-native_typography.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/dom-06998d6df374c93d",
+    "bytes": 240829264,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-06998d6df374c93d/test-integration-test-dom.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/canvas2d-62d44e32ff1ed981",
+    "bytes": 239215488,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-62d44e32ff1ed981/test-integration-test-canvas2d.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_css_correctness-0ce4bf6b9e04cfc2",
+    "bytes": 103350720,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0ce4bf6b9e04cfc2/test-integration-test-native_css_correctness.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/css_wpt-6a7f9a2c20aaed1f",
+    "bytes": 240763968,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-6a7f9a2c20aaed1f/test-integration-test-css_wpt.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_paint_correctness-c1e556d554d7fdc0",
+    "bytes": 107790912,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-c1e556d554d7fdc0/test-integration-test-native_paint_correctness.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/web_workers-36244465cbfd15b0",
+    "bytes": 239576128,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-36244465cbfd15b0/test-integration-test-web_workers.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/console_bench-048d70cbb6942325",
+    "bytes": 238942128,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-048d70cbb6942325/test-integration-test-console_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/worker-dd3aec5608ad9fdf",
+    "bytes": 62003440,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-dd3aec5608ad9fdf/test-integration-test-worker.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_graphics_acceptance-bb9de1bb68f8853a",
+    "bytes": 244229088,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-bb9de1bb68f8853a/test-integration-test-native_graphics_acceptance.json",
+    "missing_dependencies": [
+      "svgtypes"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_paint_correctness-9e5616d3c03e85bc",
+    "bytes": 109765216,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-9e5616d3c03e85bc/test-integration-test-native_paint_correctness.json",
+    "missing_dependencies": [
+      "svgtypes"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_vertical_slice-df70e9ade89dabab",
+    "bytes": 237289680,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-df70e9ade89dabab/test-integration-test-native_vertical_slice.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_layout_engine-b300d7338d9c6f6f",
+    "bytes": 104614480,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b300d7338d9c6f6f/test-integration-test-native_layout_engine.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/scripts-7913a37d93735f7b",
+    "bytes": 240918736,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-7913a37d93735f7b/test-integration-test-scripts.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/broker_websocket-735d02c35860f5ce",
+    "bytes": 241027008,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-735d02c35860f5ce/test-integration-test-broker_websocket.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_styles_bench-2b63ab784ad50eae",
+    "bytes": 130407792,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-2b63ab784ad50eae/test-integration-test-inspector_styles_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/canvas2d-320ee5212e8e3ae1",
+    "bytes": 240004224,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-320ee5212e8e3ae1/test-integration-test-canvas2d.json",
+    "missing_dependencies": [
+      "svgtypes"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/history-eecc7d8ca5a876c7",
+    "bytes": 242597648,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-eecc7d8ca5a876c7/test-integration-test-history.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_typography-0705e58173556c8d",
+    "bytes": 106663728,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0705e58173556c8d/test-integration-test-native_typography.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/custom_elements-4b59ac54f4a12b62",
+    "bytes": 238672224,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4b59ac54f4a12b62/test-integration-test-custom_elements.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_vertical_slice-13e3426e4bd5ad11",
+    "bytes": 242759632,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-13e3426e4bd5ad11/test-integration-test-native_vertical_slice.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/isolate_safety-d7c1a53455238ccf",
+    "bytes": 240967712,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-d7c1a53455238ccf/test-integration-test-isolate_safety.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframes-703c2679de00ecf8",
+    "bytes": 238188928,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-703c2679de00ecf8/test-integration-test-iframes.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/worker_bench-de812a7c4d26de3d",
+    "bytes": 238968720,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-de812a7c4d26de3d/test-integration-test-worker_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_css_at_rules_acceptance-e0403bde0c08af88",
+    "bytes": 243269792,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-e0403bde0c08af88/test-integration-test-native_css_at_rules_acceptance.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/wpt-92d699bc424a985a",
+    "bytes": 239272480,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-92d699bc424a985a/test-integration-test-wpt.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/same_origin_dom-5049b0c790d17243",
+    "bytes": 233657216,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-5049b0c790d17243/test-integration-test-same_origin_dom.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/forms-0981e48f81aac0dd",
+    "bytes": 242818864,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0981e48f81aac0dd/test-integration-test-forms.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/dom_identity-47796494ed56853d",
+    "bytes": 238626160,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-47796494ed56853d/test-integration-test-dom_identity.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/media-bcb0a71b831f5ff8",
+    "bytes": 239205472,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-bcb0a71b831f5ff8/test-integration-test-media.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_edit-4b94db2c0485a35c",
+    "bytes": 61944640,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4b94db2c0485a35c/test-integration-test-inspector_edit.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/harness_fixtures-ba017da29dadf799",
+    "bytes": 61669744,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ba017da29dadf799/test-integration-test-harness_fixtures.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframe_wpt-49a00c4d03114fe9",
+    "bytes": 241262960,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-49a00c4d03114fe9/test-integration-test-iframe_wpt.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_edit_bench-b7e6c4199d303578",
+    "bytes": 243594576,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b7e6c4199d303578/test-integration-test-inspector_edit_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/hot_path_bench-03c68a39e4054ad2",
+    "bytes": 241275328,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-03c68a39e4054ad2/test-integration-test-hot_path_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/console-0d1453ee28ac15d3",
+    "bytes": 239086080,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0d1453ee28ac15d3/test-integration-test-console.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/worker_runtime-00075ee51c2b9c03",
+    "bytes": 239054704,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-00075ee51c2b9c03/test-integration-test-worker_runtime.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/style-2b16903154023e7d",
+    "bytes": 240509776,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-2b16903154023e7d/test-integration-test-style.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/events-cc52685cb1712b1f",
+    "bytes": 242809792,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-cc52685cb1712b1f/test-integration-test-events.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/compat-4ad59f78e77bbef0",
+    "bytes": 240712272,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4ad59f78e77bbef0/test-integration-test-compat.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_advanced_rendering-f0b5f17a1d1b30b5",
+    "bytes": 106273488,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-f0b5f17a1d1b30b5/test-integration-test-native_advanced_rendering.json",
+    "missing_dependencies": [
+      "svgtypes"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/security-2f8921bca37b0790",
+    "bytes": 241066432,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-2f8921bca37b0790/test-integration-test-security.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/render-512c14a490fc60e2",
+    "bytes": 240669936,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-512c14a490fc60e2/test-integration-test-render.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_images-8cfa9c17d4251cee",
+    "bytes": 242474048,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-8cfa9c17d4251cee/test-integration-test-native_images.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_bench-a43deee61ebe2989",
+    "bytes": 62334976,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-a43deee61ebe2989/test-integration-test-inspector_bench.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframe_inspector-4f26f07b18cc868d",
+    "bytes": 242360016,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4f26f07b18cc868d/test-integration-test-iframe_inspector.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_console-749c38b5757250a1",
+    "bytes": 62508544,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-749c38b5757250a1/test-integration-test-inspector_console.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_stylesheets-2e86e11c8dbec194",
+    "bytes": 243210048,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-2e86e11c8dbec194/test-integration-test-native_stylesheets.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_css_correctness-bc186d76bfe5b0e9",
+    "bytes": 103408528,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-bc186d76bfe5b0e9/test-integration-test-native_css_correctness.json",
+    "missing_dependencies": [
+      "svgtypes"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_sandbox-ee3ce53c5d826d1e",
+    "bytes": 29614704,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ee3ce53c5d826d1e/test-integration-test-inspector_sandbox.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector-0316e5e77e0de3ff",
+    "bytes": 62155856,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0316e5e77e0de3ff/test-integration-test-inspector.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframes-f1533601f23a348d",
+    "bytes": 243027984,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-f1533601f23a348d/test-integration-test-iframes.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/document_host-63427fee476c02b7",
+    "bytes": 240932912,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-63427fee476c02b7/test-integration-test-document_host.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/same_origin_dom-9cc707361ae55d54",
+    "bytes": 238925088,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-9cc707361ae55d54/test-integration-test-same_origin_dom.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_dynamic_integration-b8ae4c69b15c73df",
+    "bytes": 237808736,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b8ae4c69b15c73df/test-integration-test-native_dynamic_integration.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/errors-c00a69f16a3a2d34",
+    "bytes": 238970448,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-c00a69f16a3a2d34/test-integration-test-errors.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/dom_budgets-67927bcaa4e3a9c4",
+    "bytes": 238917760,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-67927bcaa4e3a9c4/test-integration-test-dom_budgets.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/input-2d8deb13c96fc821",
+    "bytes": 240688832,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-2d8deb13c96fc821/test-integration-test-input.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/frame_rendering_and_stacking-6c2b08a0e2d49ae8",
+    "bytes": 240636016,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-6c2b08a0e2d49ae8/test-integration-test-frame_rendering_and_stacking.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/css-987ceb1d46fa8f11",
+    "bytes": 240701280,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-987ceb1d46fa8f11/test-integration-test-css.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_benchmark-43804c59dd4d5b18",
+    "bytes": 136504048,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-43804c59dd4d5b18/test-integration-test-native_benchmark.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/layout_depth-8d8e3801df4a697f",
+    "bytes": 240729728,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-8d8e3801df4a697f/test-integration-test-layout_depth.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  },
+  {
+    "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_public_compat-51bfd6906b57e185",
+    "bytes": 242455936,
+    "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-51bfd6906b57e185/test-integration-test-native_public_compat.json",
+    "missing_dependencies": [
+      "anyrender_svg",
+      "svgtypes",
+      "usvg"
+    ]
+  }
+]

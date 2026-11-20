@@ -23,6 +23,35 @@ impl Cookies {
                 .unwrap_or_default(),
         }
     }
+    pub fn get_frame(
+        &self,
+        url: &Url,
+        script: bool,
+        context: SiteContext,
+        frame: Option<u64>,
+    ) -> String {
+        match self {
+            Self::Local(jar) => jar.get(url, script, context),
+            Self::Remote(remote) => remote
+                .cookie_read_frame(url, script, context, false, frame)
+                .unwrap_or_default(),
+        }
+    }
+    pub fn set_frame(
+        &self,
+        url: &Url,
+        value: &str,
+        script: bool,
+        context: SiteContext,
+        frame: Option<u64>,
+    ) {
+        match self {
+            Self::Local(jar) => jar.set(url, value, script, context),
+            Self::Remote(remote) => {
+                let _ = remote.cookie_write_frame(url, value, script, context, frame);
+            }
+        }
+    }
     pub fn get(&self, url: &Url, script: bool, context: SiteContext) -> String {
         match self {
             Self::Local(jar) => jar.get(url, script, context),
