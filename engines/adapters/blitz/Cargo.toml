@@ -12,7 +12,7 @@ wega-dom = { path = "../../dom/core" }
 blitz-dom = { version = "=0.3.0-beta.4", default-features = false }
 blitz-html = "=0.3.0-beta.4"
 blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
-anyrender = "=0.14.0"
+anyrender = "=0.15.0"
 blitz-traits = "=0.3.0-beta.4"
 html5ever = "0.40.1"
 url = "2.5"

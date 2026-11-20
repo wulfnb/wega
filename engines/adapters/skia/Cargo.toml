@@ -9,7 +9,7 @@ description = "Wega's Skia raster backend: paints display lists to RGBA pixels o
 
 [dependencies]
 wega-platform = { path = "../../platform" }
-anyrender = "=0.14.0"
+anyrender = "=0.15.0"
 anyrender_skia = "=0.12.0"
 skia-safe = "=0.153.3"
 kurbo = "=0.13.1"
