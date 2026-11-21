@@ -1,6 +1,6 @@
 # css/selectors
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Phase 1 split)** — crate `wega-css-selectors`
 
 ## Purpose
 
@@ -21,4 +21,10 @@ CSS selector parsing and matching.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Implemented as `wega-css-selectors`, a member of the `engines` workspace. The code moved here from `wega-native` without behavior changes (CSS engine modularization plan, Phase 1); `wega-native` re-exports it under the old paths.
+
+Modules: `types`, `parser`, `matching` (specificity and `:has()`).
+
+Actual dependencies: `wega-dom`, `cssparser`.
+
+Deviations from the target: Matches through `wega_dom::DocumentView` directly. Target: an `ElementView` trait implemented in `adapters/dom-css`. See [`css-engine-modularization-plan.md`](../../../docs/architecture/css-engine-modularization-plan.md).

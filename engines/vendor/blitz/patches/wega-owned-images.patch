@@ -4,8 +4,8 @@
  version = "0.25.6"
  default-features = false
  
-+[dependencies.wega-native]
-+path = "../../../native"
++[dependencies.wega-image]
++path = "../../../graphics/image"
 +
  [dependencies.keyboard-types]
  version = "0.8"
@@ -142,10 +142,10 @@
 -                }
 -            }
 -            Err(error) => error.to_string(),
-+        let image_err = match wega_native::images::decode_raster(&bytes) {
++        let image_err = match wega_image::decode_raster(&bytes) {
 +            Ok(image) => return Ok(Resource::Image(self.kind, image.width, image.height, image.data)),
-+            Err(wega_native::images::RasterDecodeError::Rejected(error)) => return Err(error),
-+            Err(wega_native::images::RasterDecodeError::Format(error)) => error,
++            Err(wega_image::RasterDecodeError::Rejected(error)) => return Err(error),
++            Err(wega_image::RasterDecodeError::Format(error)) => error,
          };
 -        // Raster probing has finished. SVG parsing reserves its own bounded budget.
 -        drop(permit);
@@ -185,7 +185,7 @@
 -        }
 -    }
 -}
-+pub use wega_native::images::RasterImageData;
++pub use wega_image::RasterImageData;
  
  #[derive(Debug, Clone)]
  pub enum ImageData {
@@ -557,4 +557,4 @@
 -    usvg::Transform::from_row(sx, 0.0, 0.0, sy, tx, ty)
 -}
 +//! Compatibility export for the retained reference renderer; Wega owns decoding.
-+pub use wega_native::images::{SvgImageData, SvgIntrinsicDimensions};
++pub use wega_image::{SvgImageData, SvgIntrinsicDimensions};

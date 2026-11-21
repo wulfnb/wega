@@ -11,7 +11,7 @@ use style::{
     },
     values::{CssUrl, SourceLocation},
 };
-use wega_native::images::{RasterImageData, SvgImageData};
+use wega_image::{RasterImageData, SvgImageData};
 use wega_network::document::net::{Bytes, NetHandler, Request};
 
 #[derive(Clone)]
@@ -281,7 +281,7 @@ impl WegaDocument {
                     if signal.as_ref().is_some_and(AbortSignal::aborted) {
                         return;
                     }
-                    use wega_native::images::{RasterDecodeError, decode_raster};
+                    use wega_image::{RasterDecodeError, decode_raster};
                     let image = match decode_raster(&bytes) {
                         Ok(image) => Image::Raster(RasterImageData::new(
                             image.width,
@@ -403,7 +403,7 @@ impl WegaDocument {
                     }
                 }
                 Image::Svg(image) => {
-                    let image = wega_native::graphics::SvgGraphic::from_decoded(
+                    let image = wega_image::SvgGraphic::from_decoded(
                         image.tree,
                         image.intrinsic_dimensions.view_box,
                         image.intrinsic_dimensions.preserve_aspect_ratio,
@@ -423,8 +423,8 @@ impl WegaDocument {
                 .and_then(NodeView::element_name)
                 .is_some_and(|n| n.local == "svg")
             {
-                b.svg = wega_native::graphics::svg_source(self, key).and_then(|s| {
-                    wega_native::graphics::decode_svg_with_options(
+                b.svg = wega_image::svg_source(self, key).and_then(|s| {
+                    wega_image::decode_svg_with_options(
                         s.as_bytes(),
                         &usvg::Options {
                             fontdb: self.svg_fonts.clone(),

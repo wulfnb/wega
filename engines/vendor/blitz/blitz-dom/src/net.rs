@@ -576,10 +576,10 @@ impl NetHandler for ResourceHandler<ImageHandler> {
 
 impl ImageHandler {
     fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
-        let image_err = match wega_native::images::decode_raster(&bytes) {
+        let image_err = match wega_image::decode_raster(&bytes) {
             Ok(image) => return Ok(Resource::Image(self.kind, image.width, image.height, image.data)),
-            Err(wega_native::images::RasterDecodeError::Rejected(error)) => return Err(error),
-            Err(wega_native::images::RasterDecodeError::Format(error)) => error,
+            Err(wega_image::RasterDecodeError::Rejected(error)) => return Err(error),
+            Err(wega_image::RasterDecodeError::Format(error)) => error,
         };
         // Raster probing has released its reservation before bounded SVG fallback.
         #[cfg(feature = "svg")]

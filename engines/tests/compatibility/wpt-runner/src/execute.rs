@@ -163,7 +163,7 @@ fn compare(a: &[u8], b: &[u8]) -> (u32, u32) {
     }
     let mut max = 0u32;
     let mut count = 0u32;
-    for (pa, pb) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
+    for (pa, pb) in a.as_chunks::<4>().0.iter().zip(b.as_chunks::<4>().0) {
         let diff = pa
             .iter()
             .zip(pb)

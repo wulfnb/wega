@@ -531,7 +531,7 @@ dependencies = [
  "url",
  "usvg",
  "web-time",
- "wega-native",
+ "wega-image",
 ]
 
 [[package]]
@@ -6796,9 +6796,11 @@ dependencies = [
  "stylo",
  "stylo_traits",
  "url",
+ "wega-css-parser",
  "wega-dom",
  "wega-html",
- "wega-native",
+ "wega-image",
+ "wega-layout",
 ]
 
 [[package]]
@@ -6850,6 +6852,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "wega-css-parser"
+version = "0.1.0"
+dependencies = [
+ "cssparser 0.38.0",
+ "wega-css-selectors",
+ "wega-css-values",
+]
+
+[[package]]
+name = "wega-css-selectors"
+version = "0.1.0"
+dependencies = [
+ "cssparser 0.38.0",
+ "wega-dom",
+]
+
+[[package]]
+name = "wega-css-values"
+version = "0.1.0"
+dependencies = [
+ "cssparser 0.38.0",
+ "kurbo",
+]
+
+[[package]]
+name = "wega-display-list"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_skia",
+ "anyrender_svg",
+ "html5ever",
+ "kurbo",
+ "peniko",
+ "url",
+ "wega-css-parser",
+ "wega-css-values",
+ "wega-dom",
+ "wega-html",
+ "wega-image",
+ "wega-layout",
+]
+
+[[package]]
 name = "wega-dom"
 version = "0.1.0"
 dependencies = [
@@ -6894,14 +6940,20 @@ dependencies = [
  "wega-adapter-blitz",
  "wega-adapter-skia",
  "wega-adapter-v8",
+ "wega-css-parser",
+ "wega-css-selectors",
+ "wega-css-values",
+ "wega-display-list",
  "wega-dom",
  "wega-html",
- "wega-native",
+ "wega-image",
+ "wega-layout",
  "wega-network",
  "wega-permissions",
  "wega-platform",
  "wega-protocol",
  "wega-security",
+ "wega-style",
  "wuff",
 ]
 
@@ -6916,24 +6968,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "wega-native"
+name = "wega-image"
 version = "0.1.0"
 dependencies = [
  "anyrender",
- "anyrender_skia",
  "anyrender_svg",
- "cssparser 0.38.0",
  "flate2",
- "html5ever",
  "image",
  "kurbo",
  "parley",
  "peniko",
  "svgtypes",
- "url",
  "usvg",
  "wega-dom",
- "wega-html",
+]
+
+[[package]]
+name = "wega-layout"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "kurbo",
+ "parley",
+ "peniko",
+ "wega-css-parser",
+ "wega-css-values",
+ "wega-dom",
+ "wega-image",
+ "wega-style",
 ]
 
 [[package]]
@@ -7010,6 +7072,16 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "url",
+]
+
+[[package]]
+name = "wega-style"
+version = "0.1.0"
+dependencies = [
+ "wega-css-parser",
+ "wega-css-selectors",
+ "wega-css-values",
+ "wega-dom",
 ]
 
 [[package]]

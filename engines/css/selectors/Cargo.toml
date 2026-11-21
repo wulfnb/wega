@@ -1,0 +1,12 @@
+[package]
+name = "wega-css-selectors"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "CSS selector parsing, specificity and matching"
+
+[dependencies]
+cssparser = "=0.38.0"
+wega-dom = { path = "../../dom/core" }

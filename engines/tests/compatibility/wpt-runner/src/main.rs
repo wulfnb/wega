@@ -100,13 +100,23 @@ fn parse_args(raw: Vec<String>) -> Args {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--wpt" => args.wpt = it.next().expect("--wpt DIR").into(),
-            "--jobs" | "-j" => args.jobs = it.next().and_then(|n| n.parse().ok()).expect("--jobs N"),
+            "--jobs" | "-j" => {
+                args.jobs = it.next().and_then(|n| n.parse().ok()).expect("--jobs N")
+            }
             "--out" => args.out = it.next().expect("--out DIR").into(),
             "--save-failures" => args.save_failures = true,
             "--baseline" => args.baseline = it.next().expect("--baseline FILE").into(),
             "--update-baseline" => args.update_baseline = true,
             "-h" | "--help" => {
-                println!("{}", include_str!("main.rs").lines().take(13).map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n"));
+                println!(
+                    "{}",
+                    include_str!("main.rs")
+                        .lines()
+                        .take(13)
+                        .map(|l| l.trim_start_matches("//!"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                );
                 std::process::exit(0);
             }
             suite => args.suites.push(suite.trim_matches('/').to_string()),
@@ -134,11 +144,18 @@ fn run_parent(args: Args) -> i32 {
     let pinned = include_str!("../WPT_COMMIT").trim();
     let commit = wpt_commit(&args.wpt);
     if commit != pinned {
-        eprintln!("warning: {} is at {commit:?}, expected pinned {pinned}", args.wpt.display());
+        eprintln!(
+            "warning: {} is at {commit:?}, expected pinned {pinned}",
+            args.wpt.display()
+        );
     }
     let tests = discover::discover(&args.wpt, &args.suites);
     if tests.is_empty() {
-        eprintln!("no tests found under {} for {:?}", args.wpt.display(), args.suites);
+        eprintln!(
+            "no tests found under {} for {:?}",
+            args.wpt.display(),
+            args.suites
+        );
         return 2;
     }
     let _ = std::fs::remove_dir_all(&args.out);
@@ -169,8 +186,14 @@ fn run_parent(args: Args) -> i32 {
             std::thread::sleep(Duration::from_millis(200));
             if last_report.elapsed() >= Duration::from_secs(15) {
                 last_report = Instant::now();
-                let done: usize = (0..jobs).map(|k| shard::finished(&results_of(k)).len()).sum();
-                eprintln!("  {done}/{} after {}s", tests.len(), started.elapsed().as_secs());
+                let done: usize = (0..jobs)
+                    .map(|k| shard::finished(&results_of(k)).len())
+                    .sum();
+                eprintln!(
+                    "  {done}/{} after {}s",
+                    tests.len(),
+                    started.elapsed().as_secs()
+                );
             }
         }
     });
@@ -186,10 +209,18 @@ fn run_parent(args: Args) -> i32 {
         }
     }
     let results_path = args.out.join("results.json");
-    std::fs::write(&results_path, serde_json::to_string_pretty(&results).unwrap()).unwrap();
+    std::fs::write(
+        &results_path,
+        serde_json::to_string_pretty(&results).unwrap(),
+    )
+    .unwrap();
     let tallies = report::tally(&results, &args.suites);
     report::print(&tallies);
-    eprintln!("finished in {:?}; results in {}", started.elapsed(), results_path.display());
+    eprintln!(
+        "finished in {:?}; results in {}",
+        started.elapsed(),
+        results_path.display()
+    );
 
     let (regressions, improvements) = report::compare(&results, &args.baseline);
     if args.update_baseline {
@@ -204,7 +235,11 @@ fn run_parent(args: Args) -> i32 {
         );
     }
     if !regressions.is_empty() {
-        eprintln!("{} REGRESSIONS against {}:", regressions.len(), args.baseline.display());
+        eprintln!(
+            "{} REGRESSIONS against {}:",
+            regressions.len(),
+            args.baseline.display()
+        );
         for r in &regressions {
             eprintln!("  {r}");
         }
@@ -298,6 +333,9 @@ fn write_baseline(
             }
         }
     }
-    std::fs::write(&args.baseline, serde_json::to_string_pretty(&baseline).unwrap() + "\n")
-        .expect("write baseline");
+    std::fs::write(
+        &args.baseline,
+        serde_json::to_string_pretty(&baseline).unwrap() + "\n",
+    )
+    .expect("write baseline");
 }

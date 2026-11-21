@@ -96,8 +96,9 @@ pub fn run(shard: Shard) {
         let _ = writeln!(out, "{}", json!({"start": test.url}));
         let _ = out.flush();
         *current.lock().unwrap() = Some(Instant::now());
-        let outcome =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execute::run(&mut cx, &test)));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            execute::run(&mut cx, &test)
+        }));
         *current.lock().unwrap() = None;
         match outcome {
             Ok(result) => {

@@ -8,7 +8,13 @@ publish = false
 description = "Wega-owned DOM, V8 and native page engine"
 
 [dependencies]
-wega-native = { path = "../native" }
+wega-css-values = { path = "../css/values" }
+wega-css-selectors = { path = "../css/selectors" }
+wega-css-parser = { path = "../css/parser" }
+wega-style = { path = "../css/style-engine" }
+wega-layout = { path = "../layout/core" }
+wega-display-list = { path = "../graphics/display-list" }
+wega-image = { path = "../graphics/image" }
 wega-protocol = { path = "../protocol" }
 wega-network = {path="../network"}
 wega-security = { path = "../services/security" }

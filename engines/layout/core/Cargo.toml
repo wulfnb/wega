@@ -1,0 +1,19 @@
+[package]
+name = "wega-layout"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Box tree and layout: block, inline, flex, grid, table and text"
+
+[dependencies]
+wega-css-parser = { path = "../../css/parser" }
+wega-image = { path = "../../graphics/image" }
+anyrender = "=0.14.0"
+kurbo = "=0.13.1"
+peniko = "=0.6.1"
+wega-css-values = { path = "../../css/values" }
+wega-style = { path = "../../css/style-engine" }
+wega-dom = { path = "../../dom/core" }
+parley = { version = "=0.12.0", features = ["system", "complex-scripts"] }

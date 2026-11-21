@@ -275,7 +275,10 @@ mod tests {
             "link",
         );
         assert_eq!(attr(tag[0], "rel").as_deref(), Some("match"));
-        assert_eq!(resolve("css/a/b", "../reference/x-ref.html"), "css/a/reference/x-ref.html");
+        assert_eq!(
+            resolve("css/a/b", "../reference/x-ref.html"),
+            "css/a/reference/x-ref.html"
+        );
         let f = parse_fuzzy("ref.html:0-3;5").unwrap();
         assert_eq!((f.max_difference, f.total_pixels), ((0, 3), (5, 5)));
     }

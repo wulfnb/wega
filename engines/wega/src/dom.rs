@@ -2292,8 +2292,8 @@ impl Dom {
             let mut native = shared.borrow_mut();
             native.ensure_layout();
             if command == "media" {
-                return Ok(json!(wega_native::css::matches_media(
-                    &wega_native::css::parse_media_query_list(text(1)),
+                return Ok(json!(wega_css_parser::matches_media(
+                    &wega_css_parser::parse_media_query_list(text(1)),
                     &native.media_context()
                 )));
             }

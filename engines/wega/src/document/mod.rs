@@ -24,7 +24,7 @@ use wega_dom::{
     Document, DocumentMutation, DocumentView, MutationClock, MutationEpoch, MutationError, Mutator,
     NewAttribute, NodeKey, NodeView,
 };
-use wega_native::{controls::ControlView, layout::LayoutBox, resources::NativeResources};
+use wega_layout::{LayoutBox, controls::ControlView, resources::NativeResources};
 use wega_network::document::net::{AbortSignal, NetProvider};
 
 #[derive(Default)]
@@ -89,8 +89,8 @@ impl WegaDocument {
             .as_deref()
             .and_then(|u| Url::parse(u).ok())
             .unwrap_or_else(|| Url::parse("about:blank").unwrap());
-        let fonts = wega_native::text::font_context(setup.fonts.as_deref().map(Vec::as_slice));
-        let svg_fonts = wega_native::images::fonts::database(setup.fonts.as_ref());
+        let fonts = wega_layout::text::font_context(setup.fonts.as_deref().map(Vec::as_slice));
+        let svg_fonts = wega_image::fonts::database(setup.fonts.as_ref());
         let (tx, rx) = mpsc::channel();
         Self {
             tree: Document::new(url),
@@ -432,15 +432,15 @@ impl NativeResources for WegaDocument {
         }
     }
     fn sync_controls(&self, root: &mut LayoutBox) {
-        wega_native::controls::sync(root, &|key| self.control(key));
+        wega_layout::controls::sync(root, &|key| self.control(key));
     }
     fn decorate_controls(&self, root: &mut LayoutBox) {
-        wega_native::controls::decorate(root, &|key| self.control(key));
+        wega_layout::controls::decorate(root, &|key| self.control(key));
     }
     fn native_stylesheets(
         &self,
         allow: &dyn Fn(Option<&str>, &str) -> bool,
-    ) -> Vec<wega_native::css::StyleSheet> {
+    ) -> Vec<wega_css_parser::StyleSheet> {
         let mut sheets = Vec::new();
         for key in wega_dom::preorder(self, self.root()) {
             let Some(node) = self.node(key) else { continue };
@@ -474,9 +474,9 @@ impl NativeResources for WegaDocument {
             let Some(css) = self.native_stylesheet_text(key) else {
                 continue;
             };
-            let mut sheet = wega_native::css::StyleSheet::parse(&css);
+            let mut sheet = wega_css_parser::StyleSheet::parse(&css);
             if let Some(media) = node.attr("media").filter(|m| !m.trim().is_empty()) {
-                let queries = wega_native::css::parse_media_query_list(media);
+                let queries = wega_css_parser::parse_media_query_list(media);
                 for rule in &mut sheet.rules {
                     rule.media.push(queries.clone());
                 }

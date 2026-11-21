@@ -65,7 +65,8 @@ replaces yanked `crypto-bigint` 0.7.8 with 0.7.11.
 campaign modifications at `64ce6ec` that were missing from the archive patch
 ledger. It reproduces that baseline; it introduces no new inspector behavior.
 `blitz/patches/wega-owned-images.patch` then moves raster/SVG payloads, bounded
-decoding and the single process admission/retention budget to `engines/native`.
+decoding and the single process admission/retention budget to `engines/native`
+(now `engines/graphics/image`, crate `wega-image`).
 Reference imports forward to those types. Broker fetching, SVG font options,
 resource completion, cancellation and authorization stay at their existing
 boundaries. PNG/JPEG/GIF/WebP features and all decoder budgets remain unchanged.

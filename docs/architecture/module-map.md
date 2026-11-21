@@ -2,9 +2,14 @@
 
 **Status: PARTIALLY IMPLEMENTED** (Wave 1 crates exist; all other leaves are placeholders; Wave 2 decisions in [`wave2-gate-report.md`](./wave2-gate-report.md)). 72 planned leaf modules. Per-module classification, package names and migration sources: [`crate-initialization-plan.md`](./crate-initialization-plan.md).
 
-This map describes the modular layout of the Wega browser engine. **Implemented (Wave 1):** `services/cookies` (`wega-cookies`), `services/storage` (`wega-storage`), `services/security` (`wega-security`), `services/permissions` (`wega-permissions`) are members of the `engines` workspace; `tools/dependency-graph` and `tools/architecture-check` are members of the standalone `engines/tools` workspace. `adapters/skia` (`wega-adapter-skia`, raster only) and `adapters/v8` (`wega-adapter-v8`) are implemented; the Wega-owned document view and mutation contract is `dom/core` (`wega-dom`), the incremental HTML parser is `html/parser` (`wega-html`) and the Blitz mapping is `adapters/blitz` (`wega-adapter-blitz`, partial: document, nodes and mutation only) (see [`dom-round7-report.md`](./dom-round7-report.md), [`dom-mutation-report.md`](./dom-mutation-report.md) and [`dom-migration-report.md`](./dom-migration-report.md)), all members of the engines workspace (see [`architecture-refactor-progress.md`](./architecture-refactor-progress.md)). The Blitz removal continuation also implements `native` (`wega-native`), containing
-Wega-owned CSS, layout, Parley shaping and display-list algorithms with no Blitz
-dependency. `wega-dom` now also supplies an independently tested flat document
+This map describes the modular layout of the Wega browser engine. **Implemented (Wave 1):** `services/cookies` (`wega-cookies`), `services/storage` (`wega-storage`), `services/security` (`wega-security`), `services/permissions` (`wega-permissions`) are members of the `engines` workspace; `tools/dependency-graph` and `tools/architecture-check` are members of the standalone `engines/tools` workspace. `adapters/skia` (`wega-adapter-skia`, raster only) and `adapters/v8` (`wega-adapter-v8`) are implemented; the Wega-owned document view and mutation contract is `dom/core` (`wega-dom`), the incremental HTML parser is `html/parser` (`wega-html`) and the Blitz mapping is `adapters/blitz` (`wega-adapter-blitz`, partial: document, nodes and mutation only) (see [`dom-round7-report.md`](./dom-round7-report.md), [`dom-mutation-report.md`](./dom-mutation-report.md) and [`dom-migration-report.md`](./dom-migration-report.md)), all members of the engines workspace (see [`architecture-refactor-progress.md`](./architecture-refactor-progress.md)). The Blitz removal continuation implemented `native` (`wega-native`), with
+Wega-owned CSS, layout, Parley shaping and display-list algorithms and no Blitz
+dependency. CSS engine modularization Phase 1 split it into `css/values`
+(`wega-css-values`), `css/selectors` (`wega-css-selectors`), `css/parser`
+(`wega-css-parser`), `css/style-engine` (`wega-style`), `layout/core` (`wega-layout`),
+`graphics/display-list` (`wega-display-list`) and `graphics/image` (`wega-image`), and
+deleted `wega-native`; see
+[`css-engine-modularization-plan.md`](./css-engine-modularization-plan.md). `wega-dom` now also supplies an independently tested flat document
 owner consumed directly by html5ever and the native pipeline in tests. Production
 views still use the Blitz adapter for authoritative DOM/CSSOM/resource/control
 state; see [`wega-blitz-removal-report.md`](./wega-blitz-removal-report.md).

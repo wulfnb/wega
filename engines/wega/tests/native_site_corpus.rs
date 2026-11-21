@@ -105,8 +105,10 @@ fn geometry_score(chrome: &[[i64; 4]], wega: &[[i64; 4]], height: i64, positions
 
 fn pixel_score(a: &[u8], b: &[u8]) -> f64 {
     let same = a
-        .chunks_exact(4)
-        .zip(b.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(b.as_chunks::<4>().0)
         .filter(|(x, y)| (0..3).all(|c| x[c].abs_diff(y[c]) <= 48))
         .count();
     same as f64 / (a.len() / 4).max(1) as f64

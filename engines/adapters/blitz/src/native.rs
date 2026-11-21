@@ -1,21 +1,18 @@
 //! Reference-owner mapping onto Wega native resource/control contracts.
 use crate::{BlitzDocument, ToNodeId};
+use wega_css_parser::{StyleSheet, parse_media_query_list};
 use wega_dom::{DocumentView, NodeKind, NodeView};
-use wega_native::{
-    css::{StyleSheet, parse_media_query_list},
-    graphics::{SvgGraphic, decode_svg},
-    layout::LayoutBox,
-    resources::NativeResources,
-};
+use wega_image::{SvgGraphic, decode_svg};
+use wega_layout::{LayoutBox, resources::NativeResources};
 impl NativeResources for BlitzDocument {
     fn prepare_controls(&mut self) {
         ensure_form_control_data(self);
     }
     fn sync_controls(&self, root: &mut LayoutBox) {
-        wega_native::controls::sync(root, &|key| control(self, key));
+        wega_layout::controls::sync(root, &|key| control(self, key));
     }
     fn decorate_controls(&self, root: &mut LayoutBox) {
-        wega_native::controls::decorate(root, &|key| control(self, key));
+        wega_layout::controls::decorate(root, &|key| control(self, key));
     }
 
     fn native_generations(&self) -> (u64, u64) {
@@ -23,7 +20,7 @@ impl NativeResources for BlitzDocument {
     }
     fn native_fonts(
         &self,
-    ) -> std::sync::Arc<std::sync::Mutex<wega_native::resources::FontContext>> {
+    ) -> std::sync::Arc<std::sync::Mutex<wega_layout::resources::FontContext>> {
         self.font_ctx()
     }
     fn native_images(&mut self, root: &mut LayoutBox) {
@@ -99,7 +96,7 @@ impl NativeResources for BlitzDocument {
         sheets
     }
 }
-fn raster(image: &wega_native::images::RasterImageData) -> peniko::ImageData {
+fn raster(image: &wega_image::RasterImageData) -> peniko::ImageData {
     peniko::ImageData {
         data: image.data.clone(),
         format: peniko::ImageFormat::Rgba8,
@@ -109,7 +106,7 @@ fn raster(image: &wega_native::images::RasterImageData) -> peniko::ImageData {
     }
 }
 
-fn svg_graphic(svg: &wega_native::images::SvgImageData) -> SvgGraphic {
+fn svg_graphic(svg: &wega_image::SvgImageData) -> SvgGraphic {
     SvgGraphic::from_decoded(
         svg.tree.clone(),
         svg.intrinsic_dimensions.view_box,
@@ -122,7 +119,7 @@ fn images(b: &mut LayoutBox, doc: &mut BlitzDocument) {
         doc.node(key)
             .and_then(NodeView::element_name)
             .filter(|n| n.local == "svg")
-            .and_then(|_| wega_native::graphics::svg_source(doc, key))
+            .and_then(|_| wega_image::svg_source(doc, key))
     }) {
         b.svg = decode_svg(source.as_bytes());
     }
@@ -208,7 +205,7 @@ fn ensure_form_control_data(doc: &mut BlitzDocument) {
 fn control(
     doc: &BlitzDocument,
     key: wega_dom::NodeKey,
-) -> Option<wega_native::controls::ControlView<'_>> {
+) -> Option<wega_layout::controls::ControlView<'_>> {
     let element = doc.get_node(key.node_id())?.element_data()?;
     let input = element.text_input_data();
     let selection = input
@@ -217,7 +214,7 @@ fn control(
             (selection.anchor().index(), selection.focus().index())
         })
         .unwrap_or_default();
-    Some(wega_native::controls::ControlView {
+    Some(wega_layout::controls::ControlView {
         value: input.map(|input| input.editor.text().to_string().into()),
         selection,
         checked: element.checkbox_input_checked(),

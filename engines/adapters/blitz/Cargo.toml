@@ -8,7 +8,9 @@ publish = false
 description = "Wega's Blitz adapter: the Blitz document behind the wega-dom contract"
 
 [dependencies]
-wega-native = { path = "../../native" }
+wega-css-parser = { path = "../../css/parser" }
+wega-image = { path = "../../graphics/image" }
+wega-layout = { path = "../../layout/core" }
 wega-dom = { path = "../../dom/core" }
 blitz-dom = { version = "=0.3.0-beta.4", default-features = false }
 wega-html = { path = "../../html/parser" }

@@ -130,7 +130,7 @@ fn role(tag: &str, kind: &str, aria: Option<&str>) -> Role {
     }
 }
 
-pub fn build<D: wega_native::resources::NativeResources>(
+pub fn build<D: wega_layout::resources::NativeResources>(
     native: &NativeDocument<D>,
     doc: &D,
     focused: Option<NodeKey>,

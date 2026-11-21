@@ -124,7 +124,7 @@ fn computed(
     for name in COMPUTED.iter().skip(offset as usize).take(STYLE_PAGE) {
         BoundedCss::check(start)?;
         let mut out = BoundedCss::new(start);
-        if let Some(value) = wega_native::computed::scalar(style, name) {
+        if let Some(value) = wega_style::computed::scalar(style, name) {
             let _ = out.write_str(&value);
         }
         page.items.push(StyleItem::Declaration(Declaration {

@@ -843,7 +843,7 @@ impl ElementData {
     }
 }
 
-pub use wega_native::images::RasterImageData;
+pub use wega_image::RasterImageData;
 
 #[derive(Debug, Clone)]
 pub enum ImageData {

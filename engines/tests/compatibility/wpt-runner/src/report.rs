@@ -36,7 +36,13 @@ pub fn tally(results: &BTreeMap<String, Value>, suites: &[String]) -> BTreeMap<S
 }
 
 pub fn print(tallies: &BTreeMap<String, Tally>) {
-    let pct = |a: u64, b: u64| if b == 0 { 0.0 } else { a as f64 * 100.0 / b as f64 };
+    let pct = |a: u64, b: u64| {
+        if b == 0 {
+            0.0
+        } else {
+            a as f64 * 100.0 / b as f64
+        }
+    };
     println!(
         "{:<28} {:>14} {:>7} {:>16} {:>7}",
         "suite", "tests", "%", "subtests", "%"

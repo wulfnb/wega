@@ -1,6 +1,6 @@
 # Wega CSS engine: modularization and Blitz/Stylo-referenced port
 
-Status: IN PROGRESS. Phase 0 is implemented (2026-11-21).
+Status: IN PROGRESS. Phase 0 is implemented (2026-11-21). Phase 1 split is done; its test gate is pending.
 
 ## Why
 
@@ -115,12 +115,15 @@ Each phase ends with:
   - The weakest suites are CSS2 tables (4%), css-grid (17%) and mediaqueries (29%).
 - Still left to close Phase 0:
   - [ ] The full `cargo test -p wega-native -p wega-engine` run. Don't run it alongside the WPT
-    runner: together they ran out of memory.
-  - [ ] `native_accessibility.rs:76`: the accessibility value of a `<select>` does not update
-    after `select.value=`. It was hidden behind an earlier failing assertion until now.
-  - [ ] Re-record the site scores with `WEGA_UPDATE_SITE_SCORES=1`.
-  - [ ] Run clippy with `-D warnings`, and run `wega-architecture-check`.
-  - [ ] Commit.
+    runner: together they ran out of memory. Deferred to the end of Phase 1.
+  - [x] `native_accessibility.rs:76`: option selectedness lived only in JS (`_selected`, since
+    round 13), so native readers saw the `selected` attribute. It now lives in `WegaDocument`
+    (`option_selected`), like checkedness. The next assertion (input width) now expects
+    Chrome's 218 px.
+  - [ ] Re-record the site scores with `WEGA_UPDATE_SITE_SCORES=1`. Deferred to the end of Phase 1.
+  - [x] Clippy with `-D warnings` (engines workspace) and `wega-architecture-check` (0 violations
+    before Phase 1).
+  - [x] Commit (`969f183`).
 
 ### Phase 1: Mechanical split (no behavior change)
 1. Create the crates above and move code:
@@ -133,6 +136,45 @@ Each phase ends with:
 2. Keep `wega-native` as a thin re-export facade until `wega-engine` is moved over, then
    delete it.
 3. Gate: all tests and WPT results identical.
+
+Done (2026-11-21), test gate pending:
+
+| Crate | Directory | From |
+|---|---|---|
+| `wega-css-values` | `css/values` | value types and `calc` from `css.rs`/`syntax.rs`; value parts of `graphics.rs` |
+| `wega-css-selectors` | `css/selectors` | selector types, matching, selector parsing |
+| `wega-css-parser` | `css/parser` | rules and at-rules, declarations, media, shorthands, `var()` |
+| `wega-style` | `css/style-engine` | `ComputedStyle`, cascade, `apply_declaration`, UA sheet, hints, `computed.rs` |
+| `wega-layout` | `layout/core` | `layout.rs` as modules per formatting context; `text.rs`, `controls.rs` |
+| `wega-display-list` | `graphics/display-list` | `display_list.rs`; `hit_test_node` |
+| `wega-image` | `graphics/image` | `images/`; SVG parts of `graphics.rs` |
+
+- `wega-native` is deleted:
+  - `wega-engine` and `wega-adapter-blitz` import the new crates directly.
+  - `wega_engine::native_engine::css` groups the four CSS crates for embedders.
+  - `NativeResources` moved to `wega_layout::resources`.
+  - The vendored `blitz-dom` imports image payloads from `wega-image`.
+    `wega-owned-images.patch` is updated, and `verify-engine-vendor.py` passes.
+  - `wega-native`'s tests moved: `images.rs` to `wega-image`; `owned_pipeline.rs` and
+    `benchmark.rs` to `wega-display-list`. The Blitz-independence test now checks
+    `wega-display-list`, which depends on every pipeline crate.
+- Moved items are identical after normalizing whitespace and visibility, except four
+  deliberate edits:
+  - `ClipPath::path` takes a `kurbo::Rect`, so values do not depend on `wega-dom`.
+  - The cascade sets the viewport through `set_viewport()`.
+  - `hit_test_node` moved to display-list, which breaks the layout ↔ display-list cycle.
+  - `paint_context` builds the `kurbo::Rect` for `ClipPath::path`.
+- Clippy with `-D warnings` is clean.
+- Known deviations, now exit criteria for later phases:
+  - **Architecture check ARCH-003 violations:** `wega-layout -> wega-dom`,
+    `wega-display-list -> wega-layout` and `wega-display-list -> wega-dom`.
+    `adapters/style-layout` and `adapters/dom-css` remove these.
+  - **The checker's contract list still names a single `wega-css` crate**, so
+    `wega-css-selectors -> wega-dom` and `wega-style -> wega-dom` are not reported yet.
+  - **Formatting contexts are mutually recursive through `layout_box`**, so they are modules,
+    not crates, until a dispatch trait exists.
+  - **Two files exceed 600 lines**, each a single function: `apply.rs` (687) and
+    `block.rs` (653).
 
 ### Phase 2: Typed property model (the structural fix)
 1. In `css/parser`, add a property table modeled on Stylo's longhand/shorthand

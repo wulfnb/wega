@@ -37,7 +37,7 @@ use std::rc::Rc;
 use wega_dom::layout::*;
 use wega_dom::style::StyleError;
 use wega_dom::{NodeKey, NodeKind, NodeView};
-use wega_native::resources::NativeResources;
+use wega_layout::resources::NativeResources;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RenderingBackend {
@@ -650,7 +650,7 @@ impl<D: NativeResources> NativeDocument<D> {
             ("margin-right", Some(b)) => Some(format!("{}px", b.margin.right)),
             ("margin-bottom", Some(b)) => Some(format!("{}px", b.margin.bottom)),
             ("margin-left", Some(b)) => Some(format!("{}px", b.margin.left)),
-            _ => wega_native::computed::scalar(&computed, property),
+            _ => wega_style::computed::scalar(&computed, property),
         };
         if let Some(value) = value {
             out.push_str(&value);
