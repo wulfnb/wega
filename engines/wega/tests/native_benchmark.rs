@@ -260,10 +260,14 @@ fn comparable_native_blitz_stage_benchmark() {
     let values: serde_json::Map<String, Value> =
         timings.iter().map(|(k, v)| (k.clone(), stats(v))).collect();
     let report = json!({"profile":if cfg!(debug_assertions) {"debug"} else {"release"},"method":"five warmups; alternating backend order; comparable-work pixel and geometry gate; cold document construction and warm records separated","gate":gate,"native_glyphs":glyphs(&ns),"reference_glyphs":glyphs(&bs),"sampled_process_rss_high_water_bytes":rss_max,"allocation_counts":"unmeasured","scope":"bounded deterministic fixture only; no whole-browser speedup claim; reference parse uses shared DOM adapter; text timing is a subset of layout","timings":values});
-    let dir = std::path::PathBuf::from(
-        std::env::var("WEGA_NATIVE_EVIDENCE_DIR")
-            .unwrap_or_else(|_| "/private/tmp/wega-native-evidence".into()),
-    );
+    let dir = std::path::PathBuf::from(std::env::var("WEGA_NATIVE_EVIDENCE_DIR").unwrap_or_else(
+        |_| {
+            std::env::temp_dir()
+                .join("wega-native-evidence")
+                .to_string_lossy()
+                .into_owned()
+        },
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join(format!(

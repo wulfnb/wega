@@ -5,9 +5,9 @@
     "pixels": 0.962
   },
   "google": {
-    "geometry": 0.121,
-    "sizes": 0.447,
-    "pixels": 0.566
+    "geometry": 0.295,
+    "sizes": 0.462,
+    "pixels": 0.821
   },
   "hackernews": {
     "geometry": 0.048,
@@ -15,9 +15,9 @@
     "pixels": 0.905
   },
   "wikipedia": {
-    "geometry": 0.088,
-    "sizes": 0.398,
-    "pixels": 0.895
+    "geometry": 0.075,
+    "sizes": 0.395,
+    "pixels": 0.896
   },
   "edudia": {
     "geometry": 0.255,

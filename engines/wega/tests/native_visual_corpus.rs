@@ -131,10 +131,14 @@ fn deterministic_native_blitz_visual_corpus() {
         )
     });
     let engine = support::engine();
-    let dir = std::path::PathBuf::from(
-        std::env::var("WEGA_NATIVE_EVIDENCE_DIR")
-            .unwrap_or_else(|_| "/private/tmp/wega-native-evidence".into()),
-    );
+    let dir = std::path::PathBuf::from(std::env::var("WEGA_NATIVE_EVIDENCE_DIR").unwrap_or_else(
+        |_| {
+            std::env::temp_dir()
+                .join("wega-native-evidence")
+                .to_string_lossy()
+                .into_owned()
+        },
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let tolerance = visual::Tolerance {
         channel: std::env::var("WEGA_DIFF_CHANNEL")

@@ -4,7 +4,11 @@
 //! architecture checker. Extend the lists deliberately, with the architecture docs.
 const ALLOWED: &[&str] = &[
     "wega-dom",
-    "wega-native",
+    // The native pipeline crates whose resource contract this adapter implements
+    // (split out of `wega-native` in CSS engine modularization Phase 1).
+    "wega-css-parser",
+    "wega-image",
+    "wega-layout",
     "blitz-dom",
     "wega-html",
     "blitz-traits",

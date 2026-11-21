@@ -16,10 +16,14 @@ fn compare(name: &str, body: &str) {
     view.set_rendering_backend(RenderingBackend::WegaNative);
     let frame = view.paint(600, 420, 1.0, 1.0, false).unwrap();
     let geometry = visual::geometry(&mut view);
-    let dir = std::path::PathBuf::from(
-        std::env::var("WEGA_NATIVE_EVIDENCE_DIR")
-            .unwrap_or_else(|_| "/private/tmp/wega-public-layout".into()),
-    );
+    let dir = std::path::PathBuf::from(std::env::var("WEGA_NATIVE_EVIDENCE_DIR").unwrap_or_else(
+        |_| {
+            std::env::temp_dir()
+                .join("wega-public-layout")
+                .to_string_lossy()
+                .into_owned()
+        },
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     if let Some((pixels, reference)) = visual::chrome(&html, None, 0.0, name, &dir) {
         let (diff, delta) = visual::compare(

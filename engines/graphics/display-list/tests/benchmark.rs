@@ -138,10 +138,14 @@ fn independent_owner_and_native_stages_release_observations() {
             .collect::<Vec<_>>()
             .join(",")
     );
-    let dir = std::path::PathBuf::from(
-        std::env::var("WEGA_NATIVE_EVIDENCE_DIR")
-            .unwrap_or_else(|_| "/private/tmp/wega-native-independent-benchmark".into()),
-    );
+    let dir = std::path::PathBuf::from(std::env::var("WEGA_NATIVE_EVIDENCE_DIR").unwrap_or_else(
+        |_| {
+            std::env::temp_dir()
+                .join("wega-native-independent-benchmark")
+                .to_string_lossy()
+                .into_owned()
+        },
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("independent-benchmark.json"), &report).unwrap();
     println!("{report}");

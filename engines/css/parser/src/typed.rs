@@ -70,6 +70,9 @@ impl PropertyDeclaration {
             "inherit" | "initial" | "unset" | "revert" | "revert-layer"
         ) || lower.contains("var(")
             || lower.contains("currentcolor")
+            // Math functions resolve viewport units against the style pass's viewport,
+            // which is only known at cascade time.
+            || (lower.contains('(') && ["vw", "vh", "vmin", "vmax"].iter().any(|u| lower.contains(u)))
         {
             return Parsed::Deferred;
         }
@@ -191,6 +194,8 @@ mod tests {
             "unset",
             "var(--w)",
             "calc(var(--w) * 2)",
+            "calc(100vw - 20px)",
+            "min(50vh, 300px)",
         ] {
             assert_eq!(PropertyDeclaration::parse("width", value), Parsed::Deferred);
         }

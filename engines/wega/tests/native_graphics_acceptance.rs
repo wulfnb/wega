@@ -198,10 +198,14 @@ fn chrome_graphics_pixel_and_geometry_gate() {
     view.evaluate(script).unwrap();
     let native = frame(&mut view);
     let geometry = visual::geometry(&mut view);
-    let dir = std::path::PathBuf::from(
-        std::env::var("WEGA_NATIVE_EVIDENCE_DIR")
-            .unwrap_or("/private/tmp/wega-round4-evidence".into()),
-    );
+    let dir = std::path::PathBuf::from(std::env::var("WEGA_NATIVE_EVIDENCE_DIR").unwrap_or_else(
+        |_| {
+            std::env::temp_dir()
+                .join("wega-round4-evidence")
+                .to_string_lossy()
+                .into_owned()
+        },
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let (chrome, cg) = visual::chrome(&html, Some(script), 0.0, "graphics", &dir).unwrap();
     let (diff, pixels) = visual::compare(

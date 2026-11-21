@@ -106,10 +106,14 @@ fn pinned_chrome_common_behavior_has_no_regressions() {
         );
         return;
     }
-    let dir = std::path::PathBuf::from(
-        std::env::var("WEGA_NATIVE_EVIDENCE_DIR")
-            .unwrap_or("/private/tmp/wega-round5-evidence".into()),
-    );
+    let dir = std::path::PathBuf::from(std::env::var("WEGA_NATIVE_EVIDENCE_DIR").unwrap_or_else(
+        |_| {
+            std::env::temp_dir()
+                .join("wega-round5-evidence")
+                .to_string_lossy()
+                .into_owned()
+        },
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let cases = cases();
     let routes: Vec<_> = cases
