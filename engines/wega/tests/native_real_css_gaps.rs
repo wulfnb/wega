@@ -186,3 +186,46 @@ fn flex_text_items_and_button_content_size() {
     assert!(rect(&d, "s").height < 30.0, "{:?}", rect(&d, "s"));
     assert!(rect(&d, "btn").width >= rect(&d, "s").width);
 }
+
+#[test]
+fn percent_heights_against_auto_containers_behave_as_auto() {
+    // CSS 2.1 §10.5. The root resolves against the viewport, so a
+    // `html,body{height:100%}` chain is definite all the way down.
+    let d = document(
+        "<style>html,body{height:100%;margin:0}</style><body><div id=full style='height:50%'></div>\
+         <div style='display:inline-block'><div id=card style='height:100%;overflow:hidden'><div style='height:70px'></div></div></div></body>",
+    );
+    assert!(rect(&d, "full").height > 0.0);
+    assert_eq!(rect(&d, "card").height, 70.0);
+}
+
+#[test]
+fn overflow_clips_only_the_containing_block_chain() {
+    // Google's consent dialog: `body{overflow:hidden}` belongs to the viewport, and a
+    // fixed overlay escapes an `overflow:hidden;height:0` wrapper.
+    let engine = wega_engine::Engine::new(
+        wega_engine::Limits::default(),
+        wega_engine::NetworkPolicy {
+            offline: true,
+            ..Default::default()
+        },
+        std::sync::Arc::new(|| {}),
+    )
+    .unwrap();
+    let mut view = engine
+        .create_view(wega_engine::Url::parse("about:blank").unwrap())
+        .unwrap();
+    view.set_html(
+        "<style>html,body{height:100%;margin:0}body{overflow:hidden}</style><body><p>page</p>\
+         <div style='height:0;overflow:hidden'><div style='position:fixed;inset:0;z-index:5;background:rgb(0 0 255)'></div></div></body>",
+    )
+    .unwrap();
+    view.poll();
+    let frame = view.paint(200, 100, 1.0, 1.0, false).unwrap();
+    let at = |x: usize, y: usize| {
+        let i = (y * 200 + x) * 4;
+        (frame.rgba[i], frame.rgba[i + 1], frame.rgba[i + 2])
+    };
+    assert_eq!(at(100, 50), (0, 0, 255));
+    assert_eq!(at(5, 95), (0, 0, 255));
+}

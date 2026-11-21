@@ -74,6 +74,8 @@ pub struct LayoutBox {
     pub background_image: Option<peniko::ImageData>,
     pub background_svg: Option<super::graphics::SvgGraphic>,
     pub is_root: bool,
+    /// The `body` element child of the root element (overflow propagation).
+    pub is_body: bool,
     pub flow_margin_top: f64,
     pub table_col_span: usize,
     pub table_row_span: usize,
@@ -130,6 +132,7 @@ impl LayoutBox {
             background_image: None,
             background_svg: None,
             is_root: false,
+            is_body: false,
             flow_margin_top: 0.0,
             table_col_span: 1,
             table_row_span: 1,
@@ -380,6 +383,12 @@ fn build_box_node<D: DocumentView>(
                     .parent()
                     .and_then(|p| doc.node(p))
                     .is_some_and(|n| n.kind() == NodeKind::Document);
+            layout_box.is_body = node.element_name().is_some_and(|n| n.local == "body")
+                && node
+                    .parent()
+                    .and_then(|p| doc.node(p))
+                    .and_then(|n| n.element_name().map(|e| e.local == "html"))
+                    .unwrap_or(false);
 
             if node
                 .element_name()
@@ -525,7 +534,7 @@ fn build_box_node<D: DocumentView>(
                                 && cn
                                     .element_name()
                                     .is_some_and(|e| e.local.eq_ignore_ascii_case("option"))
-                                && (cn.attr("selected").is_some() || selected_text.is_none())
+                                && (doc.element_state(ck).checked || selected_text.is_none())
                             {
                                 selected_text = cn.text().map(str::to_string).or_else(|| {
                                     cn.children()
@@ -748,6 +757,8 @@ pub fn perform_layout(root: &mut LayoutBox, ctx: &LayoutContext) {
         }
     }
     units(root, ctx);
+    propagate_viewport_overflow(root);
+    indefinite_percent_heights(root, true, ctx);
     let containing_block = Rect {
         x: 0.0,
         y: 0.0,
@@ -755,6 +766,83 @@ pub fn perform_layout(root: &mut LayoutBox, ctx: &LayoutContext) {
         height: ctx.viewport_height,
     };
     layout_box(root, containing_block, containing_block, ctx);
+}
+
+/// CSS 2.1 §10.5 / css-sizing-3 §5.1: a percentage `height` (or `min-height`,
+/// `max-height`) whose containing block's height is not definite behaves as
+/// `auto` (`0` / `none`). The root element resolves against the initial
+/// containing block, which is the viewport. Absolutely positioned boxes keep
+/// their percentages because they resolve against a positioned padding box,
+/// which is sized before they are laid out.
+///
+/// Reference: Stylo/Taffy treat these as "indefinite" through `MaybeResolve`
+/// (`stylo_taffy/convert.rs`, `taffy::util::resolve`).
+fn indefinite_percent_heights(b: &mut LayoutBox, definite: bool, ctx: &LayoutContext) {
+    for c in &mut b.children {
+        let absolute = matches!(c.style.position, Position::Absolute | Position::Fixed);
+        let s = &mut c.style;
+        if c.is_root {
+            // The html element (a child of the document box).
+            for l in [&mut s.height, &mut s.min_height, &mut s.max_height] {
+                if let Length::Percent(p) = *l {
+                    *l = Length::Px(p * ctx.viewport_height / 100.0);
+                }
+            }
+        } else if !definite && !absolute {
+            if has_percent(s.height) {
+                s.height = Length::Auto;
+            }
+            if has_percent(s.min_height) {
+                s.min_height = Length::Px(0.0);
+            }
+            if has_percent(s.max_height) {
+                s.max_height = Length::Auto;
+            }
+        }
+        let s = &c.style;
+        let child_definite = match s.height {
+            Length::Auto => {
+                absolute && s.top != Length::Auto && s.bottom != Length::Auto
+                    || matches!(c.box_type, BoxType::TableCell)
+                    // Anonymous wrappers are transparent for percentage resolution.
+                    || (c.node.is_none() && definite && !c.is_root)
+            }
+            l => !has_percent(l) || definite || absolute,
+        };
+        indefinite_percent_heights(c, child_definite, ctx);
+    }
+}
+
+/// css-overflow-3 §3.3: `overflow` on the root element, or on `body` when the
+/// root's is `visible`, applies to the viewport, not to the element's box. So
+/// neither box clips its content (Google sets `body{overflow:hidden;height:100%}`).
+/// The viewport itself does not yet honour `hidden`: the page still scrolls.
+fn propagate_viewport_overflow(root: &mut LayoutBox) {
+    let visible = |b: &LayoutBox| {
+        b.style.overflow_x == Overflow::Visible && b.style.overflow_y == Overflow::Visible
+    };
+    let Some(html) = root.children.iter_mut().find(|c| c.is_root) else {
+        return;
+    };
+    let html_visible = visible(html);
+    html.style.overflow_x = Overflow::Visible;
+    html.style.overflow_y = Overflow::Visible;
+    if !html_visible {
+        return;
+    }
+    if let Some(body) = html.children.iter_mut().find(|c| c.is_body) {
+        body.style.overflow_x = Overflow::Visible;
+        body.style.overflow_y = Overflow::Visible;
+    }
+}
+
+fn has_percent(l: Length) -> bool {
+    match l {
+        Length::Percent(_) => true,
+        Length::Calc(terms) => terms[1] != 0.0,
+        Length::Clamp(parts) => parts.iter().any(|t| t[1] != 0.0),
+        _ => false,
+    }
 }
 
 fn layout_box(

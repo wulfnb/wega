@@ -69,7 +69,7 @@ impl WegaDocument {
                             continue;
                         };
                         if node.element_name().is_some_and(|n| n.local == "option")
-                            && node.attr("selected").is_some()
+                            && self.option_selected(option)
                             && node.attr("disabled").is_none()
                         {
                             push(

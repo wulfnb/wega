@@ -373,7 +373,7 @@ pub fn build<D: wega_native::resources::NativeResources>(
                     options
                         .iter()
                         .copied()
-                        .find(|k| doc.node(*k).is_some_and(|n| n.attr("selected").is_some()))
+                        .find(|k| doc.element_state(*k).checked)
                         .or_else(|| options.first().copied())
                         .and_then(|k| {
                             doc.node(k).map(|n| {

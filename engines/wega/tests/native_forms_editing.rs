@@ -367,9 +367,10 @@ button[type="submit"] {
 
     let native_geom = visual::geometry(&mut view);
     let temp_dir = tempfile::tempdir().unwrap();
-    let chrome_bin = std::env::var("WEGA_CHROME_BIN").unwrap_or_else(|_| {
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".to_string()
-    });
+    let Some(chrome_bin) = visual::chrome_binary() else {
+        eprintln!("skipping Chrome comparison: no Chrome found (set WEGA_CHROME_BIN)");
+        return;
+    };
 
     if let Some((chrome_png, chrome_geom)) =
         visual::chrome_with_binary(&chrome_bin, html, None, 0.0, "login_form", temp_dir.path())

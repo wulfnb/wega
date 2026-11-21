@@ -49,7 +49,8 @@ fn native_accessibility_roles_names_labels_values_focus_and_geometry() {
     assert_eq!(node(&t, email).role(), accesskit::Role::EmailInput);
     assert_eq!(node(&t, email).label(), Some("Email address"));
     assert_eq!(node(&t, email).value(), Some("user@example.test"));
-    assert_eq!(node(&t, email).bounds().unwrap().width(), 160.0);
+    // Chrome: 160px content + 2px padding + 2px border per side (content-box).
+    assert_eq!(node(&t, email).bounds().unwrap().width(), 168.0);
     assert_eq!(node(&t, password).role(), accesskit::Role::PasswordInput);
     assert_eq!(node(&t, password).label(), Some("Password"));
     assert_eq!(node(&t, password).value(), Some("••••••"));
@@ -76,7 +77,7 @@ fn native_accessibility_roles_names_labels_values_focus_and_geometry() {
     view.evaluate("document.getElementById('email').style.width='210px'")
         .unwrap();
     let t = tree(&view);
-    assert_eq!(node(&t, email).bounds().unwrap().width(), 210.0);
+    assert_eq!(node(&t, email).bounds().unwrap().width(), 218.0); // 210 content + 8 padding/border
 }
 
 #[test]

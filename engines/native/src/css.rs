@@ -2187,7 +2187,8 @@ th { font-weight: bold; text-align: center; }
 img, video, canvas, svg, iframe, embed, object { display: inline-block; }
 button, input, textarea, select, meter, progress { display: inline-block; }
 input, textarea, select, button { font-size: 13.333px; font-family: sans-serif; line-height: normal; color: black; }
-input, textarea { box-sizing: content-box; width: 147px; padding: 1px 2px; border: 1px solid #767676; background-color: white; }
+input, textarea { box-sizing: content-box; width: 147px; padding: 1px 2px; border: 2px inset #767676; background-color: white; }
+textarea { padding: 2px; border: 1px solid #767676; }
 select { box-sizing: border-box; height: 20px; padding: 0 2px; border: 1px solid #767676; background-color: white; }
 button, input[type="submit" i], input[type="button" i], input[type="reset" i] { box-sizing: border-box; width: auto; padding: 1px 6px; border: 1px solid #767676; border-radius: 2px; background-color: #efefef; text-align: center; }
 input[type="checkbox" i], input[type="radio" i] { box-sizing: border-box; width: 13px; height: 13px; margin: 3px 3px 3px 4px; padding: 0; border: 0; background-color: transparent; }

@@ -168,6 +168,16 @@ impl WegaDocument {
     pub fn checked(&self, key: NodeKey) -> bool {
         self.node(key).is_some() && self.checked.get(&key).copied().unwrap_or(false)
     }
+    /// An `<option>`'s selectedness: the dirty value set through `option.selected`, or the
+    /// `selected` content attribute (default selectedness) until script changes it.
+    pub fn option_selected(&self, key: NodeKey) -> bool {
+        self.node(key).is_some_and(|n| {
+            self.checked
+                .get(&key)
+                .copied()
+                .unwrap_or_else(|| n.attr("selected").is_some())
+        })
+    }
     pub fn set_checked(&mut self, key: NodeKey, value: bool) {
         if self.node(key).and_then(NodeView::element_name).is_some() {
             self.checked.insert(key, value);
@@ -219,6 +229,9 @@ impl WegaDocument {
             if !input.dirty_value && input.editor.text() != value.as_str() {
                 input.editor.set_text(&value);
             }
+        } else if tag == "option" {
+            // Dirty selectedness survives mutations; see `option_selected`.
+            self.controls.remove(&key);
         } else {
             self.controls.remove(&key);
             self.checked.remove(&key);
@@ -326,11 +339,14 @@ impl DocumentView for WegaDocument {
             focused: self.focused() == Some(key),
             focus_within: ancestor_of(self.focused()),
             active: ancestor_of(self.active),
-            checked: self.checked(key)
-                || node.is_some_and(|n| {
-                    n.element_name().is_some_and(|n| n.local == "option")
-                        && n.attr("selected").is_some()
-                }),
+            checked: if node
+                .and_then(NodeView::element_name)
+                .is_some_and(|n| n.local == "option")
+            {
+                self.option_selected(key)
+            } else {
+                self.checked(key)
+            },
             disabled: control && disabled,
             enabled: control && !disabled,
         }

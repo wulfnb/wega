@@ -118,8 +118,11 @@ impl Element for ElementRef<'_> {
             NonTSPseudoClass::Active => self.document.active == Some(self.key),
             NonTSPseudoClass::AnyLink | NonTSPseudoClass::Link => self.is_link(),
             NonTSPseudoClass::Checked => {
-                self.document.checked(self.key)
-                    || tag == "option" && node.attr("selected").is_some()
+                if tag == "option" {
+                    self.document.option_selected(self.key)
+                } else {
+                    self.document.checked(self.key)
+                }
             }
             NonTSPseudoClass::Disabled => node.attr("disabled").is_some(),
             NonTSPseudoClass::Enabled => {

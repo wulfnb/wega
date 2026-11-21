@@ -878,7 +878,21 @@ fn paint_entry(
     s: f64,
     mut scroll: Point,
 ) {
-    for ancestor in &entry.path {
+    // CSS 2.1 §11.1.1: an ancestor's overflow clips (and scrolls) a descendant
+    // only when it is in the descendant's containing-block chain. Fixed boxes
+    // escape every ancestor here; absolute boxes escape the ones between them
+    // and their nearest positioned ancestor.
+    let chain = match entry.b.style.position {
+        Position::Fixed => 0,
+        Position::Absolute => entry
+            .path
+            .iter()
+            .rposition(|a| a.style.position != Position::Static || a.style.transform.is_some())
+            .map_or(0, |i| i + 1),
+        _ => entry.path.len(),
+    };
+    let ancestors = &entry.path[..chain];
+    for ancestor in ancestors {
         push_contents(ancestor, list, s);
         scroll.x += ancestor.scroll_offset.x;
         scroll.y += ancestor.scroll_offset.y;
@@ -888,7 +902,7 @@ fn paint_entry(
     } else {
         flow(entry.b, list, embedded, s, scroll);
     }
-    for ancestor in entry.path.iter().rev() {
+    for ancestor in ancestors.iter().rev() {
         pop_contents(ancestor, list);
     }
 }

@@ -7013,6 +7013,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wega-wpt-runner"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "skia-safe",
+ "url",
+ "wega-engine",
+]
+
+[[package]]
 name = "which"
 version = "6.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

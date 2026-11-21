@@ -123,6 +123,23 @@ pub fn chrome(
     let binary = std::env::var("WEGA_CHROME_BIN").ok()?;
     chrome_with_binary(&binary, html, script, scroll, name, dir)
 }
+/// `$WEGA_CHROME_BIN`, else the first Chrome/Chromium installed at a standard
+/// macOS or Linux location.
+pub fn chrome_binary() -> Option<String> {
+    if let Ok(binary) = std::env::var("WEGA_CHROME_BIN") {
+        return Some(binary);
+    }
+    [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
+    .into_iter()
+    .find(|path| Path::new(path).exists())
+    .map(str::to_string)
+}
 pub fn chrome_with_binary(
     binary: &str,
     html: &str,

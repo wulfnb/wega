@@ -1578,6 +1578,7 @@ impl Dom {
             "selectionRange"=>{let range=doc.selection_range(node_id()?);json!([range.0,range.1])},
             "setSelectionRange"=>{let target=node_id()?;doc.set_selection_range(target,text(2).parse().unwrap_or(0),text(3).parse().unwrap_or(0));self.invalidate();Value::Null},
             "checked"=>json!(doc.checked(node_id()?)),
+            "optionSelected"=>json!(doc.option_selected(node_id()?)),
             "setChecked"=>{let target=node_id()?;doc.set_checked(target,text(2)=="true");Value::Null},
             "focus"=>{let target=node_id()?;let _=doc.set_focus(target);self.invalidate();Value::Null},
             "blur"=>{doc.clear_focus();self.invalidate();Value::Null},

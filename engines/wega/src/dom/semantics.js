@@ -2380,17 +2380,26 @@
   setupFormValidation(HTMLSelectElement.prototype);
 
   class HTMLOptionElement extends HTMLElement {
+    // Selectedness lives in the native document (like input checkedness) so
+    // rendering, :checked, accessibility and form submission all see it.
     get selected() {
-      if (this._selected !== undefined) return this._selected;
-      return this.hasAttribute("selected");
+      return host("optionSelected", this._id);
     }
     set selected(val) {
-      this._selected = !!val;
-      if (!this.closest("select")?.multiple && this._selected) {
-        for (const opt of (this.closest("select")?.options || [])) {
-          if (opt !== this) opt._selected = false;
+      val = !!val;
+      host("setChecked", this._id, String(val));
+      const select = this.closest("select");
+      if (val && select && !select.multiple) {
+        for (const opt of select.options) {
+          if (opt !== this) host("setChecked", opt._id, "false");
         }
       }
+    }
+    get defaultSelected() {
+      return this.hasAttribute("selected");
+    }
+    set defaultSelected(val) {
+      this.toggleAttribute("selected", !!val);
     }
     get value() {
       return this.getAttribute("value") ?? this.textContent ?? "";
@@ -2441,6 +2450,9 @@
         for (const control of this.elements) {
           if (["checkbox", "radio"].includes(control.type))
             control.checked = control.defaultChecked;
+          else if (control.localName === "select")
+            for (const option of control.options)
+              option.selected = option.defaultSelected;
           else if (control.localName !== "select" && "defaultValue" in control)
             control.value = control.defaultValue;
         }
