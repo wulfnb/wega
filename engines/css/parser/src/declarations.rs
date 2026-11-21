@@ -43,6 +43,11 @@ pub fn stylesheet(css: &str) -> StyleSheet {
                     .unsupported
                     .push(format!("viewport-relative typography:{}", decl.property));
             }
+            if decl.typed == Parsed::Invalid && rules.unsupported.len() < 256 {
+                rules
+                    .unsupported
+                    .push(format!("invalid value:{}: {}", decl.property, decl.value));
+            }
             if !supported_property(&decl.property) && rules.unsupported.len() < 256 {
                 rules
                     .unsupported
@@ -107,11 +112,7 @@ impl<'i> DeclarationParser<'i> for Declarations {
         if value.is_empty() {
             return Err(ParseError::unexpected_token());
         }
-        Ok(Declaration {
-            property,
-            value,
-            important,
-        })
+        Ok(Declaration::new(property, value, important))
     }
 }
 

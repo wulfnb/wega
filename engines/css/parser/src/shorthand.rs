@@ -27,11 +27,7 @@ pub fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
     if matches!(decl.value.trim(), "initial" | "inherit" | "unset") {
         return names
             .iter()
-            .map(|p| Declaration {
-                property: (*p).into(),
-                value: decl.value.clone(),
-                important: decl.important,
-            })
+            .map(|p| Declaration::new(*p, decl.value.clone(), decl.important))
             .collect();
     }
     let properties = if decl.property == "font" {
@@ -44,11 +40,7 @@ pub fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
     properties
         .unwrap_or_default()
         .into_iter()
-        .map(|(p, v)| Declaration {
-            property: p.to_owned(),
-            value: v,
-            important: decl.important,
-        })
+        .map(|(p, v)| Declaration::new(p, v, decl.important))
         .collect()
 }
 

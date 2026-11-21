@@ -9,6 +9,7 @@ pub mod computed;
 mod computed_style;
 mod gradient;
 mod hints;
+mod typed;
 mod user_agent;
 mod values;
 
@@ -17,5 +18,6 @@ pub use cascade::*;
 pub use computed_style::*;
 use gradient::*;
 use hints::*;
+use typed::*;
 pub use user_agent::*;
 use values::*;

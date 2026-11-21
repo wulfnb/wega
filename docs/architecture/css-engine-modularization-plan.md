@@ -196,6 +196,34 @@ Done (2026-11-21), test gate pending:
 5. Gate: the WPT `css-cascade`, `css-values`, `css-color` and `css-variables` pass
    rates rise. Unsupported properties appear in diagnostics.
 
+Progress (2026-11-21), step 1 of the port order (box and position), test gate pending:
+- **Types:** `wega_css_parser::PropertyDeclaration` (`typed.rs`). `Declaration::new`
+  parses the value once, at stylesheet parse time, into `Declaration::typed`:
+  - `Parsed::Typed` for ported longhands.
+  - `Parsed::Invalid` for ported longhands with bad values.
+  - `Parsed::Deferred` for everything still on the string path: unported families,
+    shorthands, logical properties, CSS-wide keywords, `var()` and `currentcolor`.
+- **Ported longhands:**
+  - `display`, `position`, `box-sizing`, `visibility`, `pointer-events`
+  - widths and heights with their min/max variants
+  - margin and padding longhands, `top`, `right`, `bottom`, `left`
+  - `z-index`, `float`, `clear`, `overflow-x`, `overflow-y`
+- **Cascade:** applies `Typed` declarations with `apply_typed` (no re-parse), skips
+  `Invalid` ones, and sends `Deferred` ones to `apply_declaration` as before.
+  Presentational hints are parsed when matched.
+- **Behavior change (spec fix):** an invalid `float`, `clear` or `z-index` used to reset
+  the property to its initial value. It is now dropped, so the previous cascaded value
+  wins (CSS Syntax §5.4.4 / CSS Cascade §4). All other ported properties keep their
+  exact previous acceptance rules: the typed parsers call the same value parsers.
+- **Diagnostics:** `StyleSheet::unsupported` was collected but never reported. `wega-engine`
+  now emits each entry once per document as a `css` warning `WEGA_DIAGNOSTIC`:
+  - unsupported properties
+  - invalid values (`invalid value:<property>: <value>`)
+  - unsupported at-rules and selectors
+  - viewport-relative typography
+- **Next:** color and background, then border and outline, then font and text, following
+  the same pattern. Shorthand expansion at parse time comes with each family.
+
 ### Phase 3: Own stylesheet source and CSSOM
 1. Parse stylesheets from their original source text in `css/parser`. Drop the Stylo
    re-serialization (`native_stylesheet_text`).

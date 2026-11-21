@@ -2,11 +2,27 @@
 use crate::*;
 use wega_css_selectors::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Declaration {
     pub property: String,
     pub value: String,
     pub important: bool,
+    /// The value parsed for a ported property, or why it stays a string.
+    pub typed: Parsed,
+}
+
+impl Declaration {
+    /// A declaration, with the value parsed now if the property is ported.
+    pub fn new(property: impl Into<String>, value: impl Into<String>, important: bool) -> Self {
+        let (property, value) = (property.into(), value.into());
+        let typed = PropertyDeclaration::parse(&property, &value);
+        Self {
+            property,
+            value,
+            important,
+            typed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

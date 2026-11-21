@@ -8,6 +8,7 @@ use wega_dom::{DocumentView, NodeKey, NodeKind, NodeView};
 pub(crate) struct MatchedDecl {
     property: String,
     value: String,
+    typed: Parsed,
     origin: u8, // 0 = UA, 1 = Author, 2 = Inline
     important: bool,
     specificity: (usize, usize, usize),
@@ -84,6 +85,7 @@ pub fn resolve_computed_style<D: DocumentView>(
                             layer: u32::MAX,
                             property: d.property.clone(),
                             value: d.value.clone(),
+                            typed: d.typed,
                             origin: 0,
                             important: d.important,
                             specificity: spec,
@@ -101,6 +103,7 @@ pub fn resolve_computed_style<D: DocumentView>(
     for (property, value) in presentational_hints(doc, node_key) {
         matched.push(MatchedDecl {
             layer: u32::MAX,
+            typed: PropertyDeclaration::parse(property, &value),
             property: property.into(),
             value,
             origin: 1,
@@ -128,6 +131,7 @@ pub fn resolve_computed_style<D: DocumentView>(
                             layer,
                             property: d.property.clone(),
                             value: d.value.clone(),
+                            typed: d.typed,
                             origin: 1,
                             important: d.important,
                             specificity: spec,
@@ -147,6 +151,7 @@ pub fn resolve_computed_style<D: DocumentView>(
                 layer: u32::MAX,
                 property: d.property,
                 value: d.value,
+                typed: d.typed,
                 origin: 2,
                 important: d.important,
                 specificity: (1, 0, 0), // Inline origin weight
@@ -231,19 +236,12 @@ pub fn resolve_computed_style<D: DocumentView>(
             }
             let value =
                 substitute(&d.value, &style.custom_properties).unwrap_or_else(|| "unset".into());
-            let mut expanded = expand_shorthand(Declaration {
-                property: d.property.clone(),
-                value,
-                important: d.important,
-            });
+            let mut expanded =
+                expand_shorthand(Declaration::new(d.property.clone(), value, d.important));
             if expanded.is_empty() {
                 expanded = names
                     .iter()
-                    .map(|p| Declaration {
-                        property: (*p).into(),
-                        value: "unset".into(),
-                        important: d.important,
-                    })
+                    .map(|p| Declaration::new(*p, "unset", d.important))
                     .collect();
             }
             expanded
@@ -252,6 +250,7 @@ pub fn resolve_computed_style<D: DocumentView>(
                     layer: u32::MAX,
                     property: e.property,
                     value: e.value,
+                    typed: e.typed,
                     ..d.clone()
                 })
                 .collect()
@@ -267,6 +266,14 @@ pub fn resolve_computed_style<D: DocumentView>(
     for decl in matched {
         if decl.property.starts_with("--") {
             continue;
+        }
+        match decl.typed {
+            Parsed::Typed(typed) => {
+                apply_typed(&mut style, typed);
+                continue;
+            }
+            Parsed::Invalid => continue,
+            Parsed::Deferred => {}
         }
         let value = substitute(&decl.value, &style.custom_properties);
         let inherited = matches!(

@@ -8,6 +8,7 @@ mod properties;
 mod rules;
 mod shorthand;
 mod stylesheet;
+mod typed;
 mod variables;
 
 pub use declarations::*;
@@ -16,4 +17,5 @@ pub use properties::*;
 use rules::*;
 pub use shorthand::*;
 pub use stylesheet::*;
+pub use typed::*;
 pub use variables::*;

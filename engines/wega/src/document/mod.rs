@@ -80,6 +80,8 @@ pub struct WegaDocument {
     signal: Option<AbortSignal>,
     tx: mpsc::Sender<Message>,
     rx: mpsc::Receiver<Message>,
+    /// Dropped-CSS diagnostics already emitted, so relayouts do not repeat them.
+    reported_css: std::cell::RefCell<HashSet<String>>,
 }
 impl WegaDocument {
     pub fn empty(setup: DocumentSetup) -> Self {
@@ -118,6 +120,7 @@ impl WegaDocument {
             signal: setup.abort_signal,
             tx,
             rx,
+            reported_css: Default::default(),
         }
     }
     pub fn from_html(source: &str, setup: DocumentSetup) -> Self {
@@ -475,6 +478,7 @@ impl NativeResources for WegaDocument {
                 continue;
             };
             let mut sheet = wega_css_parser::StyleSheet::parse(&css);
+            self.report_dropped_css(&sheet.unsupported);
             if let Some(media) = node.attr("media").filter(|m| !m.trim().is_empty()) {
                 let queries = wega_css_parser::parse_media_query_list(media);
                 for rule in &mut sheet.rules {
@@ -487,6 +491,25 @@ impl NativeResources for WegaDocument {
     }
     fn native_images(&mut self, root: &mut LayoutBox) {
         self.attach_images(root);
+    }
+}
+impl WegaDocument {
+    /// Emit a CSS diagnostic for each declaration, rule or property the native style
+    /// engine drops, once per document.
+    fn report_dropped_css(&self, dropped: &[String]) {
+        let mut reported = self.reported_css.borrow_mut();
+        for item in dropped {
+            if reported.len() >= 1024 || !reported.insert(item.clone()) {
+                continue;
+            }
+            let mut diagnostic = crate::diagnostics::Diagnostic::error(
+                crate::diagnostics::Category::Css,
+                format!("Dropped unsupported CSS: {item}"),
+                Some(self.url().to_string()),
+            );
+            diagnostic.severity = "warning".into();
+            diagnostic.emit();
+        }
     }
 }
 impl DocumentMutation for WegaDocument {
