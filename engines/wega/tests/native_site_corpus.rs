@@ -6,7 +6,11 @@
 //! - sizes: the same, comparing only width and height
 //! - pixels: the share of pixels close to Chrome's
 //!
-//! The test fails when either score falls below `scores.json`.
+//! The test fails when either score falls below `scores.json`. Scores depend on the
+//! installed system fonts, so they are enforced only where the font environment
+//! matches the one they were recorded in (`environment` in `scores.json`); elsewhere,
+//! such as CI runners, the scores are reported. `WEGA_SITE_SCORES_STRICT=1` enforces
+//! them everywhere.
 //!
 //! Refresh snapshots (live network, Chrome required):
 //!     node tests/support/site_snapshot.mjs <chrome> <tmp-profile> <url> tests/fixtures/site_corpus <site>
@@ -114,6 +118,23 @@ fn pixel_score(a: &[u8], b: &[u8]) -> f64 {
     same as f64 / (a.len() / 4).max(1) as f64
 }
 
+/// The OS and a stable hash (FNV-1a) of the installed system font family names.
+fn font_environment() -> String {
+    let mut db = usvg::fontdb::Database::new();
+    db.load_system_fonts();
+    let mut families: Vec<String> = db
+        .faces()
+        .flat_map(|face| face.families.iter().map(|(name, _)| name.clone()))
+        .collect();
+    families.sort();
+    families.dedup();
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in families.join("\n").bytes() {
+        hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{}-{}-{hash:016x}", std::env::consts::OS, families.len())
+}
+
 #[test]
 fn real_site_snapshots_do_not_regress_against_chrome() {
     let scores_path = dir().join("scores.json");
@@ -122,6 +143,9 @@ fn real_site_snapshots_do_not_regress_against_chrome() {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| json!({}));
     let update = std::env::var_os("WEGA_UPDATE_SITE_SCORES").is_some() || recorded == json!({});
+    let environment = font_environment();
+    let enforce = std::env::var_os("WEGA_SITE_SCORES_STRICT").is_some()
+        || recorded["environment"].as_str() == Some(environment.as_str());
     let evidence = std::env::var_os("WEGA_NATIVE_EVIDENCE_DIR").map(std::path::PathBuf::from);
     let mut current = serde_json::Map::new();
     let mut regressions = Vec::new();
@@ -185,11 +209,21 @@ fn real_site_snapshots_do_not_regress_against_chrome() {
         }
     }
     if update {
+        current.insert("environment".into(), json!(environment));
         std::fs::write(
             &scores_path,
             serde_json::to_string_pretty(&Value::Object(current)).unwrap() + "\n",
         )
         .unwrap();
+        return;
+    }
+    if !enforce {
+        println!(
+            "site scores not enforced: fonts {environment} differ from the recorded {}; \
+             set WEGA_SITE_SCORES_STRICT=1 to enforce. Differences:\n{}",
+            recorded["environment"].as_str().unwrap_or("(none)"),
+            regressions.join("\n")
+        );
         return;
     }
     assert!(
