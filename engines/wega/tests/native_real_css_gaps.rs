@@ -258,7 +258,10 @@ fn border_radius_is_per_corner_and_overlapping_radii_scale_down() {
     // 30 + 30 exceeds the 40px height on the right side: everything scales by 40/60.
     let b = radii("b");
     assert_eq!(b[0], 0.0);
-    assert!((b[1] - 20.0).abs() < 1e-9 && (b[2] - 20.0).abs() < 1e-9, "{b:?}");
+    assert!(
+        (b[1] - 20.0).abs() < 1e-9 && (b[2] - 20.0).abs() < 1e-9,
+        "{b:?}"
+    );
     // 50% of the shorter side (40px) is 20px on every corner.
     assert_eq!(radii("c"), [20.0; 4]);
 }

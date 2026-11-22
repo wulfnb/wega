@@ -222,7 +222,9 @@ fn test_transforms_and_box_shadow() {
             ..
         } = item
         {
-            *offset_x == 4.0 && *offset_y == 6.0 && *border_radius == kurbo::RoundedRectRadii::from_single_radius(10.0)
+            *offset_x == 4.0
+                && *offset_y == 6.0
+                && *border_radius == kurbo::RoundedRectRadii::from_single_radius(10.0)
         } else {
             false
         }
