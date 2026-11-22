@@ -253,6 +253,29 @@ Progress (2026-11-21), step 1 of the port order (box and position), test gate pe
 4. Gate: CSSOM tests (`round15`, `inspector_styles`, `css`) pass. `:has()` and
    anything else Stylo rejected now apply.
 
+Progress (2026-11-22):
+- **Done: the native engine parses the author's original text.**
+  - `WegaDocument` records each sheet's source (`<style>` text, or the fetched text of a
+    `<link>`) together with Stylo's serialization at load.
+  - `native_stylesheet_text` returns the source while the serialization still matches.
+  - After any CSSOM edit, rule-style edit or `@import` completion the serialization
+    differs, and it falls back to the serialization.
+  - Rules Stylo drops, such as `:has()`, now style native rendering
+    (`native_real_css_gaps::author_rules_stylo_rejects_reach_the_native_engine`).
+  - Site corpus scores are unchanged.
+- **Not done: retiring Stylo.** Stylo still backs:
+  - `document.styleSheets` and the whole CSSOM (`cssom.rs`): rule lists,
+    `insertRule`/`deleteRule`, `cssText`, keyframes and `@property` descriptors
+  - inline `element.style` parsing and serialization (`inline.rs`)
+  - `querySelector`/`matches` selector parsing (`selectors.rs`)
+  - `@import` and `@font-face` loading (`resources.rs`)
+  - the inspector (`inspection.rs`)
+
+  Replacing these needs CSSOM serialization that matches what pages and tests expect,
+  so each is its own step: `querySelector` first (`wega-css-selectors` already
+  matches), then inline style, CSSOM rules, and loading. Stylo leaves the worker only
+  after all five, which also removes the "already immutably borrowed" panic.
+
 ### Phase 4: Layout fidelity, ported per formatting context
 Driven by WPT flexbox, grid, floats and tables plus the site corpus. Replace
 approximations made during the bug-fix rounds:
