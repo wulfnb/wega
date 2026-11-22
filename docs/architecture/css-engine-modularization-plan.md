@@ -1,6 +1,6 @@
 # Wega CSS engine: modularization and Blitz/Stylo-referenced port
 
-Status: IN PROGRESS. Phase 0 is implemented (2026-11-21). Phases 0–2 are done.
+Status: IN PROGRESS. Phase 0 is implemented (2026-11-21). Phases 0–2 are done. Phase 3 is reverted pending parser validation.
 
 ## Why
 
@@ -253,28 +253,58 @@ Progress (2026-11-21), step 1 of the port order (box and position), test gate pe
 4. Gate: CSSOM tests (`round15`, `inspector_styles`, `css`) pass. `:has()` and
    anything else Stylo rejected now apply.
 
-Progress (2026-11-22):
-- **Done: the native engine parses the author's original text.**
-  - `WegaDocument` records each sheet's source (`<style>` text, or the fetched text of a
-    `<link>`) together with Stylo's serialization at load.
-  - `native_stylesheet_text` returns the source while the serialization still matches.
-  - After any CSSOM edit, rule-style edit or `@import` completion the serialization
-    differs, and it falls back to the serialization.
-  - Rules Stylo drops, such as `:has()`, now style native rendering
-    (`native_real_css_gaps::author_rules_stylo_rejects_reach_the_native_engine`).
-  - Site corpus scores are unchanged.
-- **Not done: retiring Stylo.** Stylo still backs:
-  - `document.styleSheets` and the whole CSSOM (`cssom.rs`): rule lists,
-    `insertRule`/`deleteRule`, `cssText`, keyframes and `@property` descriptors
-  - inline `element.style` parsing and serialization (`inline.rs`)
-  - `querySelector`/`matches` selector parsing (`selectors.rs`)
-  - `@import` and `@font-face` loading (`resources.rs`)
-  - the inspector (`inspection.rs`)
-
-  Replacing these needs CSSOM serialization that matches what pages and tests expect,
-  so each is its own step: `querySelector` first (`wega-css-selectors` already
-  matches), then inline style, CSSOM rules, and loading. Stylo leaves the worker only
-  after all five, which also removes the "already immutably borrowed" panic.
+Progress (2026-11-22): **tried and reverted.**
+- **What was tried:** feeding the native engine the original stylesheet text (`b473723`).
+- **Results:** `:has()` worked and the site corpus didn't change. But the full WPT run found
+  37 baseline regressions; all 37 pass again with Stylo's text.
+- **Cause:** Stylo used to validate the CSS before the native engine saw it, and the native
+  parsers are more lenient than Stylo. Examples:
+  - mixed-unit `rgb()`/`hsl()`
+  - invalid media types
+  - `@supports` edge cases
+  - `revert`/`revert-layer`
+  - negative `background-size`
+  - some selectors
+- **Reverted in:** the commit after `ad3f036`.
+- **Re-landing condition:** the native parsers must reject these first. With the source text
+  re-enabled, every one of these tests must pass:
+  - `css/css-backgrounds/background-size-with-negative-value.html`
+  - `css/css-cascade/revert-layer-001.html`
+  - `css/css-cascade/revert-layer-002.html`
+  - `css/css-cascade/revert-layer-006.html`
+  - `css/css-cascade/revert-layer-007.html`
+  - `css/css-cascade/revert-rule-layer.html`
+  - `css/css-cascade/revert-val-001.html`
+  - `css/css-color/relative-currentcolor-rec2020-02.html`
+  - `css/css-color/t421-rgb-func-no-mixed-f.xht`
+  - `css/css-color/t422-rgba-func-no-mixed-f.xht`
+  - `css/css-color/t424-hsl-parsing-f.xht`
+  - `css/css-color/t425-hsla-parsing-f.xht`
+  - `css/css-conditional/at-supports-020.html`
+  - `css/css-conditional/at-supports-026.html`
+  - `css/css-conditional/css-supports-013.xht`
+  - `css/css-conditional/css-supports-014.xht`
+  - `css/css-conditional/css-supports-039.xht`
+  - `css/css-flexbox/balance/balance-002.html`
+  - `css/css-flexbox/flex-basis-004.html`
+  - `css/css-flexbox/relayout-image-load.html`
+  - `css/css-grid/alignment/grid-gutters-002.html`
+  - `css/css-grid/alignment/grid-gutters-004.html`
+  - `css/css-grid/alignment/grid-gutters-006.html`
+  - `css/css-values/angle-units-001.html`
+  - `css/css-values/attr-IACVT.html`
+  - `css/css-values/calc-rgb-percent-001.html`
+  - `css/css-variables/revert-rule-to-var.html`
+  - `css/css-variables/variable-declaration-11.html`
+  - `css/css-variables/variable-declaration-12.html`
+  - `css/css-variables/variable-declaration-13.html`
+  - `css/mediaqueries/mq-invalid-media-type-001.html`
+  - `css/mediaqueries/mq-invalid-media-type-002.html`
+  - `css/mediaqueries/mq-invalid-media-type-004.html`
+  - `css/mediaqueries/mq-invalid-media-type-layer-001.html`
+  - `css/selectors/dir-selector-ltr-002.html`
+  - `css/selectors/selectors-attr-white-space-001.html`
+  - `css/selectors/x-pseudo-element.html`
 
 ### Phase 4: Layout fidelity, ported per formatting context
 Driven by WPT flexbox, grid, floats and tables plus the site corpus. Replace

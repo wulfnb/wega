@@ -262,30 +262,7 @@ impl WegaDocument {
     /// Serialize the authoritative rules for the native renderer. Imported
     /// sheets are included only after the existing authorized loader completed.
     /// This is a rendering bridge, never a script-visible cross-origin read.
-    ///
-    /// The native engine gets the author's original text while the sheet is unchanged
-    /// since it loaded, so rules Stylo rejects (`:has()`, unknown properties) still reach
-    /// it. Once script changes the rules, or an `@import` completes, the serialization
-    /// differs from the one recorded at load, and the serialization is used.
     pub fn native_stylesheet_text(&self, node_id: NodeKey) -> Option<String> {
-        let serialized = self.serialized_stylesheet(node_id)?;
-        match self.native_sources.get(&node_id) {
-            Some((source, at_load)) if *at_load == serialized => Some(source.clone()),
-            _ => Some(serialized),
-        }
-    }
-    /// Record a sheet's original text with its serialization at load.
-    pub(super) fn record_native_source(&mut self, node_id: NodeKey, source: String) {
-        match self.serialized_stylesheet(node_id) {
-            Some(at_load) if source.len() <= 8 * 1024 * 1024 => {
-                self.native_sources.insert(node_id, (source, at_load));
-            }
-            _ => {
-                self.native_sources.remove(&node_id);
-            }
-        }
-    }
-    fn serialized_stylesheet(&self, node_id: NodeKey) -> Option<String> {
         fn append(
             rules: &[CssRule],
             guard: &SharedRwLockReadGuard,

@@ -68,9 +68,6 @@ pub struct WegaDocument {
     guard: SharedRwLock,
     nodes_to_stylesheet: std::collections::BTreeMap<NodeKey, DocumentStyleSheet>,
     inline_sources: HashMap<NodeKey, (String, u64)>,
-    /// Original stylesheet text and its Stylo serialization at load (see
-    /// `native_stylesheet_text`).
-    native_sources: HashMap<NodeKey, (String, String)>,
     stylesheet_requests: HashMap<NodeKey, String>,
     stylesheet_generation: u64,
     resource_generation: u64,
@@ -111,7 +108,6 @@ impl WegaDocument {
             guard: SharedRwLock::new(),
             nodes_to_stylesheet: std::collections::BTreeMap::new(),
             inline_sources: HashMap::new(),
-            native_sources: HashMap::new(),
             stylesheet_requests: HashMap::new(),
             stylesheet_generation: 0,
             resource_generation: 0,
@@ -289,8 +285,6 @@ impl WegaDocument {
         self.nodes_to_stylesheet
             .retain(|key, _| self.tree.node(*key).is_some());
         self.inline_sources
-            .retain(|key, _| self.tree.node(*key).is_some());
-        self.native_sources
             .retain(|key, _| self.tree.node(*key).is_some());
         self.stylesheet_requests
             .retain(|key, _| self.tree.node(*key).is_some());

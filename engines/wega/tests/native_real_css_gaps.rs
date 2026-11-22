@@ -230,18 +230,6 @@ fn overflow_clips_only_the_containing_block_chain() {
     assert_eq!(at(5, 95), (0, 0, 255));
 }
 #[test]
-fn author_rules_stylo_rejects_reach_the_native_engine() {
-    // Phase 3: the native engine parses the original stylesheet text, so `:has()` (which
-    // Stylo drops) applies. After a CSSOM edit the sheet falls back to Stylo's rules.
-    let d = document(
-        "<style id=s>.card:has(img){width:120px} .card{height:10px}</style>\
-         <body><div id=with class=card><img></div><div id=without class=card></div></body>",
-    );
-    assert_eq!(rect(&d, "with").width, 120.0);
-    assert_ne!(rect(&d, "without").width, 120.0);
-    assert_eq!(rect(&d, "without").height, 10.0);
-}
-#[test]
 fn border_radius_is_per_corner_and_overlapping_radii_scale_down() {
     use wega_engine::native_engine::layout::LayoutBox;
     let d = document(

@@ -24,8 +24,6 @@ pub(super) enum Message {
         key: NodeKey,
         requested: Url,
         sheet: DocumentStyleSheet,
-        /// The fetched text, which the native style engine parses itself.
-        source: String,
     },
     Import(StyleArc<Locked<ImportRule>>, StyleArc<Stylesheet>),
     Image(Url, Image),
@@ -194,7 +192,6 @@ impl WegaDocument {
         self.nodes_to_stylesheet
             .insert(key, DocumentStyleSheet(StyleArc::new(sheet)));
         self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
-        self.record_native_source(key, source.clone());
         self.inline_sources
             .insert(key, (source, self.stylesheet_generation));
     }
@@ -253,7 +250,6 @@ impl WegaDocument {
                             key,
                             requested: requested_copy,
                             sheet: DocumentStyleSheet(StyleArc::new(sheet)),
-                            source: css.to_owned(),
                         });
                     })),
                 );
@@ -342,7 +338,6 @@ impl WegaDocument {
                     key,
                     requested,
                     sheet,
-                    source,
                 } => {
                     if self
                         .node(key)
@@ -363,7 +358,6 @@ impl WegaDocument {
                     }
                     self.nodes_to_stylesheet.insert(key, sheet);
                     self.stylesheet_generation = self.stylesheet_generation.wrapping_add(1);
-                    self.record_native_source(key, source);
                 }
                 Message::Import(import, sheet) => {
                     import.write_with(&mut self.guard.write()).stylesheet =
