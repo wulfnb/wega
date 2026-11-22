@@ -62,9 +62,17 @@ pub struct StyleSheet {
     pub unsupported: Vec<String>,
     /// `@property` registrations: (name, initial value, inherits).
     pub registered_properties: Vec<(String, String, bool)>,
+    /// Candidate rules by id, class and tag. Rebuild with [`StyleSheet::reindex`] after
+    /// changing `rules`; a stale count makes the cascade scan every rule instead.
+    pub index: wega_css_cache::SelectorMap,
 }
 
 impl StyleSheet {
+    /// Rebuild the selector map from `rules`.
+    pub fn reindex(&mut self) {
+        self.index =
+            wega_css_cache::SelectorMap::build(self.rules.iter().map(|r| r.selectors.as_slice()));
+    }
     pub fn parse(css: &str) -> Self {
         stylesheet(css)
     }

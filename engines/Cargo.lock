@@ -6852,10 +6852,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "wega-css-cache"
+version = "0.1.0"
+dependencies = [
+ "wega-css-selectors",
+]
+
+[[package]]
 name = "wega-css-parser"
 version = "0.1.0"
 dependencies = [
  "cssparser 0.38.0",
+ "wega-css-cache",
  "wega-css-selectors",
  "wega-css-values",
 ]

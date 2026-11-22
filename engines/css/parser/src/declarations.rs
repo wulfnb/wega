@@ -57,13 +57,16 @@ pub fn stylesheet(css: &str) -> StyleSheet {
     }
     rules.unsupported.sort();
     rules.unsupported.dedup();
-    StyleSheet {
+    let mut sheet = StyleSheet {
         rules: sheet_rules,
         font_faces,
         imports,
         unsupported: rules.unsupported,
         registered_properties: rules.registered,
-    }
+        index: Default::default(),
+    };
+    sheet.reindex();
+    sheet
 }
 
 pub(crate) struct Declarations;

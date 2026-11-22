@@ -423,7 +423,10 @@ mod tests {
         ] {
             assert_eq!(PropertyDeclaration::parse("width", value), Parsed::Deferred);
         }
-        assert_eq!(PropertyDeclaration::parse("font-size", "12px"), Parsed::Deferred);
+        assert_eq!(
+            PropertyDeclaration::parse("font-size", "12px"),
+            Parsed::Deferred
+        );
         assert_eq!(
             PropertyDeclaration::parse("margin", "1px"),
             Parsed::Deferred

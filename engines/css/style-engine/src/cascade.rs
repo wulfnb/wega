@@ -72,8 +72,20 @@ pub fn resolve_computed_style<D: DocumentView>(
 
     // 1. UA Stylesheet
     let mut order = 0;
+    // Candidate rules for this element from each sheet's selector map, in source order.
+    let element = node.element_name().map(|n| n.local).unwrap_or_default();
+    let (id, class) = (node.attr("id"), node.attr("class").unwrap_or_default());
+    let candidates = |sheet: &StyleSheet| -> Vec<usize> {
+        if sheet.index.covers(sheet.rules.len()) {
+            sheet
+                .index
+                .candidates(id, class.split_whitespace(), element)
+        } else {
+            (0..sheet.rules.len()).collect()
+        }
+    };
     USER_AGENT.with(|ua| {
-        for rule in &ua.rules {
+        for rule in candidates(ua).into_iter().map(|i| &ua.rules[i]) {
             if !rule.media.iter().all(|group| matches_media(group, m_ctx)) {
                 continue;
             }
@@ -114,7 +126,7 @@ pub fn resolve_computed_style<D: DocumentView>(
     }
     // 2. Author Stylesheets
     for (sheet_index, sheet) in author_sheets.iter().enumerate() {
-        for rule in &sheet.rules {
+        for rule in candidates(sheet).into_iter().map(|i| &sheet.rules[i]) {
             let layer = rule.layer.map_or(u32::MAX, |l| {
                 (sheet_index as u32)
                     .saturating_mul(4096)

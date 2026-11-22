@@ -293,6 +293,19 @@ approximations made during the bug-fix rounds:
 4. Gate: `native_benchmark`, `hot_path_bench` and `render_bench` do not regress.
    Restyle on large pages (Wikipedia) is faster.
 
+Progress (2026-11-22):
+- **Done: selector map** (`css/cache`, crate `wega-css-cache`).
+  - Rules are bucketed by the id, class or tag of their subject compound, and the
+    cascade tests only those candidates, in source order.
+  - The matched declarations and their order are unchanged. CSS tests and site
+    corpus scores are identical.
+  - The site corpus test took 56 s against 74 s before. That's one wall-clock sample,
+    not a benchmark.
+- **Not done:**
+  - an ancestor bloom filter for descendant combinators
+  - style sharing between siblings with the same id, classes and attributes
+  - restyle invalidation; every mutation still restyles the document
+
 ## Decisions
 - WPT lives at `~/my/wpt` as a sparse checkout of the CSS suites, at the pinned commit.
 - Retiring Stylo (Phase 3) comes after Phase 2.

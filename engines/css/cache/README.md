@@ -1,6 +1,6 @@
 # css/cache
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: PARTIAL** — crate `wega-css-cache`
 
 ## Purpose
 
@@ -21,4 +21,13 @@ Style sharing and style-related caches.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Implemented as `wega-css-cache`: `SelectorMap` buckets each rule under the id, class or tag
+of its selectors' subject compound (or a universal bucket). The cascade (`wega-style`) tests
+only the candidate rules, in source order, so matching results are unchanged. Every
+`StyleSheet` builds its map at parse time; a map whose rule count differs from the sheet's
+is treated as stale and the cascade scans every rule.
+
+Not yet: bloom filters for ancestor combinators, style sharing, invalidation. See
+[`css-engine-modularization-plan.md`](../../../docs/architecture/css-engine-modularization-plan.md).
+
+Dependencies: `wega-css-selectors`.
