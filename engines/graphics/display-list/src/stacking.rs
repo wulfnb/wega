@@ -240,7 +240,7 @@ pub(crate) fn background(b: &LayoutBox, list: &mut DisplayList, s: f64) {
     };
     list.items.push(DisplayItem::PushClip {
         rect: scaled(b.border_box, s),
-        border_radius: b.radius() * s,
+        border_radius: radii(b, s),
     });
     let mut budget = 4096;
     for row in 0..ny {

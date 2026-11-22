@@ -134,11 +134,27 @@ impl LayoutBox {
         }
     }
     /// Used corner radius; percentages resolve against the border box.
-    pub fn radius(&self) -> f64 {
-        let short = self.border_box.width.min(self.border_box.height).max(0.0);
-        (self.style.border_radius + self.style.border_radius_percent / 100.0 * short)
-            .min(short / 2.0)
-            .max(0.0)
+    /// Used corner radii (top-left, top-right, bottom-right, bottom-left) in px.
+    ///
+    /// Percentages resolve against the shorter side (radii are circular). When adjacent
+    /// radii exceed a side, all are scaled down by the same factor (CSS Backgrounds 3
+    /// §5.5).
+    pub fn radii(&self) -> [f64; 4] {
+        let (w, h) = (
+            self.border_box.width.max(0.0),
+            self.border_box.height.max(0.0),
+        );
+        let short = w.min(h);
+        let r = self
+            .style
+            .border_radii
+            .map(|(px, pct)| (px + pct / 100.0 * short).max(0.0));
+        let fit = |side: f64, a: f64, b: f64| if a + b > side { side / (a + b) } else { 1.0 };
+        let f = fit(w, r[0], r[1])
+            .min(fit(w, r[3], r[2]))
+            .min(fit(h, r[0], r[3]))
+            .min(fit(h, r[1], r[2]));
+        r.map(|v| v * f)
     }
     /// A float taken out of normal flow (absolute positioning wins over float).
     pub fn is_floating(&self) -> bool {

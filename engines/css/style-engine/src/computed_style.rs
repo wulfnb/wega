@@ -68,9 +68,10 @@ pub struct ComputedStyle {
     pub grid_row_name: Option<String>,
     pub grid_template_areas: Vec<Vec<String>>,
     pub border_spacing: f64,
-    pub border_radius: f64,
-    /// Percentage part of `border-radius`, resolved against the border box.
-    pub border_radius_percent: f64,
+    /// Corner radii (top-left, top-right, bottom-right, bottom-left) as `(px, percent)`;
+    /// the percentage resolves against the border box. Elliptical radii use their
+    /// horizontal value.
+    pub border_radii: [(f64, f64); 4],
     pub transform: Option<Transform>,
     pub transform_origin: (Length, Length),
     pub box_shadow: Option<BoxShadow>,
@@ -158,8 +159,7 @@ impl Default for ComputedStyle {
             grid_row_name: None,
             grid_template_areas: Vec::new(),
             border_spacing: 2.0,
-            border_radius: 0.0,
-            border_radius_percent: 0.0,
+            border_radii: [(0.0, 0.0); 4],
             transform: None,
             transform_origin: (Length::Percent(50.0), Length::Percent(50.0)),
             box_shadow: None,

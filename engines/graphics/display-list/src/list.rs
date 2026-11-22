@@ -6,13 +6,13 @@ pub enum DisplayItem {
     FillRect {
         rect: Rect,
         color: Color,
-        border_radius: f64,
+        border_radius: kurbo::RoundedRectRadii,
     },
     StrokeRect {
         rect: Rect,
         color: Color,
         width: f64,
-        border_radius: f64,
+        border_radius: kurbo::RoundedRectRadii,
     },
     FillPath {
         path: kurbo::BezPath,
@@ -29,7 +29,7 @@ pub enum DisplayItem {
         start: (f64, f64),
         end: (f64, f64),
         stops: Vec<(f32, Color)>,
-        border_radius: f64,
+        border_radius: kurbo::RoundedRectRadii,
     },
     BoxShadow {
         rect: Rect,
@@ -37,7 +37,7 @@ pub enum DisplayItem {
         offset_y: f64,
         blur_radius: f64,
         color: Color,
-        border_radius: f64,
+        border_radius: kurbo::RoundedRectRadii,
         /// The casting box's border box: outer shadows are never painted
         /// beneath it, even when its background is transparent.
         clip_out: Rect,
@@ -54,11 +54,11 @@ pub enum DisplayItem {
         enabled: bool,
         node: NodeKey,
         rect: Rect,
-        border_radius: f64,
+        border_radius: kurbo::RoundedRectRadii,
     },
     PushClip {
         rect: Rect,
-        border_radius: f64,
+        border_radius: kurbo::RoundedRectRadii,
     },
     PushPathClip {
         path: kurbo::BezPath,
@@ -182,10 +182,7 @@ impl DisplayList {
                         current,
                         color(*c),
                         None,
-                        &kurbo::RoundedRect::from_rect(
-                            inset,
-                            (*border_radius - width / 2.0).max(0.0),
-                        ),
+                        &kurbo::RoundedRect::from_rect(inset, shrink(*border_radius, width / 2.0)),
                     );
                 }
                 DisplayItem::FillPath { path, color: c } => {
@@ -225,7 +222,8 @@ impl DisplayList {
                         current * Affine::translate((*offset_x, *offset_y)),
                         kr(*rect),
                         color(*c),
-                        *border_radius,
+                        // The blurred shadow primitive takes one radius.
+                        largest(*border_radius),
                         blur_radius.max(0.0) / 2.0,
                     );
                     scene.pop_layer();
@@ -435,4 +433,28 @@ impl DisplayList {
 /// The topmost node painted at `point`.
 pub fn hit_test_node(box_node: &LayoutBox, point: Point) -> Option<NodeKey> {
     DisplayList::build(box_node, &[], 1.0).hit_test(point)
+}
+
+/// A box's used corner radii, scaled by `s`.
+pub(crate) fn radii(b: &LayoutBox, s: f64) -> kurbo::RoundedRectRadii {
+    let [tl, tr, br, bl] = b.radii();
+    kurbo::RoundedRectRadii::new(tl * s, tr * s, br * s, bl * s)
+}
+
+/// Radii reduced by `by` (never below zero).
+pub(crate) fn shrink(r: kurbo::RoundedRectRadii, by: f64) -> kurbo::RoundedRectRadii {
+    let f = |v: f64| (v - by).max(0.0);
+    kurbo::RoundedRectRadii::new(
+        f(r.top_left),
+        f(r.top_right),
+        f(r.bottom_right),
+        f(r.bottom_left),
+    )
+}
+
+fn largest(r: kurbo::RoundedRectRadii) -> f64 {
+    r.top_left
+        .max(r.top_right)
+        .max(r.bottom_right)
+        .max(r.bottom_left)
 }

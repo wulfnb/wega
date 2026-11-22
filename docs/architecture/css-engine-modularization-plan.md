@@ -286,6 +286,21 @@ approximations made during the bug-fix rounds:
 - `filter: blur()`
 - gradient text through `background-clip: text`
 
+Progress (2026-11-22):
+- **Done: per-corner `border-radius`.**
+  - `ComputedStyle::border_radii` holds four `(px, %)` corners from the shorthand
+    (1–4 values) or the corner longhands. The old precedence hack, which ignored a
+    longhand after the shorthand, is gone; the cascade decides.
+  - `LayoutBox::radii()` resolves percentages and scales overlapping radii down
+    (CSS Backgrounds 3 §5.5).
+  - Display items carry `kurbo::RoundedRectRadii`, and padding-box clips subtract each
+    corner's adjacent borders.
+  - Still approximated: elliptical radii use their horizontal value, and blurred
+    shadows use the largest corner.
+- **Open, from the list above:** tables, grid, float line shortening, inset shadows,
+  `::before`/`::after` content, `filter: blur()`, gradient text, SVG child rects, the
+  Google card width, Verdana fallback width and viewport `overflow:hidden`.
+
 ### Phase 5: Performance
 1. Selector map and bloom filter (`css/cache`).
 2. Style sharing.

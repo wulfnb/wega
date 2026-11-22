@@ -426,11 +426,22 @@ pub(crate) fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, 
     "margin"=>margin,"padding"=>padding,"border"=>borders,"font-size"=>font_size,"font-family"=>font_family,
     "font-weight"=>font_weight,"font-style"=>font_italic,"white-space"=>white_space,"text-align"=>text_align,
     "opacity"=>opacity,"visibility"=>visible,"pointer-events"=>pointer_events,"cursor"=>cursor,"top"=>top,"right"=>right,"bottom"=>bottom,"left"=>left,"z-index"=>z_index,
-    "transform"=>transform,"box-shadow"=>box_shadow,"border-radius"=>border_radius,
+    "transform"=>transform,"box-shadow"=>box_shadow,"border-radius"=>border_radii,
     "overflow-x"=>overflow_x,"overflow-y"=>overflow_y,"flex-direction"=>flex_direction,
     "flex-grow"=>flex_grow,"flex-shrink"=>flex_shrink,"flex-basis"=>flex_basis,"align-items"=>align_items,"justify-content"=>justify_content,"object-fit"=>object_fit,"object-position"=>object_position,"vertical-align"=>vertical_align }
     if prop == "line-height" {
         target.line_height = source.line_height;
         target.line_height_factor = source.line_height_factor;
+    }
+    if let Some(i) = [
+        "border-top-left-radius",
+        "border-top-right-radius",
+        "border-bottom-right-radius",
+        "border-bottom-left-radius",
+    ]
+    .iter()
+    .position(|p| *p == prop)
+    {
+        target.border_radii[i] = source.border_radii[i];
     }
 }

@@ -17,7 +17,17 @@ pub(crate) fn push_contents(b: &LayoutBox, list: &mut DisplayList, s: f64) {
     if clipped(b) {
         list.items.push(DisplayItem::PushClip {
             rect: scaled(b.padding_box(), s),
-            border_radius: (b.radius() - b.border.left.max(b.border.top)).max(0.0) * s,
+            // The padding box's corners: each outer radius less its adjacent borders.
+            border_radius: {
+                let [tl, tr, br, bl] = b.radii();
+                let (t, r, bo, l) = (b.border.top, b.border.right, b.border.bottom, b.border.left);
+                kurbo::RoundedRectRadii::new(
+                    (tl - l.max(t)).max(0.0) * s,
+                    (tr - r.max(t)).max(0.0) * s,
+                    (br - r.max(bo)).max(0.0) * s,
+                    (bl - l.max(bo)).max(0.0) * s,
+                )
+            },
         });
     }
     list.items.push(DisplayItem::PushTransform {
@@ -43,7 +53,7 @@ pub(crate) fn decorations(b: &LayoutBox, list: &mut DisplayList, s: f64) {
     };
     for rect in rects {
         let rect = scaled(*rect, s);
-        let radius = b.radius() * s;
+        let radius = radii(b, s);
         if let Some(k) = b.node {
             list.items.push(DisplayItem::HitRegion {
                 node: k,
@@ -244,7 +254,7 @@ pub(crate) fn content(
         if needs_clip {
             list.items.push(DisplayItem::PushClip {
                 rect: scaled(c, s),
-                border_radius: b.radius() * s,
+                border_radius: radii(b, s),
             });
         }
         list.items.push(DisplayItem::Image {
@@ -265,7 +275,7 @@ pub(crate) fn content(
                     b: 254,
                     a: 180,
                 },
-                border_radius: 0.0,
+                border_radius: 0.0.into(),
             });
         }
     }
@@ -283,7 +293,7 @@ pub(crate) fn content(
                         },
                         s,
                     ),
-                    border_radius: 0.0,
+                    border_radius: 0.0.into(),
                 });
             }
             list.items.push(DisplayItem::Text {
@@ -299,7 +309,7 @@ pub(crate) fn content(
             list.items.push(DisplayItem::FillRect {
                 rect: scaled(caret, s),
                 color: b.style.color,
-                border_radius: 0.0,
+                border_radius: 0.0.into(),
             });
         }
         if matches!(form.kind, Some(FormControlKind::Checkbox)) {
@@ -323,7 +333,7 @@ pub(crate) fn content(
                 list.items.push(DisplayItem::FillRect {
                     rect,
                     color: accent,
-                    border_radius: 2.0 * s,
+                    border_radius: (2.0 * s).into(),
                 });
                 let mut path = kurbo::BezPath::new();
                 let (x, y, w, h) = (rect.x, rect.y, rect.width, rect.height);

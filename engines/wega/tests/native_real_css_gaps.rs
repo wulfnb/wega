@@ -241,3 +241,24 @@ fn author_rules_stylo_rejects_reach_the_native_engine() {
     assert_ne!(rect(&d, "without").width, 120.0);
     assert_eq!(rect(&d, "without").height, 10.0);
 }
+#[test]
+fn border_radius_is_per_corner_and_overlapping_radii_scale_down() {
+    use wega_engine::native_engine::layout::LayoutBox;
+    let d = document(
+        "<body><div id=a style='width:100px;height:40px;border-radius:4px 8px 12px 16px'></div>\
+         <div id=b style='width:100px;height:40px;border-radius:30px;border-top-left-radius:0'></div>\
+         <div id=c style='width:100px;height:40px;border-radius:50%'></div></body>",
+    );
+    let radii = |id: &str| -> [f64; 4] {
+        let key = d.doc.borrow().element_by_id(id).unwrap();
+        let b: &LayoutBox = d.find_box(key).unwrap();
+        b.radii()
+    };
+    assert_eq!(radii("a"), [4.0, 8.0, 12.0, 16.0]);
+    // 30 + 30 exceeds the 40px height on the right side: everything scales by 40/60.
+    let b = radii("b");
+    assert_eq!(b[0], 0.0);
+    assert!((b[1] - 20.0).abs() < 1e-9 && (b[2] - 20.0).abs() < 1e-9, "{b:?}");
+    // 50% of the shorter side (40px) is 20px on every corner.
+    assert_eq!(radii("c"), [20.0; 4]);
+}

@@ -114,29 +114,36 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
         }
         // Elliptical and per-corner radii are approximated by one circular
         // radius: the first horizontal value.
-        p if p == "border-radius" || (p.starts_with("border-") && p.ends_with("-radius")) => {
-            if p != "border-radius"
-                && (style.border_radius > 0.0 || style.border_radius_percent > 0.0)
-            {
+        p if p == "border-radius" || corner(p).is_some() => {
+            let radius = |v: &str| match Length::parse(v)? {
+                Length::Percent(pct) => Some((0.0, pct.max(0.0))),
+                Length::Auto => None,
+                l => Some((
+                    l.resolve(0.0, style.font_size, style.root_font_size)
+                        .max(0.0),
+                    0.0,
+                )),
+            };
+            // Horizontal radii only: the part before `/`.
+            let horizontal = val.split('/').next().unwrap_or("");
+            let parts = components(horizontal);
+            if let Some(index) = corner(p) {
+                if let Some(r) = parts.first().and_then(|v| radius(v)) {
+                    style.border_radii[index] = r;
+                }
                 return;
             }
-            let first = val
-                .split('/')
-                .next()
-                .and_then(|v| components(v).first().copied());
-            match first.and_then(Length::parse) {
-                Some(Length::Percent(pct)) => {
-                    style.border_radius = 0.0;
-                    style.border_radius_percent = pct.max(0.0);
-                }
-                Some(l) => {
-                    style.border_radius = l
-                        .resolve(0.0, style.font_size, style.root_font_size)
-                        .max(0.0);
-                    style.border_radius_percent = 0.0;
-                }
-                None => {}
-            }
+            let Some(values) = parts.iter().map(|v| radius(v)).collect::<Option<Vec<_>>>() else {
+                return;
+            };
+            // CSS Backgrounds 3 §5.5: top-left, top-right, bottom-right, bottom-left.
+            style.border_radii = match values.as_slice() {
+                [a] => [*a; 4],
+                [a, b] => [*a, *b, *a, *b],
+                [a, b, c] => [*a, *b, *c, *b],
+                [a, b, c, d] => [*a, *b, *c, *d],
+                _ => return,
+            };
         }
         "background-image" => {
             style.background_image = None;
@@ -255,5 +262,16 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
             }
         }
         _ => {}
+    }
+}
+
+/// The corner index of a physical `border-*-radius` longhand.
+fn corner(property: &str) -> Option<usize> {
+    match property {
+        "border-top-left-radius" => Some(0),
+        "border-top-right-radius" => Some(1),
+        "border-bottom-right-radius" => Some(2),
+        "border-bottom-left-radius" => Some(3),
+        _ => None,
     }
 }
