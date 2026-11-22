@@ -1,6 +1,6 @@
 # Wega CSS engine: modularization and Blitz/Stylo-referenced port
 
-Status: IN PROGRESS. Phase 0 is implemented (2026-11-21). Phase 1 split is done; its test gate is pending.
+Status: IN PROGRESS. Phase 0 is implemented (2026-11-21). Phases 0–2 are done.
 
 ## Why
 
@@ -221,8 +221,29 @@ Progress (2026-11-21), step 1 of the port order (box and position), test gate pe
   - invalid values (`invalid value:<property>: <value>`)
   - unsupported at-rules and selectors
   - viewport-relative typography
-- **Next:** color and background, then border and outline, then font and text, following
-  the same pattern. Shorthand expansion at parse time comes with each family.
+- **Steps 2–6 (2026-11-22):** color and background, border, font and text, flex and grid,
+  transforms and effects.
+  - 64 longhands are typed. Values that depend on the element (`em` borders, gaps,
+    `border-spacing`, `line-height` lengths) stay specified and are resolved in
+    `apply_typed`.
+  - Math functions with viewport units are deferred at parse time;
+    `PropertyDeclaration::parse_value` types them once the viewport is known.
+  - `apply_declaration` maps logical properties and shorthands, then calls
+    `parse_value`. Its 64 string arms for ported properties are deleted, so `apply.rs`
+    went from 687 to 293 lines.
+  - Still strings (each needs a real parser first):
+    - shorthands: `margin`, `padding`, `border*`, `background`, `mask`, `overflow`,
+      `grid-template`, `grid-area`
+    - `border-radius`
+    - `background-image` (gradients need `currentcolor`)
+    - `font-size`, which the cascade special-cases
+    - `grid-row`/`grid-column` and their start/end longhands, which depend on each other
+  - `clip-path`, `transform`, `box-shadow` and `font-style` keep their exact previous
+    behavior: their parsers return `None` for valid values that aren't painted yet, so
+    "invalid" can't be told apart from "unsupported".
+  - Site corpus scores are identical before and after.
+- **Step 7 (animations):** nothing to port. The native engine has no animation or
+  transition properties yet.
 
 ### Phase 3: Own stylesheet source and CSSOM
 1. Parse stylesheets from their original source text in `css/parser`. Drop the Stylo

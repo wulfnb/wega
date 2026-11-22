@@ -1,5 +1,6 @@
 //! Apply one declaration to a computed style.
 use crate::*;
+use wega_css_parser::{Parsed, PropertyDeclaration};
 use wega_css_values::*;
 
 pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
@@ -33,104 +34,14 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
         }
         return;
     }
+    match PropertyDeclaration::parse_value(prop, val) {
+        Parsed::Typed(typed) => return apply_typed(style, typed),
+        Parsed::Invalid => return,
+        Parsed::Deferred => {}
+    }
     match prop {
-        "visibility" => {
-            if matches!(val, "visible" | "hidden" | "collapse") {
-                style.visible = val == "visible";
-            }
-        }
-        "pointer-events" => {
-            if matches!(val, "auto" | "none") {
-                style.pointer_events = val == "auto";
-            }
-        }
-        "display" => {
-            if let Some(d) = Display::parse(val) {
-                style.display = d;
-            }
-        }
-        "position" => {
-            if let Some(p) = Position::parse(val) {
-                style.position = p;
-            }
-        }
-        "box-sizing" => {
-            if let Some(b) = BoxSizing::parse(val) {
-                style.box_sizing = b;
-            }
-        }
-        "width" => {
-            if let Some(l) = Length::parse(val) {
-                style.width = l;
-            }
-        }
-        "height" => {
-            if let Some(l) = Length::parse(val) {
-                style.height = l;
-            }
-        }
-        "min-width" => {
-            if let Some(l) = Length::parse(val) {
-                style.min_width = l;
-            }
-        }
-        "max-width" => {
-            if let Some(l) = Length::parse(val) {
-                style.max_width = l;
-            }
-        }
-        "min-height" => {
-            if let Some(l) = Length::parse(val) {
-                style.min_height = l;
-            }
-        }
-        "max-height" => {
-            if let Some(l) = Length::parse(val) {
-                style.max_height = l;
-            }
-        }
         "margin" => style.margin = RectLengths::parse_quad(val),
-        "margin-top" => {
-            if let Some(l) = Length::parse(val) {
-                style.margin.top = l;
-            }
-        }
-        "margin-right" => {
-            if let Some(l) = Length::parse(val) {
-                style.margin.right = l;
-            }
-        }
-        "margin-bottom" => {
-            if let Some(l) = Length::parse(val) {
-                style.margin.bottom = l;
-            }
-        }
-        "margin-left" => {
-            if let Some(l) = Length::parse(val) {
-                style.margin.left = l;
-            }
-        }
         "padding" => style.padding = RectLengths::parse_quad(val),
-        "padding-top" => {
-            if let Some(l) = Length::parse(val) {
-                style.padding.top = l;
-            }
-        }
-        "padding-right" => {
-            if let Some(l) = Length::parse(val) {
-                style.padding.right = l;
-            }
-        }
-        "padding-bottom" => {
-            if let Some(l) = Length::parse(val) {
-                style.padding.bottom = l;
-            }
-        }
-        "padding-left" => {
-            if let Some(l) = Length::parse(val) {
-                style.padding.left = l;
-            }
-        }
         "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
             // Initial values: medium width, no style, currentcolor.
             let mut side = BorderSide {
@@ -181,41 +92,6 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
                 style.border_hidden = values.map(|p| matches!(p, "none" | "hidden"));
             }
         }
-        // Per-side longhands only; `border-width`/`-color`/`-style` themselves
-        // are shorthands handled below.
-        p if [
-            "border-top-",
-            "border-right-",
-            "border-bottom-",
-            "border-left-",
-        ]
-        .iter()
-        .any(|side| p.starts_with(side))
-            && (p.ends_with("-width") || p.ends_with("-color") || p.ends_with("-style")) =>
-        {
-            let index = if p.starts_with("border-top-") {
-                0
-            } else if p.starts_with("border-right-") {
-                1
-            } else if p.starts_with("border-bottom-") {
-                2
-            } else if p.starts_with("border-left-") {
-                3
-            } else {
-                return;
-            };
-            if p.ends_with("-width") {
-                if let Some(w) = border_width(style, val) {
-                    border_side(style, index).width = w;
-                }
-            } else if p.ends_with("-color") {
-                if let Some(c) = color_value(style, val) {
-                    border_side(style, index).color = c;
-                }
-            } else {
-                style.border_hidden[index] = matches!(val, "none" | "hidden");
-            }
-        }
         "border-width" | "border-color" => {
             let parts = components(val);
             if (1..=4).contains(&parts.len()) {
@@ -234,13 +110,6 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
                         border_side(style, i).color = c;
                     }
                 }
-            }
-        }
-        "border-spacing" => {
-            if let Some(l) = Length::parse(val) {
-                style.border_spacing = l
-                    .resolve(0.0, style.font_size, style.root_font_size)
-                    .max(0.0);
             }
         }
         // Elliptical and per-corner radii are approximated by one circular
@@ -269,13 +138,6 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
                 None => {}
             }
         }
-        "color" => {
-            if val.eq_ignore_ascii_case("currentcolor") {
-                // Inherited color is already in place.
-            } else if let Some(c) = Color::parse(val) {
-                style.color = c;
-            }
-        }
         "background-image" => {
             style.background_image = None;
             style.background_gradient = None;
@@ -289,148 +151,13 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
                 }
             }
         }
-        "background-clip" | "-webkit-background-clip" => {
-            style.background_clip_text = val.trim().eq_ignore_ascii_case("text");
-        }
-        "background-position" => {
-            if let Some(p) = position(val) {
-                style.background_position = p;
-            }
-        }
-        "background-size" => {
-            if let Some(size) = BackgroundSize::parse(val) {
-                style.background_size = size;
-            }
-        }
-        "background-repeat" => {
-            if let Some(repeat) = background_repeat(&components(val)) {
-                style.background_repeat = repeat;
-            }
-        }
-        "clip-path" => style.clip_path = ClipPath::parse(val),
-        "background-color" => {
-            if let Some(c) = color_value(style, val) {
-                style.background_color = c;
-            }
-        }
         "background" => background_shorthand(style, val),
-        "cursor" => {
-            if matches!(
-                val,
-                "auto"
-                    | "default"
-                    | "none"
-                    | "context-menu"
-                    | "help"
-                    | "pointer"
-                    | "progress"
-                    | "wait"
-                    | "cell"
-                    | "crosshair"
-                    | "text"
-                    | "vertical-text"
-                    | "alias"
-                    | "copy"
-                    | "move"
-                    | "no-drop"
-                    | "not-allowed"
-                    | "grab"
-                    | "grabbing"
-                    | "all-scroll"
-                    | "col-resize"
-                    | "row-resize"
-                    | "n-resize"
-                    | "e-resize"
-                    | "s-resize"
-                    | "w-resize"
-                    | "ne-resize"
-                    | "nw-resize"
-                    | "se-resize"
-                    | "sw-resize"
-                    | "ew-resize"
-                    | "ns-resize"
-                    | "nesw-resize"
-                    | "nwse-resize"
-                    | "zoom-in"
-                    | "zoom-out"
-            ) {
-                style.cursor = val.into();
-            }
-        }
-        "font-family" => style.font_family = val.to_owned(),
-        "font-weight" => {
-            style.font_weight = match val {
-                "bold" => 700.0,
-                "normal" => 400.0,
-                _ => val
-                    .parse::<f32>()
-                    .ok()
-                    .filter(|n| n.is_finite())
-                    .unwrap_or(style.font_weight)
-                    .clamp(1.0, 1000.0),
-            };
-        }
-        "font-style" => style.font_italic = matches!(val, "italic" | "oblique"),
-        "white-space" => {
-            if let Some(value) = WhiteSpace::parse(val) {
-                style.white_space = value;
-            }
-        }
         "font-size" => {
             if let Some(l) = Length::parse(val).map(viewport_px) {
                 let size = l.resolve(style.font_size, style.font_size, style.root_font_size);
                 if size >= 0.0 && size.is_finite() {
                     style.font_size = size.min(4096.0);
                 }
-            }
-        }
-        "line-height" => {
-            if val == "normal" {
-                style.line_height_factor = Some(1.25);
-            } else if let Ok(factor) = val.parse::<f64>() {
-                if factor >= 0.0 && factor.is_finite() {
-                    style.line_height_factor = Some(factor);
-                }
-            } else if let Some(l) =
-                Length::parse(val).filter(|l| !matches!(l, Length::Vw(_) | Length::Vh(_)))
-            {
-                let h = l.resolve(style.font_size, style.font_size, style.root_font_size);
-                if h >= 0.0 && h.is_finite() {
-                    style.line_height = h;
-                    style.line_height_factor = None;
-                }
-            }
-        }
-        "text-align" => {
-            if let Some(a) = TextAlign::parse(val) {
-                style.text_align = a;
-            }
-        }
-        "top" => {
-            if let Some(l) = Length::parse(val) {
-                style.top = l;
-            }
-        }
-        "right" => {
-            if let Some(l) = Length::parse(val) {
-                style.right = l;
-            }
-        }
-        "bottom" => {
-            if let Some(l) = Length::parse(val) {
-                style.bottom = l;
-            }
-        }
-        "left" => {
-            if let Some(l) = Length::parse(val) {
-                style.left = l;
-            }
-        }
-        "z-index" => {
-            style.z_index = if val.trim().eq_ignore_ascii_case("auto") {
-                None
-            } else {
-                css_number(val).map(|n| n.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32)
             }
         }
         "mask-image" | "-webkit-mask-image" => style.mask_image = image_url(val),
@@ -449,116 +176,10 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
         "mask-repeat" | "-webkit-mask-repeat" => {
             style.mask_repeat = background_repeat(&components(val));
         }
-        "float" => {
-            style.float = match val.trim().to_ascii_lowercase().as_str() {
-                "left" | "inline-start" => Float::Left,
-                "right" | "inline-end" => Float::Right,
-                _ => Float::None,
-            }
-        }
-        "clear" => {
-            style.clear = match val.trim().to_ascii_lowercase().as_str() {
-                "left" | "inline-start" => (true, false),
-                "right" | "inline-end" => (false, true),
-                "both" => (true, true),
-                _ => (false, false),
-            }
-        }
-        "opacity" => {
-            let v = val.trim();
-            let op = v
-                .strip_suffix('%')
-                .and_then(|p| p.trim().parse::<f64>().ok().map(|p| p / 100.0))
-                .or_else(|| css_number(v));
-            if let Some(op) = op {
-                style.opacity = op.clamp(0.0, 1.0) as f32;
-            }
-        }
         "overflow" => {
             if let Some(o) = Overflow::parse(val) {
                 style.overflow_x = o;
                 style.overflow_y = o;
-            }
-        }
-        "overflow-x" => {
-            if let Some(o) = Overflow::parse(val) {
-                style.overflow_x = o;
-            }
-        }
-        "overflow-y" => {
-            if let Some(o) = Overflow::parse(val) {
-                style.overflow_y = o;
-            }
-        }
-        "flex-direction" => {
-            if let Some(fd) = FlexDirection::parse(val) {
-                style.flex_direction = fd;
-            }
-        }
-        "justify-content" => {
-            if let Some(jc) = JustifyContent::parse(val) {
-                style.justify_content = jc;
-            }
-        }
-        "align-items" => {
-            if let Some(ai) = AlignItems::parse(val) {
-                style.align_items = ai;
-            }
-        }
-        "flex-grow" => {
-            if let Some(g) = css_number(val).filter(|g| *g >= 0.0) {
-                style.flex_grow = g;
-            }
-        }
-        "flex-shrink" => {
-            if let Some(s) = css_number(val).filter(|s| *s >= 0.0) {
-                style.flex_shrink = s;
-            }
-        }
-        "flex-basis" => {
-            if let Some(l) = Length::parse(val) {
-                style.flex_basis = l;
-            }
-        }
-        "flex-wrap" => style.flex_wrap = val == "wrap",
-        "gap" => {
-            let values: Vec<_> = components(val)
-                .into_iter()
-                .filter_map(Length::parse)
-                .collect();
-            if let Some(v) = values.first() {
-                style.row_gap = v
-                    .resolve(0.0, style.font_size, style.root_font_size)
-                    .max(0.0);
-                style.column_gap = values
-                    .get(1)
-                    .unwrap_or(v)
-                    .resolve(0.0, style.font_size, style.root_font_size)
-                    .max(0.0);
-            }
-        }
-        "row-gap" => {
-            if let Some(v) = Length::parse(val) {
-                style.row_gap = v
-                    .resolve(0.0, style.font_size, style.root_font_size)
-                    .max(0.0);
-            }
-        }
-        "column-gap" => {
-            if let Some(v) = Length::parse(val) {
-                style.column_gap = v
-                    .resolve(0.0, style.font_size, style.root_font_size)
-                    .max(0.0);
-            }
-        }
-        "grid-template-columns" => {
-            if let Some(tracks) = tracks(val) {
-                style.grid_template_columns = tracks;
-            }
-        }
-        "grid-template-rows" => {
-            if let Some(tracks) = tracks(val) {
-                style.grid_template_rows = tracks;
             }
         }
         "grid-column" | "grid-row" => {
@@ -599,9 +220,6 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
                 grid_axis(style, column, keep(start), grid_line(val));
             }
         }
-        "grid-template-areas" => {
-            style.grid_template_areas = grid_areas(val).unwrap_or_default();
-        }
         "grid-template" => {
             let (rows, columns) = val.split_once('/').unwrap_or((val, ""));
             if rows.contains('"') || rows.contains('\'') {
@@ -636,52 +254,6 @@ pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str
                 style.grid_template_columns = tracks;
             }
         }
-        "transform" => style.transform = Transform::parse(val),
-        "transform-origin" => {
-            let p: Vec<_> = val.split_ascii_whitespace().collect();
-            let axis = |v: &str| match v {
-                "center" => Some(Length::Percent(50.0)),
-                "left" | "top" => Some(Length::Percent(0.0)),
-                "right" | "bottom" => Some(Length::Percent(100.0)),
-                _ => Length::parse(v),
-            };
-            if let Some(x) = p.first().and_then(|v| axis(v)) {
-                style.transform_origin = (
-                    x,
-                    p.get(1)
-                        .and_then(|v| axis(v))
-                        .unwrap_or(Length::Percent(50.0)),
-                );
-            }
-        }
-        "object-fit" => {
-            if let Some(of) = ObjectFit::parse(val) {
-                style.object_fit = of;
-            }
-        }
-        "object-position" => {
-            let p: Vec<_> = val.split_ascii_whitespace().collect();
-            let axis = |v: &str| match v {
-                "center" => Some(Length::Percent(50.0)),
-                "left" | "top" => Some(Length::Percent(0.0)),
-                "right" | "bottom" => Some(Length::Percent(100.0)),
-                _ => Length::parse(v),
-            };
-            if let Some(x) = p.first().and_then(|v| axis(v)) {
-                style.object_position = (
-                    x,
-                    p.get(1)
-                        .and_then(|v| axis(v))
-                        .unwrap_or(Length::Percent(50.0)),
-                );
-            }
-        }
-        "vertical-align" => {
-            if let Some(va) = VerticalAlign::parse(val) {
-                style.vertical_align = va;
-            }
-        }
-        "box-shadow" => style.box_shadow = BoxShadow::parse(val),
         _ => {}
     }
 }

@@ -120,3 +120,26 @@ pub(crate) fn track_list(p: &mut Parser<'_>, depth: usize) -> Result<Vec<GridTra
     }
     Ok(out)
 }
+
+pub fn grid_areas(val: &str) -> Option<Vec<Vec<String>>> {
+    if val.trim() == "none" {
+        return Some(Vec::new());
+    }
+    let mut rows = Vec::new();
+    let mut rest = val;
+    while let Some(open) = rest.find(['"', '\'']) {
+        let quote = rest.as_bytes()[open] as char;
+        let after = &rest[open + 1..];
+        let close = after.find(quote)?;
+        rows.push(
+            after[..close]
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+        );
+        rest = &after[close + 1..];
+    }
+    let width = rows.first().map_or(0, Vec::len);
+    (width > 0 && rows.iter().all(|r| r.len() == width) && rows.len() <= 256 && width <= 256)
+        .then_some(rows)
+}
