@@ -1,5 +1,7 @@
 //! Same-origin DOM access and cross-origin security boundaries.
 use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 use wega_engine::{Engine, Limits, NetworkPolicy, Url, View};
 
 fn page(url: &str) -> View {
@@ -13,12 +15,25 @@ fn eval(view: &mut View, script: &str) -> String {
     view.evaluate_json(script).unwrap()
 }
 
+/// Evaluate in a child frame, polling while that frame is still mid-navigation.
+/// A single parent `poll()` is not always enough on slower runners.
 fn child_eval(view: &mut View, index: usize, script: &str) -> String {
-    let key = view.child_frames()[index].0;
-    view.child_by_key(key)
-        .unwrap()
-        .evaluate_json(script)
-        .unwrap()
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let key = view.child_frames()[index].0;
+        match view.child_by_key(key).unwrap().evaluate_json(script) {
+            Ok(value) => return value,
+            Err(error) if error == "Document is suspended for navigation" => {
+                assert!(
+                    Instant::now() < deadline,
+                    "child frame {index} never finished navigating"
+                );
+                view.poll();
+                thread::sleep(Duration::from_millis(2));
+            }
+            Err(error) => panic!("child frame {index} evaluate failed: {error}"),
+        }
+    }
 }
 
 #[test]
