@@ -33,3 +33,20 @@ condition = "AND"
 regexTarget = "line"
 paths = ['''^docs/validation/browser-completion-2026-11-11\.json$''']
 regexes = ['''(?m)^[ \t]*"engines/(network/src|wega/tests)/cache_api\.rs": "[0-9a-f]{64}",?$''']
+
+# Inspector console tests pass the fixed test grant `TOKEN` to `eval`; the
+# JavaScript argument after it matches the generic credential rule.
+[[rules.allowlists]]
+description = "Inspector console test eval calls using the TOKEN test constant"
+condition = "AND"
+regexTarget = "line"
+paths = ['''^engines/wega/tests/inspector_console\.rs$''']
+regexes = ['''eval\(&mut [a-z_]+, [a-z_]+, TOKEN, "globalThis\.''']
+
+# The saved github.com page fixture embeds GitHub's per-page click-tracking HMAC.
+[[rules.allowlists]]
+description = "Real-world github.com fixture hydro click HMAC"
+condition = "AND"
+regexTarget = "line"
+paths = ['''^engines/wega/tests/fixtures/real_world/github\.html$''']
+regexes = ['''"auth_hydro_click_hmac":"[0-9a-f]{64}"''']
