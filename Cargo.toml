@@ -74,3 +74,8 @@ objc2 = { version = "0.6.5", optional = true }
 block2 = { version = "0.6.2", optional = true }
 objc2-app-kit = { optional = true,version="0.3.2",default-features=false,features=["std","NSVisualEffectView","NSView","NSWindow","NSColor","NSAppearance","NSGraphics","NSResponder","NSScreen"]}
 objc2-foundation = { optional = true,version="0.3.2",default-features=false,features=["std","NSAppleEventDescriptor","NSAppleEventManager","NSArray","NSURL","NSGeometry","NSString","NSDictionary","NSValue"]}
+
+# webdriver 0.54.0 with its unused cookie 0.16 dependency removed (RUSTSEC-2026-0594);
+# see engines/vendor/README.md. Drop once a webdriver release removes it upstream.
+[patch.crates-io]
+webdriver = { path = "engines/vendor/webdriver/webdriver" }

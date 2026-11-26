@@ -136,5 +136,13 @@
     "extra_licenses": [
       "LICENSE.md"
     ]
+  },
+  "webdriver": {
+    "version": "0.54.0",
+    "directory": "webdriver/webdriver",
+    "sha256": "799eea1e97dc3b3505b178be76e301138ced2af3b62490d8d932ace71168a948",
+    "patches": [
+      "webdriver/patches/drop-unused-cookie.patch"
+    ]
   }
 }

@@ -175,3 +175,17 @@ Deno event and structured-clone JavaScript sources remain from the pinned crate.
 `engines/wega/src/extension_adapter.rs` applies checked, narrow native DOM hooks at
 runtime/snapshot creation. The hook installer and native DOM call bridge are removed
 from page globals after trusted bootstrap.
+
+## WebDriver protocol crate (`webdriver/`, 26 November 2026)
+
+`webdriver` 0.54.0 is the published crates.io source used by the browser's
+optional WebDriver endpoint (`desktop` feature), through `[patch.crates-io]` in
+the root workspace. It is the latest release and still declares `cookie ^0.16`,
+which RUSTSEC-2026-0594 flags and which has no patched 0.16.x. The crate never
+uses `cookie`, and Mozilla has already removed it upstream (mozilla-central
+`testing/webdriver`). `webdriver/patches/drop-unused-cookie.patch` makes the same
+change: it removes the dependency from `Cargo.toml` and the unused
+`extern crate cookie;` from `src/lib.rs`. No WebDriver behavior changes. The
+crate's own published `Cargo.lock` is not used by any workspace and is left as
+published. Remove this copy and the root `[patch.crates-io]` entry once a
+`webdriver` release without `cookie` is available.
