@@ -170,6 +170,118 @@ fn origin(value: &str) -> Option<(Length, Length)> {
     ))
 }
 
+/// A length that is not negative where the property forbids negative values.
+/// Math functions clamp at computed time, so they are accepted.
+fn non_negative(l: &Length) -> bool {
+    match l {
+        Length::Px(v)
+        | Length::Percent(v)
+        | Length::Em(v)
+        | Length::Rem(v)
+        | Length::Vw(v)
+        | Length::Vh(v) => *v >= 0.0,
+        _ => true,
+    }
+}
+
+/// A `<length-percentage [0,∞]>` or `normal` for the gap longhands.
+fn gap_value(value: &str) -> Option<Length> {
+    if value.trim().eq_ignore_ascii_case("normal") {
+        return Some(Length::Px(0.0));
+    }
+    Length::parse(value).filter(|l| *l != Length::Auto && non_negative(l))
+}
+
+/// Whether every comma-separated `background-image` layer is `none`, a `url()`, an image
+/// function, or a gradient whose arguments are well formed. Invalid values are dropped
+/// at parse time instead of clearing an earlier image.
+pub fn valid_background_image(value: &str) -> bool {
+    use cssparser::{Parser, Token};
+    let mut parser = Parser::new(value);
+    parser
+        .parse_entirely(|p| {
+            p.parse_comma_separated(|p| {
+                let bad = |p: &mut Parser<'_>| Err(p.new_error_for_next_token::<()>());
+                match p.next()?.clone() {
+                    Token::Ident(i) if i.eq_ignore_ascii_case("none") => Ok(()),
+                    Token::UnquotedUrl(_) => Ok(()),
+                    Token::Function(f) => {
+                        let f = f.to_ascii_lowercase();
+                        p.parse_nested_block(|p| {
+                            let ok = match f.as_str() {
+                                "linear-gradient"
+                                | "repeating-linear-gradient"
+                                | "-webkit-linear-gradient" => linear_gradient_args(p),
+                                "url"
+                                | "image-set"
+                                | "-webkit-image-set"
+                                | "cross-fade"
+                                | "radial-gradient"
+                                | "repeating-radial-gradient"
+                                | "conic-gradient"
+                                | "repeating-conic-gradient"
+                                | "-webkit-radial-gradient"
+                                | "-webkit-gradient" => {
+                                    let mut ok = true;
+                                    while let Ok(t) = p.next() {
+                                        ok &= !t.is_parse_error();
+                                    }
+                                    ok
+                                }
+                                _ => false,
+                            };
+                            if ok { Ok(()) } else { bad(p) }
+                        })
+                    }
+                    _ => bad(p),
+                }
+            })
+        })
+        .is_ok()
+}
+
+/// `[ <angle> | to <side-or-corner> ]? [in <colorspace>]?, <color-stop-list>`: the
+/// leading argument and that every stop starts with a color or is a lone hint.
+fn linear_gradient_args(p: &mut cssparser::Parser<'_>) -> bool {
+    use cssparser::Token;
+    let args: Result<Vec<String>, _> = p.parse_comma_separated(|p| {
+        let start = p.position();
+        while p.next().is_ok() {}
+        Ok::<_, cssparser::ParseError<()>>(p.slice_from(start).trim().to_owned())
+    });
+    let Ok(args) = args else { return false };
+    let mut stops = &args[..];
+    if let Some(first) = args.first() {
+        let mut head = cssparser::Parser::new(first);
+        let leading = match head.next() {
+            Ok(Token::Ident(w)) => w.eq_ignore_ascii_case("to") || w.eq_ignore_ascii_case("in"),
+            Ok(Token::Dimension { value, unit, .. }) => {
+                if angle_degrees(*value, unit).is_none() {
+                    return false;
+                }
+                true
+            }
+            Ok(Token::Number { value, .. }) => *value == 0.0,
+            _ => false,
+        };
+        if leading {
+            stops = &args[1..];
+        }
+    }
+    stops.len() >= 2
+        && stops.iter().all(|stop| {
+            let words = components(stop);
+            match words.split_first() {
+                Some((color, rest)) if Color::parse(color).is_some() => {
+                    rest.len() <= 2 && rest.iter().all(|w| Length::parse(w).is_some())
+                }
+                // A color hint: one length or percentage.
+                Some((hint, [])) => Length::parse(hint).is_some(),
+                _ => false,
+            }
+        })
+}
+
 /// A border width keyword or a non-percentage length.
 fn border_width(value: &str) -> Option<Length> {
     match value.to_ascii_lowercase().as_str() {
@@ -203,8 +315,9 @@ impl PropertyDeclaration {
         let lower = value.trim().to_ascii_lowercase();
         if matches!(
             lower.as_str(),
-            "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+            "inherit" | "initial" | "unset" | "revert" | "revert-layer" | "revert-rule"
         ) || lower.contains("var(")
+            || lower.contains("attr(")
             || lower.contains("currentcolor")
             // Math functions resolve viewport units against the style pass's viewport,
             // which is only known at cascade time.
@@ -342,19 +455,22 @@ impl PropertyDeclaration {
             "align-items" => AlignItems::parse(value).map(P::AlignItems),
             "flex-grow" => css_number(value).filter(|g| *g >= 0.0).map(P::FlexGrow),
             "flex-shrink" => css_number(value).filter(|s| *s >= 0.0).map(P::FlexShrink),
-            "flex-basis" => length(P::FlexBasis),
-            "flex-wrap" => Some(P::FlexWrap(value == "wrap")),
+            "flex-basis" => Length::parse(value).filter(non_negative).map(P::FlexBasis),
+            "flex-wrap" => match lower.as_str() {
+                "wrap" | "wrap-reverse" => Some(P::FlexWrap(true)),
+                "nowrap" => Some(P::FlexWrap(false)),
+                _ => None,
+            },
             "gap" => {
-                let values: Vec<_> = components(value)
-                    .into_iter()
-                    .filter_map(Length::parse)
-                    .collect();
-                values
-                    .first()
-                    .map(|row| P::Gap(*row, *values.get(1).unwrap_or(row)))
+                let values: Option<Vec<_>> = components(value).into_iter().map(gap_value).collect();
+                match values.as_deref() {
+                    Some([row]) => Some(P::Gap(*row, *row)),
+                    Some([row, column]) => Some(P::Gap(*row, *column)),
+                    _ => None,
+                }
             }
-            "row-gap" => length(P::RowGap),
-            "column-gap" => length(P::ColumnGap),
+            "row-gap" => gap_value(value).map(P::RowGap),
+            "column-gap" => gap_value(value).map(P::ColumnGap),
             "grid-template-columns" => tracks(value).map(P::GridTemplateColumns),
             "grid-template-rows" => tracks(value).map(P::GridTemplateRows),
             "grid-template-areas" => {
@@ -366,6 +482,7 @@ impl PropertyDeclaration {
             "object-position" => origin(value).map(P::ObjectPosition),
             // Inset-only shadows parse to `None` (not painted yet) and still override.
             "box-shadow" => Some(P::BoxShadow(BoxShadow::parse(value).map(Box::new))),
+            "background-image" if !valid_background_image(value) => return Parsed::Invalid,
             _ => return Parsed::Deferred,
         };
         typed.map_or(Parsed::Invalid, Parsed::Typed)
@@ -524,5 +641,55 @@ mod tests {
             PropertyDeclaration::parse_value("width", "calc(100vw - 20px)"),
             Parsed::Typed(PropertyDeclaration::Width(_))
         ));
+    }
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    fn invalid(property: &str, value: &str) -> bool {
+        PropertyDeclaration::parse(property, value) == Parsed::Invalid
+    }
+
+    #[test]
+    fn values_the_spec_rejects_are_invalid() {
+        for (property, value) in [
+            ("flex-basis", "-50px"),
+            ("flex-wrap", "balance"),
+            ("gap", "-1px"),
+            ("gap", "1px 2px 3px"),
+            ("row-gap", "-5%"),
+            ("background-size", "-1px -1px"),
+            ("background-size", "1px 2px 3px"),
+            ("background-image", "linear-gradient(90degree, red, red)"),
+            ("background-image", "linear-gradient(100gradian, red, red)"),
+            ("background-image", "linear-gradient(1.57radian, red, red)"),
+            ("background-image", "linear-gradient(0.25turns, red, red)"),
+            ("background-image", "linear-gradient(red)"),
+            ("background-image", "nonsense"),
+        ] {
+            assert!(invalid(property, value), "{property}: {value}");
+        }
+        for (property, value) in [
+            ("flex-basis", "30px"),
+            ("flex-wrap", "wrap-reverse"),
+            ("gap", "normal 4px"),
+            ("background-size", "50% auto"),
+            (
+                "background-image",
+                "linear-gradient(90deg, red, blue 50%, 75%, green)",
+            ),
+            ("background-image", "linear-gradient(to right, red, blue)"),
+            ("background-image", "url(a.png), linear-gradient(red, blue)"),
+            ("background-image", "none"),
+            ("background-image", "radial-gradient(circle, red, blue)"),
+        ] {
+            assert!(!invalid(property, value), "{property}: {value}");
+        }
+        assert_eq!(
+            crate::Declaration::new("grid-gap", "20px", false).property,
+            "gap"
+        );
     }
 }

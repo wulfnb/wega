@@ -15,6 +15,8 @@ pub(crate) struct MatchedDecl {
     source_order: usize,
     /// Cascade layer rank for author rules; unlayered rules rank highest.
     layer: u32,
+    /// The style rule (per matching selector) the declaration came from, for `revert-rule`.
+    rule: usize,
 }
 
 pub fn resolve_computed_style<D: DocumentView>(
@@ -84,6 +86,7 @@ pub fn resolve_computed_style<D: DocumentView>(
             (0..sheet.rules.len()).collect()
         }
     };
+    let mut rule_id = 0;
     USER_AGENT.with(|ua| {
         for rule in candidates(ua).into_iter().map(|i| &ua.rules[i]) {
             if !rule.media.iter().all(|group| matches_media(group, m_ctx)) {
@@ -92,8 +95,10 @@ pub fn resolve_computed_style<D: DocumentView>(
             for sel in &rule.selectors {
                 if sel.matches(doc, node_key) {
                     let spec = sel.specificity();
+                    rule_id += 1;
                     for d in &rule.declarations {
                         matched.push(MatchedDecl {
+                            rule: rule_id,
                             layer: u32::MAX,
                             property: d.property.clone(),
                             value: d.value.clone(),
@@ -113,7 +118,9 @@ pub fn resolve_computed_style<D: DocumentView>(
     // HTML presentational attributes map to author-level hints with zero
     // specificity that precede every authored rule (HTML §15 Rendering).
     for (property, value) in presentational_hints(doc, node_key) {
+        rule_id += 1;
         matched.push(MatchedDecl {
+            rule: rule_id,
             layer: u32::MAX,
             typed: PropertyDeclaration::parse(property, &value),
             property: property.into(),
@@ -138,8 +145,10 @@ pub fn resolve_computed_style<D: DocumentView>(
             for sel in &rule.selectors {
                 if sel.matches(doc, node_key) {
                     let spec = sel.specificity();
+                    rule_id += 1;
                     for d in &rule.declarations {
                         matched.push(MatchedDecl {
+                            rule: rule_id,
                             layer,
                             property: d.property.clone(),
                             value: d.value.clone(),
@@ -158,8 +167,10 @@ pub fn resolve_computed_style<D: DocumentView>(
 
     // 3. Inline style attribute
     if let Some(inline_css) = node.attr("style") {
+        rule_id += 1;
         for d in parse_declarations(inline_css) {
             matched.push(MatchedDecl {
+                rule: rule_id,
                 layer: u32::MAX,
                 property: d.property,
                 value: d.value,
@@ -239,7 +250,7 @@ pub fn resolve_computed_style<D: DocumentView>(
     // longhands. Expand only after substitution, retaining the original rank.
     // Invalid-at-computed-value shorthands reset their longhands (CSS Variables
     // 3.1); an earlier declaration must not silently become the winner.
-    let mut matched: Vec<MatchedDecl> = matched
+    let matched: Vec<MatchedDecl> = matched
         .into_iter()
         .flat_map(|d| {
             let names = shorthand_properties(&d.property);
@@ -268,6 +279,7 @@ pub fn resolve_computed_style<D: DocumentView>(
                 .collect()
         })
         .collect();
+    let mut matched = apply_reverts(matched);
     // Font-relative computed values and currentColor use the winning font and
     // color, regardless of declaration order or selector specificity.
     matched.sort_by_key(|d| match d.property.as_str() {
@@ -281,13 +293,18 @@ pub fn resolve_computed_style<D: DocumentView>(
         }
         match decl.typed {
             Parsed::Typed(typed) => {
+                if matches!(decl.property.as_str(), "background-color" | "background") {
+                    style.background_color_current = None;
+                }
                 apply_typed(&mut style, typed);
                 continue;
             }
             Parsed::Invalid => continue,
             Parsed::Deferred => {}
         }
-        let value = substitute(&decl.value, &style.custom_properties);
+        let attribute = |name: &str| node.attr(name).map(str::to_owned);
+        let value = substitute_attr(&decl.value, &attribute)
+            .and_then(|value| substitute(&value, &style.custom_properties));
         let inherited = matches!(
             decl.property.as_str(),
             "color"
@@ -337,18 +354,11 @@ pub fn resolve_computed_style<D: DocumentView>(
         } else if decl.property == "color" && value.eq_ignore_ascii_case("currentcolor") {
             style.color = parent_style.map(|p| p.color).unwrap_or(Color::BLACK);
         } else {
-            let resolved = if value.eq_ignore_ascii_case("currentcolor") {
-                format!(
-                    "rgba({},{},{},{})",
-                    style.color.r,
-                    style.color.g,
-                    style.color.b,
-                    style.color.a as f32 / 255.0
-                )
-            } else {
-                value.to_owned()
-            };
+            let resolved = resolve_current_color(value, style.color);
             apply_declaration(&mut style, &decl.property, &resolved);
+            if matches!(decl.property.as_str(), "background-color" | "background") {
+                style.background_color_current = (resolved != value).then(|| value.to_owned());
+            }
         }
     }
     for (side, hidden) in [
@@ -419,6 +429,16 @@ pub fn resolve_computed_style<D: DocumentView>(
 }
 
 pub(crate) fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, prop: &str) {
+    if matches!(prop, "background-color" | "background") {
+        target.background_color_current = source.background_color_current.clone();
+        // A currentcolor-relative value resolves against the inheriting element's color.
+        if let Some(declared) = &source.background_color_current
+            && let Some(color) = Color::parse(&resolve_current_color(declared, target.color))
+        {
+            target.background_color = color;
+            return;
+        }
+    }
     macro_rules! copy { ($($name:literal => $field:ident),* $(,)?) => { match prop { $( $name => target.$field=source.$field.clone(), )* _=>{} } }; }
     copy! { "display"=>display,"position"=>position,"box-sizing"=>box_sizing,
     "color"=>color,"background-color"=>background_color,"background"=>background_color,
@@ -444,4 +464,72 @@ pub(crate) fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, 
     {
         target.border_radii[i] = source.border_radii[i];
     }
+}
+
+/// Resolve `revert`, `revert-layer` and `revert-rule` (CSS Cascade 5 §7.3–7.4).
+///
+/// Declarations are in cascade order and are applied in turn, each overriding the last. A
+/// revert keyword for a property removes the earlier declarations for it in the scope it
+/// rolls back: `revert` its origin (and the ones above it), `revert-layer` its layer in
+/// its origin, `revert-rule` its own rule. What remains below is the reverted value; with
+/// nothing below, the property keeps its inherited or initial value, as `unset` does.
+fn apply_reverts(matched: Vec<MatchedDecl>) -> Vec<MatchedDecl> {
+    let mut out: Vec<MatchedDecl> = Vec::with_capacity(matched.len());
+    for decl in matched {
+        let keyword = decl.value.trim().to_ascii_lowercase();
+        let rolled_back: Box<dyn Fn(&MatchedDecl) -> bool> = match keyword.as_str() {
+            // Author and inline declarations both roll back to the user-agent origin.
+            "revert" => {
+                let origin = decl.origin;
+                Box::new(move |d| d.origin >= origin.min(1))
+            }
+            "revert-layer" => {
+                let (origin, layer) = (decl.origin, decl.layer);
+                Box::new(move |d| d.origin == origin && d.layer == layer)
+            }
+            "revert-rule" => {
+                let rule = decl.rule;
+                Box::new(move |d| d.rule == rule)
+            }
+            _ => {
+                out.push(decl);
+                continue;
+            }
+        };
+        out.retain(|d| d.property != decl.property || !rolled_back(d));
+    }
+    out
+}
+
+/// Replace each `currentcolor` keyword in `value` with `color`.
+pub(crate) fn resolve_current_color(value: &str, color: Color) -> String {
+    let lower = value.to_ascii_lowercase();
+    if !lower.contains("currentcolor") {
+        return value.to_owned();
+    }
+    let replacement = format!(
+        "rgba({},{},{},{})",
+        color.r,
+        color.g,
+        color.b,
+        color.a as f32 / 255.0
+    );
+    let mut out = String::new();
+    let mut rest = 0;
+    let bytes = lower.as_bytes();
+    let mut from = 0;
+    while let Some(i) = lower[from..].find("currentcolor").map(|i| i + from) {
+        let end = i + "currentcolor".len();
+        let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'-' || c == b'_';
+        let standalone =
+            (i == 0 || !ident(bytes[i - 1])) && (end == bytes.len() || !ident(bytes[end]));
+        if standalone {
+            out.push_str(&value[rest..i]);
+            out.push_str(&replacement);
+            rest = end;
+        }
+        from = end;
+    }
+    out.push_str(&value[rest..]);
+    out
 }

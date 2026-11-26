@@ -6,6 +6,7 @@ use wega_css_values::*;
 pub fn shorthand_properties(property: &str) -> &'static [&'static str] {
     match property {
         "flex" => &["flex-grow", "flex-shrink", "flex-basis"],
+        "flex-flow" => &["flex-direction", "flex-wrap"],
         "font" => &[
             "font-weight",
             "font-style",
@@ -24,7 +25,10 @@ pub fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
         // at its authored cascade position until custom properties are known.
         return vec![decl];
     }
-    if matches!(decl.value.trim(), "initial" | "inherit" | "unset") {
+    if matches!(
+        decl.value.trim().to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer" | "revert-rule"
+    ) {
         return names
             .iter()
             .map(|p| Declaration::new(*p, decl.value.clone(), decl.important))
@@ -34,6 +38,8 @@ pub fn expand_shorthand(decl: Declaration) -> Vec<Declaration> {
         font_shorthand(&decl.value)
     } else if decl.property == "flex" {
         flex_shorthand(&decl.value)
+    } else if decl.property == "flex-flow" {
+        flex_flow_shorthand(&decl.value)
     } else {
         return vec![decl];
     };
@@ -127,4 +133,53 @@ pub(crate) fn flex_shorthand(css: &str) -> Option<Vec<(&'static str, String)>> {
         ("flex-shrink", shrink.to_string()),
         ("flex-basis", basis),
     ])
+}
+
+/// `flex-flow: <flex-direction> || <flex-wrap>`; an omitted part is reset to its initial
+/// value.
+pub(crate) fn flex_flow_shorthand(css: &str) -> Option<Vec<(&'static str, String)>> {
+    let mut direction = None;
+    let mut wrap = None;
+    for word in css.split_ascii_whitespace() {
+        let word = word.to_ascii_lowercase();
+        match word.as_str() {
+            "row" | "row-reverse" | "column" | "column-reverse" if direction.is_none() => {
+                direction = Some(word)
+            }
+            "nowrap" | "wrap" | "wrap-reverse" if wrap.is_none() => wrap = Some(word),
+            _ => return None,
+        }
+    }
+    if direction.is_none() && wrap.is_none() {
+        return None;
+    }
+    Some(vec![
+        ("flex-direction", direction.unwrap_or_else(|| "row".into())),
+        ("flex-wrap", wrap.unwrap_or_else(|| "nowrap".into())),
+    ])
+}
+
+#[cfg(test)]
+mod flex_flow_tests {
+    use super::*;
+
+    #[test]
+    fn flex_flow_expands_to_direction_and_wrap() {
+        let expand = |v: &str| {
+            expand_shorthand(Declaration::new("flex-flow", v, false))
+                .into_iter()
+                .map(|d| (d.property, d.value))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            expand("wrap column"),
+            [
+                ("flex-direction".to_owned(), "column".to_owned()),
+                ("flex-wrap".to_owned(), "wrap".to_owned())
+            ]
+        );
+        assert_eq!(expand("row-reverse")[1].1, "nowrap");
+        assert!(expand("column balance").is_empty());
+        assert!(expand("row column").is_empty());
+    }
 }

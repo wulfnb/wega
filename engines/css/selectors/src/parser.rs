@@ -87,9 +87,11 @@ pub(crate) fn pseudo(input: &mut Parser<'_>, depth: usize) -> Result<SimpleSelec
     let element = |name: &str| SimpleSelector::PseudoElement(name.to_ascii_lowercase());
     let token = input.next_including_whitespace()?.clone();
     Ok(match token {
+        // Unknown pseudo-elements invalidate the selector list (Selectors 4 §3.6.1).
+        // `-webkit-` ones are kept, as Chrome does, so the rest of such a list applies.
         Token::Colon => match input.next_including_whitespace()?.clone() {
-            Token::Ident(s) => element(&s),
-            Token::Function(s) => {
+            Token::Ident(s) if known_pseudo_element(&s) => element(&s),
+            Token::Function(s) if known_functional_pseudo_element(&s) => {
                 input.parse_nested_block(|p| {
                     while p.next().is_ok() {}
                     Ok::<_, Error>(())
@@ -162,10 +164,12 @@ pub(crate) fn pseudo(input: &mut Parser<'_>, depth: usize) -> Result<SimpleSelec
                     let tag = p.expect_ident_or_string()?.to_ascii_lowercase();
                     SimpleSelector::Lang(tag)
                 }
-                "dir" => {
-                    p.expect_ident()?;
-                    SimpleSelector::Universal
-                }
+                // Directionality is not tracked yet: documents are left-to-right.
+                "dir" => match p.expect_ident()?.to_ascii_lowercase().as_str() {
+                    "ltr" => SimpleSelector::Universal,
+                    "rtl" => SimpleSelector::Never,
+                    _ => return Err(ParseError::unexpected_token()),
+                },
                 // Shadow-tree selectors never match light-DOM elements.
                 "host" | "host-context" => {
                     while p.next().is_ok() {}
@@ -216,8 +220,83 @@ pub(crate) fn relative(
     Ok((combinator, complex(input, depth)?))
 }
 
+/// `[name]`, `[|name]` (no namespace) or `[*|name]` (any namespace), with no whitespace
+/// around the `|`. Named namespace prefixes need `@namespace`, which is not supported, so
+/// they are invalid like any undeclared prefix.
+fn attribute_name(input: &mut Parser<'_>) -> Result<String, Error> {
+    input.skip_whitespace();
+    let name = |input: &mut Parser<'_>| match input.next_including_whitespace()? {
+        Token::Ident(n) => Ok(n.to_ascii_lowercase()),
+        _ => Err(ParseError::unexpected_token()),
+    };
+    match input.next_including_whitespace()?.clone() {
+        Token::Delim('|') => name(input),
+        Token::Delim('*') => match input.next_including_whitespace()? {
+            Token::Delim('|') => name(input),
+            _ => Err(ParseError::unexpected_token()),
+        },
+        Token::Ident(n) => {
+            let state = input.state();
+            if let Ok(Token::Delim('|')) = input.next_including_whitespace() {
+                return Err(ParseError::unexpected_token());
+            }
+            input.reset(&state);
+            Ok(n.to_ascii_lowercase())
+        }
+        _ => Err(ParseError::unexpected_token()),
+    }
+}
+
+fn known_pseudo_element(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.starts_with("-webkit-")
+        || matches!(
+            name.as_str(),
+            "before"
+                | "after"
+                | "first-line"
+                | "first-letter"
+                | "marker"
+                | "placeholder"
+                | "selection"
+                | "backdrop"
+                | "file-selector-button"
+                | "cue"
+                | "grammar-error"
+                | "spelling-error"
+                | "target-text"
+                | "details-content"
+                | "view-transition"
+                | "picker-icon"
+                | "checkmark"
+                | "column"
+                | "scroll-marker"
+                | "scroll-marker-group"
+                | "scroll-button"
+        )
+}
+
+fn known_functional_pseudo_element(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.starts_with("-webkit-")
+        || matches!(
+            name.as_str(),
+            "highlight"
+                | "picker"
+                | "scroll-button"
+                | "part"
+                | "slotted"
+                | "cue"
+                | "view-transition-group"
+                | "view-transition-image-pair"
+                | "view-transition-old"
+                | "view-transition-new"
+        )
+}
+
 pub(crate) fn attribute(input: &mut Parser<'_>) -> Result<SimpleSelector, Error> {
-    let name = input.expect_ident()?.to_ascii_lowercase();
+    let name = attribute_name(input)?;
+    input.skip_whitespace();
     if input.is_exhausted() {
         return Ok(SimpleSelector::AttrPresent(name));
     }
@@ -263,3 +342,35 @@ pub fn parse_compound_selector(s: &str) -> Option<CompoundSelector> {
 // ---------------------------------------------------------------------------
 // DEFAULT USER-AGENT STYLESHEET
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod validity_tests {
+    use super::selectors;
+
+    #[test]
+    fn invalid_selectors_reject_the_list() {
+        for invalid in [
+            "::x-something-nobody-would-think-of, p",
+            "div:dir(ltrr)",
+            "[ | data-test-4]",
+            "[ns|data-test]",
+            "[* | a]",
+        ] {
+            assert!(selectors(invalid).is_empty(), "{invalid}");
+        }
+        for valid in [
+            "[ data-test-1]",
+            "[data-test-2 ]",
+            "[data-test-3 = x]",
+            "[ |data-test-4]",
+            "[*|a]",
+            "[lang|=en]",
+            "p::before, p::marker",
+            "input::-webkit-input-placeholder",
+            "div:dir(ltr)",
+            "a:after",
+        ] {
+            assert!(!selectors(valid).is_empty(), "{valid}");
+        }
+    }
+}

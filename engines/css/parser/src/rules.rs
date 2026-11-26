@@ -222,65 +222,99 @@ impl Rules {
 }
 
 /// Evaluate an `@supports` condition against what this engine implements.
-pub(crate) fn supports_condition(input: &mut Parser<'_>, depth: usize) -> bool {
+///
+/// `Err` is a syntax error, which drops the whole rule (CSS Conditional 3 §2.1):
+/// leftover tokens, or `and` and `or` mixed without parentheses.
+pub(crate) fn supports_condition(input: &mut Parser<'_>, depth: usize) -> Result<bool, ()> {
     if depth > 16 {
-        return false;
+        return Err(());
     }
     if input.try_parse(|p| p.expect_ident_matching("not")).is_ok() {
-        return !supports_in_parens(input, depth);
+        let result = !supports_in_parens(input, depth)?;
+        return input.is_exhausted().then_some(result).ok_or(());
     }
-    let mut result = supports_in_parens(input, depth);
-    loop {
-        if input.try_parse(|p| p.expect_ident_matching("and")).is_ok() {
-            let next = supports_in_parens(input, depth);
-            result = result && next;
-        } else if input.try_parse(|p| p.expect_ident_matching("or")).is_ok() {
-            let next = supports_in_parens(input, depth);
-            result = result || next;
-        } else {
-            break;
+    let mut result = supports_in_parens(input, depth)?;
+    let mut combinator: Option<bool> = None;
+    while !input.is_exhausted() {
+        let is_and = match input.next() {
+            Ok(Token::Ident(word)) if word.eq_ignore_ascii_case("and") => true,
+            Ok(Token::Ident(word)) if word.eq_ignore_ascii_case("or") => false,
+            _ => return Err(()),
+        };
+        if combinator.is_some_and(|c| c != is_and) {
+            return Err(());
         }
+        combinator = Some(is_and);
+        let next = supports_in_parens(input, depth)?;
+        result = if is_and {
+            result && next
+        } else {
+            result || next
+        };
     }
-    while input.next().is_ok() {}
-    result
+    Ok(result)
 }
 
-pub(crate) fn supports_in_parens(input: &mut Parser<'_>, depth: usize) -> bool {
+pub(crate) fn supports_in_parens(input: &mut Parser<'_>, depth: usize) -> Result<bool, ()> {
     match input.next().cloned() {
         Ok(Token::ParenthesisBlock) => input
             .parse_nested_block(|p| {
                 let state = p.state();
                 // A declaration test `(property: value)`.
-                if let Ok(name) = p.expect_ident().map(|n| n.to_ascii_lowercase())
+                if let Ok(name) = p.expect_ident().map(|n| n.to_string())
                     && p.expect_colon().is_ok()
                 {
                     let start = p.position();
-                    while p.next().is_ok() {}
-                    let value = p.slice_from(start).trim().to_owned();
-                    let ok = !value.is_empty()
-                        && (name.starts_with("--")
-                            || (supported_property(&name) && !value.contains("from ")));
+                    let mut well_formed = true;
+                    while let Ok(token) = p.next() {
+                        well_formed &= !token.is_parse_error();
+                    }
+                    let value = p.slice_from(start).trim();
+                    // A declaration test may end in `!important` (CSS Conditional 3 §2.2).
+                    let value = match value.rfind('!') {
+                        Some(bang)
+                            if value[bang + 1..].trim().eq_ignore_ascii_case("important") =>
+                        {
+                            value[..bang].trim()
+                        }
+                        _ => value,
+                    }
+                    .to_owned();
+                    let ok = well_formed && !value.is_empty() && {
+                        if name.starts_with("--") {
+                            true
+                        } else {
+                            let name = name.to_ascii_lowercase();
+                            supported_property(&name)
+                                && !value.contains("from ")
+                                && PropertyDeclaration::parse(&name, &value) != Parsed::Invalid
+                        }
+                    };
                     return Ok::<bool, Error>(ok);
                 }
                 p.reset(&state);
-                Ok(supports_condition(p, depth + 1))
+                // Anything else in parentheses is `<general-enclosed>`: false.
+                Ok(p.parse_entirely(|p| {
+                    supports_condition(p, depth + 1).map_err(|_| p.new_error_for_next_token::<()>())
+                })
+                .unwrap_or(false))
             })
-            .unwrap_or(false),
+            .map_err(|_| ()),
         Ok(Token::Function(f)) if f.eq_ignore_ascii_case("selector") => input
             .parse_nested_block(|p| {
                 let start = p.position();
                 while p.next().is_ok() {}
                 Ok::<bool, Error>(!selectors(p.slice_from(start)).is_empty())
             })
-            .unwrap_or(false),
-        Ok(Token::Function(_)) => {
-            let _ = input.parse_nested_block(|p| {
+            .map_err(|_| ()),
+        // Other functions are `<general-enclosed>`: false.
+        Ok(Token::Function(_)) => input
+            .parse_nested_block(|p| {
                 while p.next().is_ok() {}
-                Ok::<(), Error>(())
-            });
-            false
-        }
-        _ => false,
+                Ok::<bool, Error>(false)
+            })
+            .map_err(|_| ()),
+        _ => Err(()),
     }
 }
 
@@ -332,7 +366,9 @@ impl<'i> AtRuleParser<'i> for Rules {
                 }
                 Ok(AtRulePrelude::Layer(names))
             }
-            "supports" => Ok(AtRulePrelude::Supports(supports_condition(input, 0))),
+            "supports" => supports_condition(input, 0)
+                .map(AtRulePrelude::Supports)
+                .map_err(|_| input.new_error_for_next_token()),
             "property" => {
                 let name = input.expect_ident()?.to_string();
                 if !name.starts_with("--") {
@@ -495,5 +531,41 @@ impl<'i> QualifiedRuleParser<'i> for Rules {
                 .clone()
                 .map(|name| self.layer_index(&name)),
         }))
+    }
+}
+
+#[cfg(test)]
+mod supports_tests {
+    fn applies(condition: &str) -> bool {
+        !crate::stylesheet(&format!("@supports {condition} {{ p {{ color: red }} }}"))
+            .rules
+            .is_empty()
+    }
+
+    #[test]
+    fn syntax_errors_drop_the_rule() {
+        for invalid in [
+            "(margin: 2px) )",
+            "(color: green) and (color: green) or (color: green)",
+            "(color: green) or (color: green) and (color: green)",
+            "(color: green) or(color: blue)",
+            "not (color: green) and (color: green)",
+            "(margin: 0])",
+            "(margin-top: wide)",
+        ] {
+            assert!(!applies(invalid), "{invalid}");
+        }
+        for valid in [
+            "(margin: 0)",
+            "(color: green !important)",
+            "((margin: 0) and (display:inline-block !important))",
+            "(color: green) and (color: green)",
+            "((color: green) or (color: red)) and (color: green)",
+            "not (unknown-property: 1)",
+            "not (foo bar)",
+            "(--custom: anything)",
+        ] {
+            assert!(applies(valid), "{valid}");
+        }
     }
 }

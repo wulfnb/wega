@@ -15,6 +15,13 @@ impl Declaration {
     /// A declaration, with the value parsed now if the property is ported.
     pub fn new(property: impl Into<String>, value: impl Into<String>, important: bool) -> Self {
         let (property, value) = (property.into(), value.into());
+        // Legacy aliases (CSS Box Alignment 3 §8.4).
+        let property = match property.as_str() {
+            "grid-gap" => "gap".to_owned(),
+            "grid-row-gap" => "row-gap".to_owned(),
+            "grid-column-gap" => "column-gap".to_owned(),
+            _ => property,
+        };
         let typed = PropertyDeclaration::parse(&property, &value);
         Self {
             property,

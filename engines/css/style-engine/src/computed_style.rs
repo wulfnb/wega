@@ -29,6 +29,10 @@ pub struct ComputedStyle {
     pub cursor: String,
     pub color: Color,
     pub background_color: Color,
+    /// The declared `background-color` when it depends on `currentcolor` (such as
+    /// `color(from currentcolor ...)`). Its computed value keeps `currentcolor`, so an
+    /// element inheriting it re-resolves it against its own `color`.
+    pub background_color_current: Option<String>,
     pub background_image: Option<String>,
     pub background_position: (Length, Length),
     pub background_size: BackgroundSize,
@@ -123,6 +127,7 @@ impl Default for ComputedStyle {
             cursor: "auto".into(),
             color: Color::BLACK,
             background_color: Color::TRANSPARENT,
+            background_color_current: None,
             background_image: None,
             background_position: (Length::Percent(0.0), Length::Percent(0.0)),
             background_size: BackgroundSize::Auto,

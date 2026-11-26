@@ -41,11 +41,21 @@ impl BackgroundSize {
             "contain" => Self::Contain,
             "cover" => Self::Cover,
             _ => {
+                // `<length-percentage [0,∞]> | auto`, once or twice.
+                let size = |v: &str| {
+                    Length::parse(v).filter(|l| match l {
+                        Length::Px(v) | Length::Percent(v) | Length::Em(v) | Length::Rem(v) => {
+                            *v >= 0.0
+                        }
+                        _ => true,
+                    })
+                };
                 let mut p = value.split_whitespace();
-                Self::Explicit(
-                    Length::parse(p.next()?)?,
-                    Length::parse(p.next().unwrap_or("auto"))?,
-                )
+                let size = Self::Explicit(size(p.next()?)?, size(p.next().unwrap_or("auto"))?);
+                if p.next().is_some() {
+                    return None;
+                }
+                size
             }
         })
     }

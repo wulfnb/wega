@@ -222,12 +222,83 @@ pub(crate) fn media_range(feature: &str) -> Option<Vec<MediaFeature>> {
     Some(out)
 }
 
+/// Whether a single media query follows the Media Queries 4 grammar at the level of its
+/// words: `<media-condition>`, or `[not | only]? <media-type> [and <condition>]?`, where
+/// a media type cannot be `only`, `not`, `and`, `or` or `layer`. Parenthesized feature
+/// groups are checked by the feature parser.
+fn well_formed_query(query: &str) -> bool {
+    // Words outside parentheses, with each top-level group as `(`.
+    let mut items: Vec<String> = Vec::new();
+    let mut rest = query;
+    loop {
+        rest = rest.trim_start();
+        if rest.is_empty() {
+            break;
+        }
+        if rest.starts_with('(') {
+            let Some(end) = closing_paren(rest) else {
+                return false;
+            };
+            items.push("(".into());
+            rest = &rest[end + 1..];
+        } else {
+            let end = rest
+                .find(|c: char| c.is_whitespace() || c == '(')
+                .unwrap_or(rest.len());
+            items.push(rest[..end].to_ascii_lowercase());
+            rest = &rest[end..];
+        }
+    }
+    let item = |i: usize| items.get(i).map(String::as_str);
+    // A media condition: leave combinator rules to the feature evaluation.
+    if item(0) == Some("(") || (item(0) == Some("not") && item(1) == Some("(")) {
+        return true;
+    }
+    let mut i = usize::from(matches!(item(0), Some("not" | "only")));
+    match item(i) {
+        Some(t)
+            if t != "("
+                && !matches!(t, "only" | "not" | "and" | "or" | "layer")
+                && t.chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || !c.is_ascii()) => {}
+        _ => return false,
+    }
+    i += 1;
+    // `and <media-condition-without-or>`.
+    while i < items.len() {
+        if item(i) != Some("and") {
+            return false;
+        }
+        i += 1;
+        if item(i) == Some("not") {
+            i += 1;
+        }
+        if item(i) != Some("(") {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// A query that never matches: what an invalid query becomes (MQ4 §3.2, "not all").
+fn never_matches() -> MediaQuery {
+    MediaQuery {
+        negated: false,
+        media_type: None,
+        features: vec![MediaFeature::Unknown("invalid media query".into())],
+    }
+}
+
 pub fn parse_media_query_list(s: &str) -> Vec<MediaQuery> {
     s.split(',')
         .filter_map(|part| {
             let p = part.trim();
             if p.is_empty() {
                 return None;
+            }
+            if !well_formed_query(p) {
+                return Some(never_matches());
             }
             let mut negated = false;
             let mut media_type = None;
@@ -344,4 +415,47 @@ pub fn parse_media_query_list(s: &str) -> Vec<MediaQuery> {
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod grammar_tests {
+    use super::*;
+
+    fn matches(query: &str) -> bool {
+        matches_media(&parse_media_query_list(query), &MediaContext::default())
+    }
+
+    #[test]
+    fn reserved_words_are_not_media_types() {
+        for invalid in [
+            "and",
+            "not and",
+            "or",
+            "not or",
+            "only",
+            "not only",
+            "layer",
+            "not layer",
+            "screen (min-width: 1px)",
+            "screen and",
+        ] {
+            assert!(!matches(invalid), "{invalid}");
+        }
+        for valid in [
+            "all",
+            "screen",
+            "only screen",
+            "not print",
+            "screen and (min-width: 1px)",
+            "(min-width: 1px)",
+            "not (max-width: 1px)",
+            "screen and not (max-width: 1px)",
+            "print, screen",
+        ] {
+            assert!(matches(valid), "{valid}");
+        }
+        // An unknown type is valid but matches nothing.
+        assert!(!matches("tv"));
+        assert!(matches("not tv"));
+    }
 }

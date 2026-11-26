@@ -112,7 +112,7 @@ impl<'i> DeclarationParser<'i> for Declarations {
             name.to_ascii_lowercase()
         };
         let value = input.slice(start..end).trim().to_owned();
-        if value.is_empty() {
+        if value.is_empty() || !valid_var_references(&value) {
             return Err(ParseError::unexpected_token());
         }
         Ok(Declaration::new(property, value, important))
@@ -146,4 +146,89 @@ pub fn declarations(css: &str) -> Vec<Declaration> {
         .filter_map(Result::ok)
         .flat_map(expand_shorthand)
         .collect()
+}
+
+/// Whether every `var()` in `value` is `var(<custom-property-name> [, <declaration-value>?]?)`.
+/// A fallback may not contain a top-level `;` or `!` (CSS Variables 1 §3), so
+/// `var(--x, !important)` makes the whole declaration invalid at parse time.
+pub(crate) fn valid_var_references(value: &str) -> bool {
+    fn walk(input: &mut Parser<'_>, depth: usize) -> Result<(), Error> {
+        if depth > 32 {
+            return Err(ParseError::unexpected_token());
+        }
+        while let Ok(token) = input.next() {
+            match token.clone() {
+                Token::Function(name) if name.eq_ignore_ascii_case("var") => {
+                    input.parse_nested_block(|p| {
+                        if !p.expect_ident()?.starts_with("--") {
+                            return Err(ParseError::unexpected_token());
+                        }
+                        if p.is_exhausted() {
+                            return Ok(());
+                        }
+                        p.expect_comma()?;
+                        // The fallback: no top-level `;` or `!`.
+                        while let Ok(token) = p.next() {
+                            match token.clone() {
+                                Token::Semicolon | Token::Delim('!') => {
+                                    return Err(ParseError::unexpected_token());
+                                }
+                                Token::Function(_)
+                                | Token::ParenthesisBlock
+                                | Token::SquareBracketBlock
+                                | Token::CurlyBracketBlock => {
+                                    p.parse_nested_block(|p| walk(p, depth + 1))?
+                                }
+                                t if t.is_parse_error() => {
+                                    return Err(ParseError::unexpected_token());
+                                }
+                                _ => {}
+                            }
+                        }
+                        Ok(())
+                    })?;
+                }
+                Token::Function(_)
+                | Token::ParenthesisBlock
+                | Token::SquareBracketBlock
+                | Token::CurlyBracketBlock => input.parse_nested_block(|p| walk(p, depth + 1))?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    if !value.to_ascii_lowercase().contains("var(") {
+        return true;
+    }
+    let mut parser = Parser::new(value);
+    walk(&mut parser, 0).is_ok()
+}
+
+#[cfg(test)]
+mod var_tests {
+    use super::valid_var_references;
+
+    #[test]
+    fn var_fallbacks_reject_top_level_semicolons_and_bangs() {
+        for invalid in [
+            "var(--b,!)",
+            "var(--b,;)",
+            "var(--b,!important)",
+            "var(b)",
+            "calc(var(--b,!) + 1px)",
+        ] {
+            assert!(!valid_var_references(invalid), "{invalid}");
+        }
+        for valid in [
+            "var(--b)",
+            "var(--b,)",
+            "var(--b, red)",
+            "var(--b, var(--c, 1px))",
+            "var(--b, f(;))",
+            "calc(var(--b) + 1px)",
+            "plain",
+        ] {
+            assert!(valid_var_references(valid), "{valid}");
+        }
+    }
 }
