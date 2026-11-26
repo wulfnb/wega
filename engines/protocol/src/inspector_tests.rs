@@ -878,7 +878,7 @@ fn the_grant_token_never_appears_in_debug_output_and_compares_fully() {
     );
     assert!(
         !rendered.contains("171") && !rendered.to_lowercase().contains("ab, ab"),
-        "{rendered}"
+        "grant token bytes leaked into Debug output"
     );
     assert_eq!(secret, GrantToken([0xAB; 16]));
     let mut other = [0xAB; 16];
@@ -1339,10 +1339,13 @@ fn printing_a_command_or_payload_never_reveals_a_grant_token_or_expression() {
         format!("{request:?}"),
         format!("{secret:?}"),
     ] {
-        assert!(!rendered.contains("195"), "{rendered}");
+        assert!(
+            !rendered.contains("195"),
+            "grant token bytes leaked into Debug output"
+        );
         assert!(
             !rendered.contains("document.cookie") || rendered.contains("Evaluate {"),
-            "{rendered}"
+            "evaluate expression leaked into Debug output"
         );
     }
     assert!(!format!("{payload:?}").contains("cookie"));
