@@ -10,13 +10,13 @@ mod generated {
     pub mod properties;
 }
 mod media;
-mod native_align;
 mod native_values;
 mod properties;
 pub mod properties_table;
 mod rules;
 mod shorthand;
 mod stylesheet;
+mod supports;
 mod typed;
 mod variables;
 
@@ -26,8 +26,9 @@ pub use media::*;
 pub use native_values::NativeFirst;
 pub use properties::*;
 use rules::*;
-pub use rules::{supports_property_value, supports_text};
 pub use shorthand::*;
 pub use stylesheet::*;
+use supports::*;
+pub use supports::{supports_property_value, supports_text};
 pub use typed::*;
 pub use variables::*;
