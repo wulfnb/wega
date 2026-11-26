@@ -61,6 +61,41 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
         "FontWeight" => return font_weight(value),
         "BorderCornerRadius" => return corner_radius(value),
         "Display" => return Native::Parsed(crate::native_align::display(value)),
+        "BackgroundRepeat" => return list(info, value, background_repeat),
+        "AnimationIterationCount" => {
+            return list(info, value, |v| match single_token(v) {
+                Some(cssparser::Token::Ident(i)) if i.eq_ignore_ascii_case("infinite") => {
+                    Native::Parsed(Some("infinite".into()))
+                }
+                _ => number("NonNegativeNumber", v),
+            });
+        }
+        // `auto` needs the scroll-driven animations preference, which is off.
+        "AnimationDuration" => return list(info, value, |v| time(v, true)),
+        "ColumnCount" => {
+            return match single_token(value) {
+                Some(cssparser::Token::Ident(i)) if i.eq_ignore_ascii_case("auto") => {
+                    Native::Parsed(Some("auto".into()))
+                }
+                Some(cssparser::Token::Number {
+                    int_value: Some(n), ..
+                }) => Native::Parsed((n >= 1).then(|| n.to_string())),
+                Some(cssparser::Token::Function(_)) => Native::Unported,
+                _ => Native::Parsed(None),
+            };
+        }
+        "color::CaretColor" => {
+            return match single_token(value) {
+                Some(cssparser::Token::Ident(i)) if i.eq_ignore_ascii_case("auto") => {
+                    Native::Parsed(Some("auto".into()))
+                }
+                _ => color(value),
+            };
+        }
+        "BorderSpacing" => return pair(value, |v| length_percentage(v, &[], false, false)),
+        "length::NonNegativeLengthOrAuto" => {
+            return length_percentage(value, &["auto"], false, false);
+        }
         "ContentDistribution" | "SelfAlignment" | "ItemPlacement" | "JustifyItems" => {
             use crate::native_align::{Axis, Grammar, alignment};
             let grammar = match info.value_type {
@@ -228,7 +263,9 @@ fn time(value: &str, non_negative: bool) -> Native {
             }
             Native::Parsed(Some(format!("{}{unit}", value.to_css_string())))
         }
-        _ => Native::Unported,
+        // Only a dimension or a math function is a time.
+        Some(Token::Function(_)) => Native::Unported,
+        _ => Native::Parsed(None),
     }
 }
 
@@ -281,6 +318,11 @@ fn font_weight(value: &str) -> Native {
 /// A corner radius: one or two non-negative length-percentages; the second is written only
 /// when it differs (Stylo `Size2D`).
 fn corner_radius(value: &str) -> Native {
+    pair(value, |v| length_percentage(v, &[], false, true))
+}
+
+/// One or two values (Stylo `Size2D`), the second written only when it differs.
+fn pair(value: &str, item: impl Fn(&str) -> Native) -> Native {
     let mut parser = Parser::new(value);
     let mut parts = Vec::new();
     while !parser.is_exhausted() {
@@ -290,10 +332,7 @@ fn corner_radius(value: &str) -> Native {
         }
         parts.push(parser.slice_from(start).trim().to_owned());
     }
-    let parsed: Vec<Native> = parts
-        .iter()
-        .map(|p| length_percentage(p, &[], false, true))
-        .collect();
+    let parsed: Vec<Native> = parts.iter().map(|p| item(p)).collect();
     match parsed.as_slice() {
         [Native::Parsed(Some(a))] => Native::Parsed(Some(a.clone())),
         [Native::Parsed(Some(a)), Native::Parsed(Some(b))] => Native::Parsed(Some(if a == b {
@@ -306,6 +345,34 @@ fn corner_radius(value: &str) -> Native {
         }
         _ => Native::Unported,
     }
+}
+
+/// One `background-repeat` layer: `repeat-x`, `repeat-y`, or one or two of `repeat`,
+/// `space`, `round`, `no-repeat`, serialized as Stylo does.
+fn background_repeat(value: &str) -> Native {
+    const KEYWORDS: [&str; 4] = ["repeat", "space", "round", "no-repeat"];
+    let mut parser = Parser::new(value);
+    let mut words = Vec::new();
+    while !parser.is_exhausted() {
+        match parser.expect_ident() {
+            Ok(w) => words.push(w.to_ascii_lowercase()),
+            Err(_) => return Native::Parsed(None),
+        }
+    }
+    let keyword = |w: &String| KEYWORDS.contains(&w.as_str());
+    let (h, v) = match words.as_slice() {
+        [w] if w == "repeat-x" => ("repeat", "no-repeat"),
+        [w] if w == "repeat-y" => ("no-repeat", "repeat"),
+        [w] if keyword(w) => (w.as_str(), w.as_str()),
+        [a, b] if keyword(a) && keyword(b) => (a.as_str(), b.as_str()),
+        _ => return Native::Parsed(None),
+    };
+    Native::Parsed(Some(match (h, v) {
+        ("repeat", "no-repeat") => "repeat-x".into(),
+        ("no-repeat", "repeat") => "repeat-y".into(),
+        (h, v) if h == v => h.to_owned(),
+        (h, v) => format!("{h} {v}"),
+    }))
 }
 
 /// Length units Stylo's `NoCalcLength` accepts, as it serializes them.
@@ -347,6 +414,8 @@ fn length_percentage(value: &str, words: &[&str], negative: bool, percent: bool)
         Token::Percentage { unit_value, .. } if percent => {
             (unit_value, format!("{}%", number(unit_value * 100.0)))
         }
+        // Length-only types reject percentages.
+        Token::Percentage { .. } => return Native::Parsed(None),
         _ => return Native::Unported,
     };
     if !value.is_finite() {
@@ -501,6 +570,37 @@ mod tests {
     }
 
     #[test]
+    fn repeat_iteration_columns_caret_spacing() {
+        let engine = NativeFirst(Never);
+        let native = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+        assert_eq!(
+            native("background-repeat", "repeat no-repeat, SPACE space").as_deref(),
+            Some("repeat-x, space")
+        );
+        assert_eq!(
+            native("background-repeat", "repeat-y").as_deref(),
+            Some("repeat-y")
+        );
+        assert_eq!(native("background-repeat", "repeat-x repeat"), None);
+        assert_eq!(
+            native("animation-iteration-count", "INFINITE, 2.5").as_deref(),
+            Some("infinite, 2.5")
+        );
+        assert_eq!(native("animation-iteration-count", "-1"), None);
+        assert_eq!(native("animation-duration", "auto"), None);
+        assert_eq!(native("animation-duration", "2s").as_deref(), Some("2s"));
+        assert_eq!(native("column-count", "0"), None);
+        assert_eq!(native("column-count", "3").as_deref(), Some("3"));
+        assert_eq!(native("caret-color", "Auto").as_deref(), Some("auto"));
+        assert_eq!(
+            native("caret-color", "#fff").as_deref(),
+            Some("rgb(255, 255, 255)")
+        );
+        assert_eq!(native("border-spacing", "2px 2px").as_deref(), Some("2px"));
+        assert_eq!(native("border-spacing", "2px 10%"), None);
+    }
+
+    #[test]
     fn lengths_serialize_like_stylo() {
         let engine = NativeFirst(Never);
         let one = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].clone());
@@ -518,12 +618,12 @@ mod tests {
         );
         assert_eq!(engine.parse("width", "-1px"), None);
         assert_eq!(engine.parse("padding-top", "-1%"), None);
+        assert_eq!(engine.parse("border-top-width", "10%"), None);
         // Left to the fallback: math functions, other keywords, unknown units.
         for (p, v) in [
             ("width", "calc(1px + 1%)"),
             ("width", "fit-content"),
             ("width", "1foo"),
-            ("border-top-width", "10%"),
         ] {
             assert_eq!(one(p, v).unwrap().0, "fallback", "{p}: {v}");
         }
