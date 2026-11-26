@@ -79,6 +79,7 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
             });
         }
         "BackgroundSize" => return list(info, value, background_size),
+        "Image" => return list(info, value, image),
         "position::HorizontalPosition" => {
             return list(info, value, |v| position_component(v, ["left", "right"]));
         }
@@ -438,6 +439,38 @@ fn background_size(value: &str) -> Native {
             }))
         }
         (Native::Parsed(None), _) | (_, Native::Parsed(None)) => Native::Parsed(None),
+        _ => Native::Unported,
+    }
+}
+
+/// `none` or a `url()`, serialized with the authored URL as a CSS string (Stylo `CssUrl`).
+/// Gradients and other image functions are left to the fallback.
+fn image(value: &str) -> Native {
+    use cssparser::Token;
+    let quoted = |url: &str| {
+        let mut out = String::from("url(");
+        if cssparser::serialize_string(url, &mut out).is_err() {
+            return None;
+        }
+        out.push(')');
+        Some(out)
+    };
+    let mut parser = Parser::new(value);
+    let result = match parser.next().cloned() {
+        Ok(Token::Ident(i)) if i.eq_ignore_ascii_case("none") => Some("none".to_owned()),
+        Ok(Token::UnquotedUrl(url)) => quoted(&url),
+        Ok(Token::Function(f)) if f.eq_ignore_ascii_case("url") => parser
+            .parse_nested_block(|p| {
+                let url = p.expect_string()?.to_string();
+                p.expect_exhausted()?;
+                Ok::<_, cssparser::ParseError<()>>(url)
+            })
+            .ok()
+            .and_then(|url| quoted(&url)),
+        _ => return Native::Unported,
+    };
+    match result {
+        Some(v) if parser.is_exhausted() => Native::Parsed(Some(v)),
         _ => Native::Unported,
     }
 }

@@ -214,3 +214,24 @@ fn lengths_serialize_like_stylo() {
         assert_eq!(one(p, v).unwrap().0, "fallback", "{p}: {v}");
     }
 }
+
+#[test]
+fn image_none_and_urls() {
+    let engine = NativeFirst(Never);
+    let native = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+    assert_eq!(
+        native("background-image", "url(a.png), NONE, url( 'b \"c.png' )").as_deref(),
+        Some("url(\"a.png\"), none, url(\"b \\\"c.png\")")
+    );
+    assert_eq!(
+        native("list-style-image", "url(x.svg)").as_deref(),
+        Some("url(\"x.svg\")")
+    );
+    assert_eq!(
+        engine
+            .parse("background-image", "linear-gradient(red, blue)")
+            .unwrap()[0]
+            .0,
+        "fallback"
+    );
+}
