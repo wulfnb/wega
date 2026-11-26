@@ -164,7 +164,8 @@ def main():
             f"    Longhand {{ name: {rust_str(name)}, value_type: {rust_str(value_type)}, "
             f"keywords: {rust_list(keywords)}, inherited: {str(e.get('struct') in INHERITED_STRUCTS).lower()}, "
             f"logical: {str(bool(e.get('logical'))).lower()}, list: {str('vector' in e).lower()}, "
-            f"logical_group: {rust_str(e.get('logical_group') or '')} }},"
+            f"logical_group: {rust_str(e.get('logical_group') or '')}, "
+            f"non_negative: {str('non_negative' in (e.get('parse_method') or '')).lower()} }},"
         )
         alias_pairs += [(a, name) for a in aliases(name, e)]
     lines += ["];", "", "/// Shorthands supported by the Servo build of Stylo, by name.",

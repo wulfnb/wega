@@ -20,6 +20,8 @@ pub struct Longhand {
     pub list: bool,
     /// The logical property group (`margin` for `margin-top` and `margin-inline-start`).
     pub logical_group: &'static str,
+    /// Parsed with Stylo's `parse_non_negative` (negative values are invalid).
+    pub non_negative: bool,
 }
 
 /// A keyword enum value type: its name and its `(keyword, aliases)` variants.

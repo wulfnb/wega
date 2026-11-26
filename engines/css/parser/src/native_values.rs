@@ -55,6 +55,11 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
         "BorderSideWidth" => (&["thin", "medium", "thick"], false, false),
         "Color" | "ColorPropertyValue" => return color(value),
         "NonNegativeNumber" | "Integer" | "ZIndex" => return number(info.value_type, value),
+        "Time" => return list(info, value, |v| time(v, info.non_negative)),
+        "Opacity" => return opacity(value),
+        "LineHeight" => return line_height(value),
+        "FontWeight" => return font_weight(value),
+        "BorderCornerRadius" => return corner_radius(value),
         _ => return Native::Unported,
     };
     length_percentage(value, words, negative, percent)
@@ -159,6 +164,132 @@ fn number(value_type: &str, value: &str) -> Native {
         }
         (_, Token::Function(_)) => Native::Unported,
         _ => Native::Parsed(None),
+    }
+}
+
+/// A single token of `value`, or `None` if there are more (or none).
+fn single_token(value: &str) -> Option<cssparser::Token<'_>> {
+    let mut parser = Parser::new(value);
+    let token = parser.next().ok()?.clone();
+    parser.is_exhausted().then_some(token)
+}
+
+/// A comma-separated list for list properties (each item parsed by `item`), else one item.
+fn list(info: &Longhand, value: &str, item: impl Fn(&str) -> Native) -> Native {
+    if !info.list {
+        return item(value);
+    }
+    let mut items = Vec::new();
+    let mut parser = Parser::new(value);
+    let parsed: Result<Vec<String>, cssparser::ParseError<()>> =
+        parser.parse_comma_separated(|p| {
+            let start = p.position();
+            while p.next().is_ok() {}
+            Ok(p.slice_from(start).trim().to_owned())
+        });
+    let Ok(parts) = parsed else {
+        return Native::Parsed(None);
+    };
+    for part in parts {
+        match item(&part) {
+            Native::Parsed(Some(v)) => items.push(v),
+            other => return other,
+        }
+    }
+    Native::Parsed(Some(items.join(", ")))
+}
+
+/// `<time>` in `s` or `ms`, serialized in its unit (Stylo `NoCalcTime`).
+fn time(value: &str, non_negative: bool) -> Native {
+    use cssparser::{ToCss, Token};
+    match single_token(value) {
+        Some(Token::Dimension { value, unit, .. }) if value.is_finite() => {
+            let unit = unit.to_ascii_lowercase();
+            if unit != "s" && unit != "ms" {
+                return Native::Parsed(None);
+            }
+            if non_negative && value < 0.0 {
+                return Native::Parsed(None);
+            }
+            Native::Parsed(Some(format!("{}{unit}", value.to_css_string())))
+        }
+        _ => Native::Unported,
+    }
+}
+
+/// `opacity`: a number, or a percentage serialized as the equivalent number.
+fn opacity(value: &str) -> Native {
+    use cssparser::{ToCss, Token};
+    match single_token(value) {
+        Some(Token::Number { value, .. }) if value.is_finite() => {
+            Native::Parsed(Some(value.to_css_string()))
+        }
+        Some(Token::Percentage { unit_value, .. }) if unit_value.is_finite() => {
+            Native::Parsed(Some(unit_value.to_css_string()))
+        }
+        _ => Native::Unported,
+    }
+}
+
+/// `line-height`: `normal`, a non-negative number (kept unitless, so `0` stays `0`), or a
+/// non-negative length-percentage.
+fn line_height(value: &str) -> Native {
+    use cssparser::{ToCss, Token};
+    match single_token(value) {
+        Some(Token::Number { value, .. }) if value.is_finite() => {
+            Native::Parsed((value >= 0.0).then(|| value.to_css_string()))
+        }
+        _ => length_percentage(value, &["normal"], false, true),
+    }
+}
+
+/// `font-weight`: a number from 1 to 1000, or `normal`, `bold`, `bolder`, `lighter`.
+fn font_weight(value: &str) -> Native {
+    use cssparser::{ToCss, Token};
+    match single_token(value) {
+        Some(Token::Number { value, .. }) if value.is_finite() => Native::Parsed(
+            (1.0..=1000.0)
+                .contains(&value)
+                .then(|| value.to_css_string()),
+        ),
+        Some(Token::Ident(ident)) => match ["normal", "bold", "bolder", "lighter"]
+            .iter()
+            .find(|k| ident.eq_ignore_ascii_case(k))
+        {
+            Some(k) => Native::Parsed(Some((*k).to_owned())),
+            None => Native::Unported,
+        },
+        _ => Native::Unported,
+    }
+}
+
+/// A corner radius: one or two non-negative length-percentages; the second is written only
+/// when it differs (Stylo `Size2D`).
+fn corner_radius(value: &str) -> Native {
+    let mut parser = Parser::new(value);
+    let mut parts = Vec::new();
+    while !parser.is_exhausted() {
+        let start = parser.position();
+        if parser.next().is_err() {
+            return Native::Unported;
+        }
+        parts.push(parser.slice_from(start).trim().to_owned());
+    }
+    let parsed: Vec<Native> = parts
+        .iter()
+        .map(|p| length_percentage(p, &[], false, true))
+        .collect();
+    match parsed.as_slice() {
+        [Native::Parsed(Some(a))] => Native::Parsed(Some(a.clone())),
+        [Native::Parsed(Some(a)), Native::Parsed(Some(b))] => Native::Parsed(Some(if a == b {
+            a.clone()
+        } else {
+            format!("{a} {b}")
+        })),
+        [_, _] | [_] if parsed.iter().any(|p| matches!(p, Native::Parsed(None))) => {
+            Native::Parsed(None)
+        }
+        _ => Native::Unported,
     }
 }
 
@@ -322,6 +453,36 @@ mod tests {
             engine.parse("order", "calc(1 + 1)").unwrap()[0].0,
             "fallback"
         );
+    }
+
+    #[test]
+    fn times_opacity_line_height_weights_and_radii() {
+        let engine = NativeFirst(Never);
+        let native = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+        assert_eq!(
+            native("transition-delay", "-1S, 200MS").as_deref(),
+            Some("-1s, 200ms")
+        );
+        assert_eq!(native("transition-duration", "-1s"), None);
+        assert_eq!(native("transition-duration", "1px"), None);
+        assert_eq!(native("opacity", "50%").as_deref(), Some("0.5"));
+        assert_eq!(native("opacity", "1.50").as_deref(), Some("1.5"));
+        assert_eq!(native("line-height", "0").as_deref(), Some("0"));
+        assert_eq!(native("line-height", "1.5em").as_deref(), Some("1.5em"));
+        assert_eq!(native("line-height", "NORMAL").as_deref(), Some("normal"));
+        assert_eq!(native("line-height", "-1"), None);
+        assert_eq!(native("font-weight", "Bold").as_deref(), Some("bold"));
+        assert_eq!(native("font-weight", "450").as_deref(), Some("450"));
+        assert_eq!(native("font-weight", "1001"), None);
+        assert_eq!(
+            native("border-top-left-radius", "5px 5px").as_deref(),
+            Some("5px")
+        );
+        assert_eq!(
+            native("border-top-left-radius", "5px 10%").as_deref(),
+            Some("5px 10%")
+        );
+        assert_eq!(native("border-top-left-radius", "-5px"), None);
     }
 
     #[test]
