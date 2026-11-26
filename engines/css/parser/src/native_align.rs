@@ -1,10 +1,10 @@
 //! CSS Box Alignment values (`align-content`, `justify-content`, `align-self`,
-//! `justify-self`, `align-items`, `justify-items`): parsing and specified-value
-//! `justify-self`, `align-items`, `justify-items`) and `display`: parsing and specified-value
+//! `justify-self`, `align-items`, `justify-items`) and `display`: parsing and
+//! specified-value serialization.
 //!
-//! Ported from Stylo `values/specified/align.rs` (MPL-2.0): the same grammar per axis and
-//! the same serialization as its `AlignFlags`. `anchor-center` is behind a preference that
-//! is off in Servo builds, so it is rejected here as there.
+//! Ported from Stylo `values/specified/align.rs` and `box.rs` (MPL-2.0): the same grammar
+//! per axis and the same serialization as its `AlignFlags` and `Display`. `anchor-center`
+//! is behind a preference that is off in Servo builds, so it is rejected here as there.
 
 /// The axis a property aligns in: `align-*` is the block axis, `justify-*` the inline axis.
 #[derive(Clone, Copy, PartialEq, Eq)]
