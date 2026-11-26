@@ -62,6 +62,23 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
         "BorderCornerRadius" => return corner_radius(value),
         "Display" => return Native::Parsed(crate::native_align::display(value)),
         "BackgroundRepeat" => return list(info, value, background_repeat),
+        "BackgroundClip" => {
+            // `text` is for backgrounds only; `border-area` is behind a preference that is off.
+            let mut boxes = vec!["border-box", "padding-box", "content-box"];
+            if info.parse_method == "parse_for_background" {
+                boxes.push("text");
+            }
+            return list(info, value, |v| match single_token(v) {
+                Some(cssparser::Token::Ident(i)) => Native::Parsed(
+                    boxes
+                        .iter()
+                        .find(|b| i.eq_ignore_ascii_case(b))
+                        .map(|b| (*b).to_owned()),
+                ),
+                _ => Native::Parsed(None),
+            });
+        }
+        "BackgroundSize" => return list(info, value, background_size),
         "position::HorizontalPosition" => {
             return list(info, value, |v| position_component(v, ["left", "right"]));
         }
@@ -390,6 +407,41 @@ fn position_component(value: &str, sides: [&str; 2]) -> Native {
     }
 }
 
+/// One `background-size` layer: `cover`, `contain`, or a width and an optional height
+/// (each `auto` or a non-negative length-percentage), serialized `W H` unless both are
+/// `auto` (Stylo `GenericBackgroundSize`).
+fn background_size(value: &str) -> Native {
+    let mut parser = Parser::new(value);
+    let mut parts = Vec::new();
+    while !parser.is_exhausted() {
+        let start = parser.position();
+        if parser.next().is_err() {
+            return Native::Parsed(None);
+        }
+        parts.push(parser.slice_from(start).trim().to_owned());
+    }
+    let size = |v: &str| length_percentage(v, &["auto"], false, true);
+    let (width, height) = match parts.as_slice() {
+        [one] if one.eq_ignore_ascii_case("cover") || one.eq_ignore_ascii_case("contain") => {
+            return Native::Parsed(Some(one.to_ascii_lowercase()));
+        }
+        [w] => (size(w), Native::Parsed(Some("auto".into()))),
+        [w, h] => (size(w), size(h)),
+        _ => return Native::Unported,
+    };
+    match (width, height) {
+        (Native::Parsed(Some(w)), Native::Parsed(Some(h))) => {
+            Native::Parsed(Some(if w == "auto" && h == "auto" {
+                "auto".into()
+            } else {
+                format!("{w} {h}")
+            }))
+        }
+        (Native::Parsed(None), _) | (_, Native::Parsed(None)) => Native::Parsed(None),
+        _ => Native::Unported,
+    }
+}
+
 /// One `background-repeat` layer: `repeat-x`, `repeat-y`, or one or two of `repeat`,
 /// `space`, `round`, `no-repeat`, serialized as Stylo does.
 fn background_repeat(value: &str) -> Native {
@@ -657,6 +709,30 @@ mod tests {
         );
         assert_eq!(native("background-position-x", "top"), None);
         assert_eq!(native("background-position-x", "10px left"), None);
+    }
+
+    #[test]
+    fn background_clip_and_size() {
+        let engine = NativeFirst(Never);
+        let native = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+        assert_eq!(
+            native("background-clip", "TEXT, border-box").as_deref(),
+            Some("text, border-box")
+        );
+        assert_eq!(native("mask-clip", "text"), None);
+        assert_eq!(
+            native("background-size", "10px").as_deref(),
+            Some("10px auto")
+        );
+        assert_eq!(
+            native("background-size", "auto AUTO").as_deref(),
+            Some("auto")
+        );
+        assert_eq!(
+            native("background-size", "Cover, 50% 10%").as_deref(),
+            Some("cover, 50% 10%")
+        );
+        assert_eq!(native("background-size", "-1px"), None);
     }
 
     #[test]
