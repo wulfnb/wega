@@ -1,6 +1,6 @@
 # Wega CSS engine: modularization and Blitz/Stylo-referenced port
 
-Status: IN PROGRESS. Phase 0 is implemented (2026-11-21). Phases 0–2 are done. Phase 3 is reverted pending parser validation.
+Status: IN PROGRESS. Phase 0 is implemented (2026-11-21). Phases 0–2 are done. Phase 3 step 1 (original stylesheet text) is re-landed; steps 2–3 are open.
 
 ## Why
 
@@ -306,6 +306,39 @@ Progress (2026-11-22): **tried and reverted.**
   - `css/selectors/selectors-attr-white-space-001.html`
   - `css/selectors/x-pseudo-element.html`
 
+Progress (2026-11-26): **step 1 re-landed.** The native engine parses the original
+stylesheet text again (`b473723`), after the native parsers were made to reject what the
+spec rejects:
+- **Colors:** CSS Color 4 grammar for `rgb()`/`hsl()`/`hwb()` (no mixed legacy numbers and
+  percentages, hue units), `calc()`/`min()`/`max()`/`clamp()` channels, unclamped `hsl()`,
+  `color()` with the predefined spaces (`rec2020` uses the 2.4 gamma), relative
+  `color(from …)`, and `color-mix(in srgb, …)` mixing encoded values, rounded once.
+- **Media queries:** `only`, `not`, `and`, `or` and `layer` are not media types; invalid
+  queries never match.
+- **`@supports`:** syntax errors drop the rule (leftover tokens, `and`/`or` mixed without
+  parentheses, `or(`); declaration tests check the value, allowing `!important`.
+- **Selectors:** unknown pseudo-elements invalidate the list (`-webkit-` ones are kept, as
+  Chrome does); `:dir()` takes only `ltr`/`rtl`; attribute selectors accept `[|a]` and
+  `[*|a]`, not whitespace around `|`.
+- **Values:** negative `flex-basis`, gaps and `background-size` are invalid; `flex-wrap`
+  keywords; gradient angle units are validated at parse time; `grid-gap` aliases;
+  `flex-flow` is now supported.
+- **Cascade:** `revert`, `revert-layer` and `revert-rule`; `var()` fallbacks reject a
+  top-level `;` or `!`; `attr()` substitution with IACVT; `currentcolor` inside values, and
+  a `currentcolor`-relative `background-color` re-resolves when inherited.
+
+Results (Linux, comparing the source text with Stylo's text at `2384b98`):
+- 36 of the 37 acceptance tests pass. `css/css-flexbox/balance/balance-002.html` needs
+  `flex-wrap: balance` (Flexbox 2), which neither engine implements; it passed before only
+  because Stylo's `flex-flow` serialization was ignored in both test and reference.
+- Of the 1,858 baseline-passing tests, four now fail, all in flexbox layout and all because
+  `flex-flow` now takes effect: `align-content-006` (multi-line `align-content` is not
+  implemented), `balance-002` and `balance-start-bias-002` (`flex-wrap: balance`), and
+  `flexbox-writing-mode-slr-row-mix` (vertical writing modes). These move to Phase 4.
+- `relayout-image-load` is timing-dependent: it fails when run alone with either text.
+- The CSSOM gates (`round15_acceptance`, `inspector_styles`, `native_real_css_gaps`) pass,
+  and the ignored `css` tests fail identically with either text.
+
 ### Phase 4: Layout fidelity, ported per formatting context
 Driven by WPT flexbox, grid, floats and tables plus the site corpus. Replace
 approximations made during the bug-fix rounds:
@@ -327,7 +360,8 @@ Progress (2026-11-22):
     corner's adjacent borders.
   - Still approximated: elliptical radii use their horizontal value, and blurred
     shadows use the largest corner.
-- **Open, from the list above:** tables, grid, float line shortening, inset shadows,
+- **Open, from the list above:** multi-line `align-content`, `flex-wrap: balance`, vertical
+  writing modes in flexbox (exposed by `flex-flow` in Phase 3), tables, grid, float line shortening, inset shadows,
   `::before`/`::after` content, `filter: blur()`, gradient text, SVG child rects, the
   Google card width, Verdana fallback width and viewport `overflow:hidden`.
 
