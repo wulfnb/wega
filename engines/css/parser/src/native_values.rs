@@ -62,6 +62,12 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
         "BorderCornerRadius" => return corner_radius(value),
         "Display" => return Native::Parsed(crate::native_align::display(value)),
         "BackgroundRepeat" => return list(info, value, background_repeat),
+        "position::HorizontalPosition" => {
+            return list(info, value, |v| position_component(v, ["left", "right"]));
+        }
+        "position::VerticalPosition" => {
+            return list(info, value, |v| position_component(v, ["top", "bottom"]));
+        }
         "AnimationIterationCount" => {
             return list(info, value, |v| match single_token(v) {
                 Some(cssparser::Token::Ident(i)) if i.eq_ignore_ascii_case("infinite") => {
@@ -347,6 +353,43 @@ fn pair(value: &str, item: impl Fn(&str) -> Native) -> Native {
     }
 }
 
+/// One position component (Stylo `PositionComponent`): `center`, a length-percentage, or a
+/// side keyword with an optional length-percentage offset, serialized as written.
+fn position_component(value: &str, sides: [&str; 2]) -> Native {
+    let mut parser = Parser::new(value);
+    let mut parts = Vec::new();
+    while !parser.is_exhausted() {
+        let start = parser.position();
+        if parser.next().is_err() {
+            return Native::Parsed(None);
+        }
+        parts.push(parser.slice_from(start).trim().to_owned());
+    }
+    let offset = |v: &str| length_percentage(v, &[], true, true);
+    match parts.as_slice() {
+        [one] if one.eq_ignore_ascii_case("center") => Native::Parsed(Some("center".into())),
+        [one] => match sides.iter().find(|s| one.eq_ignore_ascii_case(s)) {
+            Some(side) => Native::Parsed(Some((*side).to_owned())),
+            // Any other identifier is no length either.
+            None if matches!(single_token(one), Some(cssparser::Token::Ident(_))) => {
+                Native::Parsed(None)
+            }
+            None => offset(one),
+        },
+        [side, length] => match sides.iter().find(|s| side.eq_ignore_ascii_case(s)) {
+            Some(side) => match offset(length) {
+                Native::Parsed(Some(l)) => Native::Parsed(Some(format!("{side} {l}"))),
+                other => other,
+            },
+            None => match offset(side) {
+                Native::Unported => Native::Unported,
+                _ => Native::Parsed(None),
+            },
+        },
+        _ => Native::Unported,
+    }
+}
+
 /// One `background-repeat` layer: `repeat-x`, `repeat-y`, or one or two of `repeat`,
 /// `space`, `round`, `no-repeat`, serialized as Stylo does.
 fn background_repeat(value: &str) -> Native {
@@ -598,6 +641,22 @@ mod tests {
         );
         assert_eq!(native("border-spacing", "2px 2px").as_deref(), Some("2px"));
         assert_eq!(native("border-spacing", "2px 10%"), None);
+    }
+
+    #[test]
+    fn position_components_serialize_as_written() {
+        let engine = NativeFirst(Never);
+        let native = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+        assert_eq!(
+            native("background-position-x", "Center, RIGHT 10px, 0, left").as_deref(),
+            Some("center, right 10px, 0px, left")
+        );
+        assert_eq!(
+            native("background-position-y", "bottom 5%").as_deref(),
+            Some("bottom 5%")
+        );
+        assert_eq!(native("background-position-x", "top"), None);
+        assert_eq!(native("background-position-x", "10px left"), None);
     }
 
     #[test]
