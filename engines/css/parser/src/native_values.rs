@@ -60,6 +60,7 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
         "LineHeight" => return line_height(value),
         "FontWeight" => return font_weight(value),
         "BorderCornerRadius" => return corner_radius(value),
+        "Display" => return Native::Parsed(crate::native_align::display(value)),
         "ContentDistribution" | "SelfAlignment" | "ItemPlacement" | "JustifyItems" => {
             use crate::native_align::{Axis, Grammar, alignment};
             let grammar = match info.value_type {
