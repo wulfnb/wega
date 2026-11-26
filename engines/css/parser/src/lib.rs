@@ -10,6 +10,7 @@ mod generated {
     pub mod properties;
 }
 mod media;
+mod native_align;
 mod native_values;
 mod properties;
 pub mod properties_table;

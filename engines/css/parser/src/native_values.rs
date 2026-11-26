@@ -60,6 +60,20 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
         "LineHeight" => return line_height(value),
         "FontWeight" => return font_weight(value),
         "BorderCornerRadius" => return corner_radius(value),
+        "ContentDistribution" | "SelfAlignment" | "ItemPlacement" | "JustifyItems" => {
+            use crate::native_align::{Axis, Grammar, alignment};
+            let grammar = match info.value_type {
+                "ContentDistribution" => Grammar::ContentDistribution,
+                "SelfAlignment" => Grammar::SelfAlignment,
+                _ => Grammar::ItemPlacement,
+            };
+            let axis = if info.parse_method == "parse_block" {
+                Axis::Block
+            } else {
+                Axis::Inline
+            };
+            return Native::Parsed(alignment(value, grammar, axis));
+        }
         _ => return Native::Unported,
     };
     length_percentage(value, words, negative, percent)

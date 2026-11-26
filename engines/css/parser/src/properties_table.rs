@@ -22,6 +22,8 @@ pub struct Longhand {
     pub logical_group: &'static str,
     /// Parsed with Stylo's `parse_non_negative` (negative values are invalid).
     pub non_negative: bool,
+    /// Stylo's parse method when not `parse` (`parse_block`, `parse_inline`, ...).
+    pub parse_method: &'static str,
 }
 
 /// A keyword enum value type: its name and its `(keyword, aliases)` variants.
