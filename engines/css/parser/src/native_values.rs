@@ -1,6 +1,7 @@
 //! Native property values for CSSOM declaration blocks, with a fallback [`ValueEngine`] for
 //! value types not ported yet. Each ported type validates and serializes specified values
 //! as Stylo does (`stylo/values/specified/*`), so moving a type here changes no output.
+use crate::generated::properties::KEYWORD_TYPES;
 use crate::properties_table::longhand;
 use crate::{ValueEngine, properties_table::Longhand};
 use cssparser::Parser;
@@ -38,6 +39,10 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
     if !info.keywords.is_empty() {
         return Native::Parsed(keywords(info, value));
     }
+    let base = info.value_type.rsplit("::").next().unwrap_or_default();
+    if let Ok(i) = KEYWORD_TYPES.binary_search_by(|(name, _)| (*name).cmp(base)) {
+        return Native::Parsed(keyword_enum(info, KEYWORD_TYPES[i].1, value));
+    }
     // `(keywords handled here, negative values allowed, percentages allowed)`.
     let (words, negative, percent): (&[&str], bool, bool) = match info.value_type {
         "Margin" | "Inset" => (&["auto"], true, true),
@@ -52,6 +57,38 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
         _ => return Native::Unported,
     };
     length_percentage(value, words, negative, percent)
+}
+
+/// A keyword enum value type (generated from Stylo's `#[derive(Parse)]` enums): one of its
+/// keywords or their aliases, serialized as the keyword; a comma-separated list for list
+/// properties.
+fn keyword_enum(
+    info: &Longhand,
+    variants: &[(&'static str, &'static [&'static str])],
+    value: &str,
+) -> Option<String> {
+    let one = |p: &mut Parser<'_>| -> Result<String, cssparser::ParseError<()>> {
+        let ident = p.expect_ident()?.clone();
+        variants
+            .iter()
+            .find(|(keyword, aliases)| {
+                ident.eq_ignore_ascii_case(keyword)
+                    || aliases.iter().any(|a| ident.eq_ignore_ascii_case(a))
+            })
+            .map(|(keyword, _)| (*keyword).to_owned())
+            .ok_or_else(cssparser::ParseError::unexpected_token)
+    };
+    let mut parser = Parser::new(value);
+    let values = parser
+        .parse_entirely(|p| {
+            if info.list {
+                p.parse_comma_separated(one)
+            } else {
+                one(p).map(|k| vec![k])
+            }
+        })
+        .ok()?;
+    Some(values.join(", "))
 }
 
 /// A color keyword or hex color, serialized as Stylo serializes specified colors: keywords
@@ -225,6 +262,22 @@ mod tests {
             engine.parse("background-color", "Canvas").unwrap()[0].0,
             "fallback"
         );
+    }
+
+    #[test]
+    fn keyword_enum_types_are_native() {
+        let engine = NativeFirst(Never);
+        let native = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+        assert_eq!(
+            native("float", "INLINE-START").as_deref(),
+            Some("inline-start")
+        );
+        assert_eq!(native("user-select", "-moz-none").as_deref(), Some("none"));
+        assert_eq!(
+            native("border-top-style", "Dashed").as_deref(),
+            Some("dashed")
+        );
+        assert_eq!(native("float", "middle"), None);
     }
 
     #[test]

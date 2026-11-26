@@ -8,11 +8,13 @@ values, inheritance, aliases and, for shorthands, longhands and serialization ki
 
 Run from the repository root:  python3 tools/css-properties/generate.py
 """
+import re
 import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 STYLO = ROOT / "engines/vendor/blitz/stylo/properties"
+SPECIFIED = ROOT / "engines/vendor/blitz/stylo/values/specified"
 OUT = ROOT / "engines/css/parser/src/generated/properties.rs"
 
 # Style structs whose properties inherit (Stylo `properties/data.py`, `StyleStruct`).
@@ -47,6 +49,56 @@ def rust_str(s):
 
 def rust_list(items):
     return "&[" + ", ".join(rust_str(i) for i in items) + "]"
+
+
+def css_identifier(variant):
+    """Stylo's derive naming (`style_derive::to_css`): CamelCase to kebab-case, with a
+    `Moz`/`Webkit` prefix becoming `-moz-`/`-webkit-`."""
+    out = re.sub(r"(?<!^)([A-Z])", lambda m: "-" + m.group(1), variant).lower()
+    for vendor in ("moz", "webkit"):
+        if out.startswith(vendor + "-"):
+            out = "-" + out
+    return out
+
+
+def keyword_enums():
+    """Specified value types that are `#[derive(Parse)]` enums of unit variants only:
+    `{type: [(keyword, [aliases])]}`. Enums with preference-gated variants are skipped."""
+    found = {}
+    pattern = re.compile(
+        r"#\[derive\(([^\]]*)\)\]((?:\s*#\[[^\n]*\]|\s*///[^\n]*)*)\s*pub enum (\w+)\s*\{(.*?)\n\}",
+        re.S,
+    )
+    for path in sorted(SPECIFIED.rglob("*.rs")):
+        for derives, attrs, name, body in pattern.findall(path.read_text()):
+            if "Parse" not in derives or "condition" in body:
+                continue
+            variants, ok = [], True
+            pending = []
+            for line in body.splitlines():
+                line = line.strip()
+                if not line or line.startswith("//"):
+                    continue
+                if line.startswith("#["):
+                    pending.append(line)
+                    continue
+                m = re.fullmatch(r"(\w+)(\s*=\s*[^,]+)?,?", line)
+                if not m:
+                    ok = False
+                    break
+                joined = " ".join(pending)
+                pending = []
+                if "css(skip)" in joined:
+                    continue
+                keyword = re.search(r'keyword\s*=\s*"([^"]+)"', joined)
+                aliases = re.search(r'aliases\s*=\s*"([^"]+)"', joined)
+                variants.append((
+                    keyword.group(1) if keyword else css_identifier(m.group(1)),
+                    aliases.group(1).split("|") if aliases else [],
+                ))
+            if ok and variants:
+                found[name] = variants
+    return found
 
 
 def main():
@@ -98,6 +150,15 @@ def main():
               "pub static ALIASES: &[(&str, &str)] = &["]
     for alias, name in sorted(alias_pairs):
         lines.append(f"    ({rust_str(alias)}, {rust_str(name)}),")
+    lines.append("];")
+    # Keyword enum value types used by the properties above.
+    enums = keyword_enums()
+    used = sorted({longhands[n].get("type", "").split("::")[-1] for n in longhands} & set(enums))
+    lines += ["", "/// Value types that are enums of keywords: (type, [(keyword, aliases)]), by type.",
+              "pub static KEYWORD_TYPES: &[(&str, &[(&str, &[&str])])] = &["]
+    for name in used:
+        entries = ", ".join(f"({rust_str(k)}, {rust_list(a)})" for k, a in enums[name])
+        lines.append(f"    ({rust_str(name)}, &[{entries}]),")
     lines.append("];")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(lines) + "\n")
