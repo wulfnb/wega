@@ -101,6 +101,8 @@ pub(crate) fn anonymous_style(parent: &ComputedStyle) -> ComputedStyle {
     ComputedStyle {
         display: Display::Block,
         color: parent.color,
+        writing_mode: parent.writing_mode,
+        direction_rtl: parent.direction_rtl,
         visible: parent.visible,
         pointer_events: parent.pointer_events,
         font_size: parent.font_size,

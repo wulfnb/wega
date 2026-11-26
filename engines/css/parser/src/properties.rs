@@ -8,6 +8,9 @@ pub fn supported_property(property: &str) -> bool {
         || matches!(
             property,
             "align-items"
+                | "align-content"
+                | "direction"
+                | "writing-mode"
                 | "background"
                 | "background-color"
                 | "background-image"

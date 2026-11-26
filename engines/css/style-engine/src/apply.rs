@@ -5,9 +5,15 @@ use wega_css_values::*;
 
 pub(crate) fn apply_declaration(style: &mut ComputedStyle, prop: &str, val: &str) {
     if let Some(physical) = logical_single(prop) {
-        return apply_declaration(style, physical, val);
+        let physical = flow_relative(physical, style.writing_mode, style.direction_rtl);
+        return apply_declaration(style, &physical, val);
     }
     if let Some((start, end, split)) = logical_longhands(prop) {
+        let (start, end) = (
+            flow_relative(start, style.writing_mode, style.direction_rtl),
+            flow_relative(end, style.writing_mode, style.direction_rtl),
+        );
+        let (start, end) = (start.as_str(), end.as_str());
         let parts = components(val);
         let (a, b) = match (split, parts.as_slice()) {
             (true, [one]) => (*one, *one),

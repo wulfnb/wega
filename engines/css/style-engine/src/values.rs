@@ -262,3 +262,104 @@ pub(crate) fn logical_single(prop: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+/// Rewrite a physical property from the horizontal, left-to-right tables above for the
+/// element's writing mode and direction (CSS Logical Properties 1 §4): `left`/`right` stand
+/// for inline-start/end, `top`/`bottom` for block-start/end, and `width`/`height` for the
+/// inline and block sizes.
+pub(crate) fn flow_relative(property: &str, wm: WritingMode, rtl: bool) -> String {
+    if wm == WritingMode::HorizontalTb && !rtl {
+        return property.to_owned();
+    }
+    let inline_start = match (wm.is_vertical(), wm.inline_bottom_to_top() != rtl) {
+        (false, false) => "left",
+        (false, true) => "right",
+        (true, false) => "top",
+        (true, true) => "bottom",
+    };
+    let opposite = |side: &str| match side {
+        "left" => "right",
+        "right" => "left",
+        "top" => "bottom",
+        _ => "top",
+    };
+    let block_start = match wm {
+        WritingMode::HorizontalTb => "top",
+        WritingMode::VerticalRl | WritingMode::SidewaysRl => "right",
+        WritingMode::VerticalLr | WritingMode::SidewaysLr => "left",
+    };
+    let side = |token: &str| -> String {
+        match token {
+            "left" => inline_start.into(),
+            "right" => opposite(inline_start).into(),
+            "top" => block_start.into(),
+            "bottom" => opposite(block_start).into(),
+            "width" if wm.is_vertical() => "height".into(),
+            "height" if wm.is_vertical() => "width".into(),
+            other => other.into(),
+        }
+    };
+    // Corners are named block side first (`top-left` is start-start); physical corner names
+    // put the vertical side first.
+    if let Some(rest) = property.strip_prefix("border-")
+        && let Some(corner) = rest.strip_suffix("-radius")
+        && let Some((block, inline)) = corner.split_once('-')
+    {
+        let (a, b) = (side(block), side(inline));
+        let (vertical, horizontal) = if matches!(a.as_str(), "top" | "bottom") {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        return format!("border-{vertical}-{horizontal}-radius");
+    }
+    property.split('-').map(side).collect::<Vec<_>>().join("-")
+}
+
+#[cfg(test)]
+mod flow_relative_tests {
+    use super::*;
+
+    #[test]
+    fn logical_sides_follow_writing_mode_and_direction() {
+        let map = |p: &str, wm, rtl| flow_relative(p, wm, rtl);
+        assert_eq!(
+            map("margin-left", WritingMode::HorizontalTb, true),
+            "margin-right"
+        );
+        assert_eq!(
+            map("padding-top", WritingMode::VerticalRl, false),
+            "padding-right"
+        );
+        assert_eq!(
+            map("margin-left", WritingMode::VerticalLr, false),
+            "margin-top"
+        );
+        assert_eq!(
+            map("margin-left", WritingMode::SidewaysLr, false),
+            "margin-bottom"
+        );
+        assert_eq!(
+            map("margin-left", WritingMode::SidewaysLr, true),
+            "margin-top"
+        );
+        assert_eq!(map("width", WritingMode::VerticalLr, false), "height");
+        assert_eq!(
+            map("min-height", WritingMode::VerticalRl, false),
+            "min-width"
+        );
+        assert_eq!(
+            map("border-left-width", WritingMode::HorizontalTb, true),
+            "border-right-width"
+        );
+        assert_eq!(
+            map("border-top-left-radius", WritingMode::HorizontalTb, true),
+            "border-top-right-radius"
+        );
+        assert_eq!(
+            map("border-top-left-radius", WritingMode::VerticalRl, false),
+            "border-top-right-radius"
+        );
+        assert_eq!(map("left", WritingMode::HorizontalTb, false), "left");
+    }
+}

@@ -147,6 +147,9 @@ pub(crate) fn color_mix(p: &mut cssparser::Parser<'_>) -> Result<Color, ()> {
     })
 }
 
+/// A per-channel transfer function.
+type Transfer = fn(f32) -> f32;
+
 /// `color-mix()` as unrounded gamma-encoded sRGB and alpha (0..1), so nested mixes are
 /// rounded once.
 fn color_mix_unrounded(p: &mut cssparser::Parser<'_>) -> Result<[f32; 4], ()> {
@@ -205,7 +208,7 @@ fn color_mix_unrounded(p: &mut cssparser::Parser<'_>) -> Result<[f32; 4], ()> {
     }
     let (wa, wb) = (pa / total, pb / total);
     let mixed_alpha = a[3] * wa + b[3] * wb;
-    let (decode, encode): (fn(f32) -> f32, fn(f32) -> f32) = if encoded {
+    let (decode, encode): (Transfer, Transfer) = if encoded {
         (|v| v, |v| v)
     } else {
         (linear, gamma)

@@ -64,17 +64,25 @@ pub(crate) fn intrinsic_content(b: &LayoutBox, min: bool, depth: usize) -> f64 {
             .iter()
             .filter(|c| !matches!(c.style.position, Position::Absolute | Position::Fixed))
     };
-    let row_flex = b.box_type == BoxType::Flex
-        && matches!(
-            b.style.flex_direction,
-            FlexDirection::Row | FlexDirection::RowReverse
-        );
+    // A flex container whose main axis is horizontal: `row` in horizontal writing modes,
+    // `column` in vertical ones (as in `layout_flex`).
+    let row_like = matches!(
+        b.style.flex_direction,
+        FlexDirection::Row | FlexDirection::RowReverse
+    );
+    let row_flex = b.box_type == BoxType::Flex && row_like != b.style.writing_mode.is_vertical();
     if row_flex || b.box_type == BoxType::TableRow {
         let sizes: Vec<f64> = in_flow().map(|c| outer_intrinsic(c, min, depth)).collect();
         return if min && b.style.flex_wrap {
             sizes.into_iter().fold(0.0, f64::max)
         } else {
-            let gaps = b.style.column_gap * sizes.len().saturating_sub(1) as f64;
+            // The main-axis gap: `column-gap` for `row`, `row-gap` for `column`.
+            let gap = if row_like || b.box_type == BoxType::TableRow {
+                b.style.column_gap
+            } else {
+                b.style.row_gap
+            };
+            let gaps = gap * sizes.len().saturating_sub(1) as f64;
             sizes.into_iter().sum::<f64>() + gaps
         };
     }

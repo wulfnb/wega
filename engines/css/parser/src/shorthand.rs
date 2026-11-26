@@ -139,23 +139,29 @@ pub(crate) fn flex_shorthand(css: &str) -> Option<Vec<(&'static str, String)>> {
 /// value.
 pub(crate) fn flex_flow_shorthand(css: &str) -> Option<Vec<(&'static str, String)>> {
     let mut direction = None;
-    let mut wrap = None;
+    let mut wrap = Vec::new();
     for word in css.split_ascii_whitespace() {
         let word = word.to_ascii_lowercase();
         match word.as_str() {
             "row" | "row-reverse" | "column" | "column-reverse" if direction.is_none() => {
                 direction = Some(word)
             }
-            "nowrap" | "wrap" | "wrap-reverse" if wrap.is_none() => wrap = Some(word),
-            _ => return None,
+            _ => wrap.push(word),
         }
     }
-    if direction.is_none() && wrap.is_none() {
+    let wrap = if wrap.is_empty() {
+        "nowrap".to_owned()
+    } else {
+        let wrap = wrap.join(" ");
+        FlexWrapMode::parse(&wrap)?;
+        wrap
+    };
+    if direction.is_none() && wrap == "nowrap" && !css.to_ascii_lowercase().contains("nowrap") {
         return None;
     }
     Some(vec![
         ("flex-direction", direction.unwrap_or_else(|| "row".into())),
-        ("flex-wrap", wrap.unwrap_or_else(|| "nowrap".into())),
+        ("flex-wrap", wrap),
     ])
 }
 
@@ -179,7 +185,8 @@ mod flex_flow_tests {
             ]
         );
         assert_eq!(expand("row-reverse")[1].1, "nowrap");
-        assert!(expand("column balance").is_empty());
+        assert_eq!(expand("column balance")[1].1, "balance");
+        assert!(expand("column sideways").is_empty());
         assert!(expand("row column").is_empty());
     }
 }

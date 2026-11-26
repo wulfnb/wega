@@ -272,8 +272,8 @@ impl AlignItems {
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "stretch" => Some(Self::Stretch),
-            "flex-start" | "start" => Some(Self::FlexStart),
-            "flex-end" | "end" => Some(Self::FlexEnd),
+            "flex-start" | "start" | "flow-start" => Some(Self::FlexStart),
+            "flex-end" | "end" | "flow-end" => Some(Self::FlexEnd),
             "center" => Some(Self::Center),
             "baseline" => Some(Self::Baseline),
             _ => None,
@@ -311,5 +311,104 @@ impl WhiteSpace {
             "break-spaces" => Self::BreakSpaces,
             _ => return None,
         })
+    }
+}
+
+/// `align-content` on a multi-line flex container. `normal` behaves as `stretch`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AlignContent {
+    #[default]
+    Normal,
+    Stretch,
+    FlexStart,
+    FlexEnd,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+impl AlignContent {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim().to_ascii_lowercase().as_str() {
+            "normal" => Self::Normal,
+            "stretch" => Self::Stretch,
+            "flex-start" | "start" | "flow-start" => Self::FlexStart,
+            "flex-end" | "end" | "flow-end" => Self::FlexEnd,
+            "center" => Self::Center,
+            "space-between" => Self::SpaceBetween,
+            "space-around" => Self::SpaceAround,
+            "space-evenly" => Self::SpaceEvenly,
+            _ => return None,
+        })
+    }
+}
+
+/// `flex-wrap: nowrap | [ wrap | wrap-reverse ] || balance` (CSS Flexbox 2 §5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FlexWrapMode {
+    /// Items may wrap onto several lines.
+    pub wrap: bool,
+    /// Lines stack from the cross-end edge (`wrap-reverse`).
+    pub reverse: bool,
+    /// Items are balanced across lines (`balance`).
+    pub balance: bool,
+}
+
+impl FlexWrapMode {
+    pub fn parse(s: &str) -> Option<Self> {
+        let words: Vec<String> = s
+            .split_ascii_whitespace()
+            .map(|w| w.to_ascii_lowercase())
+            .collect();
+        if words == ["nowrap"] {
+            return Some(Self::default());
+        }
+        let (mut wrap, mut reverse, mut balance) = (false, false, false);
+        for word in &words {
+            match word.as_str() {
+                "wrap" if !wrap && !reverse => wrap = true,
+                "wrap-reverse" if !wrap && !reverse => reverse = true,
+                "balance" if !balance => balance = true,
+                _ => return None,
+            }
+        }
+        (!words.is_empty()).then_some(Self {
+            wrap: true,
+            reverse,
+            balance,
+        })
+    }
+}
+
+/// `writing-mode` (CSS Writing Modes 4 §3.1), with the SVG 1.1 aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WritingMode {
+    #[default]
+    HorizontalTb,
+    VerticalRl,
+    VerticalLr,
+    SidewaysRl,
+    SidewaysLr,
+}
+
+impl WritingMode {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim().to_ascii_lowercase().as_str() {
+            "horizontal-tb" | "lr" | "lr-tb" | "rl" | "rl-tb" => Self::HorizontalTb,
+            "vertical-rl" | "tb" | "tb-rl" => Self::VerticalRl,
+            "vertical-lr" => Self::VerticalLr,
+            "sideways-rl" => Self::SidewaysRl,
+            "sideways-lr" => Self::SidewaysLr,
+            _ => return None,
+        })
+    }
+    pub fn is_vertical(self) -> bool {
+        self != Self::HorizontalTb
+    }
+    /// Whether the inline direction (with `direction: ltr`) runs bottom to top, as in
+    /// `sideways-lr`.
+    pub fn inline_bottom_to_top(self) -> bool {
+        self == Self::SidewaysLr
     }
 }

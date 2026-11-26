@@ -45,6 +45,8 @@ pub fn resolve_computed_style<D: DocumentView>(
         font_weight: p.font_weight,
         font_italic: p.font_italic,
         white_space: p.white_space,
+        writing_mode: p.writing_mode,
+        direction_rtl: p.direction_rtl,
         ..Default::default()
     });
 
@@ -283,6 +285,7 @@ pub fn resolve_computed_style<D: DocumentView>(
     // Font-relative computed values and currentColor use the winning font and
     // color, regardless of declaration order or selector specificity.
     matched.sort_by_key(|d| match d.property.as_str() {
+        "writing-mode" | "direction" => 0,
         "font-size" => 0,
         "color" => 1,
         _ => 2,
@@ -318,6 +321,8 @@ pub fn resolve_computed_style<D: DocumentView>(
                 | "line-height"
                 | "text-align"
                 | "white-space"
+                | "writing-mode"
+                | "direction"
         );
         let value = value
             .as_deref()
@@ -429,6 +434,12 @@ pub fn resolve_computed_style<D: DocumentView>(
 }
 
 pub(crate) fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, prop: &str) {
+    if prop == "flex-wrap" {
+        target.flex_wrap = source.flex_wrap;
+        target.flex_wrap_reverse = source.flex_wrap_reverse;
+        target.flex_balance = source.flex_balance;
+        return;
+    }
     if matches!(prop, "background-color" | "background") {
         target.background_color_current = source.background_color_current.clone();
         // A currentcolor-relative value resolves against the inheriting element's color.
@@ -448,7 +459,7 @@ pub(crate) fn copy_property(target: &mut ComputedStyle, source: &ComputedStyle, 
     "opacity"=>opacity,"visibility"=>visible,"pointer-events"=>pointer_events,"cursor"=>cursor,"top"=>top,"right"=>right,"bottom"=>bottom,"left"=>left,"z-index"=>z_index,
     "transform"=>transform,"box-shadow"=>box_shadow,"border-radius"=>border_radii,
     "overflow-x"=>overflow_x,"overflow-y"=>overflow_y,"flex-direction"=>flex_direction,
-    "flex-grow"=>flex_grow,"flex-shrink"=>flex_shrink,"flex-basis"=>flex_basis,"align-items"=>align_items,"justify-content"=>justify_content,"object-fit"=>object_fit,"object-position"=>object_position,"vertical-align"=>vertical_align }
+    "flex-grow"=>flex_grow,"flex-shrink"=>flex_shrink,"flex-basis"=>flex_basis,"align-items"=>align_items,"justify-content"=>justify_content,"align-content"=>align_content,"writing-mode"=>writing_mode,"direction"=>direction_rtl,"object-fit"=>object_fit,"object-position"=>object_position,"vertical-align"=>vertical_align }
     if prop == "line-height" {
         target.line_height = source.line_height;
         target.line_height_factor = source.line_height_factor;

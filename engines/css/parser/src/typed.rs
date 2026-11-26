@@ -86,7 +86,11 @@ pub enum PropertyDeclaration {
     FlexGrow(f64),
     FlexShrink(f64),
     FlexBasis(Length),
-    FlexWrap(bool),
+    FlexWrap(FlexWrapMode),
+    AlignContent(AlignContent),
+    WritingMode(WritingMode),
+    /// `direction: rtl`.
+    DirectionRtl(bool),
     /// `(row, column)`, resolved against the font size when applied.
     Gap(Length, Length),
     RowGap(Length),
@@ -456,9 +460,12 @@ impl PropertyDeclaration {
             "flex-grow" => css_number(value).filter(|g| *g >= 0.0).map(P::FlexGrow),
             "flex-shrink" => css_number(value).filter(|s| *s >= 0.0).map(P::FlexShrink),
             "flex-basis" => Length::parse(value).filter(non_negative).map(P::FlexBasis),
-            "flex-wrap" => match lower.as_str() {
-                "wrap" | "wrap-reverse" => Some(P::FlexWrap(true)),
-                "nowrap" => Some(P::FlexWrap(false)),
+            "flex-wrap" => FlexWrapMode::parse(value).map(P::FlexWrap),
+            "align-content" => AlignContent::parse(value).map(P::AlignContent),
+            "writing-mode" => WritingMode::parse(value).map(P::WritingMode),
+            "direction" => match lower.as_str() {
+                "ltr" => Some(P::DirectionRtl(false)),
+                "rtl" => Some(P::DirectionRtl(true)),
                 _ => None,
             },
             "gap" => {
@@ -656,7 +663,8 @@ mod validation_tests {
     fn values_the_spec_rejects_are_invalid() {
         for (property, value) in [
             ("flex-basis", "-50px"),
-            ("flex-wrap", "balance"),
+            ("flex-wrap", "wrap wrap-reverse"),
+            ("flex-wrap", "nowrap balance"),
             ("gap", "-1px"),
             ("gap", "1px 2px 3px"),
             ("row-gap", "-5%"),
@@ -674,6 +682,9 @@ mod validation_tests {
         for (property, value) in [
             ("flex-basis", "30px"),
             ("flex-wrap", "wrap-reverse"),
+            ("flex-wrap", "balance wrap-reverse"),
+            ("align-content", "space-between"),
+            ("writing-mode", "sideways-lr"),
             ("gap", "normal 4px"),
             ("background-size", "50% auto"),
             (

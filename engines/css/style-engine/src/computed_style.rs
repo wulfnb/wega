@@ -56,8 +56,20 @@ pub struct ComputedStyle {
     pub flex_shrink: f64,
     pub flex_basis: Length,
     pub flex_wrap: bool,
+    /// `flex-wrap: wrap-reverse`: lines stack from the cross-end edge.
+    pub flex_wrap_reverse: bool,
+    /// `flex-wrap: balance`: items are balanced across lines.
+    pub flex_balance: bool,
+    pub align_content: AlignContent,
+    /// Inherited.
+    pub writing_mode: WritingMode,
+    /// `direction: rtl`. Inherited.
+    pub direction_rtl: bool,
     pub row_gap: f64,
     pub column_gap: f64,
+    /// Percentage parts of the gaps, as fractions of the content box (resolved at layout).
+    pub row_gap_percent: f64,
+    pub column_gap_percent: f64,
     pub grid_template_columns: Vec<GridTrack>,
     pub grid_template_rows: Vec<GridTrack>,
     pub grid_column_start: Option<i32>,
@@ -150,8 +162,15 @@ impl Default for ComputedStyle {
             flex_shrink: 1.0,
             flex_basis: Length::Auto,
             flex_wrap: false,
+            flex_wrap_reverse: false,
+            flex_balance: false,
+            align_content: AlignContent::Normal,
+            writing_mode: WritingMode::HorizontalTb,
+            direction_rtl: false,
             row_gap: 0.0,
             column_gap: 0.0,
+            row_gap_percent: 0.0,
+            column_gap_percent: 0.0,
             grid_template_columns: Vec::new(),
             grid_template_rows: Vec::new(),
             grid_column_start: None,
@@ -186,3 +205,14 @@ impl Default for ComputedStyle {
 // ---------------------------------------------------------------------------
 // SELECTORS & SPECIFICITY
 // ---------------------------------------------------------------------------
+
+impl ComputedStyle {
+    /// `(row-gap, column-gap)` in px for a content box `width` wide and, when definite,
+    /// `height` tall. Percentages of an indefinite height resolve to zero.
+    pub fn gaps(&self, width: f64, height: Option<f64>) -> (f64, f64) {
+        (
+            (self.row_gap + self.row_gap_percent * height.unwrap_or(0.0)).max(0.0),
+            (self.column_gap + self.column_gap_percent * width).max(0.0),
+        )
+    }
+}

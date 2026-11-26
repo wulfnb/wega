@@ -328,13 +328,15 @@ spec rejects:
   a `currentcolor`-relative `background-color` re-resolves when inherited.
 
 Results (Linux, comparing the source text with Stylo's text at `2384b98`):
-- 36 of the 37 acceptance tests pass. `css/css-flexbox/balance/balance-002.html` needs
-  `flex-wrap: balance` (Flexbox 2), which neither engine implements; it passed before only
-  because Stylo's `flex-flow` serialization was ignored in both test and reference.
-- Of the 1,858 baseline-passing tests, four now fail, all in flexbox layout and all because
-  `flex-flow` now takes effect: `align-content-006` (multi-line `align-content` is not
-  implemented), `balance-002` and `balance-start-bias-002` (`flex-wrap: balance`), and
-  `flexbox-writing-mode-slr-row-mix` (vertical writing modes). These move to Phase 4.
+- All 37 acceptance tests pass.
+- `flex-flow` now taking effect exposed missing flex layout, which is ported after Taffy
+  (the layout engine Blitz uses): multi-line `align-content` (`normal` stretches lines),
+  `flex-wrap: balance` (Taffy's balancing dynamic program, without its zero-sized-item
+  rule) and `wrap-reverse`, and flex axes that follow `writing-mode` and `direction`.
+  Logical properties map by writing mode and direction, percentage gaps resolve at layout,
+  and a vertical-writing-mode flex container with `width: auto` fits its content.
+- No regressions: the 1,858 baseline-passing tests, the full `css-flexbox` suite (362 →
+  441 passing) and `css-logical` + `css-grid` (464 → 478) were compared test by test.
 - `relayout-image-load` is timing-dependent: it fails when run alone with either text.
 - The CSSOM gates (`round15_acceptance`, `inspector_styles`, `native_real_css_gaps`) pass,
   and the ignored `css` tests fail identically with either text.
@@ -360,8 +362,10 @@ Progress (2026-11-22):
     corner's adjacent borders.
   - Still approximated: elliptical radii use their horizontal value, and blurred
     shadows use the largest corner.
-- **Open, from the list above:** multi-line `align-content`, `flex-wrap: balance`, vertical
-  writing modes in flexbox (exposed by `flex-flow` in Phase 3), tables, grid, float line shortening, inset shadows,
+- **Done in Phase 3 (2026-11-26):** multi-line `align-content`, `flex-wrap: balance`,
+  `wrap-reverse`, and writing-mode-aware flex axes. Block and inline layout still ignore
+  vertical writing modes.
+- **Open, from the list above:** tables, grid, float line shortening, inset shadows,
   `::before`/`::after` content, `filter: blur()`, gradient text, SVG child rects, the
   Google card width, Verdana fallback width and viewport `overflow:hidden`.
 

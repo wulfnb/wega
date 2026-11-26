@@ -209,6 +209,10 @@ pub(crate) fn resolve_grid_item(
 
 pub(crate) fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
     let inner = init_container(b, cb, positioned, ctx);
+    let (row_gap, column_gap) = b.style.gaps(
+        inner.width,
+        (b.style.height != Length::Auto).then_some(inner.height),
+    );
     let positioned = if b.style.position != Position::Static {
         b.padding_box()
     } else {
@@ -217,7 +221,7 @@ pub(crate) fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &L
     let columns = expand_auto_repeat(
         &b.style.grid_template_columns,
         inner.width,
-        b.style.column_gap,
+        column_gap,
         b.style.font_size,
         ctx.font_size_root,
     );
@@ -310,14 +314,13 @@ pub(crate) fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &L
         &mins,
         &maxs,
         Some(inner.width),
-        b.style.column_gap,
+        column_gap,
         ctx,
         b.style.font_size,
     );
     let mut heights = vec![0.0_f64; rows];
     for (i, row, col, rs, cs) in &places {
-        let width =
-            widths[*col..col + cs].iter().sum::<f64>() + b.style.column_gap * (cs - 1) as f64;
+        let width = widths[*col..col + cs].iter().sum::<f64>() + column_gap * (cs - 1) as f64;
         let c = &mut b.children[*i];
         forced_size(
             c,
@@ -328,7 +331,7 @@ pub(crate) fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &L
             None,
         );
         let height = (c.border_box.height + c.margin.top + c.margin.bottom
-            - b.style.row_gap * (rs - 1) as f64)
+            - row_gap * (rs - 1) as f64)
             .max(0.0)
             / *rs as f64;
         for h in heights.iter_mut().skip(*row).take(*rs) {
@@ -344,15 +347,15 @@ pub(crate) fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &L
         } else {
             Some(inner.height)
         },
-        b.style.row_gap,
+        row_gap,
         ctx,
         b.style.font_size,
     );
     for (i, row, col, rs, cs) in places {
-        let x = inner.x + widths[..col].iter().sum::<f64>() + b.style.column_gap * col as f64;
-        let y = inner.y + row_sizes[..row].iter().sum::<f64>() + b.style.row_gap * row as f64;
-        let w = widths[col..col + cs].iter().sum::<f64>() + b.style.column_gap * (cs - 1) as f64;
-        let h = row_sizes[row..row + rs].iter().sum::<f64>() + b.style.row_gap * (rs - 1) as f64;
+        let x = inner.x + widths[..col].iter().sum::<f64>() + column_gap * col as f64;
+        let y = inner.y + row_sizes[..row].iter().sum::<f64>() + row_gap * row as f64;
+        let w = widths[col..col + cs].iter().sum::<f64>() + column_gap * (cs - 1) as f64;
+        let h = row_sizes[row..row + rs].iter().sum::<f64>() + row_gap * (rs - 1) as f64;
         let c = &mut b.children[i];
         let stretch_w = c.style.width == Length::Auto;
         let stretch_h = c.style.height == Length::Auto;
@@ -372,7 +375,7 @@ pub(crate) fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &L
     }
     if b.style.height == Length::Auto {
         b.border_box.height = row_sizes.iter().sum::<f64>()
-            + b.style.row_gap * rows.saturating_sub(1) as f64
+            + row_gap * rows.saturating_sub(1) as f64
             + b.border.top
             + b.border.bottom
             + b.padding.top

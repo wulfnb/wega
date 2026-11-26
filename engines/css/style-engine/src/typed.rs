@@ -25,6 +25,11 @@ pub(crate) fn apply_typed(style: &mut ComputedStyle, declaration: PropertyDeclar
     };
     let (font, root) = (style.font_size, style.root_font_size);
     let px = |l: Length| l.resolve(0.0, font, root).max(0.0);
+    // A gap's fixed part in px and its percentage part as a fraction, resolved at layout.
+    let gap = |l: Length| {
+        let fixed = l.resolve(0.0, font, root);
+        (fixed, (l.resolve(100.0, font, root) - fixed) / 100.0)
+    };
     match declaration {
         P::Display(v) => style.display = v,
         P::Position(v) => style.position = v,
@@ -82,13 +87,20 @@ pub(crate) fn apply_typed(style: &mut ComputedStyle, declaration: PropertyDeclar
         P::FlexGrow(v) => style.flex_grow = v,
         P::FlexShrink(v) => style.flex_shrink = v,
         P::FlexBasis(v) => style.flex_basis = v,
-        P::FlexWrap(v) => style.flex_wrap = v,
-        P::Gap(row, column) => {
-            style.row_gap = px(row);
-            style.column_gap = px(column);
+        P::FlexWrap(v) => {
+            style.flex_wrap = v.wrap;
+            style.flex_wrap_reverse = v.reverse;
+            style.flex_balance = v.balance;
         }
-        P::RowGap(v) => style.row_gap = px(v),
-        P::ColumnGap(v) => style.column_gap = px(v),
+        P::AlignContent(v) => style.align_content = v,
+        P::WritingMode(v) => style.writing_mode = v,
+        P::DirectionRtl(v) => style.direction_rtl = v,
+        P::Gap(row, column) => {
+            (style.row_gap, style.row_gap_percent) = gap(row);
+            (style.column_gap, style.column_gap_percent) = gap(column);
+        }
+        P::RowGap(v) => (style.row_gap, style.row_gap_percent) = gap(v),
+        P::ColumnGap(v) => (style.column_gap, style.column_gap_percent) = gap(v),
         P::GridTemplateColumns(v) => style.grid_template_columns = v,
         P::GridTemplateRows(v) => style.grid_template_rows = v,
         P::GridTemplateAreas(v) => style.grid_template_areas = v,
