@@ -22,6 +22,12 @@ pub struct Longhand {
     pub logical_group: &'static str,
 }
 
+/// A keyword enum value type: its name and its `(keyword, aliases)` variants.
+pub type KeywordType = (
+    &'static str,
+    &'static [(&'static str, &'static [&'static str])],
+);
+
 /// A shorthand property.
 #[derive(Debug)]
 pub struct Shorthand {
