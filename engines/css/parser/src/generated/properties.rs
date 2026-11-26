@@ -467,6 +467,7 @@ pub static KEYWORD_TYPES: &[KeywordType] = &[
     ("LineBreak", &[("auto", &[]), ("loose", &[]), ("normal", &[]), ("strict", &[]), ("anywhere", &[])]),
     ("MozControlCharacterVisibility", &[("hidden", &[]), ("visible", &[])]),
     ("MozTheme", &[("auto", &[]), ("non-native", &[])]),
+    ("Overflow", &[("visible", &[]), ("hidden", &[]), ("scroll", &[]), ("auto", &["overlay"]), ("clip", &[])]),
     ("OverflowAnchor", &[("auto", &[]), ("none", &[])]),
     ("OverflowWrap", &[("normal", &[]), ("break-word", &[]), ("anywhere", &[])]),
     ("OverscrollBehavior", &[("auto", &[]), ("contain", &[]), ("none", &[])]),

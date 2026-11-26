@@ -25,6 +25,13 @@ INHERITED_STRUCTS = {
 # Properties Stylo gates behind a preference Wega leaves off, but the native engine
 # implements.
 NATIVE_EXTRAS = {"writing-mode"}
+# Stylo preferences Wega enables (`engines/wega/src/document/mod.rs`).
+ENABLED_PREFS = {
+    "layout.grid.enabled", "layout.flexbox.balance", "layout.unimplemented",
+    "layout.columns.enabled", "layout.css.basic-shape-shape.enabled",
+    "layout.css.tree-counting-functions.enabled", "layout.css.progress-function.enabled",
+    "layout.variable_fonts.enabled", "layout.container-queries.enabled",
+}
 
 
 def servo(entry):
@@ -97,6 +104,40 @@ def keyword_enums():
                     aliases.group(1).split("|") if aliases else [],
                 ))
             if ok and variants:
+                found[name] = variants
+    # Hand-written `impl Parse` that only matches identifiers to variants
+    # (`try_match_ident_ignore_ascii_case!`); any other logic leaves the type to Stylo.
+    impl = re.compile(
+        r"impl Parse for (\w+) \{\s*fn parse\([^)]*\)\s*->\s*Result<Self, ParseError[^>]*>\s*\{"
+        r"\s*Ok\(try_match_ident_ignore_ascii_case! \{ input,(.*?)\}\)\s*\}\s*\}",
+        re.S,
+    )
+    arm = re.compile(r'((?:"[^"]+"\s*\|\s*)*"[^"]+")\s*=>\s*Self::(\w+),?')
+    for path in sorted(SPECIFIED.rglob("*.rs")):
+        for name, body in impl.findall(path.read_text()):
+            if name in found:
+                continue
+            # Arms behind a preference Wega leaves off never match.
+            body = re.sub(
+                r'"[^"]+"\s+if crate::pref!\("([^"]+)"\)\s*=>\s*\{[^{}]*\},?',
+                lambda m: "" if m.group(1) not in ENABLED_PREFS else m.group(0),
+                body,
+            )
+            arms = [a.strip() for a in body.strip().splitlines() if a.strip() and not a.strip().startswith("//")]
+            parsed = [arm.fullmatch(a) for a in arms]
+            if not parsed or not all(parsed):
+                continue
+            by_variant = {}
+            for m in parsed:
+                words = re.findall(r'"([^"]+)"', m.group(1))
+                by_variant.setdefault(m.group(2), []).extend(words)
+            variants = []
+            for variant, words in by_variant.items():
+                keyword = css_identifier(variant)
+                if keyword not in words:
+                    break
+                variants.append((keyword, [w for w in words if w != keyword]))
+            else:
                 found[name] = variants
     return found
 

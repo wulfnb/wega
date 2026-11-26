@@ -54,6 +54,7 @@ fn parse_longhand(info: &Longhand, value: &str) -> Native {
         "LengthPercentage" => (&[], true, true),
         "BorderSideWidth" => (&["thin", "medium", "thick"], false, false),
         "Color" | "ColorPropertyValue" => return color(value),
+        "NonNegativeNumber" | "Integer" | "ZIndex" => return number(info.value_type, value),
         _ => return Native::Unported,
     };
     length_percentage(value, words, negative, percent)
@@ -132,6 +133,32 @@ fn color(value: &str) -> Native {
             Native::Parsed(Some(out))
         }
         _ => Native::Unported,
+    }
+}
+
+/// `<number [0,∞]>`, `<integer>` or `auto | <integer>` (`z-index`), serialized as Stylo
+/// does. Math functions are left to the fallback.
+fn number(value_type: &str, value: &str) -> Native {
+    use cssparser::{ToCss, Token};
+    let mut parser = Parser::new(value);
+    let Ok(token) = parser.next().cloned() else {
+        return Native::Unported;
+    };
+    if !parser.is_exhausted() {
+        return Native::Unported;
+    }
+    match (value_type, token) {
+        ("ZIndex", Token::Ident(ident)) if ident.eq_ignore_ascii_case("auto") => {
+            Native::Parsed(Some("auto".into()))
+        }
+        ("NonNegativeNumber", Token::Number { value, .. }) if value.is_finite() => {
+            Native::Parsed((value >= 0.0).then(|| value.to_css_string()))
+        }
+        ("Integer" | "ZIndex", Token::Number { int_value, .. }) => {
+            Native::Parsed(int_value.map(|i| i.to_string()))
+        }
+        (_, Token::Function(_)) => Native::Unported,
+        _ => Native::Parsed(None),
     }
 }
 
@@ -278,6 +305,23 @@ mod tests {
             Some("dashed")
         );
         assert_eq!(native("float", "middle"), None);
+    }
+
+    #[test]
+    fn numbers_serialize_like_stylo() {
+        let engine = NativeFirst(Never);
+        let native = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+        assert_eq!(native("flex-grow", "2.50").as_deref(), Some("2.5"));
+        assert_eq!(native("flex-grow", "-1"), None);
+        assert_eq!(native("order", "-3").as_deref(), Some("-3"));
+        assert_eq!(native("order", "1.5"), None);
+        assert_eq!(native("z-index", "AUTO").as_deref(), Some("auto"));
+        assert_eq!(native("z-index", "10").as_deref(), Some("10"));
+        assert_eq!(native("z-index", "1px"), None);
+        assert_eq!(
+            engine.parse("order", "calc(1 + 1)").unwrap()[0].0,
+            "fallback"
+        );
     }
 
     #[test]
