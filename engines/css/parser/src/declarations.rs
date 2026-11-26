@@ -153,6 +153,15 @@ pub fn declarations(css: &str) -> Vec<Declaration> {
         .collect()
 }
 
+/// A declaration list as written: names lowercased (custom properties kept), values with
+/// `!important` split off, shorthands not expanded.
+pub fn raw_declarations(css: &str) -> Vec<Declaration> {
+    let mut parser = Parser::new(css);
+    RuleBodyParser::new(&mut parser, &mut Declarations)
+        .filter_map(Result::ok)
+        .collect()
+}
+
 /// Whether every `var()` in `value` is `var(<custom-property-name> [, <declaration-value>?]?)`.
 /// A fallback may not contain a top-level `;` or `!` (CSS Variables 1 §3), so
 /// `var(--x, !important)` makes the whole declaration invalid at parse time.

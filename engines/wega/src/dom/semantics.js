@@ -1194,17 +1194,13 @@
         fail("NoModificationAllowedError", "Computed style is readonly");
       this._element.setAttribute("style", String(value));
     }
+    // The block's longhands, in order (CSSOM: shorthands count as their longhands).
     get length() {
-      return this.cssText.split(";").filter((s) => s.includes(":")).length;
+      return this._computed ? 0 : host("inlineNames", this._element._id).length;
     }
     item(index) {
-      return (
-        this.cssText
-          .split(";")
-          .filter((s) => s.includes(":"))
-          [index]?.split(":")[0]
-          .trim() || ""
-      );
+      if (this._computed) return "";
+      return host("inlineNames", this._element._id)[Number(index) >>> 0] ?? "";
     }
     getPropertyValue(name) {
       return host(
@@ -1240,14 +1236,8 @@
       return old;
     }
     getPropertyPriority(name) {
-      return new RegExp(
-        "(?:^|;)\\s*" +
-          String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
-          "\\s*:[^;]*!important",
-        "i",
-      ).test(this.cssText)
-        ? "important"
-        : "";
+      if (this._computed) return "";
+      return host("inlinePriority", this._element._id, String(name));
     }
   }
   class Element extends Node {

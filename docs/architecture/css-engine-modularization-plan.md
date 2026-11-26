@@ -363,6 +363,17 @@ Results: selector API, `css/selectors` and `css/cssom` files 316 → 395 passing
 4,813 → 5,536, no regressions. The 1,858 baseline tests and `css/css-conditional` show none
 either; `css-cascade/parsing/supports-import-parsing.html` times out only under parallel load.
 
+Part 2, first step (2026-11-26): `element.style` runs on a native CSSOM declaration block
+(`css/parser/src/block.rs`): parsing with `!important` precedence, `setProperty`/
+`removeProperty` with Stylo's logical-group reordering, `cssText` with shorthand
+recombination (including `all`), `var()` shorthands with pending longhands, CSS-wide
+keywords, and `length`/`item()`/`getPropertyPriority()` from the block (they were guessed
+from `cssText`). The property table (names, aliases, shorthands, keywords, inheritance,
+logical groups) is generated from Stylo's metadata by `tools/css-properties/generate.py`.
+Values go through `NativeFirst`: keyword properties are native, other value types still use
+Stylo (`StyloValues`) until ported. `parsing/` suites and `css/cssom`: 68 more subtests
+pass, none lost against the previous commit.
+
 ### Phase 4: Layout fidelity, ported per formatting context
 Driven by WPT flexbox, grid, floats and tables plus the site corpus. Replace
 approximations made during the bug-fix rounds:

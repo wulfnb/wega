@@ -1565,6 +1565,9 @@ impl Dom {
             "supportsProperty"=>json!(doc.supports_declaration(text(1),text(2))),
             "inlineCSS"=>{let mut css=String::new();Self::style_text(doc.inline_style(node_id()?,&mut css),css)?},
             "inlineProperty"=>{let mut css=String::new();Self::style_text(doc.inline_property(node_id()?,text(2),&mut css),css)?},
+            // CSSOM `length`/`item()` (the block's longhands) and `getPropertyPriority()`.
+            "inlineNames"=>json!(doc.inline_property_names(node_id()?).unwrap_or_default()),
+            "inlinePriority"=>json!(doc.inline_priority(node_id()?,text(2)).unwrap_or_default()),
             // CSSOM setProperty/removeProperty; `false` when the declaration was rejected or
             // changed nothing, so script queues no mutation record for it.
             "styleSet"|"styleSetImportant"=>{
