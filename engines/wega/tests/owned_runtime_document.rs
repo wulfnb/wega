@@ -89,7 +89,8 @@ fn owned_queries_scope_relations_namespaces_and_live_control_state() {
     let reference =
         wega_adapter_blitz::BlitzDocument::from_html("<p><b></b></p>", Default::default());
     assert!(reference.query_selector("p:has(b)").is_err());
-    assert!(d.query_selector("p:has(b)").is_err());
+    // Wega's selector engine supports `:has()` in queries, as browsers do.
+    assert!(d.query_selector("p:has(b)").unwrap().is_some());
     let input = d.element_by_id("i").unwrap();
     assert_eq!(d.query_selector(":checked").unwrap(), Some(input));
     d.set_checked(input, false);

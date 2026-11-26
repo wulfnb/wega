@@ -39,10 +39,11 @@
           return ops.op_dom_set_attr(String(a), String(b), String(c));
         return ops.op_dom_read(String(op), String(a), String(b), String(c));
       } catch (error) {
-        // A native "SyntaxError: ..." becomes that DOMException (TypeError and RangeError
-        // stay ECMAScript errors), as in __wega_guard_binding.
+        // A native "SyntaxError: ..." becomes a DOMException of that name (TypeError and
+        // RangeError stay ECMAScript errors). The message keeps the native text, which
+        // existing callers read.
         const match = /^([A-Za-z]+Error):\s*(.*)/.exec(error.message || "");
-        if (match) throw ({ TypeError, RangeError }[match[1]] ? new globalThis[match[1]](match[2]) : new DOMException(match[2], match[1]));
+        if (match) throw ({ TypeError, RangeError }[match[1]] ? new globalThis[match[1]](match[2]) : new DOMException(error.message, match[1]));
         throw error;
       }
     },
