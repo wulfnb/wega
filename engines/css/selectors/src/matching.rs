@@ -1,6 +1,6 @@
 //! Selector matching and specificity against a `DocumentView`, including `:has()`.
 use crate::*;
-use wega_dom::{DocumentView, NodeKey, NodeKind, NodeView};
+use wega_dom::{DocumentView, HTML_NAMESPACE, NodeKey, NodeKind, NodeView};
 
 impl CompoundSelector {
     pub fn specificity(&self) -> (usize, usize, usize) {
@@ -35,7 +35,9 @@ impl CompoundSelector {
                     types += s.2;
                 }
                 SimpleSelector::PseudoElement(_) => types += 1,
-                SimpleSelector::Universal | SimpleSelector::Where(_) => {}
+                SimpleSelector::Universal
+                | SimpleSelector::Where(_)
+                | SimpleSelector::Namespace(_) => {}
                 _ => classes += 1,
             }
         }
@@ -43,22 +45,55 @@ impl CompoundSelector {
     }
 
     pub fn matches<D: DocumentView>(&self, doc: &D, node_key: NodeKey) -> bool {
+        self.matches_scoped(doc, node_key, None)
+    }
+
+    /// Match with `:scope` as `scope` (a query's scoping element), or the root element.
+    pub fn matches_scoped<D: DocumentView>(
+        &self,
+        doc: &D,
+        node_key: NodeKey,
+        scope: Option<NodeKey>,
+    ) -> bool {
         let Some(node) = doc.node(node_key) else {
             return false;
         };
         if node.kind() != NodeKind::Element {
             return false;
         };
-        let tag = node
+        let (raw_tag, html) = node
             .element_name()
-            .map(|e| e.local.to_ascii_lowercase())
+            .map(|e| (e.local, e.namespace == HTML_NAMESPACE))
             .unwrap_or_default();
+        let tag = raw_tag.to_ascii_lowercase();
+        // Attribute names match case-insensitively on HTML elements (Selectors 4 §6.1).
+        let attr = |name: &str| -> Option<&str> {
+            node.attributes()
+                .find(|(n, _)| {
+                    if html {
+                        (*n.local).eq_ignore_ascii_case(name)
+                    } else {
+                        &*n.local == name
+                    }
+                })
+                .map(|(_, v)| v)
+        };
 
         for comp in &self.components {
             match comp {
                 SimpleSelector::Universal => {}
                 SimpleSelector::Type(name) => {
-                    if !name.eq_ignore_ascii_case(&tag) {
+                    let matched = if html {
+                        name.eq_ignore_ascii_case(raw_tag)
+                    } else {
+                        name == raw_tag
+                    };
+                    if !matched {
+                        return false;
+                    }
+                }
+                SimpleSelector::Namespace(url) => {
+                    if node.element_name().is_none_or(|e| e.namespace != url) {
                         return false;
                     }
                 }
@@ -75,20 +110,22 @@ impl CompoundSelector {
                     }
                 }
                 SimpleSelector::AttrPresent(name) => {
-                    if node.attr(name.as_str()).is_none() {
+                    if attr(name).is_none() {
                         return false;
                     }
                 }
                 SimpleSelector::AttrEquals(name, val) => {
-                    if node.attr(name.as_str()) != Some(val.as_str()) {
+                    if attr(name) != Some(val.as_str()) {
                         return false;
                     }
                 }
-                SimpleSelector::AttrMatch(name, value, op, insensitive) => {
-                    let Some(attr) = node.attr(name) else {
+                SimpleSelector::AttrMatch(name, value, op, flag) => {
+                    let Some(attr) = attr(name) else {
                         return false;
                     };
-                    let (attr, value) = if *insensitive {
+                    let insensitive =
+                        flag.unwrap_or_else(|| html && case_insensitive_attribute(name));
+                    let (attr, value) = if insensitive {
                         (attr.to_ascii_lowercase(), value.to_ascii_lowercase())
                     } else {
                         (attr.to_owned(), value.clone())
@@ -109,12 +146,24 @@ impl CompoundSelector {
                     }
                 }
                 SimpleSelector::Is(list) | SimpleSelector::Where(list) => {
-                    if !list.iter().any(|s| s.matches(doc, node_key)) {
+                    if !list.iter().any(|s| s.matches_scoped(doc, node_key, scope)) {
                         return false;
                     }
                 }
                 SimpleSelector::Not(list) => {
-                    if list.iter().any(|s| s.matches(doc, node_key)) {
+                    if list.iter().any(|s| s.matches_scoped(doc, node_key, scope)) {
+                        return false;
+                    }
+                }
+                SimpleSelector::Scope => {
+                    let is_scope = match scope {
+                        Some(scope) => scope == node_key,
+                        None => node
+                            .parent()
+                            .and_then(|p| doc.node(p))
+                            .is_some_and(|p| p.kind() == NodeKind::Document),
+                    };
+                    if !is_scope {
                         return false;
                     }
                 }
@@ -122,7 +171,7 @@ impl CompoundSelector {
                 SimpleSelector::Has(list) => {
                     if !list
                         .iter()
-                        .any(|(combinator, s)| has_relative(doc, node_key, *combinator, s))
+                        .any(|(combinator, s)| has_relative(doc, node_key, *combinator, s, scope))
                     {
                         return false;
                     }
@@ -206,25 +255,67 @@ impl CompoundSelector {
                     }
                 }
                 SimpleSelector::Empty => {
+                    // Comments and processing instructions do not count (Selectors 4 §14.2).
                     if node.children().filter_map(|c| doc.node(c)).any(|c| {
-                        c.kind() == NodeKind::Element || c.text().is_some_and(|t| !t.is_empty())
+                        c.kind() == NodeKind::Element
+                            || (c.kind() == NodeKind::Text
+                                && c.text().is_some_and(|t| !t.is_empty()))
                     }) {
                         return false;
                     }
                 }
                 structural => {
+                    // An element without a parent is its own only sibling (Selectors 4 §14.3).
                     let Some(parent) = node.parent().and_then(|p| doc.node(p)) else {
-                        return false;
+                        let only = match structural {
+                            SimpleSelector::NthChild(a, b, _)
+                            | SimpleSelector::NthChildOf(a, b, _, _)
+                            | SimpleSelector::NthOfType(a, b, _) => {
+                                let n = 1 - *b as i64;
+                                if *a == 0 {
+                                    n == 0
+                                } else {
+                                    n % *a as i64 == 0 && n / *a as i64 >= 0
+                                }
+                            }
+                            _ => true,
+                        };
+                        let of = match structural {
+                            SimpleSelector::NthChildOf(_, _, _, list) => {
+                                list.iter().any(|s| s.matches_scoped(doc, node_key, scope))
+                            }
+                            _ => true,
+                        };
+                        if !(only && of) {
+                            return false;
+                        }
+                        continue;
                     };
                     let of_type = matches!(structural, SimpleSelector::NthOfType(..));
+                    let of = match structural {
+                        SimpleSelector::NthChildOf(_, _, _, list) => Some(list),
+                        _ => None,
+                    };
+                    if of.is_some_and(|list| {
+                        !list.iter().any(|s| s.matches_scoped(doc, node_key, scope))
+                    }) {
+                        return false;
+                    }
                     let siblings: Vec<_> = parent
                         .children()
                         .filter(|k| {
                             doc.node(*k).is_some_and(|n| {
                                 n.kind() == NodeKind::Element
                                     && (!of_type
-                                        || n.element_name()
-                                            .is_some_and(|e| e.local.eq_ignore_ascii_case(&tag)))
+                                        || n.element_name().is_some_and(|e| {
+                                            e.local == raw_tag
+                                                && node
+                                                    .element_name()
+                                                    .is_some_and(|me| me.namespace == e.namespace)
+                                        }))
+                                    && of.is_none_or(|list| {
+                                        list.iter().any(|s| s.matches_scoped(doc, *k, scope))
+                                    })
                             })
                         })
                         .collect();
@@ -238,6 +329,7 @@ impl CompoundSelector {
                         SimpleSelector::LastChild => index == count,
                         SimpleSelector::OnlyChild => count == 1,
                         SimpleSelector::NthChild(a, b, reverse)
+                        | SimpleSelector::NthChildOf(a, b, reverse, _)
                         | SimpleSelector::NthOfType(a, b, reverse) => {
                             let n = if *reverse { count - index + 1 } else { index } - *b as i64;
                             if *a == 0 {
@@ -265,13 +357,16 @@ pub(crate) fn has_relative<D: DocumentView>(
     subject: NodeKey,
     combinator: Combinator,
     selector: &ComplexSelector,
+    scope: Option<NodeKey>,
 ) -> bool {
     const LIMIT: usize = 4096;
     let Some(node) = doc.node(subject) else {
         return false;
     };
     match combinator {
-        Combinator::Child => node.children().any(|c| selector.matches(doc, c)),
+        Combinator::Child => node
+            .children()
+            .any(|c| selector.matches_scoped(doc, c, scope)),
         Combinator::Descendant => {
             let mut stack: Vec<NodeKey> = node.children().collect();
             let mut seen = 0;
@@ -280,7 +375,7 @@ pub(crate) fn has_relative<D: DocumentView>(
                 if seen > LIMIT {
                     return false;
                 }
-                if selector.matches(doc, k) {
+                if selector.matches_scoped(doc, k, scope) {
                     return true;
                 }
                 if let Some(n) = doc.node(k) {
@@ -299,9 +394,13 @@ pub(crate) fn has_relative<D: DocumentView>(
                 .skip(1)
                 .filter(|k| doc.node(*k).is_some_and(|n| n.kind() == NodeKind::Element));
             if combinator == Combinator::Adjacent {
-                following.take(1).any(|k| selector.matches(doc, k))
+                following
+                    .take(1)
+                    .any(|k| selector.matches_scoped(doc, k, scope))
             } else {
-                following.into_iter().any(|k| selector.matches(doc, k))
+                following
+                    .into_iter()
+                    .any(|k| selector.matches_scoped(doc, k, scope))
             }
         }
     }
@@ -320,37 +419,54 @@ impl ComplexSelector {
     }
 
     pub fn matches<D: DocumentView>(&self, doc: &D, node_key: NodeKey) -> bool {
+        self.matches_scoped(doc, node_key, None)
+    }
+
+    /// Match with `:scope` as `scope` (a query's scoping element), or the root element.
+    pub fn matches_scoped<D: DocumentView>(
+        &self,
+        doc: &D,
+        node_key: NodeKey,
+        scope: Option<NodeKey>,
+    ) -> bool {
         if self.items.is_empty() {
             return false;
         }
-        let (last_compound, _) = self.items.last().unwrap();
-        if !last_compound.matches(doc, node_key) {
-            return false;
-        }
-        if self.items.len() == 1 {
-            return true;
-        }
-
-        self.matches_at(doc, node_key, self.items.len() - 1)
+        self.matches_at(doc, node_key, self.items.len() - 1, scope)
     }
-    fn matches_at<D: DocumentView>(&self, doc: &D, key: NodeKey, index: usize) -> bool {
-        if !self.items[index].0.matches(doc, key) {
+    fn matches_at<D: DocumentView>(
+        &self,
+        doc: &D,
+        key: NodeKey,
+        index: usize,
+        scope: Option<NodeKey>,
+    ) -> bool {
+        if !self.items[index].0.matches_scoped(doc, key, scope) {
             return false;
         }
         if index == 0 {
             return true;
         }
         let combinator = self.items[index - 1].1.unwrap_or(Combinator::Descendant);
-        let parent = || doc.node(key).and_then(NodeView::parent);
+        let parent = || {
+            doc.node(key)
+                .and_then(NodeView::parent)
+                .filter(|p| doc.node(*p).is_some_and(|n| n.kind() == NodeKind::Element))
+        };
         match combinator {
-            Combinator::Child => parent().is_some_and(|p| self.matches_at(doc, p, index - 1)),
+            Combinator::Child => {
+                parent().is_some_and(|p| self.matches_at(doc, p, index - 1, scope))
+            }
             Combinator::Descendant => {
                 let mut ancestor = parent();
                 while let Some(p) = ancestor {
-                    if self.matches_at(doc, p, index - 1) {
+                    if self.matches_at(doc, p, index - 1, scope) {
                         return true;
                     }
-                    ancestor = doc.node(p).and_then(NodeView::parent);
+                    ancestor = doc
+                        .node(p)
+                        .and_then(NodeView::parent)
+                        .filter(|p| doc.node(*p).is_some_and(|n| n.kind() == NodeKind::Element));
                 }
                 false
             }
@@ -366,12 +482,12 @@ impl ComplexSelector {
                 if combinator == Combinator::Adjacent {
                     previous
                         .last()
-                        .is_some_and(|p| self.matches_at(doc, *p, index - 1))
+                        .is_some_and(|p| self.matches_at(doc, *p, index - 1, scope))
                 } else {
                     previous
                         .into_iter()
                         .rev()
-                        .any(|p| self.matches_at(doc, p, index - 1))
+                        .any(|p| self.matches_at(doc, p, index - 1, scope))
                 }
             }
         }
@@ -381,3 +497,57 @@ impl ComplexSelector {
 // ---------------------------------------------------------------------------
 // CSS PARSING (RULES & SELECTORS)
 // ---------------------------------------------------------------------------
+
+/// HTML attributes whose values match case-insensitively in selectors unless the `s` flag is
+/// given (HTML §4.16.2, "case-sensitivity of selectors").
+fn case_insensitive_attribute(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "accept"
+            | "accept-charset"
+            | "align"
+            | "alink"
+            | "axis"
+            | "bgcolor"
+            | "charset"
+            | "checked"
+            | "clear"
+            | "codetype"
+            | "color"
+            | "compact"
+            | "declare"
+            | "defer"
+            | "dir"
+            | "direction"
+            | "disabled"
+            | "enctype"
+            | "face"
+            | "frame"
+            | "hreflang"
+            | "http-equiv"
+            | "lang"
+            | "language"
+            | "link"
+            | "media"
+            | "method"
+            | "multiple"
+            | "nohref"
+            | "noresize"
+            | "noshade"
+            | "nowrap"
+            | "readonly"
+            | "rel"
+            | "rev"
+            | "rules"
+            | "scope"
+            | "scrolling"
+            | "selected"
+            | "shape"
+            | "target"
+            | "text"
+            | "type"
+            | "valign"
+            | "valuetype"
+            | "vlink"
+    )
+}

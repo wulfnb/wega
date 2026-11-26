@@ -8,6 +8,11 @@ use wega_css_values::*;
 type Error = ParseError<()>;
 
 pub fn stylesheet(css: &str) -> StyleSheet {
+    // `@namespace` declarations hold for this stylesheet only.
+    wega_css_selectors::with_namespaces(|| parse_stylesheet(css))
+}
+
+fn parse_stylesheet(css: &str) -> StyleSheet {
     if css.len() > 8 * 1024 * 1024 {
         return StyleSheet {
             unsupported: vec!["stylesheet byte limit".into()],

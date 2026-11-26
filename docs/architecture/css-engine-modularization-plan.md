@@ -341,6 +341,28 @@ Results (Linux, comparing the source text with Stylo's text at `2384b98`):
 - The CSSOM gates (`round15_acceptance`, `inspector_styles`, `native_real_css_gaps`) pass,
   and the ignored `css` tests fail identically with either text.
 
+Progress (2026-11-26): **steps 2–3, part 1 of 4: DOM selector queries.**
+Steps 2–3 run in four parts, each compared test by test with the previous commit:
+1. `querySelector`/`matches`/`closest` on `wega-css-selectors` (done).
+2. Inline styles (`element.style`) with a native serializer, together with `CSS.supports`.
+   Moving `CSS.supports` alone broke feature detection (container-query tests stop at
+   `CSS.supports("container-type: size")`) and would disagree with `element.style`;
+   `supports_text`/`supports_property_value` are ready in `css/parser`.
+3. The CSSOM rule tree (`cssRules`, `insertRule`, `cssText`).
+4. Stylesheet loading and DevTools inspection, then removing Stylo from the worker.
+
+Part 1 adds to `wega-css-selectors`: a real `:scope`, `:nth-child(An+B of S)`, type
+selectors that keep their case (case-insensitive only on HTML elements) and attribute names
+likewise, HTML's case-insensitive attribute values, `*|E`/`|E`/`ns|E` with `@namespace`
+(default namespace rules for `:is()`/`:where()`/`:not()`, top of sheet only), `:empty`
+ignoring comments, parentless elements as only children, and the pseudo-classes and
+pseudo-elements Stylo accepted. Invalid selectors (and other `SyntaxError:` native errors)
+throw a `SyntaxError` `DOMException`.
+
+Results: selector API, `css/selectors` and `css/cssom` files 316 → 395 passing, subtests
+4,813 → 5,536, no regressions. The 1,858 baseline tests and `css/css-conditional` show none
+either; `css-cascade/parsing/supports-import-parsing.html` times out only under parallel load.
+
 ### Phase 4: Layout fidelity, ported per formatting context
 Driven by WPT flexbox, grid, floats and tables plus the site corpus. Replace
 approximations made during the bug-fix rounds:

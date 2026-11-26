@@ -18,6 +18,8 @@ pub(crate) enum AtRulePrelude {
     Supports(bool),
     /// `@property --name`.
     Property(String),
+    /// `@namespace [prefix] url`.
+    Namespace(Option<String>, String),
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +154,9 @@ pub(crate) struct Rules {
     anonymous_layers: usize,
     /// `@property` registrations: (name, initial value, inherits).
     pub(crate) registered: Vec<(String, String, bool)>,
+    /// Whether `@namespace` may still appear: only at the top level, before any rule other
+    /// than `@charset`, `@import` and `@layer` statements (CSS Namespaces 3 §2).
+    namespaces_open: bool,
 }
 
 impl Rules {
@@ -163,6 +168,7 @@ impl Rules {
             current_layer: None,
             anonymous_layers: 0,
             registered: Vec::new(),
+            namespaces_open: true,
         }
     }
     fn layer_index(&mut self, name: &str) -> u32 {
@@ -196,6 +202,7 @@ impl Rules {
             current_layer: layer.or_else(|| self.current_layer.clone()),
             anonymous_layers: self.anonymous_layers,
             registered: std::mem::take(&mut self.registered),
+            namespaces_open: false,
         };
         let parsed: Vec<ParsedRule> = StyleSheetParser::new(input, &mut nested)
             .filter_map(Result::ok)
@@ -328,7 +335,11 @@ impl<'i> AtRuleParser<'i> for Rules {
         name: CowRcStr<'i>,
         input: &mut Parser<'i>,
     ) -> Result<Self::Prelude, Error> {
-        match name.to_ascii_lowercase().as_str() {
+        let name = name.to_ascii_lowercase();
+        if !matches!(name.as_str(), "namespace" | "import" | "charset" | "layer") {
+            self.namespaces_open = false;
+        }
+        match name.as_str() {
             "media" => {
                 let mut s = String::new();
                 while let Ok(token) = input.next() {
@@ -350,6 +361,21 @@ impl<'i> AtRuleParser<'i> for Rules {
                 Ok(AtRulePrelude::Media(queries))
             }
             "font-face" => Ok(AtRulePrelude::FontFace),
+            "namespace" if self.namespaces_open => {
+                let prefix = input
+                    .try_parse(|p| p.expect_ident().map(|i| i.to_string()))
+                    .ok();
+                let url = match input.next()?.clone() {
+                    Token::UnquotedUrl(u) | Token::QuotedString(u) => u.to_string(),
+                    Token::Function(f) if f.eq_ignore_ascii_case("url") => input
+                        .parse_nested_block(|p| {
+                            p.expect_string().map(|s| s.to_string()).map_err(Into::into)
+                        })?,
+                    _ => return Err(ParseError::unexpected_token()),
+                };
+                input.expect_exhausted()?;
+                Ok(AtRulePrelude::Namespace(prefix, url))
+            }
             "layer" => {
                 let mut names = Vec::new();
                 let mut current = String::new();
@@ -444,6 +470,7 @@ impl<'i> AtRuleParser<'i> for Rules {
                 })
             }
             AtRulePrelude::Layer(names) => {
+                self.namespaces_open = false;
                 if names.len() > 1 {
                     return Err(ParseError::unexpected_token());
                 }
@@ -487,6 +514,10 @@ impl<'i> AtRuleParser<'i> for Rules {
     ) -> Result<Self::AtRule, ()> {
         match prelude {
             AtRulePrelude::Import(imp) => Ok(ParsedRule::Import(imp)),
+            AtRulePrelude::Namespace(prefix, url) => {
+                wega_css_selectors::declare_namespace(prefix.as_deref(), &url);
+                Ok(ParsedRule::Media { rules: Vec::new() })
+            }
             AtRulePrelude::Layer(names) => {
                 // `@layer a, b;` fixes the layers' order.
                 for name in names {
@@ -505,6 +536,7 @@ impl<'i> QualifiedRuleParser<'i> for Rules {
     type QualifiedRule = ParsedRule;
     type Error = ();
     fn parse_prelude(&mut self, input: &mut Parser<'i>) -> Result<Self::Prelude, Error> {
+        self.namespaces_open = false;
         match selector_list(input, 0) {
             Ok(s) => Ok(s),
             Err(e) => {
@@ -567,5 +599,124 @@ mod supports_tests {
         ] {
             assert!(applies(valid), "{valid}");
         }
+    }
+}
+
+/// `CSS.supports(conditionText)` (CSS Conditional 3 §6.1): the text as a
+/// `<supports-condition>`, or failing that, wrapped in parentheses, so that a bare
+/// declaration such as `display: grid` works.
+pub fn supports_text(condition: &str) -> bool {
+    let evaluate = |text: &str| {
+        Parser::new(text)
+            .parse_entirely(|p| {
+                supports_condition(p, 0).map_err(|_| p.new_error_for_next_token::<()>())
+            })
+            .ok()
+    };
+    evaluate(condition) == Some(true) || evaluate(&format!("({condition})")) == Some(true)
+}
+
+/// `CSS.supports(property, value)`: whether `value` is valid for the property, which is
+/// matched literally (no `!important`, no extra syntax around the name).
+pub fn supports_property_value(property: &str, value: &str) -> bool {
+    let well_formed_name = !property.is_empty()
+        && property
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || !c.is_ascii());
+    let mut bang = false;
+    let mut input = Parser::new(value);
+    while let Ok(token) = input.next() {
+        bang |= matches!(token, Token::Delim('!'));
+    }
+    well_formed_name && !bang && supports_text(&format!("({property}: {value})"))
+}
+
+#[cfg(test)]
+mod css_supports_tests {
+    use super::*;
+
+    #[test]
+    fn css_supports_accepts_conditions_and_bare_declarations() {
+        assert!(supports_text("(display: flex)"));
+        assert!(supports_text("display: flex"));
+        assert!(supports_text("(color: red) and (margin: 0)"));
+        assert!(!supports_text("display: nonsense"));
+        assert!(!supports_text(
+            "(color: red) and (margin: 0) or (padding: 0)"
+        ));
+        assert!(supports_property_value("color", "red"));
+        assert!(supports_property_value("--anything", "x"));
+        assert!(!supports_property_value("color", "red !important"));
+        assert!(!supports_property_value("color:", "red"));
+        assert!(!supports_property_value("unknown-property", "1"));
+    }
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    use wega_css_selectors::SimpleSelector;
+
+    fn first_compound(css: &str) -> Vec<SimpleSelector> {
+        crate::stylesheet(css).rules[0].selectors[0].items[0]
+            .0
+            .components
+            .clone()
+    }
+
+    #[test]
+    fn namespace_rules_scope_type_selectors() {
+        const SVG: &str = "http://www.w3.org/2000/svg";
+        let svg = || SimpleSelector::Namespace(SVG.into());
+        // The default namespace applies to type selectors and to bare compounds.
+        assert_eq!(
+            first_compound(&format!("@namespace url({SVG}); rect {{ color: red }}")),
+            [svg(), SimpleSelector::Type("rect".into())]
+        );
+        assert_eq!(
+            first_compound(&format!("@namespace \"{SVG}\"; .a {{ color: red }}"))[0],
+            svg()
+        );
+        // Inside :is() it applies only to the explicit type selector.
+        let is = first_compound(&format!(
+            "@namespace url({SVG}); *|*:is(div) {{ color: red }}"
+        ));
+        assert_eq!(is[0], SimpleSelector::Universal);
+        // Declared prefixes resolve; undeclared ones drop the rule.
+        assert_eq!(
+            first_compound(&format!("@namespace s url({SVG}); s|rect {{ color: red }}"))[0],
+            svg()
+        );
+        assert!(crate::stylesheet("x|rect { color: red }").rules.is_empty());
+        // Declarations do not leak into the next stylesheet.
+        assert_eq!(
+            first_compound("rect { color: red }"),
+            [SimpleSelector::Type("rect".into())]
+        );
+    }
+}
+
+#[cfg(test)]
+mod namespace_position_tests {
+    #[test]
+    fn namespace_rules_only_count_at_the_top() {
+        let not_div = |css: &str| crate::stylesheet(css).rules.len();
+        // Inside @media, after a style rule, or after a @layer block, @namespace is ignored,
+        // so `foo|div` stays an undeclared prefix and its rule is dropped.
+        assert_eq!(
+            not_div("@media all { @namespace foo url(x); foo|div { color: red } }"),
+            0
+        );
+        assert_eq!(
+            not_div("p {} @namespace foo url(x); foo|div { color: red }"),
+            1
+        );
+        assert_eq!(
+            not_div("@layer a {} @namespace foo url(x); foo|div { color: red }"),
+            0
+        );
+        assert_eq!(
+            not_div("@import url(a.css); @namespace foo url(x); foo|div { color: red }"),
+            1
+        );
     }
 }

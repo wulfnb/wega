@@ -1471,10 +1471,10 @@ impl Dom {
                 json!({"nodeType":info.node_type,"nodeName":info.node_name,"localName":info.local_name,"namespaceURI":info.namespace,"prefix":info.prefix})
             },
             "attributes"=>json!(doc.node(node_id()?).into_iter().flat_map(NodeView::attributes).map(|(name,value)|json!({"name":name.prefix.as_ref().map_or_else(||name.local.to_string(),|p|format!("{p}:{}",name.local)),"localName":name.local.to_string(),"namespaceURI":if name.ns==ns!(){None}else{Some(name.ns.to_string())},"value":value})).collect::<Vec<_>>()),
-            "queryIn"=>json!(doc.query_selector_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
-            "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?,text(2)).map_err(|_|"Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
-            "matches"=>json!(doc.matches_selector(node_id()?,text(2)).map_err(|_|"Invalid selector")?),
-            "closest"=>json!(doc.closest(node_id()?,text(2)).map_err(|_|"Invalid selector")?.map(|id|id.as_u64().to_string())),
+            "queryIn"=>json!(doc.query_selector_in(node_id()?,text(2)).map_err(|_|"SyntaxError: Invalid selector")?.map(|id|id.as_u64().to_string())),
+            "queryAllIn"=>json!(doc.query_selector_all_in(node_id()?,text(2)).map_err(|_|"SyntaxError: Invalid selector")?.iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>()),
+            "matches"=>json!(doc.matches_selector(node_id()?,text(2)).map_err(|_|"SyntaxError: Invalid selector")?),
+            "closest"=>json!(doc.closest(node_id()?,text(2)).map_err(|_|"SyntaxError: Invalid selector")?.map(|id|id.as_u64().to_string())),
             "getById" => {
                 let id_str = text(1);
                 let target_scope = text(2).parse::<u64>().ok().map(NodeKey::from_u64);
@@ -1592,12 +1592,12 @@ impl Dom {
             "root" => json!(doc.root().as_u64().to_string()),
             "query" => json!(
                 doc.query_selector(text(1))
-                    .map_err(|_| "Invalid selector")?
+                    .map_err(|_| "SyntaxError: Invalid selector")?
                     .map(|id| id.as_u64().to_string())
             ),
             "queryAll" => json!(
                 doc.query_selector_all(text(1))
-                    .map_err(|_| "Invalid selector")?
+                    .map_err(|_| "SyntaxError: Invalid selector")?
                     .iter()
                     .map(|id| id.as_u64().to_string())
                     .collect::<Vec<_>>()

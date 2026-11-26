@@ -26,17 +26,25 @@
   Object.defineProperty(globalThis, "__wega_call", {
     configurable: true,
     value: (op, a = "", b = "", c = "", d = "") => {
-      if (op === "setAttrNS")
-        return ops.op_dom_set_attr_ns(
-          String(a),
-          String(b),
-          String(c),
-          String(d),
-        );
-      if (op === "setText") return ops.op_dom_set_text(String(a), String(b));
-      if (op === "setAttr")
-        return ops.op_dom_set_attr(String(a), String(b), String(c));
-      return ops.op_dom_read(String(op), String(a), String(b), String(c));
+      try {
+        if (op === "setAttrNS")
+          return ops.op_dom_set_attr_ns(
+            String(a),
+            String(b),
+            String(c),
+            String(d),
+          );
+        if (op === "setText") return ops.op_dom_set_text(String(a), String(b));
+        if (op === "setAttr")
+          return ops.op_dom_set_attr(String(a), String(b), String(c));
+        return ops.op_dom_read(String(op), String(a), String(b), String(c));
+      } catch (error) {
+        // A native "SyntaxError: ..." becomes that DOMException (TypeError and RangeError
+        // stay ECMAScript errors), as in __wega_guard_binding.
+        const match = /^([A-Za-z]+Error):\s*(.*)/.exec(error.message || "");
+        if (match) throw ({ TypeError, RangeError }[match[1]] ? new globalThis[match[1]](match[2]) : new DOMException(match[2], match[1]));
+        throw error;
+      }
     },
   });
 })(Deno.core.ops);

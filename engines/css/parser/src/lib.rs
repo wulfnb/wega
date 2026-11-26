@@ -15,6 +15,7 @@ pub use declarations::*;
 pub use media::*;
 pub use properties::*;
 use rules::*;
+pub use rules::{supports_property_value, supports_text};
 pub use shorthand::*;
 pub use stylesheet::*;
 pub use typed::*;

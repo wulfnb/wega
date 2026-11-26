@@ -3,13 +3,21 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleSelector {
     Universal,
+    /// A type selector, as written: case-insensitive for HTML elements, exact otherwise.
     Type(String),
+    /// Elements in this namespace (`""` is no namespace), from `ns|E`, `|E` or a default
+    /// namespace declared with `@namespace`.
+    Namespace(String),
     Class(String),
     Id(String),
     AttrPresent(String),
     AttrEquals(String, String),
-    AttrMatch(String, String, char, bool),
+    /// `[name op value flag]`. The name is as written; the flag is `Some(true)` for `i`,
+    /// `Some(false)` for `s`, and `None` for HTML's default case sensitivity.
+    AttrMatch(String, String, char, Option<bool>),
     Root,
+    /// `:scope`: the scoping element of a query, or the root element in a stylesheet.
+    Scope,
     Hover,
     Focus,
     FocusWithin,
@@ -23,6 +31,8 @@ pub enum SimpleSelector {
     LastChild,
     OnlyChild,
     NthChild(i32, i32, bool),
+    /// `:nth-child(An+B of S)`, counting only siblings that match `S`.
+    NthChildOf(i32, i32, bool, Vec<ComplexSelector>),
     Is(Vec<ComplexSelector>),
     Where(Vec<ComplexSelector>),
     Not(Vec<ComplexSelector>),
