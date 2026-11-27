@@ -235,3 +235,39 @@ fn image_none_and_urls() {
         "fallback"
     );
 }
+
+#[test]
+fn transforms_are_native() {
+    let engine = NativeFirst(Never);
+    let one = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+    assert_eq!(
+        one("transform", "translate(10px, 0) Scale(2,2)").as_deref(),
+        Some("translate(10px) scale(2)")
+    );
+    assert_eq!(one("rotate", "0 0 -1 30deg").as_deref(), Some("-30deg"));
+    assert_eq!(one("translate", "10px 0% 0").as_deref(), Some("10px 0%"));
+    assert_eq!(
+        one("transform-origin", "left top").as_deref(),
+        Some("left top 0px")
+    );
+    assert_eq!(one("transform", "rotate(calc(1deg))").as_deref(), Some(""));
+}
+
+#[test]
+fn shadows_and_filters_are_native() {
+    let engine = NativeFirst(Never);
+    let one = |p: &str, v: &str| engine.parse(p, v).map(|v| v[0].1.clone());
+    assert_eq!(
+        one("box-shadow", "inset 1px 2px RED").as_deref(),
+        Some("red 1px 2px inset")
+    );
+    assert_eq!(
+        one("text-shadow", "1px 2px, red 3px 4px 5px").as_deref(),
+        Some("1px 2px, red 3px 4px 5px")
+    );
+    assert_eq!(
+        one("filter", "grayscale(2) blur()").as_deref(),
+        Some("grayscale(1) blur(0px)")
+    );
+    assert_eq!(one("box-shadow", "1px 2px -3px"), None);
+}

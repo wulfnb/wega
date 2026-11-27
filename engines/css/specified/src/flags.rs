@@ -97,6 +97,59 @@ pub const CONTAINER_TYPE: Flags = Flags {
     validate: |bits| bits & 0b11 != 0b11 && bits & 4 == 0,
 };
 
+/// `font-variant-east-asian`: at most one of the JIS/simplified/traditional group, and not
+/// `full-width` with `proportional-width`.
+pub const FONT_VARIANT_EAST_ASIAN: Flags = Flags {
+    single: &[("normal", 0)],
+    mixed: &[
+        ("jis78", 1),
+        ("jis83", 2),
+        ("jis90", 4),
+        ("jis04", 8),
+        ("simplified", 16),
+        ("traditional", 32),
+        ("full-width", 64),
+        ("proportional-width", 128),
+        ("ruby", 256),
+    ],
+    overlapping: false,
+    validate: |bits| bits & 0b1100_0000 != 0b1100_0000 && (bits & 0b11_1111).count_ones() <= 1,
+};
+
+/// `font-variant-ligatures`: each feature on or off, not both.
+pub const FONT_VARIANT_LIGATURES: Flags = Flags {
+    single: &[("normal", 0), ("none", 1)],
+    mixed: &[
+        ("common-ligatures", 2),
+        ("no-common-ligatures", 4),
+        ("discretionary-ligatures", 8),
+        ("no-discretionary-ligatures", 16),
+        ("historical-ligatures", 32),
+        ("no-historical-ligatures", 64),
+        ("contextual", 128),
+        ("no-contextual", 256),
+    ],
+    overlapping: false,
+    validate: |bits| [6, 24, 96, 384].iter().all(|pair| bits & pair != *pair),
+};
+
+/// `font-variant-numeric`: not both of a figure, spacing or fraction pair.
+pub const FONT_VARIANT_NUMERIC: Flags = Flags {
+    single: &[("normal", 0)],
+    mixed: &[
+        ("lining-nums", 1),
+        ("oldstyle-nums", 2),
+        ("proportional-nums", 4),
+        ("tabular-nums", 8),
+        ("diagonal-fractions", 16),
+        ("stacked-fractions", 32),
+        ("ordinal", 128),
+        ("slashed-zero", 64),
+    ],
+    overlapping: false,
+    validate: |bits| [3, 12, 48].iter().all(|pair| bits & pair != *pair),
+};
+
 /// Parse and serialize `value` as `flags`, or `None` if invalid.
 pub fn flags(value: &str, flags: &Flags) -> Option<String> {
     let words = idents(value)?;

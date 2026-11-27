@@ -11,6 +11,7 @@ mod background;
 mod box_values;
 mod color;
 mod easing;
+mod effects;
 mod flags;
 mod font;
 mod grid;
@@ -20,6 +21,7 @@ mod number;
 mod position;
 mod svg;
 mod text;
+mod transform;
 
 pub use align::{Axis, Grammar, alignment};
 pub use background::{
@@ -28,11 +30,12 @@ pub use background::{
 pub use box_values::{aspect_ratio, display, flex_wrap};
 pub use color::{caret_color, color, color_scheme};
 pub use easing::timing_function;
+pub use effects::{filters, shadows};
 pub use flags::{
-    CONTAIN, CONTAINER_TYPE, Flags, TEXT_DECORATION_LINE, TEXT_TRANSFORM, TEXT_UNDERLINE_POSITION,
-    TOUCH_ACTION, flags,
+    CONTAIN, CONTAINER_TYPE, FONT_VARIANT_EAST_ASIAN, FONT_VARIANT_LIGATURES, FONT_VARIANT_NUMERIC,
+    Flags, TEXT_DECORATION_LINE, TEXT_TRANSFORM, TEXT_UNDERLINE_POSITION, TOUCH_ACTION, flags,
 };
-pub use font::{font_weight, line_height};
+pub use font::{font_family, font_size, font_style, font_weight, font_width, line_height};
 pub use grid::{grid_auto_flow, grid_line};
 pub use length::{border_spacing, corner_radius, length_percentage};
 pub use names::{animation_name, container_name, will_change};
@@ -42,6 +45,7 @@ pub use number::{
 pub use position::position;
 pub use svg::{dash_array, svg_length, svg_paint};
 pub use text::{text_align, text_overflow};
+pub use transform::{individual, rotate, scale, transform, transform_origin, translate};
 
 /// The result of parsing one specified value.
 #[derive(Debug, Clone, PartialEq, Eq)]
