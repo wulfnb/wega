@@ -172,9 +172,26 @@ Done (2026-11-21), test gate pending:
   - **The checker's contract list still names a single `wega-css` crate**, so
     `wega-css-selectors -> wega-dom` and `wega-style -> wega-dom` are not reported yet.
   - **Formatting contexts are mutually recursive through `layout_box`**, so they are modules,
-    not crates, until a dispatch trait exists.
+    not crates, until a dispatch trait exists. (Resolved 2026-11-26, see below.)
   - **Two files exceed 600 lines**, each a single function: `apply.rs` (687) and
-    `block.rs` (653).
+    `block.rs` (653). (Both now under 600.)
+
+Follow-up (2026-11-26): **budgets and the layout split.**
+- **Layout is one crate per formatting context**, layered with no cycles: `wega-layout-core`
+  (box tree, box model, layout context) → `-text` → `-inline` (with intrinsic sizing) →
+  `-block` (with floats and the container sizing flex, grid and table share) →
+  `-flex`/`-grid`/`-table` → `wega-layout` (`layout/engine`). Formatting contexts recurse
+  through `wega_layout_core::layout_box`, which calls the dispatcher `wega-layout` installs in
+  the layout context, so the crates no longer need each other. `wega-layout`'s public API is
+  unchanged. `block.rs` is under 600 lines (form-control text centering moved out).
+- **CSSOM value parsers moved to `wega-css-values`** (`specified`, one module per family),
+  as the target table says; `wega-css-parser` keeps only the longhand-to-parser mapping.
+- **Files over 600 lines split:** `color.rs` (the `color()` spaces and the tests moved out),
+  `typed.rs` (tests) and `rules.rs` (`@supports` moved to `supports.rs`).
+- **Crate sizes** (non-test, non-generated lines): `wega-css-values` about 3,050 and
+  `wega-css-parser` about 3,100, against the 3k budget.
+- Still open: layout reads `ComputedStyle` and `wega-dom` directly (ARCH-003); a plain
+  `LayoutStyle` from `adapters/style-layout` removes that.
 
 ### Phase 2: Typed property model (the structural fix)
 1. In `css/parser`, add a property table modeled on Stylo's longhand/shorthand

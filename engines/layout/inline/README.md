@@ -1,15 +1,15 @@
 # layout/inline
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — crate `wega-layout-inline`
 
 ## Purpose
 
-Inline formatting context layout.
+Inline formatting context layout, and intrinsic (min-/max-content) sizing.
 
-## Intended responsibilities
+## Responsibilities
 
-- Line box construction and baseline alignment
-- Inline-level box fragmentation
+- Inline formatting context: line layout and inline geometry (`inline`)
+- Intrinsic sizing measured from content (`intrinsic`)
 
 ## Expected dependencies
 
@@ -21,4 +21,8 @@ Inline formatting context layout.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Implemented as `wega-layout-inline`, a member of the `engines` workspace, split out of the single `wega-layout` crate by formatting context (CSS engine modularization plan). Crates are layered with no cycles: `core` → `text` → `inline` → `block` → `flex`/`grid`/`table` → `engine` (`wega-layout`).
+
+Actual dependencies: `wega-layout-core`, `wega-layout-text`, `wega-style`, `wega-css-values`, `wega-dom`.
+
+Deviations from the target: Builds on `ComputedStyle` (`wega-style`, `wega-css-values`) directly rather than a plain layout style from `adapters/style-layout` (target of the modularization plan). See [`css-engine-modularization-plan.md`](../../../docs/architecture/css-engine-modularization-plan.md).

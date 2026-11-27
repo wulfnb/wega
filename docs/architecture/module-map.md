@@ -6,7 +6,7 @@ This map describes the modular layout of the Wega browser engine. **Implemented 
 Wega-owned CSS, layout, Parley shaping and display-list algorithms and no Blitz
 dependency. CSS engine modularization Phase 1 split it into `css/values`
 (`wega-css-values`), `css/selectors` (`wega-css-selectors`), `css/parser`
-(`wega-css-parser`), `css/style-engine` (`wega-style`), `layout/core` (`wega-layout`),
+(`wega-css-parser`), `css/style-engine` (`wega-style`), `layout/*` (`wega-layout` and one crate per formatting context),
 `graphics/display-list` (`wega-display-list`) and `graphics/image` (`wega-image`), and
 deleted `wega-native`; see
 [`css-engine-modularization-plan.md`](./css-engine-modularization-plan.md). `wega-dom` now also supplies an independently tested flat document
@@ -191,8 +191,10 @@ Avoid: `css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*
 | [`block`](../../engines/layout/block/README.md) | Block formatting context layout. |
 | [`flex`](../../engines/layout/flex/README.md) | Flexbox layout. |
 | [`grid`](../../engines/layout/grid/README.md) | CSS Grid layout. |
-| [`inline`](../../engines/layout/inline/README.md) | Inline formatting context layout. |
+| [`inline`](../../engines/layout/inline/README.md) | Inline formatting context layout and intrinsic sizing. |
 | [`text`](../../engines/layout/text/README.md) | Text shaping, measurement and line breaking. |
+| [`table`](../../engines/layout/table/README.md) | Table layout. |
+| [`engine`](../../engines/layout/engine/README.md) | Layout entry point (`wega-layout`): dispatches boxes to formatting contexts. |
 | [`invalidation`](../../engines/layout/invalidation/README.md) | Layout invalidation and incremental relayout. |
 
 ### Graphics (`engines/graphics`)

@@ -1,7 +1,7 @@
 //! Tables.
 use crate::*;
 
-pub(crate) fn row_paths(b: &LayoutBox, path: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+pub fn row_paths(b: &LayoutBox, path: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
     for (i, c) in b.children.iter().enumerate() {
         path.push(i);
         if c.box_type == BoxType::TableRow {
@@ -13,7 +13,7 @@ pub(crate) fn row_paths(b: &LayoutBox, path: &mut Vec<usize>, out: &mut Vec<Vec<
     }
 }
 
-pub(crate) fn at_path<'a>(b: &'a mut LayoutBox, path: &[usize]) -> &'a mut LayoutBox {
+pub fn at_path<'a>(b: &'a mut LayoutBox, path: &[usize]) -> &'a mut LayoutBox {
     if let Some((first, rest)) = path.split_first() {
         at_path(&mut b.children[*first], rest)
     } else {
@@ -21,7 +21,7 @@ pub(crate) fn at_path<'a>(b: &'a mut LayoutBox, path: &[usize]) -> &'a mut Layou
     }
 }
 
-pub(crate) fn layout_table(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
+pub fn layout_table(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
     let inner = init_container(b, cb, positioned, ctx);
     let spacing = b.style.border_spacing;
     let mut paths = Vec::new();

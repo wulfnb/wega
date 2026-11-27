@@ -1,14 +1,10 @@
-//! Layout entry point and per-box dispatch.
+//! Layout entry point: viewport units, viewport overflow and indefinite percentages.
 use crate::*;
 
-pub struct LayoutContext {
-    pub viewport_width: f64,
-    pub viewport_height: f64,
-    pub font_size_root: f64,
-}
-
-pub fn perform_layout(root: &mut LayoutBox, ctx: &LayoutContext) {
-    fn units(b: &mut LayoutBox, ctx: &LayoutContext) {
+/// Resolve viewport units, propagate viewport overflow and indefinite percentage heights,
+/// then lay out `root` in the initial containing block.
+pub(crate) fn layout_root(root: &mut LayoutBox, ctx: &CoreContext) {
+    fn units(b: &mut LayoutBox, ctx: &CoreContext) {
         let cv = |l: &mut Length| {
             *l = match *l {
                 Length::Vw(v) => Length::Px(v * ctx.viewport_width / 100.0),
@@ -40,7 +36,7 @@ pub fn perform_layout(root: &mut LayoutBox, ctx: &LayoutContext) {
                 cv(l);
             }
         }
-        fn track(t: &mut GridTrack, ctx: &LayoutContext) {
+        fn track(t: &mut GridTrack, ctx: &CoreContext) {
             match t {
                 GridTrack::Length(l) => {
                     *l = match *l {
@@ -93,7 +89,7 @@ pub fn perform_layout(root: &mut LayoutBox, ctx: &LayoutContext) {
 ///
 /// Reference: Stylo/Taffy treat these as "indefinite" through `MaybeResolve`
 /// (`stylo_taffy/convert.rs`, `taffy::util::resolve`).
-pub(crate) fn indefinite_percent_heights(b: &mut LayoutBox, definite: bool, ctx: &LayoutContext) {
+pub(crate) fn indefinite_percent_heights(b: &mut LayoutBox, definite: bool, ctx: &CoreContext) {
     for c in &mut b.children {
         let absolute = matches!(c.style.position, Position::Absolute | Position::Fixed);
         let s = &mut c.style;
@@ -150,65 +146,4 @@ pub(crate) fn propagate_viewport_overflow(root: &mut LayoutBox) {
         body.style.overflow_x = Overflow::Visible;
         body.style.overflow_y = Overflow::Visible;
     }
-}
-
-pub(crate) fn has_percent(l: Length) -> bool {
-    match l {
-        Length::Percent(_) => true,
-        Length::Calc(terms) => terms[1] != 0.0,
-        Length::Clamp(parts) => parts.iter().any(|t| t[1] != 0.0),
-        _ => false,
-    }
-}
-
-pub(crate) fn layout_box(
-    box_node: &mut LayoutBox,
-    containing_block: Rect,
-    positioned_cb: Rect,
-    ctx: &LayoutContext,
-) {
-    match box_node.box_type {
-        BoxType::Flex => layout_flex(box_node, containing_block, positioned_cb, ctx),
-        BoxType::Grid => layout_grid(box_node, containing_block, positioned_cb, ctx),
-        BoxType::Table => layout_table(box_node, containing_block, positioned_cb, ctx),
-        _ => layout_block_or_flow(box_node, containing_block, positioned_cb, ctx),
-    }
-}
-
-pub(crate) fn resolve_insets(
-    lengths: &RectLengths,
-    parent_w: f64,
-    font_size: f64,
-    root_font_size: f64,
-) -> Insets {
-    Insets {
-        top: lengths.top.resolve(parent_w, font_size, root_font_size),
-        right: lengths.right.resolve(parent_w, font_size, root_font_size),
-        bottom: lengths.bottom.resolve(parent_w, font_size, root_font_size),
-        left: lengths.left.resolve(parent_w, font_size, root_font_size),
-    }
-}
-
-pub(crate) fn clamp_dimension(
-    val: f64,
-    min_len: Length,
-    max_len: Length,
-    parent_dim: f64,
-    fs: f64,
-    rfs: f64,
-) -> f64 {
-    let mut clamped = val;
-    if max_len != Length::Auto {
-        let max_val = max_len.resolve(parent_dim, fs, rfs);
-        if clamped > max_val {
-            clamped = max_val;
-        }
-    }
-    if min_len != Length::Auto {
-        let min_val = min_len.resolve(parent_dim, fs, rfs);
-        if clamped < min_val {
-            clamped = min_val;
-        }
-    }
-    clamped.max(0.0)
 }

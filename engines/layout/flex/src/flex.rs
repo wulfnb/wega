@@ -14,7 +14,7 @@ struct FlexLine {
     cross: f64,
 }
 
-pub(crate) fn layout_flex(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
+pub fn layout_flex(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
     let inner = init_container(b, cb, positioned, ctx);
     // `row` follows the inline axis and `column` the block axis (CSS Flexbox 1 §5.1). In a
     // vertical writing mode the inline axis is vertical: top to bottom, or bottom to top in

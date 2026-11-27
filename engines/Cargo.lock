@@ -6995,6 +6995,28 @@ dependencies = [
 name = "wega-layout"
 version = "0.1.0"
 dependencies = [
+ "wega-css-values",
+ "wega-layout-block",
+ "wega-layout-core",
+ "wega-layout-flex",
+ "wega-layout-grid",
+ "wega-layout-table",
+ "wega-layout-text",
+]
+
+[[package]]
+name = "wega-layout-block"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-core",
+ "wega-layout-inline",
+]
+
+[[package]]
+name = "wega-layout-core"
+version = "0.1.0"
+dependencies = [
  "anyrender",
  "kurbo",
  "parley",
@@ -7003,6 +7025,60 @@ dependencies = [
  "wega-css-values",
  "wega-dom",
  "wega-image",
+ "wega-style",
+]
+
+[[package]]
+name = "wega-layout-flex"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-block",
+ "wega-layout-core",
+ "wega-layout-inline",
+]
+
+[[package]]
+name = "wega-layout-grid"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-block",
+ "wega-layout-core",
+ "wega-layout-inline",
+]
+
+[[package]]
+name = "wega-layout-inline"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-dom",
+ "wega-layout-core",
+ "wega-layout-text",
+ "wega-style",
+]
+
+[[package]]
+name = "wega-layout-table"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-block",
+ "wega-layout-core",
+ "wega-layout-inline",
+]
+
+[[package]]
+name = "wega-layout-text"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "kurbo",
+ "parley",
+ "wega-css-values",
+ "wega-dom",
+ "wega-layout-core",
  "wega-style",
 ]
 

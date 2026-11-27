@@ -5,14 +5,14 @@ use crate::*;
 /// own `width` is the caller's concern; descendants contribute their outer
 /// sizes, honouring definite widths. Atomic inlines are measured from their
 /// contents because their own geometry is not laid out yet.
-pub(crate) fn intrinsic_width(b: &LayoutBox, min: bool) -> f64 {
+pub fn intrinsic_width(b: &LayoutBox, min: bool) -> f64 {
     intrinsic_content(b, min, 0)
 }
 
 /// Shape as layout will: with the owning block's style as the root, so the
 /// measured width matches the width the line breaker later sees.
-pub(crate) fn shaped_width(children: &[LayoutBox], min: bool, owner: &ComputedStyle) -> f64 {
-    crate::text::shape_inline_with_style(
+pub fn shaped_width(children: &[LayoutBox], min: bool, owner: &ComputedStyle) -> f64 {
+    wega_layout_text::shape_inline_with_style(
         children,
         if min { 0.0 } else { 1e7 },
         TextAlign::Left,
@@ -23,7 +23,7 @@ pub(crate) fn shaped_width(children: &[LayoutBox], min: bool, owner: &ComputedSt
     .fold(0.0, f64::max)
 }
 
-pub(crate) fn definite(length: Length, b: &LayoutBox) -> Option<f64> {
+pub fn definite(length: Length, b: &LayoutBox) -> Option<f64> {
     match length {
         Length::Auto | Length::Percent(_) => None,
         Length::Calc(v) if v[1] != 0.0 => None,
@@ -32,7 +32,7 @@ pub(crate) fn definite(length: Length, b: &LayoutBox) -> Option<f64> {
     }
 }
 
-pub(crate) fn has_atomic_inline(children: &[LayoutBox]) -> bool {
+pub fn has_atomic_inline(children: &[LayoutBox]) -> bool {
     children.iter().any(|c| {
         c.is_atomic_inline()
             || c.form_state.is_some()
@@ -40,7 +40,7 @@ pub(crate) fn has_atomic_inline(children: &[LayoutBox]) -> bool {
     })
 }
 
-pub(crate) fn intrinsic_content(b: &LayoutBox, min: bool, depth: usize) -> f64 {
+pub fn intrinsic_content(b: &LayoutBox, min: bool, depth: usize) -> f64 {
     if let Some((iw, _)) = b.replaced_size() {
         return iw;
     }
@@ -113,7 +113,7 @@ pub(crate) fn intrinsic_content(b: &LayoutBox, min: bool, depth: usize) -> f64 {
 /// Inline content containing atomic boxes: text runs are shaped on their own
 /// and atoms contribute their outer sizes. Max-content sums the pieces on one
 /// line; min-content is the widest unbreakable piece.
-pub(crate) fn inline_pieces(children: &[LayoutBox], min: bool, depth: usize) -> f64 {
+pub fn inline_pieces(children: &[LayoutBox], min: bool, depth: usize) -> f64 {
     let mut total = 0.0;
     let mut widest: f64 = 0.0;
     for c in children {
@@ -152,7 +152,7 @@ pub(crate) fn inline_pieces(children: &[LayoutBox], min: bool, depth: usize) -> 
 }
 
 /// Margin-box contribution of a child to its parent's intrinsic width.
-pub(crate) fn outer_intrinsic(c: &LayoutBox, min: bool, depth: usize) -> f64 {
+pub fn outer_intrinsic(c: &LayoutBox, min: bool, depth: usize) -> f64 {
     if c.box_type == BoxType::Text {
         return shaped_width(std::slice::from_ref(c), min, &c.style);
     }
@@ -188,7 +188,7 @@ pub(crate) fn outer_intrinsic(c: &LayoutBox, min: bool, depth: usize) -> f64 {
     content + frame + margin.left.max(0.0) + margin.right.max(0.0)
 }
 
-pub(crate) fn border_main_limit(
+pub fn border_main_limit(
     b: &LayoutBox,
     main: f64,
     is_row: bool,
@@ -253,7 +253,7 @@ pub(crate) fn border_main_limit(
     (value + extra).max(0.0)
 }
 
-pub(crate) fn forced_size(
+pub fn forced_size(
     b: &mut LayoutBox,
     cb: Rect,
     positioned: Rect,

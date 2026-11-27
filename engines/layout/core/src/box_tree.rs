@@ -85,7 +85,7 @@ pub fn build_box_tree<D: DocumentView>(
         .and_then(|mut b| (b.len() == 1).then(|| b.remove(0)))
 }
 
-pub(crate) fn build_box_node<D: DocumentView>(
+pub fn build_box_node<D: DocumentView>(
     doc: &D,
     node_key: NodeKey,
     style: ComputedStyle,

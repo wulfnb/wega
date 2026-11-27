@@ -1,7 +1,7 @@
 //! Grid.
 use crate::*;
 
-pub(crate) fn track_sizes(
+pub fn track_sizes(
     tracks: &[GridTrack],
     mins: &[f64],
     maxs: &[f64],
@@ -98,7 +98,7 @@ pub(crate) fn track_sizes(
 }
 
 /// Expand `repeat(auto-fill, …)` to as many repetitions as fit `available`.
-pub(crate) fn expand_auto_repeat(
+pub fn expand_auto_repeat(
     tracks: &[GridTrack],
     available: f64,
     gap: f64,
@@ -141,12 +141,7 @@ pub(crate) fn expand_auto_repeat(
 }
 
 /// Turn named areas and end lines into the start/span form placement uses.
-pub(crate) fn resolve_grid_item(
-    c: &mut LayoutBox,
-    areas: &[Vec<String>],
-    cols: usize,
-    rows: usize,
-) {
+pub fn resolve_grid_item(c: &mut LayoutBox, areas: &[Vec<String>], cols: usize, rows: usize) {
     let find = |name: &str| {
         let mut bounds: Option<(usize, usize, usize, usize)> = None;
         for (r, row) in areas.iter().enumerate() {
@@ -207,7 +202,7 @@ pub(crate) fn resolve_grid_item(
     }
 }
 
-pub(crate) fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
+pub fn layout_grid(b: &mut LayoutBox, cb: Rect, positioned: Rect, ctx: &LayoutContext) {
     let inner = init_container(b, cb, positioned, ctx);
     let (row_gap, column_gap) = b.style.gaps(
         inner.width,

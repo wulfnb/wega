@@ -1,9 +1,9 @@
-//! Wega-owned layout engine.
+//! Layout core: the box tree built from the DOM and `ComputedStyle`, the box model and
+//! line/fragment output, form control state, and the layout context.
 //!
-//! Converts DOM nodes and `ComputedStyle` into a box tree and lays it out: block and
-//! inline formatting, floats, flexbox, grid, tables, min/max constraints, positioning
-//! and overflow. Formatting contexts recurse through `engine::layout_box`, so they
-//! share one crate until a dispatch trait lets them split.
+//! Formatting contexts live in their own crates (`wega-layout-block`, `-inline`, `-flex`,
+//! `-grid`, `-table`) and recurse into each other through [`layout_box`], which calls the
+//! dispatcher `wega-layout` installs in [`LayoutContext::dispatch`].
 #![forbid(unsafe_code)]
 use wega_css_parser::{MediaContext, StyleSheet};
 use wega_css_values::*;
@@ -11,27 +11,14 @@ pub use wega_dom::layout::{BoxModel, ClientBox, ContentBox, Insets, Point, Rect,
 use wega_image::SvgGraphic;
 use wega_style::*;
 
-mod block;
 mod box_model;
 mod box_tree;
-mod common;
+mod context;
 pub mod controls;
-mod engine;
-mod flex;
-mod grid;
-mod inline;
-mod intrinsic;
+mod geometry;
 pub mod resources;
-mod table;
-pub mod text;
 
-use block::*;
 pub use box_model::*;
 pub use box_tree::*;
-use common::*;
-pub use engine::*;
-use flex::*;
-use grid::*;
-use inline::*;
-use intrinsic::*;
-use table::*;
+pub use context::*;
+pub use geometry::*;

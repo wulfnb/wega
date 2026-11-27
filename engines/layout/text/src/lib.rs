@@ -1,30 +1,19 @@
 //! Native typography. Parley provides font selection, Unicode shaping, bidi and
 //! line breaking; neither Blitz styles nor Blitz layout are consulted here.
-use crate::{Color, ComputedStyle, TextAlign, WhiteSpace};
-use crate::{LayoutBox, LineBox, Rect};
+#![forbid(unsafe_code)]
 use parley::{FontContext, LayoutContext, PositionedLayoutItem, TextStyle};
 use std::cell::{Cell, RefCell};
+use wega_css_values::*;
 use wega_dom::NodeKey;
+pub use wega_layout_core::GlyphRun;
+use wega_layout_core::*;
+use wega_style::*;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct TextBrush {
     node: Option<NodeKey>,
     color: Color,
     hit: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct GlyphRun {
-    pub node: Option<NodeKey>,
-    pub rect: Rect,
-    pub font: parley::FontData,
-    pub font_size: f32,
-    pub coords: Vec<i16>,
-    pub glyphs: Vec<anyrender::Glyph>,
-    pub color: Color,
-    pub hit: bool,
-    pub skew: Option<kurbo::Affine>,
-    pub embolden: kurbo::Vec2,
 }
 
 type FontSource = Option<std::sync::Arc<Vec<Vec<u8>>>>;
@@ -141,19 +130,14 @@ pub(crate) fn text_style(
     }
 }
 
-pub(crate) fn last_baseline(b: &LayoutBox) -> Option<f64> {
+pub fn last_baseline(b: &LayoutBox) -> Option<f64> {
     if let Some(line) = b.lines.last() {
         return Some(b.content_box().y + line.baseline);
     }
     b.children
         .iter()
         .rev()
-        .filter(|c| {
-            !matches!(
-                c.style.position,
-                crate::Position::Absolute | crate::Position::Fixed
-            )
-        })
+        .filter(|c| !matches!(c.style.position, Position::Absolute | Position::Fixed))
         .find_map(last_baseline)
 }
 
@@ -163,11 +147,8 @@ pub(crate) fn append_inline(
     owner: Option<NodeKey>,
     alpha: f32,
 ) {
-    if b.box_type != crate::BoxType::Text
-        && matches!(
-            b.style.position,
-            crate::Position::Absolute | crate::Position::Fixed
-        )
+    if b.box_type != BoxType::Text
+        && matches!(b.style.position, Position::Absolute | Position::Fixed)
     {
         return;
     }
@@ -219,26 +200,26 @@ pub(crate) fn append_inline(
         });
         return;
     }
-    let owner = if b.box_type == crate::BoxType::Text {
+    let owner = if b.box_type == BoxType::Text {
         owner.or(b.node)
     } else {
         b.node.or(owner)
     };
     let alpha = alpha
-        * if b.box_type == crate::BoxType::Text {
+        * if b.box_type == BoxType::Text {
             1.0
         } else {
             b.style.opacity
         };
     let mut style = text_style(&b.style, owner, alpha);
     // A <br> is a forced break even under normal whitespace collapsing.
-    if b.text_content.as_deref() == Some("\n") && b.box_type != crate::BoxType::Text {
+    if b.text_content.as_deref() == Some("\n") && b.box_type != BoxType::Text {
         style.white_space_collapse = parley::WhiteSpaceCollapse::Preserve;
     }
     builder.push_style_span(style);
     // Horizontal margin, border and padding of an inline element occupy line
     // space at its start and end; reserve it with empty spacer boxes.
-    let edges = if b.box_type == crate::BoxType::Inline {
+    let edges = if b.box_type == BoxType::Inline {
         let (fs, rfs) = (b.style.font_size, b.style.root_font_size);
         let side = |m: &crate::Length, p: &crate::Length, border: f64| {
             (m.resolve(0.0, fs, rfs) + p.resolve(0.0, fs, rfs) + border) as f32
@@ -392,7 +373,7 @@ pub fn shape_inline_with_style(
                             });
                         }
                         PositionedLayoutItem::InlineBox(ibox) => {
-                            inline_boxes.push(crate::PositionedInlineBox {
+                            inline_boxes.push(PositionedInlineBox {
                                 id: ibox.id,
                                 rect: Rect {
                                     x: ibox.x as f64,

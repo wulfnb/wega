@@ -12,7 +12,7 @@ wega-css-values = { path = "../css/values" }
 wega-css-selectors = { path = "../css/selectors" }
 wega-css-parser = { path = "../css/parser" }
 wega-style = { path = "../css/style-engine" }
-wega-layout = { path = "../layout/core" }
+wega-layout = { path = "../layout/engine" }
 wega-display-list = { path = "../graphics/display-list" }
 wega-image = { path = "../graphics/image" }
 wega-protocol = { path = "../protocol" }

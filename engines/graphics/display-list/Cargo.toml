@@ -9,7 +9,7 @@ description = "Display items, stacking contexts and paint order"
 
 [dependencies]
 wega-css-values = { path = "../../css/values" }
-wega-layout = { path = "../../layout/core" }
+wega-layout = { path = "../../layout/engine" }
 wega-image = { path = "../../graphics/image" }
 wega-dom = { path = "../../dom/core" }
 anyrender = "=0.14.0"

@@ -2,24 +2,19 @@
 use crate::*;
 use wega_dom::NodeKey;
 
-pub(crate) fn layout_inline_formatting_context(
+pub fn layout_inline_formatting_context(
     children: &mut [LayoutBox],
     avail_w: f64,
     style: &ComputedStyle,
 ) -> Vec<LineBox> {
-    crate::text::shape_inline_with_style(children, avail_w, style.text_align, Some(style))
+    wega_layout_text::shape_inline_with_style(children, avail_w, style.text_align, Some(style))
 }
 
 // ---------------------------------------------------------------------------
 // FLEXBOX ENGINE
 // ---------------------------------------------------------------------------
 
-pub(crate) fn assign_inline_geometry(
-    children: &mut [LayoutBox],
-    lines: &[LineBox],
-    x: f64,
-    y: f64,
-) {
+pub fn assign_inline_geometry(children: &mut [LayoutBox], lines: &[LineBox], x: f64, y: f64) {
     fn keys(b: &LayoutBox, out: &mut std::collections::HashSet<NodeKey>) {
         if let Some(k) = b.node {
             out.insert(k);

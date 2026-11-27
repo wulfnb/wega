@@ -1,11 +1,11 @@
 [package]
-name = "wega-layout"
+name = "wega-layout-core"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MPL-2.0"
 publish = false
-description = "Box tree and layout: block, inline, flex, grid, table and text"
+description = "Layout box tree, box model, layout context and the formatting-context dispatch hook"
 
 [dependencies]
 wega-css-parser = { path = "../../css/parser" }

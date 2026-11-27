@@ -89,7 +89,7 @@ pub struct LineBox {
     pub rect: Rect,
     /// Baseline measured from the owning content box's top.
     pub baseline: f64,
-    pub text_runs: Vec<crate::text::GlyphRun>,
+    pub text_runs: Vec<GlyphRun>,
     pub inline_boxes: Vec<PositionedInlineBox>,
 }
 
@@ -250,3 +250,18 @@ impl LayoutBox {
 /// Bounded native recursion on the 8 MiB engine thread. The larger legacy
 /// layout limit is not safe for native debug frames (252-depth probe timed out).
 pub const MAX_NATIVE_LAYOUT_DEPTH: usize = 128;
+
+/// A shaped run of glyphs in one font, positioned in layout coordinates.
+#[derive(Clone, Debug)]
+pub struct GlyphRun {
+    pub node: Option<NodeKey>,
+    pub rect: Rect,
+    pub font: parley::FontData,
+    pub font_size: f32,
+    pub coords: Vec<i16>,
+    pub glyphs: Vec<anyrender::Glyph>,
+    pub color: Color,
+    pub hit: bool,
+    pub skew: Option<kurbo::Affine>,
+    pub embolden: kurbo::Vec2,
+}
