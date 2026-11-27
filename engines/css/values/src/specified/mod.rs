@@ -9,19 +9,36 @@ mod align;
 mod background;
 mod box_values;
 mod color;
+mod easing;
+mod flags;
 mod font;
+mod grid;
 mod length;
+mod names;
 mod number;
+mod position;
+mod text;
 
 pub use align::{Axis, Grammar, alignment};
 pub use background::{
     background_clip, background_repeat, background_size, image, position_component,
 };
-pub use box_values::display;
+pub use box_values::{aspect_ratio, display, flex_wrap};
 pub use color::{caret_color, color};
+pub use easing::timing_function;
+pub use flags::{
+    CONTAIN, CONTAINER_TYPE, Flags, TEXT_DECORATION_LINE, TEXT_TRANSFORM, TEXT_UNDERLINE_POSITION,
+    TOUCH_ACTION, flags,
+};
 pub use font::{font_weight, line_height};
+pub use grid::grid_line;
 pub use length::{border_spacing, corner_radius, length_percentage};
-pub use number::{animation_iteration_count, column_count, number, opacity, time};
+pub use names::{animation_name, container_name, will_change};
+pub use number::{
+    animation_iteration_count, column_count, length_or_number, number, opacity, svg_opacity, time,
+};
+pub use position::position;
+pub use text::{text_align, text_overflow};
 
 /// The result of parsing one specified value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +75,16 @@ pub(crate) fn components(value: &str) -> Option<Vec<String>> {
     Some(parts)
 }
 
+/// The idents of `value` as written, or `None` if it holds anything else.
+pub(crate) fn idents_raw(value: &str) -> Option<Vec<String>> {
+    let mut parser = Parser::new(value);
+    let mut out = Vec::new();
+    while !parser.is_exhausted() {
+        out.push(parser.expect_ident().ok()?.to_string());
+    }
+    Some(out)
+}
+
 /// The idents of `value`, lowercased, or `None` if it holds anything else.
 pub(crate) fn idents(value: &str) -> Option<Vec<String>> {
     let mut parser = Parser::new(value);
@@ -65,6 +92,29 @@ pub(crate) fn idents(value: &str) -> Option<Vec<String>> {
     while !parser.is_exhausted() {
         out.push(parser.expect_ident().ok()?.to_ascii_lowercase());
     }
+    Some(out)
+}
+
+/// A `<custom-ident>` serialized as an identifier, or `None` for a CSS-wide keyword, `default`,
+/// or one of `excluding` (any ASCII case), as Stylo's `CustomIdent::from_ident`.
+pub fn custom_ident(ident: &str, excluding: &[&str]) -> Option<String> {
+    const RESERVED: &[&str] = &[
+        "initial",
+        "inherit",
+        "unset",
+        "revert",
+        "revert-layer",
+        "default",
+    ];
+    if RESERVED
+        .iter()
+        .chain(excluding)
+        .any(|k| ident.eq_ignore_ascii_case(k))
+    {
+        return None;
+    }
+    let mut out = String::new();
+    cssparser::serialize_identifier(ident, &mut out).ok()?;
     Some(out)
 }
 

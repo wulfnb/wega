@@ -15,6 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STYLO = ROOT / "engines/vendor/blitz/stylo/properties"
 SPECIFIED = ROOT / "engines/vendor/blitz/stylo/values/specified"
+# Generic value types shared by specified and computed values (`TransformStyle`, `FillRule`).
+GENERICS = ROOT / "engines/vendor/blitz/stylo/values/generics"
 OUT = ROOT / "engines/css/parser/src/generated/properties.rs"
 
 # Style structs whose properties inherit (Stylo `properties/data.py`, `StyleStruct`).
@@ -108,12 +110,13 @@ def derived_enums(text):
 
 
 def keyword_enums():
-    """Specified value types that are `#[derive(Parse)]` enums of unit variants only:
+    """Specified and generic value types that are `#[derive(Parse)]` enums of unit variants only:
     `{type: [(keyword, [aliases])]}`. Enums with preference-gated variants are skipped."""
     found = {}
-    for path in sorted(SPECIFIED.rglob("*.rs")):
+    # Specified types first: a generic with the same name does not replace one.
+    for path in [*sorted(SPECIFIED.rglob("*.rs")), *sorted(GENERICS.rglob("*.rs"))]:
         for derives, attrs, name, body in derived_enums(path.read_text()):
-            if "Parse" not in derives or "condition" in body:
+            if "Parse" not in derives or "condition" in body or name in found:
                 continue
             variants, ok = [], True
             pending = []

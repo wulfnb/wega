@@ -85,3 +85,26 @@ pub fn column_count(value: &str) -> Specified {
         _ => Specified::Parsed(None),
     }
 }
+
+/// `tab-size`: a non-negative number (tried first, so `0` stays a number) or a non-negative
+/// length (Stylo `NonNegativeLengthOrNumber`).
+pub fn length_or_number(value: &str) -> Specified {
+    match single_token(value) {
+        Some(Token::Number { .. }) => number("NonNegativeNumber", value),
+        _ => super::length_percentage(value, &[], false, false),
+    }
+}
+
+/// `fill-opacity`, `stroke-opacity`: an opacity, `context-fill-opacity` or
+/// `context-stroke-opacity` (Stylo `SVGOpacity`).
+pub fn svg_opacity(value: &str) -> Specified {
+    match single_token(value) {
+        Some(Token::Ident(i)) => Specified::Parsed(
+            ["context-fill-opacity", "context-stroke-opacity"]
+                .iter()
+                .find(|k| i.eq_ignore_ascii_case(k))
+                .map(|k| (*k).to_owned()),
+        ),
+        _ => opacity(value),
+    }
+}

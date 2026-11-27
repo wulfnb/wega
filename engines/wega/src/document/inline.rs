@@ -275,3 +275,7 @@ impl ValueEngine for StyloValues {
         (!out.is_empty()).then_some(out)
     }
 }
+
+#[cfg(test)]
+#[path = "inline_tests.rs"]
+mod tests;

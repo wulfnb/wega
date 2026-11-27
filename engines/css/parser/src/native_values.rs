@@ -51,6 +51,33 @@ fn parse_longhand(info: &Longhand, value: &str) -> Specified {
         "LengthPercentage" => (&[], true, true),
         "BorderSideWidth" => (&["thin", "medium", "thick"], false, false),
         "length::NonNegativeLengthOrAuto" => (&["auto"], false, false),
+        "LengthPercentageOrAuto" => (&["auto"], true, true),
+        "BorderSideOffset" => (&[], true, false),
+        "Perspective" => (&["none"], false, false),
+        "LetterSpacing" | "WordSpacing" => (&["normal"], true, true),
+        "TextIndent" => (&[], true, true),
+        "TextDecorationLength" => (&["auto", "from-font"], true, true),
+        "FlexBasis" => (&["content", "auto"], false, true),
+        "TextAlign" => return text_align(value),
+        "TimingFunction" => return each(timing_function),
+        "GridLine" => return grid_line(value),
+        "Position" => return position(value),
+        "AspectRatio" => return aspect_ratio(value),
+        "AnimationName" => return each(animation_name),
+        "ContainerName" => return container_name(value),
+        "WillChange" => return will_change(value),
+        "TransitionProperty" => return transition_property(value),
+        "TextOverflow" => return text_overflow(value),
+        "NonNegativeLengthOrNumber" => return length_or_number(value),
+        "SVGOpacity" => return svg_opacity(value),
+        "FlexWrap" => return flex_wrap(value).into(),
+        "OutlineStyle" => return outline_style(value),
+        "TextDecorationLine" => return flags(value, &TEXT_DECORATION_LINE).into(),
+        "TouchAction" => return flags(value, &TOUCH_ACTION).into(),
+        "TextTransform" => return flags(value, &TEXT_TRANSFORM).into(),
+        "TextUnderlinePosition" => return flags(value, &TEXT_UNDERLINE_POSITION).into(),
+        "Contain" => return flags(value, &CONTAIN).into(),
+        "ContainerType" => return flags(value, &CONTAINER_TYPE).into(),
         "Color" | "ColorPropertyValue" => return color(value),
         "color::CaretColor" => return caret_color(value),
         "NonNegativeNumber" | "Integer" | "ZIndex" => return number(info.value_type, value),
@@ -70,7 +97,7 @@ fn parse_longhand(info: &Longhand, value: &str) -> Specified {
             let for_background = info.parse_method == "parse_for_background";
             return list(info.list, value, |v| background_clip(v, for_background));
         }
-        "BackgroundSize" => return each(background_size),
+        "BackgroundSize" | "background::BackgroundSize" => return each(background_size),
         "Image" => return each(image),
         "position::HorizontalPosition" => {
             return each(|v| position_component(v, ["left", "right"]));
@@ -124,6 +151,50 @@ fn keyword_enum(
         })
         .ok()?;
     Some(values.join(", "))
+}
+
+/// `transition-property`: `none`, or a comma-separated list of property names (written in
+/// their canonical, unaliased form) and other names except `none` (Stylo
+/// `TransitionProperty`).
+fn transition_property(value: &str) -> Specified {
+    use crate::properties_table::canonical_property;
+    let mut parser = Parser::new(value);
+    if parser
+        .try_parse(|p| p.expect_ident_matching("none"))
+        .is_ok()
+        && parser.is_exhausted()
+    {
+        return Specified::Parsed(Some("none".into()));
+    }
+    let mut parser = Parser::new(value);
+    let names = parser.parse_entirely(|p| {
+        p.parse_comma_separated(|p| {
+            let ident = p.expect_ident()?.clone();
+            canonical_property(&ident)
+                .or_else(|| values::custom_ident(&ident, &["none"]))
+                .ok_or_else(cssparser::ParseError::<()>::unexpected_token)
+        })
+    });
+    Specified::Parsed(names.ok().map(|n| n.join(", ")))
+}
+
+/// `outline-style`: `auto` or a `<border-style>` other than `hidden` (Stylo `OutlineStyle`).
+fn outline_style(value: &str) -> Specified {
+    let styles = KEYWORD_TYPES
+        .iter()
+        .find(|(name, _)| *name == "BorderStyle")
+        .map(|(_, variants)| *variants)
+        .unwrap_or_default();
+    let mut parser = Parser::new(value);
+    let parsed = parser.parse_entirely(|p| {
+        let ident = p.expect_ident()?.clone();
+        std::iter::once("auto")
+            .chain(styles.iter().map(|(k, _)| *k).filter(|k| *k != "hidden"))
+            .find(|k| ident.eq_ignore_ascii_case(k))
+            .map(str::to_owned)
+            .ok_or_else(cssparser::ParseError::<()>::unexpected_token)
+    });
+    Specified::Parsed(parsed.ok())
 }
 
 /// A keyword property (Stylo `single_keyword`): one of its keywords, ASCII
