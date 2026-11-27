@@ -68,16 +68,51 @@ def css_identifier(variant):
     return out
 
 
+def derived_enums(text):
+    """`(derives, attributes, name, body)` for each `#[derive(...)]` followed (after attribute
+    and doc-comment lines) by `pub enum Name {`; the body ends at the first line that is `}`.
+    A scan with `str.find`, not a regex: nested repetition there backtracks exponentially."""
+    out, pos = [], 0
+    while (start := text.find("#[derive(", pos)) >= 0:
+        pos = start + 1
+        close = text.find(")]", start)
+        if close < 0:
+            break
+        derives = text[start + len("#[derive(") : close]
+        if "]" in derives:
+            continue
+        i, attrs = close + 2, []
+        while True:
+            j = i
+            while j < len(text) and text[j].isspace():
+                j += 1
+            if text.startswith("#[", j) or text.startswith("///", j):
+                end = text.find("\n", j)
+                end = len(text) if end < 0 else end
+                line = text[j:end]
+                if line.startswith("#[") and not line.rstrip().endswith("]"):
+                    break
+                attrs.append(text[i:end])
+                i = end
+            else:
+                i = j
+                break
+        m = re.compile(r"pub enum (\w+)\s*\{").match(text, i)
+        if not m:
+            continue
+        end = text.find("\n}", m.end())
+        if end < 0:
+            continue
+        out.append((derives, "".join(attrs), m.group(1), text[m.end() : end]))
+    return out
+
+
 def keyword_enums():
     """Specified value types that are `#[derive(Parse)]` enums of unit variants only:
     `{type: [(keyword, [aliases])]}`. Enums with preference-gated variants are skipped."""
     found = {}
-    pattern = re.compile(
-        r"#\[derive\(([^\]]*)\)\]((?:\s*#\[[^\n]*\]|\s*///[^\n]*)*)\s*pub enum (\w+)\s*\{(.*?)\n\}",
-        re.S,
-    )
     for path in sorted(SPECIFIED.rglob("*.rs")):
-        for derives, attrs, name, body in pattern.findall(path.read_text()):
+        for derives, attrs, name, body in derived_enums(path.read_text()):
             if "Parse" not in derives or "condition" in body:
                 continue
             variants, ok = [], True
