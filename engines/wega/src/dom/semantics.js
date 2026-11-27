@@ -5443,11 +5443,18 @@ return {
   web.event.setWegaDomHooks({
     parent: (node, event, originalRoot) => {
       if (!node?._id) return null;
-      if (node.nodeType === 9) return node.defaultView;
+      if (node._info.nodeType === 9) return node.defaultView;
       return wrap(component("eventParent", node._id, event ? !!event.composed : true, originalRoot?._id || ""));
     },
     host: node => node?._id ? wrap(component("shadowHost", node._id)) : null,
     mode: node => shadowDescriptors.get(node)?.mode || null,
+    nodeType: node => (nodeHandles.has(node) ? node._info.nodeType : undefined),
+    // `getRootNode()` without the guarded getters it reads (`ownerDocument`, `nodeType`).
+    ancestor: (ancestor, node) => component("shadowIncludingAncestor", ancestor._id, node._id),
+    root: node => {
+      const owner = node._info.nodeType === 9 ? null : node._owner || document;
+      return wrap(component("componentRoot", node._id, false), owner || node);
+    },
     slot: node => node?._id ? wrap(component("assignedSlotInternal", node._id)) : null,
   });
   {

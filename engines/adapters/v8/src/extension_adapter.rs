@@ -19,7 +19,7 @@ pub fn adapt_extension(
         for (original, replacement) in [
             (
                 "function getParent(eventTarget) {\n  return isNode(eventTarget) ? eventTarget.parentNode : null;\n}",
-                "let wegaDomHooks;\nlet wegaCurrentEvent;\nlet wegaListenerPhase = \"bubbling\";\nfunction getWegaCurrentEvent() { return wegaCurrentEvent; }\nfunction setWegaDomHooks(hooks) { if (wegaDomHooks) throw new TypeError(\"DOM hooks already installed\"); wegaDomHooks = hooks; }\nfunction getParent(eventTarget, event = null, originalRoot = null) {\n  return isNode(eventTarget) ? wegaDomHooks.parent(eventTarget, event, originalRoot) : null;\n}",
+                "let wegaDomHooks;\nlet wegaCurrentEvent;\nlet wegaListenerPhase = \"bubbling\";\nfunction getWegaCurrentEvent() { return wegaCurrentEvent; }\nfunction setWegaDomHooks(hooks) { if (wegaDomHooks) throw new TypeError(\"DOM hooks already installed\"); wegaDomHooks = hooks; }\nfunction wegaNodeType(target) { return wegaDomHooks ? wegaDomHooks.nodeType(target) : target?.nodeType; }\nfunction wegaRoot(target) { return wegaDomHooks ? wegaDomHooks.root(target) : target.getRootNode(); }\nfunction wegaShadowIncludingAncestor(ancestor, node) { return wegaDomHooks && wegaNodeType(ancestor) !== undefined ? wegaDomHooks.ancestor(ancestor, node) : isShadowInclusiveAncestor(ancestor, node); }\nfunction getParent(eventTarget, event = null, originalRoot = null) {\n  return isNode(eventTarget) ? wegaDomHooks.parent(eventTarget, event, originalRoot) : null;\n}",
             ),
             (
                 "    if (data === undefined || !data.listeners[event.type]) {",
@@ -27,11 +27,15 @@ pub fn adapt_extension(
             ),
             (
                 "isNode(parent) &&\n        isShadowInclusiveAncestor(getRoot(targetImpl), parent)",
-                "(parent === globalThis_ || (isNode(parent) &&\n        isShadowInclusiveAncestor(getRoot(targetImpl), parent)))",
+                "(parent === globalThis_ || (isNode(parent) &&\n        wegaShadowIncludingAncestor(getRoot(targetImpl), parent)))",
             ),
             (
                 "eventTarget.getRootNode({ composed: true })",
-                "eventTarget.getRootNode()",
+                "wegaRoot(eventTarget)",
+            ),
+            (
+                "    const aRoot = a.getRootNode();",
+                "    const aRoot = wegaRoot(a);",
             ),
             (
                 "let parent = getParent(targetImpl);",
@@ -40,6 +44,16 @@ pub fn adapt_extension(
             (
                 "parent = getParent(parent);",
                 "parent = getParent(parent, eventImpl, getRoot(targetOverride));",
+            ),
+            // Node checks ask the DOM directly: the public `nodeType` getter is a guarded
+            // binding (a native call), and the path walk reads it once per ancestor per step.
+            (
+                "  return eventTarget?.nodeType !== undefined;",
+                "  return wegaNodeType(eventTarget) !== undefined;",
+            ),
+            (
+                "      nodeImpl.nodeType === DOCUMENT_FRAGMENT_NODE &&",
+                "      wegaNodeType(nodeImpl) === DOCUMENT_FRAGMENT_NODE &&",
             ),
             (
                 "return target?.[eventTargetData]?.host ?? null;",

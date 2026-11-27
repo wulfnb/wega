@@ -1447,6 +1447,19 @@ impl Dom {
                 }
                 json!(root.as_u64().to_string())
             },
+            // DOM §4.2.2: whether node 1 is a shadow-including inclusive ancestor of node 2,
+            // walked natively (event dispatch asks once per ancestor on the path).
+            "shadowIncludingAncestor" => {
+                let ancestor = node_id()?;
+                let mut current = Some(id(2)?);
+                let mut found = false;
+                while let Some(key) = current {
+                    if key == ancestor { found = true; break; }
+                    current = doc.node(key).and_then(NodeView::parent)
+                        .or_else(|| self.shadows.borrow().host(key.as_u64()).map(NodeKey::from_u64));
+                }
+                json!(found)
+            },
             "assignedNodes" => {
                 let nodes = self.assigned_nodes(&*doc, node_id()?, text(2) == "true", &mut HashSet::new());
                 json!(nodes.into_iter().map(|id|id.as_u64().to_string()).collect::<Vec<_>>())
