@@ -173,6 +173,7 @@ Avoid: `dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapter
 | Module | Purpose |
 |---|---|
 | [`values`](../../engines/css/values/README.md) | CSS value types, units and computed-value representations. |
+| [`specified`](../../engines/css/specified/README.md) | Specified values as the CSSOM serializes them (ported from Stylo). |
 | [`parser`](../../engines/css/parser/README.md) | CSS tokenizer and stylesheet/declaration parser. |
 | [`selectors`](../../engines/css/selectors/README.md) | CSS selector parsing and matching. |
 | [`style-engine`](../../engines/css/style-engine/README.md) | Cascade, inheritance and computed style resolution. |

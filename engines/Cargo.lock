@@ -6865,6 +6865,7 @@ dependencies = [
  "cssparser 0.38.0",
  "wega-css-cache",
  "wega-css-selectors",
+ "wega-css-specified",
  "wega-css-values",
 ]
 
@@ -6874,6 +6875,13 @@ version = "0.1.0"
 dependencies = [
  "cssparser 0.38.0",
  "wega-dom",
+]
+
+[[package]]
+name = "wega-css-specified"
+version = "0.1.0"
+dependencies = [
+ "cssparser 0.38.0",
 ]
 
 [[package]]

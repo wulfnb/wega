@@ -3,6 +3,7 @@
 //!
 //! Each parser returns [`Specified`]: a serialized value, invalid, or not ported yet (so a
 //! caller can fall back to another engine for the grammar parts not covered here).
+#![forbid(unsafe_code)]
 use cssparser::Parser;
 
 mod align;

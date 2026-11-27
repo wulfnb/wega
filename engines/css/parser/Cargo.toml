@@ -11,4 +11,5 @@ description = "CSS stylesheet, at-rule, media query and declaration parsing"
 wega-css-cache = { path = "../cache" }
 cssparser = "=0.38.0"
 wega-css-values = { path = "../../css/values" }
+wega-css-specified = { path = "../specified" }
 wega-css-selectors = { path = "../../css/selectors" }

@@ -23,7 +23,7 @@ CSS value types, units and computed-value representations.
 
 Implemented as `wega-css-values`, a member of the `engines` workspace. The code moved here from `wega-native` without behavior changes (CSS engine modularization plan, Phase 1); `wega-native` re-exports it under the old paths.
 
-Modules: `color` (with `color_space` for `color()`), `length` (and the style-pass viewport), `calc`, `keywords`, `box_values`, `gradient`, `grid`, `background`, and `specified`: specified values as the CSSOM serializes them, ported from Stylo `values/specified/*` per family (`length`, `number`, `color`, `font`, `background`, `align`, `box_values`). `wega-css-parser` maps each longhand to these parsers.
+Modules: `color` (with `color_space` for `color()`), `length` (and the style-pass viewport), `calc`, `keywords`, `box_values`, `gradient`, `grid`, `background`. CSSOM specified-value parsers live in `wega-css-specified`.
 
 Actual dependencies: `cssparser`, `kurbo`.
 

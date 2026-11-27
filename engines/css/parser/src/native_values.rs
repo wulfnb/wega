@@ -1,13 +1,13 @@
 //! Native property values for CSSOM declaration blocks, with a fallback [`ValueEngine`] for
 //! value types not ported yet. This module maps each longhand to its value parser in
-//! `wega_css_values::specified` (keyword properties are handled here, from the property
+//! `wega_css_specified` (keyword properties are handled here, from the property
 //! table); each parser validates and serializes specified values as Stylo does, so moving a
 //! type here changes no output.
 use crate::generated::properties::KEYWORD_TYPES;
 use crate::properties_table::longhand;
 use crate::{ValueEngine, properties_table::Longhand};
 use cssparser::Parser;
-use wega_css_values::specified::{self as values, Specified};
+use wega_css_specified::{self as values, Specified};
 
 /// Native values first, `fallback` for the rest.
 pub struct NativeFirst<F: ValueEngine>(pub F);
