@@ -1,0 +1,421 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-dom v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/dom/core)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+   Compiling wega-native v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/native)
+   Compiling wega-html v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/html/parser)
+   Compiling blitz-dom v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-dom)
+   Compiling blitz-paint v0.3.0-beta.4 (/Users/noufalbabu/dev/personal/wega/engines/vendor/blitz/blitz-paint)
+   Compiling wega-adapter-blitz v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/adapters/blitz)
+warning: unused import: `Duration`
+  --> wega/src/dom.rs:10:12
+   |
+10 |     time::{Duration, Instant},
+   |            ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `modifiers` is never used
+   --> wega/src/view.rs:159:8
+    |
+146 | impl Pointer {
+    | ------------ method in this implementation
+...
+159 |     fn modifiers(&self) -> Modifiers {
+    |        ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `cursor` is never read
+   --> wega/src/view.rs:385:5
+    |
+348 | pub struct View {
+    |            ---- field in this struct
+...
+385 |     cursor: String,
+    |     ^^^^^^
+
+warning: method `page_point` is never used
+    --> wega/src/view.rs:1756:8
+     |
+ 417 | impl View {
+     | --------- method in this implementation
+...
+1756 |     fn page_point(&self, x: f32, y: f32) -> (f32, f32) {
+     |        ^^^^^^^^^^
+
+warning: `wega-engine` (lib) generated 4 warnings (run `cargo fix --lib -p wega-engine` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 30.97s
+     Running tests/document_host.rs (target/debug/deps/document_host-596e2f64c27d518d)
+
+running 6 tests
+test explicit_document_replacement_cancels_a_pending_navigation ... ok
+test hostile_to_json_is_terminated_and_requires_explicit_recovery ... ok
+test insecure_crypto_is_restricted_on_the_instance_and_its_prototype ... ok
+test ordinary_script_failure_does_not_disable_the_following_script_or_timer ... ok
+test parser_checkpoints_run_microtasks_without_dispatching_timer_tasks ... ok
+test provisional_navigation_suspends_the_old_realm_and_replacement_drops_it ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.70s
+
+     Running tests/documents.rs (target/debug/deps/documents-b333b7093c3640c3)
+
+running 6 tests
+test document_revisions_change_on_replacement_but_not_mutation_or_fragments ... FAILED
+test navigation_generation_is_bound_at_commit_or_explicit_retention ... ok
+test refresh_headers_navigate_after_load ... ok
+test text_images_and_error_statuses_are_shown_and_files_are_downloads ... ok
+test transport_meta_and_bom_charsets_decode_documents ... ok
+test xhtml_navigation_uses_namespaced_xml_and_runs_scripts_after_construction ... ok
+
+failures:
+
+---- document_revisions_change_on_replacement_but_not_mutation_or_fragments stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:61717/","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:31","url":"http://127.0.0.1:61717/","line":null,"column":null,"truncated":false}
+
+thread 'document_revisions_change_on_replacement_but_not_mutation_or_fragments' (3637702) panicked at wega/tests/documents.rs:40:10:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:31"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    document_revisions_change_on_replacement_but_not_mutation_or_fragments
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.49s
+
+error: test failed, to rerun pass `-p wega-engine --test documents`
+     Running tests/dom.rs (target/debug/deps/dom-641799e7042f16b2)
+
+running 30 tests
+test adjacent_html_uses_the_insertion_position_and_namespace_context ... FAILED
+test box_metrics_distinguish_content_padding_borders_and_scroll_overflow ... ok
+test canvas_and_screen_support_speedtest_and_lottie ... FAILED
+test capture_bubble_inline_handlers_and_mutation_observers ... FAILED
+test computed_style_returns_used_auto_and_percentage_sizes_for_layout_consumers ... FAILED
+test computed_styles_inside_display_none_do_not_panic_the_worker ... FAILED
+test contextual_fragment_scripts_run_once_while_inner_html_scripts_stay_inert ... FAILED
+test detached_wrappers_and_listeners_release_the_native_node_budget ... FAILED
+test document_location_html_document_and_live_names_support_trak_scripts ... FAILED
+test document_scripts_is_a_live_collection_for_ad_loader_inspection ... FAILED
+test fragment_parsing_covers_contexts_foreign_content_and_budgets ... ok
+test frame_callbacks_observers_media_and_layout_come_from_blitz ... FAILED
+test generated_bindings_enforce_brands_conversions_and_survive_reentrancy ... FAILED
+test history_is_same_origin_and_delivers_popstate ... ok
+test html_document_creation_keeps_mutations_separate_from_the_active_page ... FAILED
+test inline_geometry_uses_line_fragments_and_dom_rect_objects ... ok
+test live_collection_caches_do_not_keep_removed_nodes_charged ... FAILED
+test live_collections_refresh_when_the_parser_adds_nodes_between_scripts ... ok
+test live_query_collections_finish_in_budget_and_invalidate_after_mutation ... FAILED
+test mutations_namespaces_collections_and_native_style_share_one_tree ... FAILED
+test native_keyboard_and_ime_edit_parley_and_deliver_cancelable_input ... ok
+test newly_inserted_focused_input_accepts_ime_before_paint ... FAILED
+test newly_inserted_focused_input_accepts_keyboard_before_paint ... FAILED
+test range_fragment_limits_preserve_existing_dom_and_boundary_points ... ok
+test range_insertion_removal_validation_and_document_ownership ... FAILED
+test ranges_parse_contextual_html_svg_and_keep_live_boundary_points ... FAILED
+test repeated_style_and_geometry_reads_share_layout_until_a_mutation ... FAILED
+test visibility_tracks_freezing_and_domain_never_relaxes_profile_origin ... FAILED
+test wide_dom_traversal_and_live_child_lists_finish_within_the_script_budget ... FAILED
+test window_named_elements_are_live_and_do_not_override_own_globals ... FAILED
+
+failures:
+
+---- adjacent_html_uses_the_insertion_position_and_namespace_context stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.get id (ext:wega_dom/semantics.js:1404:19)\n    at Proxy.get id (ext:wega_dom/bindings.js:179:33)\n    at Reflect.get (<anonymous>)\n    at Object.get (ext:wega_dom/semantics.js:334:31)\n    at evaluate_json:1:27","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'adjacent_html_uses_the_insertion_position_and_namespace_context' (3637926) panicked at wega/tests/dom.rs:234:300:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.get id (ext:wega_dom/semantics.js:1404:19)\n    at Proxy.get id (ext:wega_dom/bindings.js:179:33)\n    at Reflect.get (<anonymous>)\n    at Object.get (ext:wega_dom/semantics.js:334:31)\n    at evaluate_json:1:27"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- canvas_and_screen_support_speedtest_and_lottie stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:3:38\n    at evaluate_json:27:11","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'canvas_and_screen_support_speedtest_and_lottie' (3638028) panicked at wega/tests/dom.rs:514:10:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:3:38\n    at evaluate_json:27:11"
+
+---- capture_bubble_inline_handlers_and_mutation_observers stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"Error: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:467\nError: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:467\n    at wega:error:1:15","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:467","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'capture_bubble_inline_handlers_and_mutation_observers' (3638051) panicked at wega/tests/dom.rs:76:566:
+called `Result::unwrap()` on an `Err` value: "evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:467"
+
+---- computed_style_returns_used_auto_and_percentage_sizes_for_layout_consumers stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+
+thread 'computed_style_returns_used_auto_and_percentage_sizes_for_layout_consumers' (3638060) panicked at wega/tests/dom.rs:460:5:
+assertion `left == right` failed
+  left: "[\"110.0px\",\"30.0px\",\"\",\"\",\"300.0px\"]"
+ right: "[\"100px\",\"20px\",\"20px\",\"5px\",\"300px\"]"
+
+---- computed_styles_inside_display_none_do_not_panic_the_worker stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at Proxy.set title (ext:wega_dom/semantics.js:4461:22)\n    at Proxy.set title (ext:wega_dom/bindings.js:196:21)\n    at evaluate_json:1:15","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'computed_styles_inside_display_none_do_not_panic_the_worker' (3638083) panicked at wega/tests/dom.rs:476:14:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at Proxy.set title (ext:wega_dom/semantics.js:4461:22)\n    at Proxy.set title (ext:wega_dom/bindings.js:196:21)\n    at evaluate_json:1:15"
+
+---- contextual_fragment_scripts_run_once_while_inner_html_scripts_stay_inert stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"Error: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at Range.createContextualFragment (ext:wega_dom/semantics.js:3765:25)\n    at evaluate:1:44\nError: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at Range.createContextualFragment (ext:wega_dom/semantics.js:3765:25)\n    at evaluate:1:44\n    at wega:error:1:15","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at Range.createContextualFragment (ext:wega_dom/semantics.js:3765:25)\n    at evaluate:1:44","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'contextual_fragment_scripts_run_once_while_inner_html_scripts_stay_inert' (3638100) panicked at wega/tests/dom.rs:268:319:
+called `Result::unwrap()` on an `Err` value: "evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at Range.createContextualFragment (ext:wega_dom/semantics.js:3765:25)\n    at evaluate:1:44"
+
+---- detached_wrappers_and_listeners_release_the_native_node_budget stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"about:blank","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"Error: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:26\nError: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:26\n    at wega:error:1:15","url":"about:blank","line":null,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:26","url":"about:blank","line":null,"column":null,"truncated":false}
+
+thread 'detached_wrappers_and_listeners_release_the_native_node_budget' (3638113) panicked at wega/tests/dom.rs:199:177:
+called `Result::unwrap()` on an `Err` value: "evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:26"
+
+---- document_location_html_document_and_live_names_support_trak_scripts stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:78\n    at evaluate_json:1:358","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'document_location_html_document_and_live_names_support_trak_scripts' (3638123) panicked at wega/tests/dom.rs:36:398:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:78\n    at evaluate_json:1:358"
+
+---- document_scripts_is_a_live_collection_for_ad_loader_inspection stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:54\n    at evaluate_json:1:296","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'document_scripts_is_a_live_collection_for_ad_loader_inspection' (3638137) panicked at wega/tests/dom.rs:442:336:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:54\n    at evaluate_json:1:296"
+
+---- frame_callbacks_observers_media_and_layout_come_from_blitz stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"Error: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at CSSStyleDeclaration.setProperty (ext:wega_dom/semantics.js:1221:33)\n    at Object.set (ext:wega_dom/semantics.js:1183:18)\n    at evaluate:1:16\nError: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at CSSStyleDeclaration.setProperty (ext:wega_dom/semantics.js:1221:33)\n    at Object.set (ext:wega_dom/semantics.js:1183:18)\n    at evaluate:1:16\n    at wega:error:1:15","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at CSSStyleDeclaration.setProperty (ext:wega_dom/semantics.js:1221:33)\n    at Object.set (ext:wega_dom/semantics.js:1183:18)\n    at evaluate:1:16","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'frame_callbacks_observers_media_and_layout_come_from_blitz' (3638159) panicked at wega/tests/dom.rs:96:46:
+called `Result::unwrap()` on an `Err` value: "evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at CSSStyleDeclaration.setProperty (ext:wega_dom/semantics.js:1221:33)\n    at Object.set (ext:wega_dom/semantics.js:1183:18)\n    at evaluate:1:16"
+
+---- generated_bindings_enforce_brands_conversions_and_survive_reentrancy stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+
+thread 'generated_bindings_enforce_brands_conversions_and_survive_reentrancy' (3638168) panicked at wega/tests/dom.rs:542:9:
+Element.prototype.getAttribute.call(document.createTextNode('t'),'id'): "Error"
+
+---- html_document_creation_keeps_mutations_separate_from_the_active_page stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at DOMImplementation.createHTMLDocument (ext:wega_dom/semantics.js:1089:27)\n    at DOMImplementation.createHTMLDocument (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:2:58\n    at evaluate_json:12:15","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'html_document_creation_keeps_mutations_separate_from_the_active_page' (3638201) panicked at wega/tests/dom.rs:62:10:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at DOMImplementation.createHTMLDocument (ext:wega_dom/semantics.js:1089:27)\n    at DOMImplementation.createHTMLDocument (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:2:58\n    at evaluate_json:12:15"
+
+---- live_collection_caches_do_not_keep_removed_nodes_charged stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"about:blank","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"Error: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:121\nError: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:121\n    at wega:error:1:15","url":"about:blank","line":null,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:121","url":"about:blank","line":null,"column":null,"truncated":false}
+
+thread 'live_collection_caches_do_not_keep_removed_nodes_charged' (3638226) panicked at wega/tests/dom.rs:428:253:
+called `Result::unwrap()` on an `Err` value: "evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:121"
+
+---- live_query_collections_finish_in_budget_and_invalidate_after_mutation stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.get id (ext:wega_dom/semantics.js:1404:19)\n    at Proxy.get id (ext:wega_dom/bindings.js:179:33)\n    at Object.get (ext:wega_dom/semantics.js:334:31)\n    at evaluate_json:1:261\n    at evaluate_json:1:426","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'live_query_collections_finish_in_budget_and_invalidate_after_mutation' (3638257) panicked at wega/tests/dom.rs:344:466:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.get id (ext:wega_dom/semantics.js:1404:19)\n    at Proxy.get id (ext:wega_dom/bindings.js:179:33)\n    at Object.get (ext:wega_dom/semantics.js:334:31)\n    at evaluate_json:1:261\n    at evaluate_json:1:426"
+
+---- mutations_namespaces_collections_and_native_style_share_one_tree stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createTextNode (ext:wega_dom/semantics.js:4526:19)\n    at Proxy.createTextNode (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:257\n    at evaluate_json:1:751","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'mutations_namespaces_collections_and_native_style_share_one_tree' (3638274) panicked at wega/tests/dom.rs:69:791:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createTextNode (ext:wega_dom/semantics.js:4526:19)\n    at Proxy.createTextNode (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:257\n    at evaluate_json:1:751"
+
+---- newly_inserted_focused_input_accepts_ime_before_paint stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"Error: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:47\nError: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:47\n    at wega:error:1:15","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:47","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'newly_inserted_focused_input_accepts_ime_before_paint' (3638313) panicked at wega/tests/dom.rs:154:190:
+called `Result::unwrap()` on an `Err` value: "evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:47"
+
+---- newly_inserted_focused_input_accepts_keyboard_before_paint stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"Error: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:47\nError: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:47\n    at wega:error:1:15","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:47","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'newly_inserted_focused_input_accepts_keyboard_before_paint' (3638328) panicked at wega/tests/dom.rs:154:190:
+called `Result::unwrap()` on an `Err` value: "evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate:1:47"
+
+---- range_insertion_removal_validation_and_document_ownership stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:4:34\n    at evaluate_json:18:7","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'range_insertion_removal_validation_and_document_ownership' (3638351) panicked at wega/tests/dom.rs:301:13:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:4:34\n    at evaluate_json:18:7"
+
+---- ranges_parse_contextual_html_svg_and_keep_live_boundary_points stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:36:40)\n    at Proxy.replaceData (ext:wega_dom/semantics.js:1010:7)\n    at Proxy.replaceData (ext:wega_dom/bindings.js:217:34)\n    at Proxy.insertData (ext:wega_dom/semantics.js:1000:12)\n    at Proxy.insertData (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:11:12\n    at evaluate_json:20:7","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'ranges_parse_contextual_html_svg_and_keep_live_boundary_points' (3638364) panicked at wega/tests/dom.rs:260:13:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:36:40)\n    at Proxy.replaceData (ext:wega_dom/semantics.js:1010:7)\n    at Proxy.replaceData (ext:wega_dom/bindings.js:217:34)\n    at Proxy.insertData (ext:wega_dom/semantics.js:1000:12)\n    at Proxy.insertData (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:11:12\n    at evaluate_json:20:7"
+
+---- repeated_style_and_geometry_reads_share_layout_until_a_mutation stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at CSSStyleDeclaration.setProperty (ext:wega_dom/semantics.js:1221:33)\n    at Object.set (ext:wega_dom/semantics.js:1183:18)\n    at evaluate_json:1:200\n    at evaluate_json:1:375","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'repeated_style_and_geometry_reads_share_layout_until_a_mutation' (3638377) panicked at wega/tests/dom.rs:362:415:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at CSSStyleDeclaration.setProperty (ext:wega_dom/semantics.js:1221:33)\n    at Object.set (ext:wega_dom/semantics.js:1183:18)\n    at evaluate_json:1:200\n    at evaluate_json:1:375"
+
+---- visibility_tracks_freezing_and_domain_never_relaxes_profile_origin stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at DOMImplementation.createHTMLDocument (ext:wega_dom/semantics.js:1089:27)\n    at DOMImplementation.createHTMLDocument (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:162","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'visibility_tracks_freezing_and_domain_never_relaxes_profile_origin' (3638389) panicked at wega/tests/dom.rs:308:239:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.createElement (ext:wega_dom/semantics.js:4514:28)\n    at Proxy.createElement (ext:wega_dom/bindings.js:217:34)\n    at DOMImplementation.createHTMLDocument (ext:wega_dom/semantics.js:1089:27)\n    at DOMImplementation.createHTMLDocument (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:162"
+
+---- wide_dom_traversal_and_live_child_lists_finish_within_the_script_budget stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.get id (ext:wega_dom/semantics.js:1404:19)\n    at Proxy.get id (ext:wega_dom/bindings.js:179:33)\n    at Object.get (ext:wega_dom/semantics.js:334:31)\n    at evaluate_json:1:127\n    at evaluate_json:1:286","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'wide_dom_traversal_and_live_child_lists_finish_within_the_script_budget' (3638398) panicked at wega/tests/dom.rs:333:326:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.get id (ext:wega_dom/semantics.js:1404:19)\n    at Proxy.get id (ext:wega_dom/bindings.js:179:33)\n    at Object.get (ext:wega_dom/semantics.js:334:31)\n    at evaluate_json:1:127\n    at evaluate_json:1:286"
+
+---- window_named_elements_are_live_and_do_not_override_own_globals stdout ----
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"https://fixture.test/start","line":1,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"Error: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.set id (ext:wega_dom/semantics.js:1407:12)\n    at Proxy.set id (ext:wega_dom/bindings.js:196:21)\n    at evaluate:1:179\nError: evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.set id (ext:wega_dom/semantics.js:1407:12)\n    at Proxy.set id (ext:wega_dom/bindings.js:196:21)\n    at evaluate:1:179\n    at wega:error:1:15","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.set id (ext:wega_dom/semantics.js:1407:12)\n    at Proxy.set id (ext:wega_dom/bindings.js:196:21)\n    at evaluate:1:179","url":"https://fixture.test/start","line":null,"column":null,"truncated":false}
+
+thread 'window_named_elements_are_live_and_do_not_override_own_globals' (3638411) panicked at wega/tests/dom.rs:225:486:
+called `Result::unwrap()` on an `Err` value: "evaluate: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.set id (ext:wega_dom/semantics.js:1407:12)\n    at Proxy.set id (ext:wega_dom/bindings.js:196:21)\n    at evaluate:1:179"
+
+
+failures:
+    adjacent_html_uses_the_insertion_position_and_namespace_context
+    canvas_and_screen_support_speedtest_and_lottie
+    capture_bubble_inline_handlers_and_mutation_observers
+    computed_style_returns_used_auto_and_percentage_sizes_for_layout_consumers
+    computed_styles_inside_display_none_do_not_panic_the_worker
+    contextual_fragment_scripts_run_once_while_inner_html_scripts_stay_inert
+    detached_wrappers_and_listeners_release_the_native_node_budget
+    document_location_html_document_and_live_names_support_trak_scripts
+    document_scripts_is_a_live_collection_for_ad_loader_inspection
+    frame_callbacks_observers_media_and_layout_come_from_blitz
+    generated_bindings_enforce_brands_conversions_and_survive_reentrancy
+    html_document_creation_keeps_mutations_separate_from_the_active_page
+    live_collection_caches_do_not_keep_removed_nodes_charged
+    live_query_collections_finish_in_budget_and_invalidate_after_mutation
+    mutations_namespaces_collections_and_native_style_share_one_tree
+    newly_inserted_focused_input_accepts_ime_before_paint
+    newly_inserted_focused_input_accepts_keyboard_before_paint
+    range_insertion_removal_validation_and_document_ownership
+    ranges_parse_contextual_html_svg_and_keep_live_boundary_points
+    repeated_style_and_geometry_reads_share_layout_until_a_mutation
+    visibility_tracks_freezing_and_domain_never_relaxes_profile_origin
+    wide_dom_traversal_and_live_child_lists_finish_within_the_script_budget
+    window_named_elements_are_live_and_do_not_override_own_globals
+
+test result: FAILED. 7 passed; 23 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.29s
+
+error: test failed, to rerun pass `-p wega-engine --test dom`
+     Running tests/dom_identity.rs (target/debug/deps/dom_identity-a7911daef8146f0b)
+
+running 5 tests
+test comment_writes_preserve_identity_and_step_the_authoritative_mutation_clock ... FAILED
+test each_document_gets_a_fresh_identity_space ... ok
+test node_info_matches_the_dom_interface ... ok
+test removed_nodes_stay_usable_until_dropped_and_ids_resolve_by_current_state ... FAILED
+test wrappers_keep_their_identity_across_mutation_and_reparenting ... FAILED
+
+failures:
+
+---- comment_writes_preserve_identity_and_step_the_authoritative_mutation_clock stdout ----
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:36:40)\n    at Proxy.set nodeValue (ext:wega_dom/semantics.js:706:9)\n    at Proxy.set nodeValue (ext:wega_dom/bindings.js:196:21)\n    at Proxy.set data (ext:wega_dom/semantics.js:987:22)\n    at Proxy.set data (ext:wega_dom/bindings.js:196:21)\n    at evaluate_json:1:57","url":"https://identity.test/","line":null,"column":null,"truncated":false}
+
+thread 'comment_writes_preserve_identity_and_step_the_authoritative_mutation_clock' (3638573) panicked at wega/tests/dom_identity.rs:14:32:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:36:40)\n    at Proxy.set nodeValue (ext:wega_dom/semantics.js:706:9)\n    at Proxy.set nodeValue (ext:wega_dom/bindings.js:196:21)\n    at Proxy.set data (ext:wega_dom/semantics.js:987:22)\n    at Proxy.set data (ext:wega_dom/bindings.js:196:21)\n    at evaluate_json:1:57"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- removed_nodes_stay_usable_until_dropped_and_ids_resolve_by_current_state stdout ----
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.removeChild (ext:wega_dom/semantics.js:827:7)\n    at Proxy.removeChild (ext:wega_dom/bindings.js:217:34)\n    at Proxy.remove (ext:wega_dom/semantics.js:875:24)\n    at evaluate_json:1:46\n    at evaluate_json:1:202","url":"https://identity.test/","line":null,"column":null,"truncated":false}
+
+thread 'removed_nodes_stay_usable_until_dropped_and_ids_resolve_by_current_state' (3638628) panicked at wega/tests/dom_identity.rs:14:32:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.removeChild (ext:wega_dom/semantics.js:827:7)\n    at Proxy.removeChild (ext:wega_dom/bindings.js:217:34)\n    at Proxy.remove (ext:wega_dom/semantics.js:875:24)\n    at evaluate_json:1:46\n    at evaluate_json:1:202"
+
+---- wrappers_keep_their_identity_across_mutation_and_reparenting stdout ----
+WEGA_DIAGNOSTIC	{"category":"javascript","severity":"error","message":"evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:46\n    at evaluate_json:1:351","url":"https://identity.test/","line":null,"column":null,"truncated":false}
+
+thread 'wrappers_keep_their_identity_across_mutation_and_reparenting' (3638639) panicked at wega/tests/dom_identity.rs:14:32:
+called `Result::unwrap()` on an `Err` value: "evaluate_json: Error: This Web API is not available\n    at value (ext:wega_dom/v8-bridge.js:39:18)\n    at Proxy.getAttribute (ext:wega_dom/semantics.js:1306:14)\n    at Proxy.getAttribute (ext:wega_dom/bindings.js:217:34)\n    at Proxy.setAttribute (ext:wega_dom/semantics.js:1323:24)\n    at Proxy.setAttribute (ext:wega_dom/bindings.js:217:34)\n    at evaluate_json:1:46\n    at evaluate_json:1:351"
+
+
+failures:
+    comment_writes_preserve_identity_and_step_the_authoritative_mutation_clock
+    removed_nodes_stay_usable_until_dropped_and_ids_resolve_by_current_state
+    wrappers_keep_their_identity_across_mutation_and_reparenting
+
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
+
+error: test failed, to rerun pass `-p wega-engine --test dom_identity`
+error: 3 targets failed:
+    `-p wega-engine --test documents`
+    `-p wega-engine --test dom`
+    `-p wega-engine --test dom_identity`

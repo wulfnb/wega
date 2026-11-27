@@ -9,7 +9,7 @@ design; each area's contract lives in its `step-NN-*.md` page.
 
 | Area | What remains | Current state in source | Step |
 | --- | --- | --- | --- |
-| Iframes | Child realms and documents, site-isolated workers, surface composition, input and focus routing | FrameTree authority exists; visible child documents do not | 14 |
+| Iframes | Child realms and documents, site-isolated workers, surface composition, input and focus routing | Partial: nested-view frames render, script, receive input and are inspectable; no same-origin DOM bridge, no per-site process, no host DevTools frame picker (see `architecture/iframe-implementation-report.md`) | 14 |
 | Shadow DOM | Scoped Stylo styling, flattened Blitz layout, slots, focus, accessibility | `attachShadow` and slot metadata exist; no scoped style or flattened layout | 15 |
 | IndexedDB | Page-facing API, version-change transactions, structured clone, indexes, cursors | Rust backend only (`engines/network/src/indexeddb.rs`); no page `indexedDB` | 16 |
 | Cache API | Opaque responses, worker-global exposure, handles that survive named-cache deletion | Page API implemented and persistent | 16 |

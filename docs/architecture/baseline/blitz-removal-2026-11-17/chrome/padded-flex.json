@@ -1,0 +1,60 @@
+{
+  "native": [
+    [
+      "auto",
+      0,
+      0,
+      84.8984375,
+      34
+    ],
+    [
+      "basis",
+      84.8984375,
+      0,
+      144,
+      34
+    ],
+    [
+      "rest",
+      228.8984375,
+      0,
+      371.1015625,
+      30
+    ]
+  ],
+  "chrome": [
+    [
+      "auto",
+      0,
+      0,
+      84.90625,
+      34
+    ],
+    [
+      "basis",
+      84.90625,
+      0,
+      144,
+      34
+    ],
+    [
+      "rest",
+      228.90625,
+      0,
+      371.09375,
+      30
+    ]
+  ],
+  "diff": {
+    "channel_tolerance": 8,
+    "pixel_threshold_fraction": 0.01,
+    "geometry_tolerance_px": 0.5,
+    "differing_pixels": 162,
+    "total_pixels": 252000,
+    "mismatch_fraction": 0.0006428571428571428,
+    "mean_absolute_channel_error": 0.009601190476190477,
+    "max_channel_error": 95,
+    "geometry_max_error_px": 0.0078125,
+    "within_tolerance": true
+  }
+}

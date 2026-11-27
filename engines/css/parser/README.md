@@ -1,6 +1,6 @@
 # css/parser
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Phase 1 split)** — crate `wega-css-parser`
 
 ## Purpose
 
@@ -21,4 +21,10 @@ CSS tokenizer and stylesheet/declaration parser.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Implemented as `wega-css-parser`, a member of the `engines` workspace. The code moved here from `wega-native` without behavior changes (CSS engine modularization plan, Phase 1); `wega-native` re-exports it under the old paths.
+
+Modules: `stylesheet`, `rules` (at-rules), `supports` (`@supports`, `CSS.supports()`), `declarations`, `media`, `shorthand`, `variables`, `properties`, `typed` (typed declarations), `block` (CSSOM declaration blocks), `properties_table` (generated from Stylo's property metadata) and `native_values` (maps each longhand to its parser in `wega_css_specified`).
+
+Actual dependencies: `wega-css-values`, `wega-css-selectors`, `cssparser`.
+
+Deviations from the target: None from the target list. Declarations are still strings (typed declarations are Phase 2). See [`css-engine-modularization-plan.md`](../../../docs/architecture/css-engine-modularization-plan.md).

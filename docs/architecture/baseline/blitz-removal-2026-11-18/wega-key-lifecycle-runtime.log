@@ -1,0 +1,98 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+    Finished `test` profile [unoptimized] target(s) in 15.46s
+     Running tests/document_host.rs (engines/target/debug/deps/document_host-90e6e1ae8210b08c)
+
+running 6 tests
+test explicit_document_replacement_cancels_a_pending_navigation ... ok
+test hostile_to_json_is_terminated_and_requires_explicit_recovery ... ok
+test insecure_crypto_is_restricted_on_the_instance_and_its_prototype ... ok
+test ordinary_script_failure_does_not_disable_the_following_script_or_timer ... ok
+test parser_checkpoints_run_microtasks_without_dispatching_timer_tasks ... ok
+test provisional_navigation_suspends_the_old_realm_and_replacement_drops_it ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
+
+     Running tests/documents.rs (engines/target/debug/deps/documents-9102e7e9861d3b00)
+
+running 6 tests
+test document_revisions_change_on_replacement_but_not_mutation_or_fragments ... ok
+test navigation_generation_is_bound_at_commit_or_explicit_retention ... ok
+test refresh_headers_navigate_after_load ... ok
+test text_images_and_error_statuses_are_shown_and_files_are_downloads ... ok
+test transport_meta_and_bom_charsets_decode_documents ... ok
+test xhtml_navigation_uses_namespaced_xml_and_runs_scripts_after_construction ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.42s
+
+     Running tests/scripts.rs (engines/target/debug/deps/scripts-cae6d2dc8957a748)
+
+running 8 tests
+test defer_and_blocking_scripts_run_in_document_order_before_domcontentloaded ... ok
+test inline_inserted_scripts_run_synchronously_as_classic_scripts ... ok
+test large_scripts_run_and_slow_scripts_are_reported_not_killed ... ok
+test load_waits_for_images_and_fires_after_domcontentloaded ... ok
+test more_than_sixty_four_scripts_all_run ... ok
+test parser_scripts_see_the_partial_document_and_document_write ... ok
+test script_inserted_external_scripts_run_and_fire_load ... ok
+test script_inserted_scripts_keep_order_only_when_async_is_false ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.31s
+

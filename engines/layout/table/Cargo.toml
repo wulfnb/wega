@@ -1,0 +1,14 @@
+[package]
+name = "wega-layout-table"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Table layout"
+
+[dependencies]
+wega-layout-core = { path = "../core" }
+wega-layout-inline = { path = "../inline" }
+wega-layout-block = { path = "../block" }
+wega-css-values = { path = "../../css/values" }

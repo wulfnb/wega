@@ -134,8 +134,101 @@ pub struct ContentBox {
     pub padding_top: f64,
 }
 
+/// The deepest element nesting the engine will lay out. Style and layout recurse once per nesting
+/// level, so unbounded depth is unbounded native stack: with the engine thread's 8 MiB stack
+/// the measured overflow cliff of a debug build is between 520 and 600 levels (a 2 MiB thread
+/// overflows at 122, which is the historical "depth-122 hang"). Past this limit
+/// [`LayoutControl::flush_layout`] does nothing and [`GeometryAccess::layout_refused`] is true.
+/// The limit leaves more than twice the measured headroom. See `devtools-d3-c-0-report.md`.
+pub const MAX_LAYOUT_DEPTH: usize = 128;
+
+/// Edge widths (top, right, bottom, left) in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Insets {
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub left: f64,
+}
+/// The four CSS boxes of an element as the *cached* layout has them, viewport-relative CSS pixels.
+/// Wega-owned: nothing here names a Blitz, Stylo, Taffy or Skia type.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct BoxModel {
+    /// The border box (what `getBoundingClientRect` returns), scrolled with the viewport.
+    pub border_box: Rect,
+    pub border: Insets,
+    pub padding: Insets,
+    pub margin: Insets,
+}
+impl BoxModel {
+    pub fn padding_box(&self) -> Rect {
+        inset(self.border_box, self.border)
+    }
+    pub fn content_box(&self) -> Rect {
+        inset(self.padding_box(), self.padding)
+    }
+    pub fn margin_box(&self) -> Rect {
+        Rect {
+            x: self.border_box.x - self.margin.left,
+            y: self.border_box.y - self.margin.top,
+            width: self.border_box.width + self.margin.left + self.margin.right,
+            height: self.border_box.height + self.margin.top + self.margin.bottom,
+        }
+    }
+}
+fn inset(r: Rect, i: Insets) -> Rect {
+    Rect {
+        x: r.x + i.left,
+        y: r.y + i.top,
+        width: (r.width - i.left - i.right).max(0.0),
+        height: (r.height - i.top - i.bottom).max(0.0),
+    }
+}
+/// Why the layout boxes of a node are not its painted geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnsupportedPaint {
+    /// The node or an ancestor has a transform (or `translate`/`rotate`/`scale`/`perspective`).
+    Transform,
+    /// An absolutely or fixed positioned node sits under a clipping ancestor: which clips apply
+    /// depends on containing blocks and is not modelled.
+    ClipPositioned,
+    /// The style is not available (never resolved) or a paint-affecting property is present that
+    /// is not modelled (`clip-path`).
+    Unknown,
+}
+/// Whether layout boxes equal what is painted: `Exact` carries the intersection of every
+/// clipping ancestor's padding box (viewport CSS pixels), if there is any clipping ancestor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PaintMapping {
+    Exact { clip: Option<Rect> },
+    Unsupported(UnsupportedPaint),
+}
+
+/// Why an inspector read has no geometry, or how fresh it is. Never produced by flushing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Geometry {
+    /// Layout is current: the boxes describe the document as it is.
+    Current(BoxModel),
+    /// Layout exists but style or layout work is pending: the boxes describe an *older* document.
+    Stale(BoxModel),
+    /// No layout exists yet (before the first flush, or waiting on resources).
+    Pending,
+    /// The node generates no boxes (`display: none`/`contents`, detached, non-element).
+    NoBoxes,
+    /// The document is nested past `MAX_LAYOUT_DEPTH` and is never laid out.
+    Refused,
+    /// The key does not refer to a node of this document.
+    Invalid,
+}
+
 /// Read access to layout results.
 pub trait GeometryAccess: DocumentView {
+    /// Whether the document nests deeper than [`MAX_LAYOUT_DEPTH`], so that it is never laid out
+    /// and every geometry reader keeps reporting "no boxes". Unlike `layout_pending` this does
+    /// not clear by waiting. Walks the tree: call it from diagnostics, not per frame.
+    fn layout_refused(&self) -> bool {
+        false
+    }
     /// Whether the element generates boxes: false for `display: none`, `display: contents` and
     /// nodes outside the document. Such nodes report empty geometry.
     fn has_boxes(&self, key: NodeKey) -> Result<bool, LayoutError>;
@@ -157,6 +250,22 @@ pub trait GeometryAccess: DocumentView {
     fn content_box(&self, key: NodeKey) -> Result<ContentBox, LayoutError>;
     /// The viewport size, zoom and scroll position.
     fn viewport(&self) -> ViewportGeometry;
+    /// Whether style or layout work is pending, so that the readers above report an *older*
+    /// layout (or none at all, before the first one). The readers never flush; a caller that must
+    /// not trigger layout (an inspector) reads this instead and reports "layout pending" rather
+    /// than asking for a flush, which on a pathological document may never finish.
+    fn layout_pending(&self) -> bool;
+    /// Cached-only geometry for an inspector: never flushes, never blocks, and says how much to
+    /// trust the answer. Does not use `layout_refused` per call when `layout_pending` is false
+    /// (a laid-out document cannot be refused), so the common path is one cached read.
+    fn inspect_geometry(&self, key: NodeKey) -> Geometry;
+    /// Whether [`Self::inspect_geometry`] boxes are the painted geometry, from cached computed
+    /// styles only (never resolves style or layout). Anything not modelled is `Unsupported`:
+    /// an overlay must be suppressed rather than drawn in the wrong place.
+    fn paint_mapping(&self, key: NodeKey) -> PaintMapping {
+        let _ = key;
+        PaintMapping::Unsupported(UnsupportedPaint::Unknown)
+    }
 }
 
 /// Hit-testing against the current layout.

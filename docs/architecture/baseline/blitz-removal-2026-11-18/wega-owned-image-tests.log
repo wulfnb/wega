@@ -1,0 +1,12 @@
+   Compiling wega-native v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/native)
+    Finished `test` profile [unoptimized] target(s) in 0.85s
+     Running tests/images.rs (engines/target/debug/deps/images-4b459a49a5583168)
+
+running 4 tests
+test raster_decoder_preserves_real_rgba_and_the_admitted_allocation_owner ... ok
+test raster_pixel_budget_rejects_header_before_expanding_invalid_pixel_data ... ok
+test svg_ignores_injected_external_resolvers_and_preserves_intrinsic_viewbox_rules ... ok
+test svg_limits_and_gzip_expansion_preserve_admission_after_rejection ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+

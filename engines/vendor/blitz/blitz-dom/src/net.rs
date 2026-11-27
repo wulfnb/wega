@@ -3,7 +3,6 @@ use blitz_traits::node_id::NodeId;
 use selectors::context::QuirksMode;
 use std::sync::atomic::Ordering as Ao;
 use std::{
-    io::Cursor,
     sync::{Arc, atomic::AtomicUsize, mpsc::Sender},
 };
 use style::{
@@ -35,6 +34,12 @@ pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request
     req
 }
 
+pub(crate) fn destined_request(url:Url,signal:Option<&AbortSignal>,destination:&'static str)->Request {
+    let mut request=stamped_request(url,signal);
+    request.headers.insert("sec-fetch-dest",destination.parse().unwrap());
+    request
+}
+
 /// Carries `@font-face` descriptors from CSS parsing through to font
 /// registration so `parley::Collection::register_fonts` can alias the bytes
 /// under the `font-family` declared in CSS rather than whatever family name
@@ -60,7 +65,8 @@ pub enum Resource {
     Image(ImageType, u32, u32, Arc<Vec<u8>>),
     #[cfg(feature = "svg")]
     Svg(ImageType, crate::node::SvgImageData),
-    Css(DocumentStyleSheet),
+    // Retain authorized response bytes for independent rendering backends.
+    Css(DocumentStyleSheet, String, String),
     /// Stylesheet loaded for an `@import` rule, to be attached to the rule on the document thread
     ImportedCss(ServoArc<Locked<ImportRule>>, ServoArc<Stylesheet>),
     Font(Bytes, FontFaceOverrides),
@@ -152,7 +158,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
 
         let sheet = Stylesheet::from_str(
             css,
-            self.data.source_url.clone().into(),
+            Url::parse(&resolved_url).unwrap_or_else(|_| self.data.source_url.clone()).into(),
             Origin::Author,
             ServoArc::new(self.data.guard.wrap(MediaList::empty())),
             self.data.guard.clone(),
@@ -171,7 +177,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
 
         self.respond(
             resolved_url,
-            Ok(Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)))),
+            Ok(Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)), css.to_owned(), self.data.source_url.to_string())),
         );
     }
 }
@@ -180,7 +186,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
 /// are refused, preventing unbounded recursion (e.g. a stylesheet whose
 /// resolved `@import` URL yields another stylesheet importing in turn, with
 /// the URL growing geometrically at each level).
-const MAX_IMPORT_DEPTH: usize = 16;
+const MAX_IMPORT_DEPTH: usize = 8;
 
 #[derive(Clone)]
 pub(crate) struct StylesheetLoader {
@@ -225,7 +231,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
         let import = ServoArc::new(lock.wrap(import));
         self.net_provider.fetch(
             self.doc_id,
-            stamped_request(url.as_ref().clone(), self.abort_signal.as_ref()),
+            destined_request(url.as_ref().clone(), self.abort_signal.as_ref(),"style"),
             ResourceHandler::boxed(
                 self.tx.clone(),
                 self.doc_id,
@@ -269,7 +275,7 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
 
         let sheet = ServoArc::new(Stylesheet::from_str(
             css,
-            UrlExtraData(self.data.url.clone()),
+            UrlExtraData(ServoArc::new(Url::parse(&resolved_url).unwrap_or_else(|_| (*self.data.url).clone()))),
             Origin::Author,
             self.data.media.clone(),
             self.data.lock.clone(),
@@ -506,7 +512,7 @@ pub(crate) fn fetch_font_face_rules<'a>(
             if let Some((url, format)) = preferred_source {
                 network_provider.fetch(
                     doc_id,
-                    stamped_request(url, abort_signal),
+                    destined_request(url, abort_signal,"font"),
                     ResourceHandler::boxed(
                         tx.clone(),
                         doc_id,
@@ -570,37 +576,12 @@ impl NetHandler for ResourceHandler<ImageHandler> {
 
 impl ImageHandler {
     fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
-        let permit = crate::image_budget::DecodePermit::reserve()?;
-        let mut reader = image::ImageReader::new(Cursor::new(&bytes))
-            .with_guessed_format()
-            .map_err(|error| error.to_string())?;
-        let mut limits = image::Limits::default();
-        limits.max_image_width = Some(8192);
-        limits.max_image_height = Some(8192);
-        limits.max_alloc = Some(64 * 1024 * 1024);
-        reader.limits(limits);
-        let image_err = match reader.into_decoder() {
-            Ok(decoder) => {
-                use image::ImageDecoder;
-                let (width, height) = decoder.dimensions();
-                if u64::from(width) * u64::from(height) > 8 * 1024 * 1024
-                    || decoder.total_bytes() > 64 * 1024 * 1024
-                {
-                    return Err("Decoded image exceeds dimensions/allocation budget".into());
-                }
-                match image::DynamicImage::from_decoder(decoder) {
-                    Ok(image) => {
-                        let data = Arc::new(image.into_rgba8().into_raw());
-                        permit.retain(&data, data.len())?;
-                        return Ok(Resource::Image(self.kind, width, height, data));
-                    }
-                    Err(error) => error.to_string(),
-                }
-            }
-            Err(error) => error.to_string(),
+        let image_err = match wega_image::decode_raster(&bytes) {
+            Ok(image) => return Ok(Resource::Image(self.kind, image.width, image.height, image.data)),
+            Err(wega_image::RasterDecodeError::Rejected(error)) => return Err(error),
+            Err(wega_image::RasterDecodeError::Format(error)) => error,
         };
-        drop(permit);
-
+        // Raster probing has released its reservation before bounded SVG fallback.
         #[cfg(feature = "svg")]
         let svg_err = {
             use crate::util::parse_svg_image;

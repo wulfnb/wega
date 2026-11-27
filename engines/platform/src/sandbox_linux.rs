@@ -41,9 +41,21 @@ pub(super) fn enter() -> io::Result<()> {
     }
     if capabilities
         .iter()
-        .any(|cap| cap.effective != 0 || cap.permitted != 0 || cap.inheritable != 0)
+        .any(|cap| cap.effective != 0 || cap.permitted != 0)
     {
         return Err(deny("Content workers must not retain Linux capabilities"));
+    }
+    // Desktop sessions can hand processes an inheritable set (for example
+    // CAP_WAKE_ALARM). It grants nothing without permitted bits, but clear it
+    // so no later exec could combine it with file capabilities.
+    if capabilities.iter().any(|cap| cap.inheritable != 0) {
+        for cap in &mut capabilities {
+            cap.inheritable = 0;
+        }
+        // SAFETY: same ABI v3 header and two data records as capget above.
+        if unsafe { libc::syscall(libc::SYS_capset, &mut header, capabilities.as_ptr()) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
     }
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     return Err(deny("Unsupported content-sandbox syscall architecture"));

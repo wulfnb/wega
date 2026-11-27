@@ -1,0 +1,1373 @@
+{
+  "base": "3f1ccb4",
+  "implementation_commits": [
+    "2c71136",
+    "9bc0c35",
+    "f18d0c0",
+    "678a002",
+    "ed8e688"
+  ],
+  "environment": {
+    "os": "macOS 27.2.1 (26B131)",
+    "architecture": "arm64",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "date": "2026-11-15",
+    "observed_load_average_range": [
+      5.94,
+      8.99
+    ],
+    "profiles": [
+      "dev: debug=0, incremental=false",
+      "release: optimized"
+    ]
+  },
+  "engine_workspace": {
+    "targets": 83,
+    "passed": 674,
+    "failed": 0,
+    "ignored": 18,
+    "results": [
+      {
+        "target": "wega-adapter-blitz-lib-wega_adapter_blitz",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 33.64
+      },
+      {
+        "target": "wega-adapter-blitz-test-boundary",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 1.26
+      },
+      {
+        "target": "wega-adapter-blitz-test-contract",
+        "status": 0,
+        "counts": [
+          [
+            11,
+            0,
+            2
+          ]
+        ],
+        "seconds": 2.48
+      },
+      {
+        "target": "wega-adapter-blitz-test-epoch",
+        "status": 0,
+        "counts": [
+          [
+            10,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.17
+      },
+      {
+        "target": "wega-adapter-blitz-test-html_parser",
+        "status": 0,
+        "counts": [
+          [
+            17,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.26
+      },
+      {
+        "target": "wega-adapter-blitz-test-input",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.32
+      },
+      {
+        "target": "wega-adapter-blitz-test-layout",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.31
+      },
+      {
+        "target": "wega-adapter-blitz-test-layout_safety",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.66
+      },
+      {
+        "target": "wega-adapter-blitz-test-style",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.32
+      },
+      {
+        "target": "wega-adapter-skia-lib-wega_adapter_skia",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 7.64
+      },
+      {
+        "target": "wega-adapter-v8-lib-wega_adapter_v8",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 38.89
+      },
+      {
+        "target": "wega-cookies-lib-wega_cookies",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 3.31
+      },
+      {
+        "target": "wega-dom-lib-wega_dom",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.71
+      },
+      {
+        "target": "wega-dom-test-boundary",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.84
+      },
+      {
+        "target": "wega-engine-bin-wega-engine",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 13.07
+      },
+      {
+        "target": "wega-engine-lib-wega_engine",
+        "status": 0,
+        "counts": [
+          [
+            68,
+            0,
+            0
+          ]
+        ],
+        "seconds": 18.12
+      },
+      {
+        "target": "wega-engine-test-broker_websocket",
+        "status": 0,
+        "counts": [
+          [
+            1,
+            0,
+            0
+          ]
+        ],
+        "seconds": 16.52
+      },
+      {
+        "target": "wega-engine-test-cache_api",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 35.72
+      },
+      {
+        "target": "wega-engine-test-canvas2d",
+        "status": 0,
+        "counts": [
+          [
+            9,
+            0,
+            0
+          ]
+        ],
+        "seconds": 15.63
+      },
+      {
+        "target": "wega-engine-test-compat",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 26.75
+      },
+      {
+        "target": "wega-engine-test-console",
+        "status": 0,
+        "counts": [
+          [
+            14,
+            0,
+            0
+          ]
+        ],
+        "seconds": 23.14
+      },
+      {
+        "target": "wega-engine-test-console_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 20.57
+      },
+      {
+        "target": "wega-engine-test-css",
+        "status": 0,
+        "counts": [
+          [
+            21,
+            0,
+            0
+          ]
+        ],
+        "seconds": 23.66
+      },
+      {
+        "target": "wega-engine-test-css_wpt",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 15.59
+      },
+      {
+        "target": "wega-engine-test-custom_elements",
+        "status": 0,
+        "counts": [
+          [
+            12,
+            0,
+            0
+          ]
+        ],
+        "seconds": 17.01
+      },
+      {
+        "target": "wega-engine-test-document_host",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 16.12
+      },
+      {
+        "target": "wega-engine-test-documents",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 30.34
+      },
+      {
+        "target": "wega-engine-test-dom",
+        "status": 0,
+        "counts": [
+          [
+            30,
+            0,
+            0
+          ]
+        ],
+        "seconds": 24.5
+      },
+      {
+        "target": "wega-engine-test-dom_budgets",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 23.1
+      },
+      {
+        "target": "wega-engine-test-dom_identity",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 14.93
+      },
+      {
+        "target": "wega-engine-test-epoch",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 16.08
+      },
+      {
+        "target": "wega-engine-test-errors",
+        "status": 0,
+        "counts": [
+          [
+            10,
+            0,
+            0
+          ]
+        ],
+        "seconds": 27.13
+      },
+      {
+        "target": "wega-engine-test-events",
+        "status": 0,
+        "counts": [
+          [
+            20,
+            0,
+            0
+          ]
+        ],
+        "seconds": 56.42
+      },
+      {
+        "target": "wega-engine-test-forms",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 23.49
+      },
+      {
+        "target": "wega-engine-test-frames",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 19.46
+      },
+      {
+        "target": "wega-engine-test-harness_fixtures",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 54.97
+      },
+      {
+        "target": "wega-engine-test-history",
+        "status": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ],
+        "seconds": 22.96
+      },
+      {
+        "target": "wega-engine-test-hot_path_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            5
+          ]
+        ],
+        "seconds": 13.87
+      },
+      {
+        "target": "wega-engine-test-image_limits",
+        "status": 0,
+        "counts": [
+          [
+            1,
+            0,
+            0
+          ]
+        ],
+        "seconds": 10.61
+      },
+      {
+        "target": "wega-engine-test-inherited_broker",
+        "status": 0,
+        "counts": [
+          [
+            1,
+            0,
+            1
+          ]
+        ],
+        "seconds": 14.92
+      },
+      {
+        "target": "wega-engine-test-input",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 16.6
+      },
+      {
+        "target": "wega-engine-test-inspector",
+        "status": 0,
+        "counts": [
+          [
+            15,
+            0,
+            0
+          ]
+        ],
+        "seconds": 28.13
+      },
+      {
+        "target": "wega-engine-test-inspector_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            3
+          ]
+        ],
+        "seconds": 15.41
+      },
+      {
+        "target": "wega-engine-test-inspector_console",
+        "status": 0,
+        "counts": [
+          [
+            21,
+            0,
+            0
+          ]
+        ],
+        "seconds": 50.66
+      },
+      {
+        "target": "wega-engine-test-inspector_dom",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 19.3
+      },
+      {
+        "target": "wega-engine-test-inspector_dom_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 29.07
+      },
+      {
+        "target": "wega-engine-test-inspector_sandbox",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 14.8
+      },
+      {
+        "target": "wega-engine-test-layout",
+        "status": 0,
+        "counts": [
+          [
+            15,
+            0,
+            0
+          ]
+        ],
+        "seconds": 39.68
+      },
+      {
+        "target": "wega-engine-test-media",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 20.04
+      },
+      {
+        "target": "wega-engine-test-mutation_epoch_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 10.6
+      },
+      {
+        "target": "wega-engine-test-pages",
+        "status": 0,
+        "counts": [
+          [
+            16,
+            0,
+            0
+          ]
+        ],
+        "seconds": 65.33
+      },
+      {
+        "target": "wega-engine-test-permissions",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 24.07
+      },
+      {
+        "target": "wega-engine-test-reliability",
+        "status": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ],
+        "seconds": 60.44
+      },
+      {
+        "target": "wega-engine-test-render",
+        "status": 0,
+        "counts": [
+          [
+            17,
+            0,
+            0
+          ]
+        ],
+        "seconds": 29.4
+      },
+      {
+        "target": "wega-engine-test-render_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 14.19
+      },
+      {
+        "target": "wega-engine-test-scripts",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 19.55
+      },
+      {
+        "target": "wega-engine-test-security",
+        "status": 0,
+        "counts": [
+          [
+            9,
+            0,
+            0
+          ]
+        ],
+        "seconds": 18.05
+      },
+      {
+        "target": "wega-engine-test-storage",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 14.76
+      },
+      {
+        "target": "wega-engine-test-style",
+        "status": 0,
+        "counts": [
+          [
+            16,
+            0,
+            0
+          ]
+        ],
+        "seconds": 18.09
+      },
+      {
+        "target": "wega-engine-test-web",
+        "status": 0,
+        "counts": [
+          [
+            10,
+            0,
+            0
+          ]
+        ],
+        "seconds": 17.17
+      },
+      {
+        "target": "wega-engine-test-web_workers",
+        "status": 0,
+        "counts": [
+          [
+            12,
+            0,
+            0
+          ]
+        ],
+        "seconds": 17.44
+      },
+      {
+        "target": "wega-engine-test-webgl",
+        "status": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ],
+        "seconds": 15.19
+      },
+      {
+        "target": "wega-engine-test-worker",
+        "status": 0,
+        "counts": [
+          [
+            17,
+            0,
+            0
+          ]
+        ],
+        "seconds": 29.24
+      },
+      {
+        "target": "wega-engine-test-worker_bench",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 13.36
+      },
+      {
+        "target": "wega-engine-test-worker_runtime",
+        "status": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ],
+        "seconds": 14.65
+      },
+      {
+        "target": "wega-engine-test-wpt",
+        "status": 0,
+        "counts": [
+          [
+            1,
+            0,
+            0
+          ]
+        ],
+        "seconds": 24.35
+      },
+      {
+        "target": "wega-html-lib-wega_html",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.68
+      },
+      {
+        "target": "wega-html-test-boundary",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.78
+      },
+      {
+        "target": "wega-network-lib-wega_network",
+        "status": 0,
+        "counts": [
+          [
+            15,
+            0,
+            0
+          ]
+        ],
+        "seconds": 20.09
+      },
+      {
+        "target": "wega-network-test-broker",
+        "status": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.8
+      },
+      {
+        "target": "wega-network-test-inherited",
+        "status": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ],
+        "seconds": 1.34
+      },
+      {
+        "target": "wega-network-test-security",
+        "status": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ],
+        "seconds": 1.45
+      },
+      {
+        "target": "wega-permissions-lib-wega_permissions",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.77
+      },
+      {
+        "target": "wega-platform-bin-wega-containment-probe",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.74
+      },
+      {
+        "target": "wega-platform-bin-wega-content-bundle",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.57
+      },
+      {
+        "target": "wega-platform-bin-wega-native-debugger",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.58
+      },
+      {
+        "target": "wega-platform-lib-wega_platform",
+        "status": 0,
+        "counts": [
+          [
+            18,
+            0,
+            0
+          ]
+        ],
+        "seconds": 1.42
+      },
+      {
+        "target": "wega-platform-test-browser_resources",
+        "status": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.91
+      },
+      {
+        "target": "wega-platform-test-inherited_channel",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ],
+        "seconds": 0.53
+      },
+      {
+        "target": "wega-platform-test-native_sandbox",
+        "status": 0,
+        "counts": [
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "seconds": 0.77
+      },
+      {
+        "target": "wega-protocol-lib-wega_protocol",
+        "status": 0,
+        "counts": [
+          [
+            84,
+            0,
+            0
+          ]
+        ],
+        "seconds": 3.85
+      },
+      {
+        "target": "wega-security-lib-wega_security",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.66
+      },
+      {
+        "target": "wega-storage-lib-wega_storage",
+        "status": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ],
+        "seconds": 2.85
+      }
+    ]
+  },
+  "other_gates": {
+    "root_library": [
+      [
+        113,
+        0,
+        0
+      ]
+    ],
+    "root_binary_final": [
+      [
+        93,
+        0,
+        0
+      ]
+    ],
+    "root_no_default_library": [
+      [
+        109,
+        0,
+        0
+      ]
+    ],
+    "tools": [
+      [
+        8,
+        0,
+        0
+      ],
+      [
+        6,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "webidl": [
+      [
+        6,
+        0,
+        0
+      ]
+    ],
+    "broker": [
+      [
+        5,
+        0,
+        0
+      ],
+      [
+        4,
+        0,
+        0
+      ],
+      [
+        3,
+        0,
+        0
+      ],
+      [
+        8,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0
+      ]
+    ],
+    "inspector_sandbox": [
+      [
+        1,
+        0,
+        0
+      ]
+    ],
+    "required_worker": [
+      [
+        1,
+        0,
+        0
+      ]
+    ],
+    "native_sandbox": [
+      [
+        1,
+        0,
+        0
+      ]
+    ],
+    "wpt_css_wpt": [
+      [
+        2,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ]
+    ]
+  },
+  "release_reader_output": [
+    "DOM_BENCH small root: median_us=1.542 p95_us=1.625 max_us=60.625 response_bytes=289 refused=0 rss_growth_mib=0.109",
+    "DOM_BENCH small children: median_us=24.416 p95_us=25.167 max_us=61.750 response_bytes=4141 refused=0 rss_growth_mib=0.156",
+    "DOM_BENCH small describe: median_us=1.959 p95_us=2.042 max_us=9.917 response_bytes=358 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH small: document_rss_mib=8.266 after_inspection_rss_mib=0.266",
+    "DOM_BENCH large root: median_us=1.500 p95_us=1.542 max_us=10.666 response_bytes=289 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH large children: median_us=85.292 p95_us=89.917 max_us=188.875 response_bytes=16097 refused=0 rss_growth_mib=0.062",
+    "DOM_BENCH large describe: median_us=1.958 p95_us=2.042 max_us=5.917 response_bytes=361 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH large: document_rss_mib=13.953 after_inspection_rss_mib=0.062",
+    "DOM_BENCH deep root: median_us=1.500 p95_us=1.625 max_us=7.375 response_bytes=289 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH deep children: median_us=2.208 p95_us=2.292 max_us=4.625 response_bytes=364 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH deep describe: median_us=5.000 p95_us=5.125 max_us=7.500 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+    "DOM_BENCH deep: document_rss_mib=0.188 after_inspection_rss_mib=0.000"
+  ],
+  "debug_reader_output": [
+    "DOM_BENCH small root: median_us=24.166 p95_us=26.125 max_us=131.500 response_bytes=289 refused=0 rss_growth_mib=0.234",
+    "DOM_BENCH small children: median_us=495.541 p95_us=520.917 max_us=695.917 response_bytes=4141 refused=0 rss_growth_mib=0.141",
+    "DOM_BENCH small describe: median_us=30.750 p95_us=33.333 max_us=79.042 response_bytes=358 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH small: document_rss_mib=12.719 after_inspection_rss_mib=0.406",
+    "DOM_BENCH large root: median_us=24.166 p95_us=27.875 max_us=79.458 response_bytes=289 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH large children: median_us=1910.959 p95_us=1967.959 max_us=2148.416 response_bytes=16097 refused=0 rss_growth_mib=0.047",
+    "DOM_BENCH large describe: median_us=30.625 p95_us=31.291 max_us=100.000 response_bytes=361 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH large: document_rss_mib=14.500 after_inspection_rss_mib=0.047",
+    "DOM_BENCH deep root: median_us=24.000 p95_us=24.542 max_us=46.000 response_bytes=289 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH deep children: median_us=38.333 p95_us=39.041 max_us=93.750 response_bytes=364 refused=0 rss_growth_mib=0.000",
+    "DOM_BENCH deep describe: median_us=16.916 p95_us=17.375 max_us=48.667 response_bytes=0 refused=1000 rss_growth_mib=0.000",
+    "DOM_BENCH deep: document_rss_mib=0.250 after_inspection_rss_mib=0.000"
+  ],
+  "release_comparison": {
+    "baseline": [
+      {
+        "console_median_us": {
+          "log(string, number)": 11.27,
+          "log(string, nested object)": 32.0,
+          "warn(string, number)": 15.95,
+          "log(8 numbers)": 15.92,
+          "log(100-property object)": 117.37
+        },
+        "console_flood_rss_growth_mib": 10.9,
+        "native_mutation_median_us": {
+          "attribute": 0.0434,
+          "text": 0.0292
+        }
+      },
+      {
+        "console_median_us": {
+          "log(string, number)": 11.51,
+          "log(string, nested object)": 36.09,
+          "warn(string, number)": 22.2,
+          "log(8 numbers)": 22.4,
+          "log(100-property object)": 190.08
+        },
+        "console_flood_rss_growth_mib": 10.8,
+        "native_mutation_median_us": {
+          "attribute": 0.0369,
+          "text": 0.0255
+        }
+      },
+      {
+        "console_median_us": {
+          "log(string, number)": 11.15,
+          "log(string, nested object)": 31.43,
+          "warn(string, number)": 15.77,
+          "log(8 numbers)": 16.23,
+          "log(100-property object)": 118.53
+        },
+        "console_flood_rss_growth_mib": 11.2,
+        "native_mutation_median_us": {
+          "attribute": 0.0379,
+          "text": 0.0251
+        }
+      }
+    ],
+    "current": [
+      {
+        "console_median_us": {
+          "log(string, number)": 12.68,
+          "log(string, nested object)": 37.79,
+          "warn(string, number)": 18.47,
+          "log(8 numbers)": 18.26,
+          "log(100-property object)": 119.51
+        },
+        "console_flood_rss_growth_mib": 10.8,
+        "native_mutation_median_us": {
+          "attribute": 0.037,
+          "text": 0.0252
+        }
+      },
+      {
+        "console_median_us": {
+          "log(string, number)": 10.93,
+          "log(string, nested object)": 32.27,
+          "warn(string, number)": 15.91,
+          "log(8 numbers)": 16.06,
+          "log(100-property object)": 117.88
+        },
+        "console_flood_rss_growth_mib": 11.1,
+        "native_mutation_median_us": {
+          "attribute": 0.0378,
+          "text": 0.0254
+        }
+      },
+      {
+        "console_median_us": {
+          "log(string, number)": 10.95,
+          "log(string, nested object)": 31.65,
+          "warn(string, number)": 15.83,
+          "log(8 numbers)": 15.78,
+          "log(100-property object)": 117.39
+        },
+        "console_flood_rss_growth_mib": 10.9,
+        "native_mutation_median_us": {
+          "attribute": 0.0365,
+          "text": 0.0251
+        }
+      }
+    ]
+  },
+  "debug_mutation_comparison": {
+    "baseline": [
+      {
+        "attribute": 1.0097,
+        "text": 0.4345
+      },
+      {
+        "attribute": 1.0073,
+        "text": 0.4324
+      },
+      {
+        "attribute": 0.995,
+        "text": 0.4197
+      },
+      {
+        "attribute": 0.9872,
+        "text": 0.4188
+      },
+      {
+        "attribute": 1.0124,
+        "text": 0.4326
+      },
+      {
+        "attribute": 1.0029,
+        "text": 0.4208
+      },
+      {
+        "attribute": 0.9964,
+        "text": 0.3953
+      },
+      {
+        "attribute": 0.9861,
+        "text": 0.4179
+      },
+      {
+        "attribute": 0.9895,
+        "text": 0.3965
+      },
+      {
+        "attribute": 1.3164,
+        "text": 0.5785
+      }
+    ],
+    "current": [
+      {
+        "attribute": 0.9985,
+        "text": 0.4333
+      },
+      {
+        "attribute": 1.0126,
+        "text": 0.4207
+      },
+      {
+        "attribute": 1.0122,
+        "text": 0.433
+      },
+      {
+        "attribute": 0.9976,
+        "text": 0.42
+      },
+      {
+        "attribute": 0.9827,
+        "text": 0.4126
+      },
+      {
+        "attribute": 1.0108,
+        "text": 0.4298
+      },
+      {
+        "attribute": 0.9849,
+        "text": 0.4159
+      },
+      {
+        "attribute": 0.998,
+        "text": 0.4221
+      },
+      {
+        "attribute": 1.1498,
+        "text": 0.5877
+      },
+      {
+        "attribute": 1.3414,
+        "text": 0.5834
+      }
+    ]
+  },
+  "native_window_output": [
+    "inspector-test: Elements expanded, selected, drawn in detached OS window and pinned across a real tab switch",
+    "INSPECTOR TEST PASSED: attach, status, console and evaluation; Elements tree expansion and selection, detached OS window and pinned real tab switch; navigation clears selection and authority; detach, reattach and stalled-worker recovery",
+    "inspector-test: stalled worker reported NotResponding after 2466 ms with 408 UI polls; recovered 80 ms after SIGCONT"
+  ],
+  "webdriver": {
+    "original_default_launch": "AssertionError: New tab; no fixture HTTP request",
+    "fresh_development_worker_seconds": 19.41,
+    "fresh_signed_helper_seconds": 14.99,
+    "fixed_wrapper_signed_helper_seconds": 17.33,
+    "status": "whole suite passed with signed helper and no development opt-in"
+  },
+  "checks": {
+    "architecture_members": 13,
+    "internal_edges": 24,
+    "violations": 0,
+    "informational": 11,
+    "dependency_cycles": 0,
+    "vendor_archives_verified": 13,
+    "new_unsafe_code_lines": 0,
+    "lockfiles_changed": false,
+    "fmt": "root, engines, tools passed",
+    "clippy": "root default, no-default, test-harness; engines workspace all targets; tools all targets; WebIDL passed",
+    "metadata_locked": "root, engines, tools passed",
+    "webidl_check": "all family outputs current",
+    "wpt_dom_assertions": 1685,
+    "wpt_css_assertions": 7,
+    "css_reftest_differing_pixels": 0
+  }
+}

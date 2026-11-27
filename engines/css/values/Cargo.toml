@@ -1,0 +1,12 @@
+[package]
+name = "wega-css-values"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "CSS value types: lengths, math functions, colors, gradients, transforms, shadows, grid tracks"
+
+[dependencies]
+cssparser = "=0.38.0"
+kurbo = "=0.13.1"

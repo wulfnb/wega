@@ -1,0 +1,574 @@
+.github/workflows/ci.yml:489:          key: skia-msvc-dev-${{ hashFiles('engines/vendor/blitz/skia-bindings/**', 'engines/vendor/blitz/patches/skia-bindings.patch') }}
+.github/workflows/standalone-engine-validation.yml:48:          key: skia-msvc-dev-${{ hashFiles('engines/vendor/blitz/skia-bindings/**', 'engines/vendor/blitz/patches/skia-bindings.patch') }}
+.github/workflows/v8-engine.yml:60:      - name: Compare pinned Deno, Blitz, Stylo and Skia sources with documented patches
+.github/workflows/v8-engine.yml:95:    name: V8 + Blitz spike (${{ matrix.os }})
+.github/workflows/v8-engine.yml:134:      - name: V8 mutates and paints Blitz's DOM
+.github/workflows/cd.yml:329:          key: skia-msvc-release-${{ hashFiles('engines/vendor/blitz/skia-bindings/**', 'engines/vendor/blitz/patches/skia-bindings.patch') }}
+scripts/skia-msvc-cache.py:27:VCS_INFO = ROOT / 'engines/vendor/blitz/skia-bindings/.cargo_vcs_info.json'
+scripts/engine-web-mutations.py:90:     [(VIEW, 'if options.method == blitz_traits::net::http::Method::GET {', 'if true {')],
+scripts/check-blitz-independence.py:2:"""Fail closed when the selected production dependency graph contains Blitz.
+scripts/check-blitz-independence.py:29:    forbidden = [name for name in packages if name.startswith('blitz-')
+scripts/check-blitz-independence.py:30:                 or name == 'wega-adapter-blitz']
+scripts/build-wega-engine.py:2:"""Build the independent Blitz worker and atomically install it beside Wega.
+scripts/engine-p4-p6-mutations.py:26:        ('style-pool-cap', 'engines/vendor/blitz/blitz-dom/src/document.rs',
+scripts/engine-p4-p6-mutations.py:35:        ('skia-color-alpha', 'engines/vendor/blitz/anyrender_skia/src/scene.rs',
+scripts/engine-p4-p6-mutations.py:38:        ('container-size', 'engines/vendor/blitz/blitz-dom/src/stylo.rs',
+scripts/engine-p4-p6-mutations.py:41:        ('scheme-default-color', 'engines/vendor/blitz/blitz-dom/assets/default.css',
+scripts/third-party-notices.sh:34:  cp -R "$project_dir/engines/vendor/blitz/licenses/." "$out_dir/WEGA-ENGINE-NATIVE-LICENSES/"
+engines/Cargo.toml:2:members = ["wega", "network", "platform", "protocol", "services/cookies", "services/storage", "services/security", "services/permissions", "adapters/skia", "adapters/v8", "adapters/blitz", "dom/core", "html/parser", "native"]
+engines/Cargo.toml:20:blitz-dom = { path = "vendor/blitz/blitz-dom" }
+engines/Cargo.toml:21:blitz-paint = { path = "vendor/blitz/blitz-paint" }
+engines/Cargo.toml:22:stylo = { path = "vendor/blitz/stylo" }
+engines/Cargo.toml:23:anyrender_skia = { path = "vendor/blitz/anyrender_skia" }
+engines/Cargo.toml:24:skia-bindings = { path = "vendor/blitz/skia-bindings" }
+engines/html/README.md:12:Dependencies to avoid: `dom/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz types in public APIs.
+engines/css/selectors/README.md:20:`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8. Also: Concrete `dom/core` types in the public API where a trait suffices.
+engines/html/parser/src/lib.rs:1://! Incremental HTML parsing into a Wega document (`wega-dom`). Unlike `blitz_html`'s one-shot
+engines/html/parser/src/lib.rs:6://! The tree sink is adapted from blitz-html 0.3.0-beta.4 `html_sink.rs`
+engines/css/style-engine/README.md:20:`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8. Also: `layout/*`.
+engines/native/src/text.rs:2://! line breaking; neither Blitz styles nor Blitz layout are consulted here.
+engines/html/parser/README.md:9:`wega-dom`, `html5ever`, `url`. No engine, no Blitz, no diagnostics module. XML parsing is **not** here (it stays in the engine until it has an independent boundary). Tests that need a real document live in `wega-adapter-blitz` (`tests/html_parser.rs`). `tests/boundary.rs` enforces the dependency list.
+engines/tools/dependency-graph/src/lib.rs:13:    "blitz-dom",
+engines/tools/dependency-graph/src/lib.rs:14:    "blitz-html",
+engines/tools/dependency-graph/src/lib.rs:15:    "blitz-paint",
+engines/tools/dependency-graph/src/lib.rs:16:    "blitz-traits",
+engines/tools/architecture-check/src/rules.rs:165:        "wega-adapter-blitz",
+engines/tools/architecture-check/src/rules.rs:451:            ("wega-adapter-blitz", "wega-engine"),
+engines/tools/architecture-check/src/rules.rs:452:            ("wega-html", "wega-adapter-blitz"),
+engines/tools/architecture-check/src/rules.rs:453:            ("wega-dom", "wega-adapter-blitz"),
+engines/services/security/src/csp.rs:302:    /// Blitz subresources carry no destination, so classify by extension; an
+engines/html/parser/tests/boundary.rs:67:                    !code.contains("blitz_") && !code.contains("wega_adapter"),
+engines/native/tests/owned_pipeline.rs:125:            !name.starts_with("blitz-") && name != "wega-adapter-blitz",
+engines/css/values/README.md:20:`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8.
+engines/css/cache/README.md:20:`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8.
+engines/css/README.md:16:Dependencies to avoid: `dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8.
+engines/css/parser/README.md:20:`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8.
+engines/css/invalidation/README.md:20:`dom/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*` (Stylo is reached only through a future `adapters/stylo`); Blitz, V8. Also: `layout/invalidation` (coordinate via events, not imports).
+engines/Cargo.lock:492:name = "blitz-dom"
+engines/Cargo.lock:499: "blitz-traits",
+engines/Cargo.lock:540:name = "blitz-html"
+engines/Cargo.lock:545: "blitz-dom",
+engines/Cargo.lock:546: "blitz-traits",
+engines/Cargo.lock:552:name = "blitz-paint"
+engines/Cargo.lock:557: "blitz-dom",
+engines/Cargo.lock:558: "blitz-traits",
+engines/Cargo.lock:573:name = "blitz-traits"
+engines/Cargo.lock:6813:name = "wega-adapter-blitz"
+engines/Cargo.lock:6817: "blitz-dom",
+engines/Cargo.lock:6818: "blitz-html",
+engines/Cargo.lock:6819: "blitz-paint",
+engines/Cargo.lock:6820: "blitz-traits",
+engines/Cargo.lock:6896: "blitz-dom",
+engines/Cargo.lock:6897: "blitz-traits",
+engines/Cargo.lock:6920: "wega-adapter-blitz",
+engines/html/treebuilder/README.md:20:`dom/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz types in public APIs. Also: Network or resource loading.
+engines/foundation/events/README.md:20:Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI toolkits, OS APIs. Also: DOM event semantics (belongs in `dom/events`).
+engines/layout/grid/README.md:16:`std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz). Within this group: `layout/core`.
+engines/layout/grid/README.md:20:`css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs.
+engines/graphics/paint/README.md:16:`std` only for now (`foundation/*` deferred). The display-list contract is independent of `layout/*`, `dom/*` and `css/*` (it may mirror `anyrender::PaintScene`). Within this group: `graphics/display-list`. Display lists are produced from layout output only through an adapter (e.g. `adapters/blitz`).
+engines/foundation/ids/README.md:20:Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI toolkits, OS APIs.
+engines/layout/text/README.md:16:`std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz). Within this group: `layout/core`.
+engines/layout/text/README.md:20:`css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs. Also: Concrete font rasterization (belongs in `graphics/fonts`).
+engines/foundation/errors/README.md:20:Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI toolkits, OS APIs.
+engines/dom/events/README.md:20:`html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`. Also: Script-engine types (listeners are abstract callbacks).
+engines/network/src/lib.rs:508:            .user_agent("Wega/0.1 (Blitz/V8)")
+engines/network/src/lib.rs:621:                    .user_agent("Wega/0.1 (Blitz/V8)")
+engines/layout/block/README.md:16:`std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz). Within this group: `layout/core`.
+engines/layout/block/README.md:20:`css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs.
+engines/layout/invalidation/README.md:16:`std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz). Within this group: `layout/core`.
+engines/layout/invalidation/README.md:20:`css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs. Also: `css/invalidation` internals.
+engines/foundation/config/README.md:20:Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI toolkits, OS APIs.
+engines/layout/inline/README.md:16:`std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz). Within this group: `layout/core`, `layout/text`.
+engines/layout/inline/README.md:20:`css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs.
+engines/foundation/geometry/README.md:20:Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI toolkits, OS APIs.
+engines/dom/traversal/README.md:20:`html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`.
+engines/foundation/metrics/README.md:20:Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI toolkits, OS APIs. Also: Concrete exporters tied to a specific backend.
+engines/layout/flex/README.md:16:`std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz). Within this group: `layout/core`.
+engines/layout/flex/README.md:20:`css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs.
+engines/layout/README.md:15:Default dependencies for this group: `std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz).
+engines/layout/README.md:17:Dependencies to avoid: `css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs.
+engines/foundation/README.md:17:Dependencies to avoid: Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI toolkits, OS APIs.
+engines/dom/README.md:14:Dependencies to avoid: `html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`.
+engines/foundation/types/README.md:20:Any other engine group, `adapters/*`, Blitz, Stylo, Skia, V8, Servo, UI toolkits, OS APIs.
+engines/README.md:4:using Blitz 0.3.0-beta.4, V8 through deno_core 0.413, and Vello CPU. Wega
+engines/README.md:9:Servo's pinned SpiderMonkey requires ICU 2.1, whereas Blitz beta.4 requires ICU
+engines/layout/core/README.md:16:`std` only for now (`foundation/*` deferred). Independent contract with plain input/output types: no dependency on `css/*`, `dom/*` or `graphics/*`; an adapter converts style and DOM data (precedent: `stylo_taffy` inside Blitz).
+engines/layout/core/README.md:20:`css/*`, `dom/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; Blitz, Taffy or Parley types in public APIs.
+engines/dom/mutation/README.md:20:`html/*`, `css/*`, `layout/*`, `graphics/*`, `javascript/*`, `services/*`, `adapters/*`; third-party engines (Blitz, V8) belong only in future `adapters/*`. Also: Direct calls into `css/*` or `layout/*` (use notifications).
+engines/dom/core/src/lib.rs:4://! This crate **must not mention Blitz** or any other document engine; the adapter crates
+engines/dom/core/src/lib.rs:5://! (`wega-adapter-blitz`) are the only place a concrete document is mapped onto it. A test
+engines/dom/core/src/lib.rs:12://!   resolves to another node (Blitz's ids carry a slot version for this).
+engines/dom/core/src/lib.rs:39:/// Semantics (fixed by tests in `wega-adapter-blitz`):
+engines/wega/src/dom.rs:1://! Checked native operations over Blitz's single DOM, used by the V8 host.
+engines/wega/src/dom.rs:3:use blitz_dom::NodeId;
+engines/wega/src/dom.rs:4:use blitz_dom::node::NodeData;
+engines/wega/src/dom.rs:13:use wega_adapter_blitz::BlitzDocument;
+engines/wega/src/dom.rs:14:use wega_adapter_blitz::{ToKey, ToNodeId};
+engines/wega/src/dom.rs:57:    pub document: Rc<RefCell<BlitzDocument>>,
+engines/wega/src/dom.rs:115:            Cell::new(blitz_dom::traversal::TreeTraverser::new(&document.borrow()).count());
+engines/wega/src/dom.rs:291:    fn resolve(&self, doc: &mut BlitzDocument) {
+engines/wega/src/dom.rs:1671:            // Blitz creates native text editors during layout. Initialize a
+engines/wega/src/dom.rs:1682:            "windowNamed" => json!(blitz_dom::traversal::TreeTraverser::new(&doc).filter(|id| {
+engines/wega/src/dom.rs:2021:    fn subtree(doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
+engines/wega/src/dom.rs:2034:    fn attribute(doc: &BlitzDocument, id: NodeId, name: &str) -> Option<String> {
+engines/wega/src/dom.rs:2037:    fn component_subtree(&self, doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
+engines/wega/src/dom.rs:2058:    fn component_connected(&self, doc: &BlitzDocument, mut node: NodeId) -> bool {
+engines/wega/src/dom.rs:2081:    fn assigned_slot(&self, doc: &BlitzDocument, target: NodeId) -> Option<NodeId> {
+engines/wega/src/dom.rs:2106:        doc: &BlitzDocument,
+engines/wega/src/dom.rs:2154:    fn collect_detached(&self, doc: &mut BlitzDocument, id: NodeId) {
+engines/wega/src/dom.rs:2208:    pub fn form_owner(doc: &BlitzDocument, control: NodeId) -> Option<NodeId> {
+engines/wega/src/dom.rs:2231:    pub fn reset_form_controls(doc: &mut BlitzDocument, form: NodeId) {
+engines/wega/src/dom.rs:2232:        let controls: Vec<NodeId> = blitz_dom::traversal::TreeTraverser::new(doc)
+engines/wega/src/dom.rs:2274:        doc: &BlitzDocument,
+engines/wega/src/dom.rs:2279:        for id in blitz_dom::traversal::TreeTraverser::new(doc) {
+engines/wega/src/dom.rs:2338:                        // Blitz creates checkbox state at layout; before that, use the attribute.
+engines/wega/src/dom.rs:2357:    fn serialize(doc: &BlitzDocument, id: NodeId, out: &mut String) {
+engines/wega/src/native_engine/mod.rs:1://! Wega Native Rendering Engine: progressive replacement for Blitz, Stylo and Taffy.
+engines/dom/core/src/layout.rs:154:/// Wega-owned: nothing here names a Blitz, Stylo, Taffy or Skia type.
+engines/wega/src/native_engine/dom_adapter.rs:1://! Temporary boundary for Blitz-owned CSSOM, authorized decoded resources and
+engines/wega/src/native_engine/dom_adapter.rs:9:use wega_adapter_blitz::{BlitzDocument, ToNodeId};
+engines/wega/src/native_engine/dom_adapter.rs:19:impl NativeResources for BlitzDocument {
+engines/wega/src/native_engine/dom_adapter.rs:104:    let svg = blitz_dom::node::SvgImageData::from_data(source, &usvg::Options::default()).ok()?;
+engines/wega/src/native_engine/dom_adapter.rs:107:pub fn raster(image: &blitz_dom::node::RasterImageData) -> peniko::ImageData {
+engines/wega/src/native_engine/dom_adapter.rs:117:fn svg_graphic(svg: &blitz_dom::node::SvgImageData) -> SvgGraphic {
+engines/wega/src/native_engine/dom_adapter.rs:125:fn images(b: &mut LayoutBox, doc: &mut BlitzDocument) {
+engines/wega/src/native_engine/dom_adapter.rs:141:            blitz_dom::node::ImageData::Raster(image) => b.image = Some(raster(image)),
+engines/wega/src/native_engine/dom_adapter.rs:142:            blitz_dom::node::ImageData::Svg(svg) => b.svg = Some(svg_graphic(svg)),
+engines/wega/src/native_engine/dom_adapter.rs:153:            Some(blitz_dom::node::ImageData::Raster(image)) => {
+engines/wega/src/native_engine/dom_adapter.rs:156:            Some(blitz_dom::node::ImageData::Svg(svg)) => {
+engines/wega/src/native_engine/dom_adapter.rs:166:pub(crate) fn ensure_form_control_data(doc: &mut BlitzDocument) {
+engines/wega/src/native_engine/dom_adapter.rs:167:    use blitz_dom::local_name;
+engines/wega/src/native_engine/dom_adapter.rs:168:    use blitz_dom::node::{SpecialElementData, TextInputData};
+engines/wega/src/native_engine/dom_adapter.rs:216:pub(crate) fn sync_form_state(b: &mut LayoutBox, doc: &BlitzDocument) {
+engines/wega/src/native_engine/dom_adapter.rs:236:                        let ph = node.attr(blitz_dom::local_name!("placeholder"));
+engines/wega/src/native_engine/dom_adapter.rs:277:pub(crate) fn compute_form_decorations(b: &mut LayoutBox, doc: &BlitzDocument) {
+engines/protocol/src/inspector_tests.rs:646:        "blitz",
+engines/dom/core/README.md:11:`html5ever` (for `QualName`) and `url`. Nothing else: no `wega-engine`, no Blitz, no adapter. `#![forbid(unsafe_code)]`. `tests/boundary.rs` fails the build if a dependency outside this list appears or if a source file names Blitz or the engine.
+engines/wega/src/native_engine/backend.rs:39:use wega_adapter_blitz::BlitzDocument;
+engines/wega/src/native_engine/backend.rs:47:    Blitz,
+engines/wega/src/native_engine/backend.rs:55:            _ => Self::Blitz,
+engines/wega/src/native_engine/backend.rs:84:    pub doc: Rc<RefCell<BlitzDocument>>,
+engines/wega/src/native_engine/backend.rs:142:    pub fn new(doc: Rc<RefCell<BlitzDocument>>) -> Self {
+engines/wega/src/native_engine/backend.rs:146:        doc: Rc<RefCell<BlitzDocument>>,
+engines/wega/src/lib.rs:11://! Owned page orchestration on Blitz, independent of Servo and SpiderMonkey.
+engines/wega/src/lib.rs:13:pub use blitz_traits::events;
+engines/wega/src/lib.rs:14:pub use blitz_traits::shell::{ColorScheme, Viewport};
+engines/wega/src/main.rs:1347:                        use wega_engine::events::{BlitzKeyEvent, KeyState};
+engines/wega/src/main.rs:1359:                        view.key(BlitzKeyEvent {
+engines/wega/src/main.rs:1379:                        wega_engine::events::BlitzImeEvent::Preedit(text, cursor)
+engines/wega/src/main.rs:1381:                        wega_engine::events::BlitzImeEvent::Commit(text)
+engines/v8-spike/src/main.rs:1://! Spike: does V8 (via deno_core) link and run against Blitz's DOM in one binary?
+engines/v8-spike/src/main.rs:5:use blitz_dom::{BaseDocument, DocumentConfig, NodeId};
+engines/v8-spike/src/main.rs:6:use blitz_html::HtmlDocument;
+engines/v8-spike/src/main.rs:7:use blitz_traits::shell::{ColorScheme, Viewport};
+engines/v8-spike/src/main.rs:123:        "[{engine}] Blitz document parsed, peak RSS {:.1} MB",
+engines/v8-spike/src/main.rs:143:    println!("[{engine}] Blitz DOM button text = {text:?}");
+engines/v8-spike/src/main.rs:144:    assert!(text.ends_with("works"), "JS did not change Blitz's DOM");
+engines/v8-spike/src/main.rs:158:        |scene| blitz_paint::paint_scene(scene, &mut d, 1.0, w, h, 0, 0),
+engines/wega/src/script.rs:2:use blitz_dom::NodeId;
+engines/wega/src/script.rs:8:use wega_adapter_blitz::BlitzDocument;
+engines/wega/src/script.rs:13:    pub document: Rc<RefCell<BlitzDocument>>,
+engines/wega/src/view.rs:10:use blitz_dom::{NodeId, traversal::TreeTraverser};
+engines/wega/src/view.rs:11:use blitz_traits::{
+engines/wega/src/view.rs:13:        BlitzPointerEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
+engines/wega/src/view.rs:34:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/src/view.rs:35:use wega_adapter_blitz::{ToKey, ToNodeId};
+engines/wega/src/view.rs:184:/// Blitz subresources (stylesheets, images, fonts) with CSP, mixed content,
+engines/wega/src/view.rs:240:        let blocked = request.method != blitz_traits::net::http::Method::GET
+engines/wega/src/view.rs:360:    document: Rc<RefCell<BlitzDocument>>,
+engines/wega/src/view.rs:445:        let document = BlitzDocument::from_html(
+engines/wega/src/view.rs:524:        if backend == crate::native_engine::RenderingBackend::Blitz {
+engines/wega/src/view.rs:772:            BlitzDocument::from_xml(html, setup)
+engines/wega/src/view.rs:774:            BlitzDocument::empty(setup)
+engines/wega/src/view.rs:1089:        if options.method == blitz_traits::net::http::Method::GET {
+engines/wega/src/view.rs:1410:                                blitz_dom::node::SpecialElementData::FileInput(path_bufs.into());
+engines/wega/src/view.rs:1845:    /// `relatedTarget`. Blitz's own focus events are not forwarded (see `generated_events`).
+engines/wega/src/view.rs:1873:    fn pointer_event(&self, target: NodeId, pointer: &Pointer) -> Option<BlitzPointerEvent> {
+engines/wega/src/view.rs:1877:            BlitzPointerEvent {
+engines/wega/src/view.rs:1878:                id: blitz_traits::events::BlitzPointerId::Mouse,
+engines/wega/src/view.rs:1944:    /// Pointer input: hover, mouse/pointer events, Blitz defaults (focus, text
+engines/wega/src/view.rs:2000:                self.blitz_pointer(target, &pointer, DomEventData::PointerMove);
+engines/wega/src/view.rs:2013:                    self.blitz_pointer(target, &pointer, DomEventData::PointerDown);
+engines/wega/src/view.rs:2021:                // Blitz generates the click (or contextmenu) unless this was a drag.
+engines/wega/src/view.rs:2022:                self.blitz_pointer(target, &pointer, DomEventData::PointerUp);
+engines/wega/src/view.rs:2028:                    // Blitz scrolls with winit's sign; DOM deltas are positive downwards.
+engines/wega/src/view.rs:2102:    /// Run Blitz's default action for a pointer event and handle what it generates.
+engines/wega/src/view.rs:2103:    fn blitz_pointer(
+engines/wega/src/view.rs:2107:        make: fn(BlitzPointerEvent) -> DomEventData,
+engines/wega/src/view.rs:2142:    /// events, new windows, fragment links), then Blitz's.
+engines/wega/src/view.rs:2143:    fn click_event(&mut self, target: NodeId, event: BlitzPointerEvent, pointer: Option<&Pointer>) {
+engines/wega/src/view.rs:2319:                // Blitz counts clicks for double clicks.
+engines/wega/src/view.rs:2372:    /// Native editing goes through Blitz/Parley after cancelable DOM events.
+engines/wega/src/view.rs:2373:    pub fn key(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+engines/wega/src/view.rs:2383:    fn key_input(&mut self, event: blitz_traits::events::BlitzKeyEvent) {
+engines/wega/src/view.rs:2402:        // Script sees key events on the focused element, else on <body>; Blitz's own editing
+engines/wega/src/view.rs:2516:                            blitz_dom::BaseDocument::toggle_radio(&mut doc, name, target);
+engines/wega/src/view.rs:2677:    pub fn ime(&mut self, event: blitz_traits::events::BlitzImeEvent) {
+engines/wega/src/view.rs:2686:        use blitz_traits::events::BlitzImeEvent;
+engines/wega/src/view.rs:2689:            BlitzImeEvent::Preedit(text, _) => (text, "compositionupdate"),
+engines/wega/src/view.rs:2690:            BlitzImeEvent::Commit(text) => (text, "compositionend"),
+engines/wega/src/view.rs:2693:        if matches!(&event,BlitzImeEvent::Preedit(text,_) if !text.is_empty()) && !self.composing {
+engines/wega/src/view.rs:2699:        let commit = matches!(event, BlitzImeEvent::Commit(_));
+engines/wega/src/view.rs:2785:    ) -> Result<<BlitzDocument as PaintSource>::Scene, String> {
+engines/wega/src/view.rs:3102:                        blitz_traits::net::EntryValue::String(text) => {
+engines/wega/src/view.rs:3108:                        blitz_traits::net::EntryValue::File(path) => {
+engines/wega/src/view.rs:3121:                        blitz_traits::net::EntryValue::EmptyFile => {
+engines/wega/src/view.rs:3533:        use blitz_traits::net::{Entry, EntryValue, FormData};
+engines/wega/src/view.rs:3559:        use blitz_traits::net::{Entry, EntryValue, FormData};
+engines/wega/src/inspector/tests.rs:926:    for word in ["blitz_", "stylo", "v8::", "deno", "servo"] {
+engines/wega/src/frames.rs:161:    pub document: Rc<RefCell<BlitzDocument>>,
+engines/wega/src/frames.rs:171:    pub document: std::rc::Weak<RefCell<BlitzDocument>>,
+engines/wega/src/frames.rs:722:    fn frame_name_hint(&self, parent: &Rc<RefCell<BlitzDocument>>, node: NodeId) -> String {
+engines/wega/src/frames.rs:868:        scene: &mut <BlitzDocument as PaintSource>::Scene,
+engines/wega/src/frames.rs:905:            <BlitzDocument as PaintSource>::compose_child(
+engines/dom/core/tests/boundary.rs:67:                    !code.contains("blitz_")
+engines/wega/src/network.rs:256:            blitz_dom::install_broker_fonts(fonts);
+engines/v8-spike/Cargo.lock:202:name = "blitz-dom"
+engines/v8-spike/Cargo.lock:210: "blitz-traits",
+engines/v8-spike/Cargo.lock:249:name = "blitz-html"
+engines/v8-spike/Cargo.lock:254: "blitz-dom",
+engines/v8-spike/Cargo.lock:255: "blitz-traits",
+engines/v8-spike/Cargo.lock:261:name = "blitz-paint"
+engines/v8-spike/Cargo.lock:268: "blitz-dom",
+engines/v8-spike/Cargo.lock:269: "blitz-traits",
+engines/v8-spike/Cargo.lock:284:name = "blitz-traits"
+engines/v8-spike/Cargo.lock:3140: "blitz-dom",
+engines/v8-spike/Cargo.lock:3141: "blitz-html",
+engines/v8-spike/Cargo.lock:3142: "blitz-paint",
+engines/v8-spike/Cargo.lock:3143: "blitz-traits",
+engines/wega/src/dom/worker.js:38:  userAgent: "Mozilla/5.0 (compatible; Wega/0.2; Blitz) AppleWebKit/537.36 (KHTML, like Gecko)",
+engines/wega/src/dom/worker.js:39:  appName: "Netscape", appVersion: "5.0 (compatible; Wega/0.2; Blitz)", product: "Gecko",
+engines/wega/src/dom/observers.js:1:// Frame-clock APIs read layout and scrolling from Blitz, never a JS-side layout tree.
+engines/v8-spike/Cargo.toml:6:description = "Spike: Blitz DOM + V8 (deno_core) in one Cargo graph"
+engines/v8-spike/Cargo.toml:12:blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars"] }
+engines/v8-spike/Cargo.toml:13:blitz-html = "=0.3.0-beta.4"
+engines/v8-spike/Cargo.toml:14:blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
+engines/v8-spike/Cargo.toml:15:blitz-traits = "=0.3.0-beta.4"
+engines/adapters/stylo/README.md:16:The wrapped third-party engine plus the Wega-owned trait it implements. Specifically: `engines/vendor/blitz/stylo`, `css/*` traits.
+engines/adapters/README.md:7:- [`blitz`](./blitz/README.md) — Adapter around the vendored Blitz components (`engines/vendor/blitz`).
+engines/wega/Cargo.toml:8:description = "Wega's experimental Blitz-based page engine"
+engines/wega/Cargo.toml:18:wega-adapter-blitz = { path = "../adapters/blitz" }
+engines/wega/Cargo.toml:30:blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["system-fonts", "svg", "woff", "autofocus", "scrollbars", "floats", "error-diagnostics", "accessibility", "file-input"] }
+engines/wega/Cargo.toml:31:blitz-traits = "=0.3.0-beta.4"
+engines/wega/src/dom/semantics.js:4954:        "Mozilla/5.0 (compatible; Wega/0.2; Blitz) AppleWebKit/537.36 (KHTML, like Gecko)",
+engines/wega/src/dom/semantics.js:4956:      appVersion: "5.0 (compatible; Wega/0.2; Blitz)",
+engines/wega/tests/native_benchmark.rs:8:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_benchmark.rs:62:fn comparable_native_blitz_stage_benchmark() {
+engines/wega/tests/native_benchmark.rs:68:    let mut native = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+engines/wega/tests/native_benchmark.rs:73:    let mut reference = BlitzDocument::from_html(HTML, DocumentSetup::default());
+engines/wega/tests/native_benchmark.rs:75:    let mut nc = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+engines/wega/tests/native_benchmark.rs:80:    let mut bc = BlitzDocument::from_html(CHILD, DocumentSetup::default());
+engines/wega/tests/native_benchmark.rs:132:            let doc = BlitzDocument::from_html(HTML, DocumentSetup::default());
+engines/wega/src/html_report.rs:3:use wega_adapter_blitz::BlitzDocument;
+engines/wega/src/html_report.rs:21:pub(crate) type Parser = wega_html::Parser<BlitzDocument, HtmlReport>;
+engines/adapters/skia/README.md:16:The wrapped third-party engine plus the Wega-owned trait it implements. Specifically: `engines/vendor/blitz/skia-bindings`.
+engines/wega/tests/native_browser_behavior.rs:138:    view.set_rendering_backend(RenderingBackend::Blitz);
+engines/adapters/blitz/src/inspect.rs:2:use super::{BlitzDocument, ToKey, ToNodeId};
+engines/adapters/blitz/src/inspect.rs:64:fn connected(doc: &BlitzDocument, key: NodeKey, start: Instant) -> Result<(), StyleReadError> {
+engines/adapters/blitz/src/inspect.rs:107:    d: &BlitzDocument,
+engines/adapters/blitz/src/inspect.rs:168:impl StyleInspect for BlitzDocument {
+engines/wega/tests/events.rs:5:use wega_engine::events::{BlitzKeyEvent, KeyState};
+engines/wega/tests/events.rs:30:pub fn key(name: &str, code: Code) -> BlitzKeyEvent {
+engines/wega/tests/events.rs:31:    BlitzKeyEvent {
+engines/wega/tests/events.rs:325:    // Tab (Blitz default action) goes through the same path.
+engines/wega/tests/events.rs:372:    // Blitz's pointer-down default clears focus; the engine now reports it as blur/focusout.
+engines/adapters/v8/src/env.rs:4://! It contains no DOM, Blitz or V8/Deno types: only the document URL, the bounded
+engines/adapters/blitz/src/lib.rs:1://! The only mapping from Blitz's document onto the Wega document contract (`wega-dom`).
+engines/adapters/blitz/src/lib.rs:4:use blitz_dom::{
+engines/adapters/blitz/src/lib.rs:7:use blitz_html::HtmlDocument;
+engines/adapters/blitz/src/lib.rs:8:use blitz_traits::{
+engines/adapters/blitz/src/lib.rs:27:/// `NodeKey` and Blitz's `NodeId` are both foreign to this module's eventual crate, so they
+engines/adapters/blitz/src/lib.rs:65:/// The document the engine owns: Blitz's `BaseDocument`, held by value (no second tree, no
+engines/adapters/blitz/src/lib.rs:69:pub struct BlitzDocument(BaseDocument, u64);
+engines/adapters/blitz/src/lib.rs:70:impl BlitzDocument {
+engines/adapters/blitz/src/lib.rs:78:    /// mutation contract (a Wega-owned wrapper over a Blitz API reached through `DerefMut`, such
+engines/adapters/blitz/src/lib.rs:79:    /// as a future stylesheet-rule edit). Blitz does not bump its stylesheet generation for edits
+engines/adapters/blitz/src/lib.rs:92:impl MutationClock for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:93:    /// The adapter's own count of successful mutations through the Wega contract, plus Blitz's
+engines/adapters/blitz/src/lib.rs:101:impl From<BaseDocument> for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:106:impl std::ops::Deref for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:113:impl std::ops::DerefMut for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:120:/// Past Blitz's `MAX_SUBDOCUMENT_DEPTH` (10): its iframe loader refuses to run.
+engines/adapters/blitz/src/lib.rs:123:/// What the engine decides about a new document. The adapter turns it into Blitz's own
+engines/adapters/blitz/src/lib.rs:144:                .map(|fonts| blitz_dom::build_broker_font_ctx(fonts)),
+engines/adapters/blitz/src/lib.rs:149:            // Blitz can load <iframe> content into static sub-documents through the same
+engines/adapters/blitz/src/lib.rs:151:            // X-Frame-Options, credentials), so Blitz's own loader is switched off by
+engines/adapters/blitz/src/lib.rs:158:impl BlitzDocument {
+engines/adapters/blitz/src/lib.rs:176:/// A borrowed node of a [`BlitzDocument`].
+engines/adapters/blitz/src/lib.rs:178:pub struct BlitzNode<'a>(&'a Node);
+engines/adapters/blitz/src/lib.rs:179:impl<'a> BlitzNode<'a> {
+engines/adapters/blitz/src/lib.rs:180:    /// The underlying Blitz node, for the properties that are not behind the contract yet.
+engines/adapters/blitz/src/lib.rs:181:    pub fn blitz(self) -> &'a Node {
+engines/adapters/blitz/src/lib.rs:186:impl DocumentView for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:187:    type Node<'a> = BlitzNode<'a>;
+engines/adapters/blitz/src/lib.rs:189:    fn node(&self, key: NodeKey) -> Option<BlitzNode<'_>> {
+engines/adapters/blitz/src/lib.rs:190:        self.0.get_node(key.node_id()).map(BlitzNode)
+engines/adapters/blitz/src/lib.rs:203:impl<'a> NodeView<'a> for BlitzNode<'a> {
+engines/adapters/blitz/src/lib.rs:258:impl DocumentMutation for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:259:    type Mutator<'a> = BlitzMutator<'a>;
+engines/adapters/blitz/src/lib.rs:260:    fn mutate(&mut self) -> BlitzMutator<'_> {
+engines/adapters/blitz/src/lib.rs:261:        BlitzMutator(BaseDocument::mutate(&mut self.0), &mut self.1)
+engines/adapters/blitz/src/lib.rs:277:impl FocusState for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:279:        // Blitz reports the root element when nothing is focused; that fallback is the
+engines/adapters/blitz/src/lib.rs:295:impl InputControl for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:307:        // Blitz hit-tests in document space; the contract takes viewport coordinates.
+engines/adapters/blitz/src/lib.rs:326:fn rect(r: blitz_dom::BoundingRect) -> Rect {
+engines/adapters/blitz/src/lib.rs:346:impl BlitzDocument {
+engines/adapters/blitz/src/lib.rs:382:impl GeometryAccess for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:385:        // Blitz checks only the node's own `display`; an element below a `display: none`
+engines/adapters/blitz/src/lib.rs:477:        // Walk to the root through *layout* parents (the DOM tree Blitz lays out).
+engines/adapters/blitz/src/lib.rs:603:impl HitTest for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:613:        // Blitz hit-tests in document space.
+engines/adapters/blitz/src/lib.rs:631:impl LayoutControl for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:642:        self.0.set_viewport(blitz_traits::shell::Viewport {
+engines/adapters/blitz/src/lib.rs:647:                blitz_traits::shell::ColorScheme::Dark
+engines/adapters/blitz/src/lib.rs:649:                blitz_traits::shell::ColorScheme::Light
+engines/adapters/blitz/src/lib.rs:654:        self.0.set_viewport_scroll(blitz_dom::Point {
+engines/adapters/blitz/src/lib.rs:665:            blitz_dom::ScrollBehavior::Instant,
+engines/adapters/blitz/src/lib.rs:673:            blitz_dom::ScrollBehavior::Instant,
+engines/adapters/blitz/src/lib.rs:674:            blitz_dom::ScrollLogicalPosition::Start,
+engines/adapters/blitz/src/lib.rs:675:            blitz_dom::ScrollLogicalPosition::Nearest,
+engines/adapters/blitz/src/lib.rs:684:impl PaintSource for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:691:            blitz_dom::StyleThreading::Parallel
+engines/adapters/blitz/src/lib.rs:693:            blitz_dom::StyleThreading::Sequential
+engines/adapters/blitz/src/lib.rs:711:        blitz_paint::paint_scene_with_embedded(
+engines/adapters/blitz/src/lib.rs:739:impl BlitzDocument {
+engines/adapters/blitz/src/lib.rs:741:    fn styled(&self, key: NodeKey) -> Result<&blitz_dom::ElementData, StyleError> {
+engines/adapters/blitz/src/lib.rs:750:/// Styles are Stylo's, hosted by the Blitz document: the inline declaration block lives on
+engines/adapters/blitz/src/lib.rs:753:impl StyleAccess for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:799:impl StyleControl for BlitzDocument {
+engines/adapters/blitz/src/lib.rs:822:        // attribute, which is how Blitz keeps the attribute and the block in step and
+engines/adapters/blitz/src/lib.rs:905:/// Blitz's `DocumentMutator` behind the Wega mutation contract. It has no `Drop` of its
+engines/adapters/blitz/src/lib.rs:906:/// own: dropping it drops the inner mutator, which runs Blitz's deferred work.
+engines/adapters/blitz/src/lib.rs:907:pub struct BlitzMutator<'a>(DocumentMutator<'a>, &'a mut u64);
+engines/adapters/blitz/src/lib.rs:919:impl BlitzMutator<'_> {
+engines/adapters/blitz/src/lib.rs:943:        match BlitzNode(self.node(key)?).kind() {
+engines/adapters/blitz/src/lib.rs:949:        match BlitzNode(self.node(key)?).kind() {
+engines/adapters/blitz/src/lib.rs:981:/// Converts keys for Blitz; the common single-child case does not allocate.
+engines/adapters/blitz/src/lib.rs:993:impl Mutator for BlitzMutator<'_> {
+engines/adapters/blitz/src/lib.rs:1071:        use blitz_dom::node::NodeData;
+engines/adapters/blitz/src/lib.rs:1125:        if BlitzNode(current).kind() != NodeKind::Text {
+engines/adapters/blitz/src/lib.rs:1129:            matches!(&current.data, blitz_dom::node::NodeData::Text(t) if &*t.content == text);
+engines/adapters/blitz/src/lib.rs:1138:        if BlitzNode(self.node(node)?).kind() != NodeKind::Text {
+engines/adapters/blitz/README.md:1:# adapters/blitz — `wega-adapter-blitz`
+engines/adapters/blitz/README.md:3:**Status: PARTIALLY IMPLEMENTED (Round 7)** — the Blitz document behind the `wega-dom` contract.
+engines/adapters/blitz/README.md:5:Owns `BlitzDocument` (an owning, zero-cost wrapper of Blitz's `BaseDocument` that derefs to it, so layout/paint/style/form APIs that are not behind the contract yet keep working), `BlitzNode` (borrowed node view), `BlitzMutator` (Blitz's `DocumentMutator` behind `Mutator`) and the `NodeId`<->`NodeKey` conversions (`ToKey`/`ToNodeId`).
+engines/adapters/blitz/README.md:7:Not yet here: layout, style, paint, events, form state (the engine still uses Blitz directly for these; see `docs/architecture/dom-round7-report.md`).
+engines/adapters/blitz/README.md:11:`wega-dom`, `blitz-dom`, `html5ever`, `url`; dev: `wega-html`, `blitz-html` (parser parity tests). No dependency on `wega-engine`; `tests/boundary.rs` enforces it. `#![forbid(unsafe_code)]`.
+engines/wega/tests/native_css_correctness.rs:1:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_css_correctness.rs:5:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_css_correctness.rs:79:    let doc = BlitzDocument::from_html(
+engines/wega/tests/hot_path_bench.rs:5:use wega_engine::events::{BlitzKeyEvent, KeyState};
+engines/wega/tests/hot_path_bench.rs:185:fn key_event() -> BlitzKeyEvent {
+engines/wega/tests/hot_path_bench.rs:186:    BlitzKeyEvent {
+engines/adapters/blitz/tests/style_inspect.rs:2:use wega_adapter_blitz::{BlitzDocument, DocumentSetup, ToNodeId};
+engines/adapters/blitz/tests/style_inspect.rs:4:fn doc(html: &str) -> BlitzDocument {
+engines/adapters/blitz/tests/style_inspect.rs:5:    BlitzDocument::from_html(html, DocumentSetup::default())
+engines/adapters/blitz/tests/style_inspect.rs:7:fn read(d: &BlitzDocument, q: StyleRead, offset: u32) -> StylePage {
+engines/adapters/blitz/tests/style_inspect.rs:36:    d.set_viewport(blitz_traits::shell::Viewport {
+engines/adapters/blitz/tests/style_inspect.rs:40:        color_scheme: blitz_traits::shell::ColorScheme::Light,
+engines/adapters/blitz/tests/style_inspect.rs:174:            owner: wega_adapter_blitz::ToKey::key(owner),
+engines/adapters/blitz/tests/style_inspect.rs:184:            owner: wega_adapter_blitz::ToKey::key(key),
+engines/adapters/blitz/tests/style_inspect.rs:196:            owner: wega_adapter_blitz::ToKey::key(key),
+engines/wega/tests/render.rs:2://! in the pixels, and the frame lifecycle around it. Blitz records the scene (behind
+engines/wega/tests/native_typography.rs:3:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_typography.rs:8:    let mut doc = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+engines/wega/tests/inspector_styles_bench.rs:3:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/inspector_styles_bench.rs:34:  let before=rss();let mut d=BlitzDocument::from_html(&html,DocumentSetup::default());if render{d.resolve(0.);}
+engines/wega/tests/native_stability.rs:2:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_stability.rs:6:    NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+engines/wega/tests/native_forms_editing.rs:9:use wega_engine::events::{BlitzKeyEvent, KeyState};
+engines/wega/tests/native_forms_editing.rs:15:    view.key(BlitzKeyEvent {
+engines/adapters/blitz/tests/epoch.rs:4:use blitz_dom::DocumentConfig;
+engines/adapters/blitz/tests/epoch.rs:5:use blitz_html::HtmlDocument;
+engines/adapters/blitz/tests/epoch.rs:7:use wega_adapter_blitz::BlitzDocument;
+engines/adapters/blitz/tests/epoch.rs:16:fn doc() -> BlitzDocument {
+engines/adapters/blitz/tests/epoch.rs:17:    BlitzDocument::new(HtmlDocument::from_html(HTML, DocumentConfig::default()).into_inner())
+engines/adapters/blitz/tests/epoch.rs:19:fn epoch(doc: &BlitzDocument) -> u64 {
+engines/adapters/blitz/tests/epoch.rs:22:fn key(doc: &BlitzDocument, id: &str) -> NodeKey {
+engines/adapters/blitz/tests/epoch.rs:28:fn text_of(doc: &BlitzDocument, id: &str) -> NodeKey {
+engines/adapters/blitz/tests/epoch.rs:33:fn moved(doc: &mut BlitzDocument, op: impl FnOnce(&mut BlitzDocument)) -> u64 {
+engines/wega/tests/native_vertical_slice.rs:6:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_vertical_slice.rs:64:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_vertical_slice.rs:110:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_vertical_slice.rs:136:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_vertical_slice.rs:176:    // Default backend is Blitz
+engines/wega/tests/native_vertical_slice.rs:177:    assert_eq!(view.rendering_backend(), RenderingBackend::Blitz);
+engines/wega/tests/native_vertical_slice.rs:191:    // Switch back to Blitz
+engines/wega/tests/native_vertical_slice.rs:192:    view.set_rendering_backend(RenderingBackend::Blitz);
+engines/wega/tests/native_vertical_slice.rs:193:    assert_eq!(view.rendering_backend(), RenderingBackend::Blitz);
+engines/wega/tests/native_vertical_slice.rs:194:    let painted_blitz = view.paint(800, 600, 1.0, 1.0, false);
+engines/wega/tests/native_vertical_slice.rs:196:        painted_blitz.is_ok(),
+engines/wega/tests/native_vertical_slice.rs:197:        "Painting with fallback Blitz backend succeeded"
+engines/wega/tests/native_visual_corpus.rs:113:fn deterministic_native_blitz_visual_corpus() {
+engines/wega/tests/native_visual_corpus.rs:153:        for backend in [RenderingBackend::WegaNative, RenderingBackend::Blitz] {
+engines/wega/tests/layout_depth.rs:47:        wega_adapter_blitz::set_layout_depth_limit_for_probe(Some(usize::MAX - 1));
+engines/wega/tests/native_css_at_rules_acceptance.rs:141:    let bytes = include_bytes!("../../vendor/blitz/blitz-dom/assets/moz-bullet-font.otf");
+engines/wega/tests/native_advanced_rendering.rs:6:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_advanced_rendering.rs:23:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_advanced_rendering.rs:75:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_advanced_rendering.rs:116:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_advanced_rendering.rs:195:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_advanced_rendering.rs:259:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/adapters/blitz/tests/input.rs:1://! The focus/hover/pointer contract (`wega_dom::input`) against a real Blitz document.
+engines/adapters/blitz/tests/input.rs:2:use blitz_dom::DocumentConfig;
+engines/adapters/blitz/tests/input.rs:3:use blitz_html::HtmlDocument;
+engines/adapters/blitz/tests/input.rs:4:use wega_adapter_blitz::{BlitzDocument, ToNodeId};
+engines/adapters/blitz/tests/input.rs:11:fn doc() -> BlitzDocument {
+engines/adapters/blitz/tests/input.rs:13:        BlitzDocument::new(HtmlDocument::from_html(HTML, DocumentConfig::default()).into_inner());
+engines/adapters/blitz/tests/input.rs:17:fn id(doc: &BlitzDocument, id: &str) -> NodeKey {
+engines/adapters/blitz/tests/input.rs:102:    // Same chain as Blitz's own.
+engines/adapters/blitz/tests/input.rs:103:    let blitz: Vec<NodeKey> = doc
+engines/adapters/blitz/tests/input.rs:110:        .map(wega_adapter_blitz::ToKey::key)
+engines/adapters/blitz/tests/input.rs:112:    assert_eq!(chain, blitz);
+engines/wega/tests/image_limits.rs:4:    use blitz_dom::node::SvgImageData;
+engines/wega/tests/inspector_styles.rs:3:use wega_adapter_blitz::{BlitzDocument, DocumentSetup, ToNodeId};
+engines/wega/tests/inspector_styles.rs:27:    let mut d = BlitzDocument::from_html(
+engines/wega/tests/inspector_styles.rs:191:    let d = BlitzDocument::from_html(
+engines/wega/tests/inspector_styles.rs:292:    let d = BlitzDocument::from_html(
+engines/wega/tests/style.rs:252:/// Known deviation (Blitz orders author sheets by node id, i.e. creation order, not tree
+engines/wega/tests/forms.rs:5:use wega_engine::events::{BlitzKeyEvent, KeyState};
+engines/wega/tests/forms.rs:134:    view.key(BlitzKeyEvent {
+engines/wega/tests/inspector_dom_bench.rs:3:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/inspector_dom_bench.rs:43:        let d = BlitzDocument::from_html(&html, DocumentSetup::default());
+engines/adapters/blitz/tests/contract.rs:1://! The Wega document contract (`wega-dom`) against a real Blitz document.
+engines/adapters/blitz/tests/contract.rs:2:use blitz_dom::{BaseDocument, DocumentConfig, NodeId, node::NodeData};
+engines/adapters/blitz/tests/contract.rs:3:use blitz_html::HtmlDocument;
+engines/adapters/blitz/tests/contract.rs:6:use wega_adapter_blitz::{BlitzDocument, ToKey, ToNodeId};
+engines/adapters/blitz/tests/contract.rs:13:fn doc() -> BlitzDocument {
+engines/adapters/blitz/tests/contract.rs:14:    BlitzDocument::new(HtmlDocument::from_html(HTML, DocumentConfig::default()).into_inner())
+engines/adapters/blitz/tests/contract.rs:16:fn root_key(doc: &BlitzDocument) -> NodeKey {
+engines/adapters/blitz/tests/contract.rs:21:fn legacy_subtree(doc: &BlitzDocument, root: NodeId) -> Vec<NodeId> {
+engines/adapters/blitz/tests/contract.rs:32:fn legacy_attribute(doc: &BlitzDocument, id: NodeId, name: &str) -> Option<String> {
+engines/adapters/blitz/tests/contract.rs:38:fn legacy_info(doc: &BlitzDocument, id: NodeId) -> NodeInfo {
+engines/adapters/blitz/tests/contract.rs:71:fn model_matches_direct_blitz_access_for_every_node() {
+engines/adapters/blitz/tests/contract.rs:91:fn element_lookup_and_tree_links_agree_with_blitz() {
+engines/adapters/blitz/tests/contract.rs:135:fn empty_doc() -> BlitzDocument {
+engines/adapters/blitz/tests/contract.rs:136:    BlitzDocument::new(BaseDocument::new(DocumentConfig::default()))
+engines/adapters/blitz/tests/contract.rs:162:fn assert_integrity(doc: &BlitzDocument) {
+engines/adapters/blitz/tests/contract.rs:177:fn element(doc: &mut BlitzDocument, name: &str, id: &str) -> NodeKey {
+engines/adapters/blitz/tests/contract.rs:187:fn tree() -> (BlitzDocument, NodeKey, NodeKey, NodeKey, NodeKey) {
+engines/adapters/blitz/tests/contract.rs:225:fn traversal_and_attribute_helpers_agree_with_direct_blitz_access() {
+engines/adapters/blitz/tests/contract.rs:474:    let height = |doc: &mut BlitzDocument| {
+engines/adapters/blitz/tests/contract.rs:476:        doc.node(outer).unwrap().blitz().final_layout().size.height
+engines/adapters/blitz/tests/contract.rs:494:/// Mutation overhead of the contract against direct Blitz calls; run with
+engines/adapters/blitz/tests/contract.rs:580:        BlitzDocument::new(HtmlDocument::from_html(&html, DocumentConfig::default()).into_inner());
+engines/wega/tests/native_chrome_compatibility.rs:94:        "../../vendor/blitz/blitz-dom/assets/moz-bullet-font.otf"
+engines/wega/tests/native_stage_profile.rs:3:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_stage_profile.rs:17:    let mut native = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+engines/wega/tests/native_layout_engine.rs:6:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_layout_engine.rs:20:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_layout_engine.rs:62:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_layout_engine.rs:102:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_layout_engine.rs:139:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_layout_engine.rs:186:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_layout_engine.rs:219:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/wega/tests/native_layout_engine.rs:261:    let doc = BlitzDocument::from_html(html, DocumentSetup::default());
+engines/adapters/blitz/tests/layout_safety.rs:10:use blitz_dom::DocumentConfig;
+engines/adapters/blitz/tests/layout_safety.rs:11:use blitz_html::HtmlDocument;
+engines/adapters/blitz/tests/layout_safety.rs:16:use wega_adapter_blitz::BlitzDocument;
+engines/adapters/blitz/tests/layout_safety.rs:48:fn document(html: &str) -> BlitzDocument {
+engines/adapters/blitz/tests/layout_safety.rs:50:        BlitzDocument::new(HtmlDocument::from_html(html, DocumentConfig::default()).into_inner());
+engines/adapters/blitz/tests/layout_safety.rs:55:fn deepest(doc: &BlitzDocument) -> NodeKey {
+engines/adapters/blitz/tests/layout_safety.rs:83:fn read_everything(doc: &BlitzDocument, key: NodeKey) -> (bool, Rect, usize, f64, f64, bool) {
+engines/adapters/blitz/tests/layout_safety.rs:168:    let empty = BlitzDocument::empty(Default::default());
+engines/adapters/blitz/tests/layout_safety.rs:170:    let doc = BlitzDocument::empty(Default::default());
+engines/adapters/blitz/tests/layout_safety.rs:176:fn unconfigured(html: &str) -> BlitzDocument {
+engines/adapters/blitz/tests/layout_safety.rs:177:    BlitzDocument::new(HtmlDocument::from_html(html, DocumentConfig::default()).into_inner())
+engines/adapters/blitz/tests/layout_safety.rs:182:    // Observation, pinned: at the adapter (Blitz's own parser, default config, no broker fonts)
+engines/wega/tests/native_layout_correctness.rs:2:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_layout_correctness.rs:6:    let mut d = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+engines/adapters/blitz/tests/boundary.rs:7:    "blitz-dom",
+engines/adapters/blitz/tests/boundary.rs:8:    "blitz-html",
+engines/adapters/blitz/tests/boundary.rs:9:    "blitz-traits",
+engines/adapters/blitz/tests/boundary.rs:11:    "blitz-paint",
+engines/adapters/blitz/tests/boundary.rs:20:    // Stylo is hosted by the Blitz document (stylist, lock and sheets are its fields), so the
+engines/wega/tests/inspector_dom.rs:4:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/inspector_dom.rs:24:fn doc(html: &str) -> BlitzDocument {
+engines/wega/tests/inspector_dom.rs:25:    BlitzDocument::from_html(html, DocumentSetup::default())
+engines/wega/tests/inspector_dom.rs:27:fn describe(doc: &BlitzDocument, key: NodeKey) -> Result<DomPage, InspectorError> {
+engines/wega/tests/inspector_dom.rs:35:fn children(doc: &BlitzDocument, key: NodeKey, offset: u32, limit: u32) -> DomPage {
+engines/wega/tests/iframes.rs:489:    use wega_engine::events::{BlitzKeyEvent, KeyState};
+engines/wega/tests/iframes.rs:506:    let key = |c: &str| BlitzKeyEvent {
+engines/wega/tests/native_resource_redirects.rs:9:            include_bytes!("../../vendor/blitz/blitz-dom/assets/moz-bullet-font.otf").to_vec(),
+engines/adapters/blitz/tests/style.rs:1://! The style contract (`wega_dom::style`) against a real Blitz document.
+engines/adapters/blitz/tests/style.rs:2:use blitz_dom::DocumentConfig;
+engines/adapters/blitz/tests/style.rs:3:use blitz_html::HtmlDocument;
+engines/adapters/blitz/tests/style.rs:4:use wega_adapter_blitz::BlitzDocument;
+engines/adapters/blitz/tests/style.rs:13:fn doc() -> BlitzDocument {
+engines/adapters/blitz/tests/style.rs:15:        BlitzDocument::new(HtmlDocument::from_html(HTML, DocumentConfig::default()).into_inner());
+engines/adapters/blitz/tests/style.rs:16:    doc.set_viewport(blitz_traits::shell::Viewport {
+engines/adapters/blitz/tests/style.rs:20:        color_scheme: blitz_traits::shell::ColorScheme::Light,
+engines/adapters/blitz/tests/style.rs:25:fn id(doc: &BlitzDocument, id: &str) -> NodeKey {
+engines/adapters/blitz/tests/style.rs:28:fn inline(doc: &BlitzDocument, key: NodeKey) -> String {
+engines/adapters/blitz/tests/style.rs:33:fn property(doc: &BlitzDocument, key: NodeKey, name: &str) -> String {
+engines/adapters/blitz/tests/style.rs:38:fn resolved(doc: &BlitzDocument, key: NodeKey, name: &str) -> String {
+engines/adapters/blitz/tests/style.rs:43:fn text_child(doc: &BlitzDocument, key: NodeKey) -> NodeKey {
+engines/wega/tests/input.rs:218:    view.ime(wega_engine::events::BlitzImeEvent::Commit("draft".into()));
+engines/wega/tests/mutation_epoch_bench.rs:4:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/mutation_epoch_bench.rs:9:    let mut d = BlitzDocument::from_html(
+engines/wega/tests/dom.rs:6:    events::{BlitzImeEvent, BlitzKeyEvent, KeyState},
+engines/wega/tests/dom.rs:89:fn frame_callbacks_observers_media_and_layout_come_from_blitz() {
+engines/wega/tests/dom.rs:120:fn key(key: &str, text: Option<&str>) -> BlitzKeyEvent {
+engines/wega/tests/dom.rs:121:    BlitzKeyEvent {
+engines/wega/tests/dom.rs:139:    view.ime(BlitzImeEvent::Preedit("文".into(), Some((3, 3))));
+engines/wega/tests/dom.rs:140:    view.ime(BlitzImeEvent::Commit("文".into()));
+engines/wega/tests/dom.rs:158:        view.ime(BlitzImeEvent::Commit("Hello 文".into()));
+engines/adapters/blitz/tests/html_parser.rs:1://! The wega-html parser against a real Blitz document: tree-construction parity with
+engines/adapters/blitz/tests/html_parser.rs:2://! blitz-html, fragment parsing, script pausing and node-budget termination.
+engines/adapters/blitz/tests/html_parser.rs:3:use blitz_dom::{BaseDocument, DocumentConfig};
+engines/adapters/blitz/tests/html_parser.rs:4:use blitz_html::HtmlDocument;
+engines/adapters/blitz/tests/html_parser.rs:11:use wega_adapter_blitz::{BlitzDocument, ToNodeId};
+engines/adapters/blitz/tests/html_parser.rs:20:fn wega_parse(html: &str, limit: usize) -> (Rc<RefCell<BlitzDocument>>, usize) {
+engines/adapters/blitz/tests/html_parser.rs:21:    let document = Rc::new(RefCell::new(BlitzDocument::new(BaseDocument::new(
+engines/adapters/blitz/tests/html_parser.rs:31:fn serialized(doc: &BlitzDocument) -> String {
+engines/adapters/blitz/tests/html_parser.rs:51:fn contract_based_parser_builds_the_same_trees_as_blitz_html() {
+engines/adapters/blitz/tests/html_parser.rs:54:        let blitz = BlitzDocument::new(
+engines/adapters/blitz/tests/html_parser.rs:59:            serialized(&blitz),
+engines/adapters/blitz/tests/html_parser.rs:83:/// The previous implementation (blitz-html's fragment sink), kept as the oracle.
+engines/adapters/blitz/tests/html_parser.rs:84:fn blitz_fragment(document: &mut BlitzDocument, element: blitz_dom::NodeId, html: &str) {
+engines/adapters/blitz/tests/html_parser.rs:87:    let sink = blitz_html::DocumentHtmlParser::new(&mut mutation);
+engines/adapters/blitz/tests/html_parser.rs:110:fn new_document() -> BlitzDocument {
+engines/adapters/blitz/tests/html_parser.rs:111:    BlitzDocument::new(BaseDocument::new(DocumentConfig {
+engines/adapters/blitz/tests/html_parser.rs:118:    document: &mut BlitzDocument,
+engines/adapters/blitz/tests/html_parser.rs:132:fn context_document(namespace: html5ever::Namespace, name: &str) -> (BlitzDocument, NodeKey) {
+engines/adapters/blitz/tests/html_parser.rs:137:fn inner(document: &BlitzDocument, context: NodeKey) -> String {
+engines/adapters/blitz/tests/html_parser.rs:139:        .get_node(blitz_dom::NodeId::from_u64(context.as_u64()))
+engines/adapters/blitz/tests/html_parser.rs:190:fn generic_fragment_parsing_matches_the_blitz_html_fragment_sink() {
+engines/adapters/blitz/tests/html_parser.rs:196:            blitz_fragment(&mut expected, expected_context.node_id(), html);
+engines/adapters/blitz/tests/html_parser.rs:311:    document: Rc<RefCell<BlitzDocument>>,
+engines/adapters/blitz/tests/html_parser.rs:312:    parser: Parser<BlitzDocument, Silent>,
+engines/adapters/blitz/tests/html_parser.rs:317:    let document = Rc::new(RefCell::new(BlitzDocument::new(BaseDocument::new(
+engines/adapters/blitz/tests/html_parser.rs:343:fn assert_tree_is_consistent(document: &BlitzDocument) -> usize {
+engines/adapters/blitz/tests/html_parser.rs:360:fn assert_document_is_usable(document: &Rc<RefCell<BlitzDocument>>) {
+engines/adapters/blitz/tests/html_parser.rs:513:    let document = Rc::new(RefCell::new(BlitzDocument::new(BaseDocument::new(
+engines/adapters/blitz/tests/geometry_feasibility.rs:5:use blitz_dom::DocumentConfig;
+engines/adapters/blitz/tests/geometry_feasibility.rs:6:use blitz_html::HtmlDocument;
+engines/adapters/blitz/tests/geometry_feasibility.rs:7:use wega_adapter_blitz::{BlitzDocument, ToKey};
+engines/adapters/blitz/tests/geometry_feasibility.rs:13:fn doc_with(html: &str, scale: f32, zoom: f32) -> BlitzDocument {
+engines/adapters/blitz/tests/geometry_feasibility.rs:15:        BlitzDocument::new(HtmlDocument::from_html(html, DocumentConfig::default()).into_inner());
+engines/adapters/blitz/tests/geometry_feasibility.rs:26:fn by_id(doc: &BlitzDocument, id: &str) -> NodeKey {
+engines/adapters/blitz/tests/geometry_feasibility.rs:29:fn current(doc: &BlitzDocument, id: &str) -> BoxModel {
+engines/adapters/blitz/tests/geometry_feasibility.rs:133:        BlitzDocument::new(HtmlDocument::from_html(PAGE, DocumentConfig::default()).into_inner());
+engines/adapters/blitz/tests/geometry_feasibility.rs:171:        BlitzDocument::new(HtmlDocument::from_html(&html, DocumentConfig::default()).into_inner());
+engines/adapters/blitz/tests/geometry_feasibility.rs:250:        BlitzDocument::new(HtmlDocument::from_html(PAINT, DocumentConfig::default()).into_inner());
+engines/adapters/blitz/Cargo.toml:2:name = "wega-adapter-blitz"
+engines/adapters/blitz/Cargo.toml:8:description = "Wega's Blitz adapter: the Blitz document behind the wega-dom contract"
+engines/adapters/blitz/Cargo.toml:12:blitz-dom = { version = "=0.3.0-beta.4", default-features = false }
+engines/adapters/blitz/Cargo.toml:13:blitz-html = "=0.3.0-beta.4"
+engines/adapters/blitz/Cargo.toml:14:blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
+engines/adapters/blitz/Cargo.toml:18:blitz-traits = "=0.3.0-beta.4"
+engines/wega/tests/native_paint_correctness.rs:3:use wega_adapter_blitz::{BlitzDocument, DocumentSetup};
+engines/wega/tests/native_paint_correctness.rs:10:    let mut d = NativeDocument::new(Rc::new(RefCell::new(BlitzDocument::from_html(
+engines/adapters/blitz/tests/layout.rs:1://! The layout contract (`wega_dom::layout`) against a real Blitz document.
+engines/adapters/blitz/tests/layout.rs:2:use blitz_dom::DocumentConfig;
+engines/adapters/blitz/tests/layout.rs:3:use blitz_html::HtmlDocument;
+engines/adapters/blitz/tests/layout.rs:4:use wega_adapter_blitz::BlitzDocument;
+engines/adapters/blitz/tests/layout.rs:31:fn doc() -> BlitzDocument {
+engines/adapters/blitz/tests/layout.rs:33:        BlitzDocument::new(HtmlDocument::from_html(HTML, DocumentConfig::default()).into_inner());
+engines/adapters/blitz/tests/layout.rs:38:fn id(doc: &BlitzDocument, id: &str) -> NodeKey {
+engines/adapters/blitz/tests/css_inspection_spike.rs:7:use wega_adapter_blitz::{BlitzDocument, DocumentSetup, ToNodeId};
+engines/adapters/blitz/tests/css_inspection_spike.rs:9:fn doc(html: &str) -> BlitzDocument {
+engines/adapters/blitz/tests/css_inspection_spike.rs:10:    BlitzDocument::from_html(html, DocumentSetup::default())
+engines/adapters/blitz/tests/css_inspection_spike.rs:29:    d.set_viewport(blitz_traits::shell::Viewport {
+engines/adapters/blitz/tests/css_inspection_spike.rs:33:        color_scheme: blitz_traits::shell::ColorScheme::Light,

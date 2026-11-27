@@ -1,0 +1,491 @@
+[
+  {
+    "name": "flex",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "f",
+        0,
+        0,
+        300,
+        80
+      ],
+      [
+        "a",
+        0,
+        0,
+        60,
+        80
+      ],
+      [
+        "b",
+        70,
+        0,
+        230,
+        80
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "f",
+        0,
+        0,
+        300,
+        80
+      ],
+      [
+        "a",
+        0,
+        0,
+        60,
+        80
+      ],
+      [
+        "b",
+        70,
+        0,
+        230,
+        80
+      ]
+    ]
+  },
+  {
+    "name": "grid",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "g",
+        0,
+        0,
+        320,
+        110
+      ],
+      [
+        "a",
+        0,
+        0,
+        100,
+        40
+      ],
+      [
+        "b",
+        110,
+        0,
+        210,
+        40
+      ],
+      [
+        "c",
+        0,
+        50,
+        320,
+        60
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "g",
+        0,
+        0,
+        320,
+        110
+      ],
+      [
+        "a",
+        0,
+        0,
+        100,
+        40
+      ],
+      [
+        "b",
+        110,
+        0,
+        210,
+        40
+      ],
+      [
+        "c",
+        0,
+        50,
+        320,
+        60
+      ]
+    ]
+  },
+  {
+    "name": "table",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "t",
+        0,
+        0,
+        300,
+        40
+      ],
+      [
+        "a",
+        0,
+        0,
+        100,
+        40
+      ],
+      [
+        "b",
+        100,
+        0,
+        200,
+        40
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "t",
+        0,
+        0,
+        300,
+        40
+      ],
+      [
+        "a",
+        0,
+        0,
+        100,
+        40
+      ],
+      [
+        "b",
+        100,
+        0,
+        200,
+        40
+      ]
+    ]
+  },
+  {
+    "name": "responsive-cssom",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "a",
+        0,
+        0,
+        220,
+        65
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "a",
+        0,
+        0,
+        220,
+        65
+      ]
+    ]
+  },
+  {
+    "name": "forms",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 1042,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0041349206349206346,
+      "mean_absolute_channel_error": 0.3889285714285714,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "i",
+        0,
+        0,
+        200,
+        32
+      ],
+      [
+        "a",
+        0,
+        32,
+        200,
+        60
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "i",
+        0,
+        0,
+        200,
+        32
+      ],
+      [
+        "a",
+        0,
+        32,
+        200,
+        60
+      ]
+    ]
+  },
+  {
+    "name": "svg",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "s",
+        0,
+        0,
+        160,
+        100
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "s",
+        0,
+        0,
+        160,
+        100
+      ]
+    ]
+  },
+  {
+    "name": "canvas",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "c",
+        0,
+        0,
+        140,
+        70
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "c",
+        0,
+        0,
+        140,
+        70
+      ]
+    ]
+  },
+  {
+    "name": "scrolling",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 1200,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.004761904761904762,
+      "mean_absolute_channel_error": 0.42314583333333333,
+      "max_channel_error": 119,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "a",
+        20,
+        20,
+        100,
+        60
+      ],
+      [
+        "b",
+        250,
+        10,
+        80,
+        40
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "a",
+        20,
+        20,
+        100,
+        60
+      ],
+      [
+        "b",
+        250,
+        10,
+        80,
+        40
+      ]
+    ]
+  },
+  {
+    "name": "mutations-events",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "a",
+        0,
+        0,
+        180,
+        40
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "a",
+        0,
+        0,
+        180,
+        40
+      ]
+    ]
+  },
+  {
+    "name": "iframe",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "f",
+        0,
+        0,
+        160,
+        90
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "f",
+        0,
+        0,
+        160,
+        90
+      ]
+    ]
+  },
+  {
+    "name": "webfont",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    },
+    "native_geometry": [
+      [
+        "a",
+        0,
+        0,
+        200,
+        60
+      ]
+    ],
+    "chrome_geometry": [
+      [
+        "a",
+        0,
+        0,
+        200,
+        60
+      ]
+    ]
+  }
+]

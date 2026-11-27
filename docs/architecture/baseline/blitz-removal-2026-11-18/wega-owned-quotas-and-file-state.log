@@ -1,0 +1,87 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+    Finished `test` profile [unoptimized] target(s) in 15.71s
+     Running tests/dom_budgets.rs (engines/target/debug/deps/dom_budgets-1b0e61dd0510adcd)
+
+running 8 tests
+test after_a_fatal_script_stop_there_is_nothing_left_to_charge ... ok
+test every_script_route_that_adds_nodes_or_text_is_bounded ... ok
+test known_gap_script_nesting_depth_has_no_budget ... ok
+test native_edit_reservations_check_nodes_text_and_depth_and_fail_without_side_effects ... ok
+test native_edits_share_the_scripts_counters ... ok
+test parser_template_ownership_counts_toward_the_existing_limit_before_scripts ... ok
+test template_contents_are_charged_by_the_shared_node_budget ... ok
+test template_fragments_and_deep_clones_charge_every_owned_descendant ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.70s
+
+     Running tests/owned_runtime_document.rs (engines/target/debug/deps/owned_runtime_document-ebe22f3df92836fe)
+
+running 7 tests
+test owned_cssom_edits_and_mutations_drive_the_existing_native_pipeline ... ok
+test owned_inline_declarations_keep_cssom_order_validation_and_priority ... ok
+test owned_queries_scope_relations_namespaces_and_live_control_state ... ok
+test owned_resources_keep_requested_and_final_urls_and_ignore_stale_completions ... ok
+test owned_stylesheet_loader_keeps_the_eight_level_import_limit ... ok
+test production_formdata_never_exposes_a_chosen_host_file_path ... ok
+test production_view_uses_the_owned_arena_and_never_converts_its_keys ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+

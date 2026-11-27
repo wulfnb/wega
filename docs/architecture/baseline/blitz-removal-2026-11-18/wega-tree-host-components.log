@@ -1,0 +1,259 @@
+   Compiling wega-dom v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/dom/core)
+   Compiling wega-html v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/html/parser)
+   Compiling wega-adapter-blitz v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/adapters/blitz)
+    Finished `test` profile [unoptimized] target(s) in 7.39s
+     Running unittests src/lib.rs (engines/target/debug/deps/wega_adapter_blitz-fdaa3ca1ed657d38)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/boundary.rs (engines/target/debug/deps/boundary-6bfc1afdd5f21124)
+
+running 2 tests
+test dependencies_stay_inside_the_boundary ... ok
+test sources_do_not_name_the_engine_or_other_document_engines ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/contract.rs (engines/target/debug/deps/contract-44de683115e89695)
+
+running 13 tests
+test clone_node_copies_shallow_or_deep_and_rejects_stale_and_unclonable_nodes ... ok
+test element_lookup_and_tree_links_agree_with_blitz ... ok
+test keys_round_trip_and_dropped_nodes_never_resolve ... ok
+test layout_reflects_mutations_once_the_scope_ends ... ok
+test model_matches_direct_blitz_access_for_every_node ... ok
+test mutation_overhead_against_direct_access ... ignored
+test mutations_apply_in_order_and_keep_parent_links_consistent ... ok
+test new_and_removed_nodes_are_detached_and_can_be_reinserted ... ok
+test overhead_against_direct_access ... ignored
+test rejected_operations_leave_the_document_unchanged ... ok
+test scopes_are_sequential_and_a_panic_does_not_roll_back_applied_operations ... ok
+test stale_keys_are_rejected_everywhere_and_never_alias_reused_slots ... ok
+test traversal_and_attribute_helpers_agree_with_direct_blitz_access ... ok
+
+test result: ok. 11 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/css_inspection_spike.rs (engines/target/debug/deps/css_inspection_spike-c0bb0802469eea91)
+
+running 3 tests
+test cssom_and_cached_computed_styles_are_executable_without_inspector_layout ... ok
+test legacy_group_serialization_and_cssom_epoch_gap_are_measured ... ok
+test retained_blocks_cannot_unambiguously_identify_matched_rules_or_selectors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/epoch.rs (engines/target/debug/deps/epoch-3ecb44f381e89e84)
+
+running 10 tests
+test a_fresh_document_starts_at_zero_and_reads_never_move_it ... ok
+test a_mutation_scope_steps_per_operation_and_finishing_adds_nothing ... ok
+test a_replacement_document_has_its_own_epoch_and_does_not_touch_the_old_one ... ok
+test failed_operations_never_move_the_epoch ... ok
+test inline_style_edits_step_only_when_the_declaration_changed ... ok
+test rule_edits_through_the_vendored_cssom_step_the_epoch ... ok
+test structural_operations_step_once_when_they_change_something ... ok
+test stylesheet_set_changes_are_part_of_the_epoch ... ok
+test text_and_attribute_operations_step_only_on_a_real_change ... ok
+test the_epoch_wraps_and_consumers_only_compare_for_inequality ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/geometry_feasibility.rs (engines/target/debug/deps/geometry_feasibility-b88836cdc623fb9c)
+
+running 9 tests
+test a_clipped_child_is_reported_with_the_clip_that_hides_it ... ok
+test a_document_past_the_depth_limit_reports_refused_not_a_hang ... ok
+test device_scale_and_zoom_do_not_change_css_pixel_geometry_except_zoom ... ok
+test freshness_states_are_distinguished_without_flushing ... ok
+test nested_scroll_offsets_are_reflected_and_transforms_and_clips_are_not ... ok
+test paint_mapping_is_exact_or_explicitly_unsupported_never_misleading ... ok
+test reads_are_cheap_and_do_not_depend_on_document_size ... ok
+test the_four_boxes_come_from_cached_layout_in_css_pixels ... ok
+test viewport_scroll_moves_viewport_relative_boxes_and_hit_testing_agrees ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests/html_parser.rs (engines/target/debug/deps/html_parser-d4e323cfa3161b36)
+
+running 19 tests
+test a_document_exactly_at_the_limit_parses_completely ... ok
+test a_document_one_node_over_the_limit_overflows ... ok
+test a_huge_overflow_stops_early_and_allocates_only_the_budget ... ok
+test chunked_input_and_document_write_respect_the_budget ... ok
+test construction_preserves_noscript_mode_and_xhtml_sniffing ... ok
+test contract_based_parser_builds_the_same_trees_as_blitz_html ... ok
+test every_budget_boundary_of_every_construction_case_is_safe ... ok
+test floods_of_non_tag_tokens_stop_at_the_budget_too ... ok
+test fragment_parsing_moves_nodes_in_place_without_copying_them ... ok
+test fragment_parsing_respects_the_node_budget_and_leaves_the_document_valid ... ok
+test fragment_scripts_stay_inert_and_do_not_pause ... ok
+test generic_fragment_parsing_matches_the_blitz_html_fragment_sink ... ok
+test generic_xml_construction_matches_the_retained_reference_parser ... ok
+test nested_elements_and_reopened_formatting_stay_bounded ... ok
+test scripts_pause_the_parser_and_adjacent_text_merges ... ok
+test scripts_stop_running_once_the_budget_is_crossed ... ok
+test tables_and_templates_overflow_without_corrupting_the_tree ... ok
+test the_original_400_paragraphs_with_a_budget_of_100_no_longer_panic ... ok
+test the_parser_recovers_for_the_next_document ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/input.rs (engines/target/debug/deps/input-4706d9dfac4be947)
+
+running 5 tests
+test a_removed_node_loses_focus_and_a_stale_key_cannot_be_focused ... ok
+test focus_moves_reports_changes_and_clears ... ok
+test nothing_is_focused_in_a_new_document_but_keyboard_input_has_a_target ... ok
+test pointer_updates_report_the_nodes_before_and_after_and_clear_on_leave ... ok
+test the_element_chain_runs_from_the_target_up_through_element_ancestors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/layout.rs (engines/target/debug/deps/layout-ca755c3acd7113fb)
+
+running 8 tests
+test boxes_report_border_padding_margin_and_fractions ... ok
+test boxless_nodes_have_no_rects_and_empty_geometry ... ok
+test hit_testing_uses_viewport_coordinates_and_follows_scroll ... ok
+test hover_takes_viewport_coordinates_too ... ok
+test reads_report_the_last_flush_and_never_relayout ... ok
+test scroll_state_and_overflow ... ok
+test stale_keys_are_rejected_without_touching_the_document ... ok
+test viewport_geometry_is_in_css_pixels ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/layout_safety.rs (engines/target/debug/deps/layout_safety-21a841bcd0234b75)
+
+running 6 tests
+test a_wide_document_is_not_mistaken_for_a_deep_one_and_the_check_is_cheap ... ok
+test an_empty_document_and_a_document_waiting_for_resources_are_pending_not_a_panic ... ok
+test flush_refuses_documents_nested_past_the_limit_and_lays_out_the_rest ... ok
+test readers_after_a_mutation_report_the_previous_layout_and_say_it_is_stale ... ok
+test readers_on_a_pathological_document_that_was_never_laid_out_return_immediately ... ok
+test the_adapter_alone_does_not_reproduce_the_nested_block_hang ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.53s
+
+     Running tests/style.rs (engines/target/debug/deps/style-c8d0fafcb30095b7)
+
+running 8 tests
+test an_inline_write_is_seen_by_the_cascade_after_the_next_flush ... ok
+test detached_elements_have_inline_but_no_resolved_style ... ok
+test inline_style_is_the_canonical_block_without_invalid_declarations ... ok
+test reads_append_to_the_callers_buffer ... ok
+test resolved_values_cover_used_values_custom_properties_and_undisplayed_elements ... ok
+test set_inline_property_follows_cssom_and_keeps_the_attribute_canonical ... ok
+test stale_keys_and_non_elements_are_rejected_without_touching_the_document ... ok
+test support_and_media_queries ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/style_inspect.rs (engines/target/debug/deps/style_inspect-9fa3b751932bc612)
+
+running 5 tests
+test author_sheet_rule_group_declarations_and_locations ... ok
+test cached_cascade_inheritance_specificity_important_inline_and_media ... ok
+test cssom_mutations_invalidate_paths_and_failed_mutations_do_not ... ok
+test deep_unrendered_and_detached_nodes_do_not_trigger_style_work ... ok
+test huge_values_many_rules_and_pathological_selectors_are_bounded_without_matching ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running unittests src/lib.rs (engines/target/debug/deps/wega_dom-f60b25bb5ed0fd40)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/boundary.rs (engines/target/debug/deps/boundary-8a1d3569575a42f7)
+
+running 2 tests
+test dependencies_stay_inside_the_boundary ... ok
+test sources_do_not_name_the_engine_or_other_document_engines ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/content.rs (engines/target/debug/deps/content-5c8155a78218df43)
+
+running 4 tests
+test comment_mutations_are_atomic_and_counted_and_document_nodes_are_distinct ... ok
+test form_association_follows_current_tree_and_explicit_invalid_owner_stays_unowned ... ok
+test markup_and_text_traversals_do_not_recurse_through_a_deep_document ... ok
+test text_and_markup_use_the_owned_tree_in_document_order ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.76s
+
+     Running tests/document.rs (engines/target/debug/deps/document-86af9992c44c9dd4)
+
+running 11 tests
+test attribute_creation_and_missing_updates_deduplicate_by_namespace ... ok
+test deep_storage_clone_drop_and_document_drop_do_not_recurse ... ok
+test duplicate_ids_follow_connected_tree_order_after_moves ... ok
+test epoch_and_invalidations_change_only_for_effective_operations ... ok
+test fragments_insert_contents_and_template_ownership_cannot_cycle ... ok
+test keys_are_stable_and_foreign_or_deleted_keys_never_alias ... ok
+test namespaces_and_attribute_order_survive_mutation_and_clone ... ok
+test rejected_mutations_are_atomic ... ok
+test reparent_insert_replace_and_detach_preserve_tree_links ... ok
+test repeated_collection_does_not_retain_deleted_keys_in_invalidation_set ... ok
+test template_clone_has_separate_owned_fragment_and_iterative_cleanup ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running unittests src/lib.rs (engines/target/debug/deps/wega_html-7c0cc782e202e0eb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/boundary.rs (engines/target/debug/deps/boundary-67f238624b63dd90)
+
+running 2 tests
+test dependencies_stay_inside_the_boundary ... ok
+test sources_do_not_name_the_engine_or_other_document_engines ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/owned_document.rs (engines/target/debug/deps/owned_document-76ae7f7ee0110d8d)
+
+running 6 tests
+test fragment_context_and_overflow_cleanup_preserve_existing_document ... ok
+test malformed_html_entities_and_implied_structure_use_html5ever ... ok
+test parser_budget_stops_real_node_creation ... ok
+test script_pause_and_document_write_use_the_same_tree ... ok
+test svg_namespaces_and_template_contents_are_real_nodes ... ok
+test table_foster_parenting_and_implicit_tbody_are_preserved ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/xml.rs (engines/target/debug/deps/xml-83abc95168308f86)
+
+running 4 tests
+test xml_binds_namespaces_and_preserves_case_without_html_implied_elements ... ok
+test xml_budget_stops_before_allocating_the_remaining_input ... ok
+test xml_does_not_resolve_external_entities ... ok
+test xml_scripts_are_constructed_without_running_and_style_pop_is_delivered ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wega_adapter_blitz
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wega_dom
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wega_html
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

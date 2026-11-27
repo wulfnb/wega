@@ -1,0 +1,35 @@
+{
+  "profile": "debug",
+  "fixture": {
+    "nodes": 200,
+    "author_rules": 200,
+    "samples": 10
+  },
+  "cold_ms": 140.72825,
+  "geometry_200_queries": {
+    "p50_ms": 0.851166,
+    "p95_ms": 0.9890000000000001,
+    "n": 10
+  },
+  "mutation_relayout": {
+    "p50_ms": 68.845292,
+    "p95_ms": 70.007833,
+    "n": 10
+  },
+  "mutation_css_parse": {
+    "p50_ms": 0.07058299999999999,
+    "p95_ms": 0.082291,
+    "n": 10
+  },
+  "scroll_record": {
+    "p50_ms": 0.6538750000000001,
+    "p95_ms": 0.73325,
+    "n": 10
+  },
+  "last_stages": {
+    "style_box_ms": 30.797209,
+    "layout_ms": 37.481083,
+    "shaping_ms": 36.513209,
+    "scene_ms": 0.498125
+  }
+}

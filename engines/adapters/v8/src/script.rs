@@ -13,6 +13,25 @@ impl std::fmt::Display for ScriptError {
 }
 impl std::error::Error for ScriptError {}
 
+/// A thrown value converted to plain data. The adapter never exposes a V8 type.
+#[derive(Clone, Debug)]
+pub struct InspectException {
+    pub name: String,
+    pub message: String,
+    pub stack: Option<String>,
+    pub url: Option<String>,
+    pub line: u32,
+    pub column: u32,
+}
+
+/// The result of an inspector evaluation: a side-effect-free preview (JSON text produced by
+/// the bootstrap-captured generator) or the exception the expression threw.
+#[derive(Clone, Debug)]
+pub enum InspectOutcome {
+    Value { preview_json: String },
+    Exception(InspectException),
+}
+
 pub trait ScriptHost {
     /// The page's queued host requests; an associated type so the script host does not
     /// name the embedder's document types.
@@ -21,6 +40,11 @@ pub trait ScriptHost {
     fn run_module(&mut self, source: &str, name: &str) -> Result<String, ScriptError>;
     fn modules_pending(&self) -> bool;
     fn evaluate_json(&mut self, source: &str) -> Result<String, ScriptError>;
+    /// Run `source` in the main world under the same watchdog and heap budget as page
+    /// script, and describe the completion value without invoking page code: no JSON
+    /// serialisation (`toJSON`, getters) and no `String(value)`. A fatal error tears the
+    /// realm down exactly as for any other script.
+    fn evaluate_inspect(&mut self, source: &str) -> Result<InspectOutcome, ScriptError>;
     fn checkpoint(&mut self) -> Result<(), ScriptError>;
     fn tick(&mut self) -> Result<(), ScriptError>;
     fn next_timer(&self) -> Option<Duration>;

@@ -340,6 +340,11 @@ pub struct BaseDocument {
     /// added, replaced or removed), so that CSSOM wrappers can detect that
     /// their cached rule data is stale.
     pub(crate) stylesheet_generation: u64,
+    resource_generation:u64,
+    /// Raw, broker-authorized CSS and request URL. Native style resolution must
+    /// parse this source itself, never serialize Stylo computed declarations.
+    pub(crate) stylesheet_sources: BTreeMap<NodeId, (String, String)>,
+    inline_stylesheet_sources: BTreeMap<NodeId,(String,u64)>,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
@@ -399,6 +404,17 @@ impl BaseDocument {
     pub fn set_style_threading(&mut self, threading: StyleThreading) { self.style_threading = threading; }
     /// Release redundant decoded-image cache references. Live nodes retain their
     /// images so freezing never loses pixels or requires a network reload.
+    /// Native image lookup/discovery reuses the authorized provider and bounded decoder.
+    pub fn native_image(&mut self, url: url::Url) -> Option<crate::node::ImageData> {
+        if let Some(image) = self.image_cache.get(url.as_str()) { return Some(image.clone()); }
+        if !self.pending_images.contains_key(url.as_str()) {
+            self.pending_images.insert(url.to_string(), Vec::new());
+            self.net_provider.fetch(self.id(), crate::net::destined_request(url, self.abort_signal.as_ref(), "image"),
+                crate::net::ResourceHandler::boxed(self.tx.clone(), self.id(), None, self.shell_provider.clone(),
+                    crate::net::ImageHandler::new(crate::util::ImageType::Image)));
+        }
+        None
+    }
     pub fn release_image_cache(&mut self) { self.image_cache.clear(); }
 
     /// Create a new (empty) [`BaseDocument`] with the specified configuration
@@ -498,6 +514,9 @@ impl BaseDocument {
             url: base_url,
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
+            resource_generation:0,
+            stylesheet_sources: BTreeMap::new(),
+            inline_stylesheet_sources: BTreeMap::new(),
             font_ctx,
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
@@ -614,6 +633,12 @@ impl BaseDocument {
     /// when `&self` would conflict with a held `&mut` borrow on a field.
     pub(crate) fn build_request(&self, url: url::Url) -> Request {
         crate::net::stamped_request(url, self.abort_signal.as_ref())
+    }
+
+    pub(crate) fn build_stylesheet_request(&self, url: url::Url) -> Request {
+        let mut request = self.build_request(url);
+        request.headers.insert("sec-fetch-dest", "style".parse().unwrap());
+        request
     }
 
     pub fn favicon_url(&self) -> Option<String> {
@@ -1134,7 +1159,7 @@ impl BaseDocument {
                         let resolved_href = self.resolve_url(href);
                         self.net_provider.fetch(
                             self.id(),
-                            self.build_request(resolved_href.clone()),
+                            self.build_stylesheet_request(resolved_href.clone()),
                             ResourceHandler::boxed(
                                 self.tx.clone(),
                                 self.id,
@@ -1157,8 +1182,7 @@ impl BaseDocument {
     pub fn process_style_element(&mut self, target_id: NodeId) {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
-        let sheet = self.make_stylesheet(&css, Origin::Author);
-        self.add_stylesheet_for_node(sheet, target_id);
+        self.upsert_stylesheet_text(target_id,css.as_ref());
     }
 
     pub fn remove_user_agent_stylesheet(&mut self, sheet: &UserAgentStylesheet) {
@@ -1175,6 +1199,20 @@ impl BaseDocument {
 
     /// Iterate over the author stylesheets (from `<style>` and `<link>` nodes)
     /// currently associated with this document
+    /// Completed authorized resources, independent of style/layout processing.
+    pub fn resource_generation(&self)->u64 {self.resource_generation}
+    pub fn stylesheet_source(&self, node: NodeId) -> Option<(&str, &str)> {
+        self.stylesheet_sources.get(&node).map(|(source, url)| (source.as_str(), url.as_str()))
+    }
+    pub fn stylesheet_source_by_url(&self, url: &str) -> Option<&str> {
+        self.stylesheet_sources.values()
+            .find(|(_, u)| u == url)
+            .map(|(s, _)| s.as_str())
+    }
+    pub fn font_ctx(&self) -> Arc<Mutex<parley::FontContext>> {
+        self.font_ctx.clone()
+    }
+
     pub fn author_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
         self.nodes_to_stylesheet.values()
     }
@@ -1218,8 +1256,17 @@ impl BaseDocument {
 
     pub fn upsert_stylesheet_for_node(&mut self, node_id: NodeId) {
         let raw_styles = self.nodes[node_id].text_content();
-        let sheet = self.make_stylesheet(raw_styles, Origin::Author);
-        self.add_stylesheet_for_node(sheet, node_id);
+        self.upsert_stylesheet_text(node_id,&raw_styles);
+    }
+
+    fn upsert_stylesheet_text(&mut self,node_id:NodeId,source:&str) {
+        // Parser and mutation notifications may report the same completed style.
+        // A CSSOM edit changes the generation and must still be reset by text edits.
+        if self.nodes_to_stylesheet.contains_key(&node_id) && self.inline_stylesheet_sources.get(&node_id)
+            .is_some_and(|(old,generation)|old==source&&*generation==self.stylesheet_generation){return;}
+        let sheet=self.make_stylesheet(source,Origin::Author);
+        self.add_stylesheet_for_node(sheet,node_id);
+        self.inline_stylesheet_sources.insert(node_id,(source.to_owned(),self.stylesheet_generation));
     }
 
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: NodeId) {
@@ -1317,9 +1364,15 @@ impl BaseDocument {
             }
         };
 
+        self.resource_generation=self.resource_generation.wrapping_add(1);
         match resource {
-            Resource::Css(css) => {
+            Resource::Css(css, source, requested_url) => {
                 let node_id = res.node_id.unwrap();
+                // Ignore late completions after removal or href replacement.
+                let current = self.nodes.get(node_id).and_then(|n| n.attr(local_name!("href")))
+                    .and_then(|href| self.url.join(href).ok());
+                if current.as_ref().map(Url::as_str) != Some(requested_url.as_str()) { return; }
+                self.stylesheet_sources.insert(node_id, (source, requested_url));
                 self.add_stylesheet_for_node(css, node_id);
             }
             Resource::ImportedCss(import_rule, sheet) => {
@@ -1678,16 +1731,30 @@ impl BaseDocument {
     }
 
     pub fn focus_next_node(&mut self) -> Option<NodeId> {
-        let focussed_node_id = self.get_focussed_node_id()?;
-        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        let id = match self.get_focussed_node_id() {
+            Some(curr) => self.next_node(&self.nodes[curr], |node| node.is_focussable())?,
+            None => {
+                let root = self.root_node();
+                if root.is_focussable() {
+                    root.id
+                } else {
+                    self.next_node(root, |node| node.is_focussable())?
+                }
+            }
+        };
         self.set_focus_to(id);
         Some(id)
     }
 
     /// Move focus to the previous focussable node in the document
     pub fn focus_prev_node(&mut self) -> Option<NodeId> {
-        let focussed_node_id = self.get_focussed_node_id()?;
-        let id = self.prev_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        let id = match self.get_focussed_node_id() {
+            Some(curr) => self.prev_node(&self.nodes[curr], |node| node.is_focussable())?,
+            None => {
+                let root = self.root_node();
+                self.prev_node(root, |node| node.is_focussable())?
+            }
+        };
         self.set_focus_to(id);
         Some(id)
     }

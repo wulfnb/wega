@@ -1,0 +1,218 @@
+//! The computed style of one element.
+use wega_css_values::*;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComputedStyle {
+    pub display: Display,
+    pub position: Position,
+    pub box_sizing: BoxSizing,
+    pub overflow_x: Overflow,
+    pub overflow_y: Overflow,
+    pub width: Length,
+    pub height: Length,
+    pub min_width: Length,
+    pub max_width: Length,
+    pub min_height: Length,
+    pub max_height: Length,
+    pub margin: RectLengths,
+    pub padding: RectLengths,
+    pub borders: Borders,
+    pub border_hidden: [bool; 4],
+    pub top: Length,
+    pub right: Length,
+    pub bottom: Length,
+    pub left: Length,
+    pub z_index: Option<i32>,
+    pub opacity: f32,
+    pub visible: bool,
+    pub pointer_events: bool,
+    pub cursor: String,
+    pub color: Color,
+    pub background_color: Color,
+    /// The declared `background-color` when it depends on `currentcolor` (such as
+    /// `color(from currentcolor ...)`). Its computed value keeps `currentcolor`, so an
+    /// element inheriting it re-resolves it against its own `color`.
+    pub background_color_current: Option<String>,
+    pub background_image: Option<String>,
+    pub background_position: (Length, Length),
+    pub background_size: BackgroundSize,
+    pub background_repeat: (bool, bool),
+    pub clip_path: Option<ClipPath>,
+    pub custom_properties: std::collections::BTreeMap<String, String>,
+    pub line_height_factor: Option<f64>,
+    pub font_size: f64,
+    /// Computed root font metric for rem units; propagated with style context.
+    pub root_font_size: f64,
+    pub line_height: f64,
+    pub text_align: TextAlign,
+    pub font_family: String,
+    pub font_weight: f32,
+    pub font_italic: bool,
+    pub white_space: WhiteSpace,
+    pub flex_direction: FlexDirection,
+    pub justify_content: JustifyContent,
+    pub align_items: AlignItems,
+    pub flex_grow: f64,
+    pub flex_shrink: f64,
+    pub flex_basis: Length,
+    pub flex_wrap: bool,
+    /// `flex-wrap: wrap-reverse`: lines stack from the cross-end edge.
+    pub flex_wrap_reverse: bool,
+    /// `flex-wrap: balance`: items are balanced across lines.
+    pub flex_balance: bool,
+    pub align_content: AlignContent,
+    /// Inherited.
+    pub writing_mode: WritingMode,
+    /// `direction: rtl`. Inherited.
+    pub direction_rtl: bool,
+    pub row_gap: f64,
+    pub column_gap: f64,
+    /// Percentage parts of the gaps, as fractions of the content box (resolved at layout).
+    pub row_gap_percent: f64,
+    pub column_gap_percent: f64,
+    pub grid_template_columns: Vec<GridTrack>,
+    pub grid_template_rows: Vec<GridTrack>,
+    pub grid_column_start: Option<i32>,
+    pub grid_row_start: Option<i32>,
+    pub grid_column_span: usize,
+    pub grid_row_span: usize,
+    /// Explicit end lines (negative counts from the end), resolved at layout.
+    pub grid_column_end: Option<i32>,
+    pub grid_row_end: Option<i32>,
+    /// Named area placement per axis (`grid-area: main`, `grid-column: main`).
+    pub grid_column_name: Option<String>,
+    pub grid_row_name: Option<String>,
+    pub grid_template_areas: Vec<Vec<String>>,
+    pub border_spacing: f64,
+    /// Corner radii (top-left, top-right, bottom-right, bottom-left) as `(px, percent)`;
+    /// the percentage resolves against the border box. Elliptical radii use their
+    /// horizontal value.
+    pub border_radii: [(f64, f64); 4],
+    pub transform: Option<Transform>,
+    pub transform_origin: (Length, Length),
+    pub box_shadow: Option<BoxShadow>,
+    pub object_fit: ObjectFit,
+    pub object_position: (Length, Length),
+    pub vertical_align: VerticalAlign,
+    pub float: Float,
+    /// `mask-image` and its size/position/repeat. Masks are not composited
+    /// yet; an image mask is painted as the background instead (icon fonts
+    /// drawn with `mask-image` over `background-color` then keep their shape).
+    pub mask_image: Option<String>,
+    /// Topmost `linear-gradient()` background layer.
+    pub background_gradient: Option<LinearGradient>,
+    /// `background-clip: text`.
+    pub background_clip_text: bool,
+    pub mask_size: Option<BackgroundSize>,
+    pub mask_position: Option<(Length, Length)>,
+    pub mask_repeat: Option<(bool, bool)>,
+    /// `clear`: (left, right).
+    pub clear: (bool, bool),
+}
+
+impl Default for ComputedStyle {
+    fn default() -> Self {
+        Self {
+            display: Display::Inline,
+            position: Position::Static,
+            box_sizing: BoxSizing::ContentBox,
+            overflow_x: Overflow::Visible,
+            overflow_y: Overflow::Visible,
+            width: Length::Auto,
+            height: Length::Auto,
+            min_width: Length::Auto,
+            max_width: Length::Auto,
+            min_height: Length::Auto,
+            max_height: Length::Auto,
+            margin: RectLengths::default(),
+            padding: RectLengths::default(),
+            borders: Borders::default(),
+            border_hidden: [false; 4],
+            top: Length::Auto,
+            right: Length::Auto,
+            bottom: Length::Auto,
+            left: Length::Auto,
+            z_index: None,
+            opacity: 1.0,
+            visible: true,
+            pointer_events: true,
+            cursor: "auto".into(),
+            color: Color::BLACK,
+            background_color: Color::TRANSPARENT,
+            background_color_current: None,
+            background_image: None,
+            background_position: (Length::Percent(0.0), Length::Percent(0.0)),
+            background_size: BackgroundSize::Auto,
+            background_repeat: (true, true),
+            clip_path: None,
+            custom_properties: Default::default(),
+            line_height_factor: Some(1.25),
+            font_size: 16.0,
+            root_font_size: 16.0,
+            line_height: 20.0,
+            text_align: TextAlign::Left,
+            font_family: "sans-serif".into(),
+            font_weight: 400.0,
+            font_italic: false,
+            white_space: WhiteSpace::Normal,
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::FlexStart,
+            align_items: AlignItems::Stretch,
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
+            flex_basis: Length::Auto,
+            flex_wrap: false,
+            flex_wrap_reverse: false,
+            flex_balance: false,
+            align_content: AlignContent::Normal,
+            writing_mode: WritingMode::HorizontalTb,
+            direction_rtl: false,
+            row_gap: 0.0,
+            column_gap: 0.0,
+            row_gap_percent: 0.0,
+            column_gap_percent: 0.0,
+            grid_template_columns: Vec::new(),
+            grid_template_rows: Vec::new(),
+            grid_column_start: None,
+            grid_row_start: None,
+            grid_column_span: 1,
+            grid_row_span: 1,
+            grid_column_end: None,
+            grid_row_end: None,
+            grid_column_name: None,
+            grid_row_name: None,
+            grid_template_areas: Vec::new(),
+            border_spacing: 2.0,
+            border_radii: [(0.0, 0.0); 4],
+            transform: None,
+            transform_origin: (Length::Percent(50.0), Length::Percent(50.0)),
+            box_shadow: None,
+            object_fit: ObjectFit::Fill,
+            object_position: (Length::Percent(50.0), Length::Percent(50.0)),
+            vertical_align: VerticalAlign::Baseline,
+            float: Float::None,
+            mask_image: None,
+            background_gradient: None,
+            background_clip_text: false,
+            mask_size: None,
+            mask_position: None,
+            mask_repeat: None,
+            clear: (false, false),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SELECTORS & SPECIFICITY
+// ---------------------------------------------------------------------------
+
+impl ComputedStyle {
+    /// `(row-gap, column-gap)` in px for a content box `width` wide and, when definite,
+    /// `height` tall. Percentages of an indefinite height resolve to zero.
+    pub fn gaps(&self, width: f64, height: Option<f64>) -> (f64, f64) {
+        (
+            (self.row_gap + self.row_gap_percent * height.unwrap_or(0.0)).max(0.0),
+            (self.column_gap + self.column_gap_percent * width).max(0.0),
+        )
+    }
+}

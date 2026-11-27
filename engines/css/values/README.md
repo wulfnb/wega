@@ -1,6 +1,6 @@
 # css/values
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Phase 1 split)** — crate `wega-css-values`
 
 ## Purpose
 
@@ -21,4 +21,10 @@ CSS value types, units and computed-value representations.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Implemented as `wega-css-values`, a member of the `engines` workspace. The code moved here from `wega-native` without behavior changes (CSS engine modularization plan, Phase 1); `wega-native` re-exports it under the old paths.
+
+Modules: `color` (with `color_space` for `color()`), `length` (and the style-pass viewport), `calc`, `keywords`, `box_values`, `gradient`, `grid`, `background`. CSSOM specified-value parsers live in `wega-css-specified`.
+
+Actual dependencies: `cssparser`, `kurbo`.
+
+Deviations from the target: None from the target list. See [`css-engine-modularization-plan.md`](../../../docs/architecture/css-engine-modularization-plan.md).

@@ -19,13 +19,50 @@
 //!   operation, never a panic on a stale key), and deferred side effects run when the mutator is
 //!   finished or dropped. There is no rollback and no staging.
 #![forbid(unsafe_code)]
+pub mod content;
+pub mod document;
+pub use document::Document;
 pub mod input;
+pub mod inspect;
 pub mod layout;
 pub mod render;
 pub mod style;
 
 use html5ever::QualName;
 use url::Url;
+
+/// The identity of a document's *state*: a counter that changes whenever the document is
+/// successfully changed through Wega's mutation contract (tree, text, attributes, inline style)
+/// or its stylesheet set changes. It is deliberately **not** document identity: a replacement
+/// document is a new object whose epoch starts again, so an epoch is only meaningful together
+/// with the stamp (`DocumentContext`) of the document it was read from.
+///
+/// Semantics (fixed by tests in `wega-adapter-blitz`):
+/// - one step per successful state-changing operation; a no-op (setting an attribute to the
+///   value it already has, removing an absent attribute, appending nothing) does not change it;
+///   a failed operation never changes it; creating a detached node does not change it;
+/// - **wrapping**: after 2^64 steps it wraps. Consumers must compare for *inequality only*
+///   (never order two epochs), so a wrap is indistinguishable from "no change" only if exactly
+///   2^64 steps happen between two reads, which is not reachable;
+/// - not covered (documented gap, not a bug): control state driven by user input or form
+///   submission (`value`, `checked`), focus/hover pseudo-state, scroll, animation-driven
+///   computed style, and image/font arrival. They do not change the DOM the inspector shows.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MutationEpoch(u64);
+
+impl MutationEpoch {
+    pub const fn from_u64(value: u64) -> Self {
+        Self(value)
+    }
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
+/// A document that reports its [`MutationEpoch`].
+pub trait MutationClock: DocumentView {
+    fn mutation_epoch(&self) -> MutationEpoch;
+}
 
 /// Stable node identity. Round-trips through `u64` and its decimal string form.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -67,6 +104,12 @@ pub const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 /// A borrowed, `Copy` handle to one node of a document.
 pub trait NodeView<'a>: Copy {
     fn kind(self) -> NodeKind;
+    fn is_fragment(self) -> bool {
+        self.element_name()
+            .is_some_and(|n| n.local == "#document-fragment")
+    }
+    /// Own text/comment data only; never concatenates descendants or flushes layout.
+    fn text(self) -> Option<&'a str>;
     /// The qualified name of an element (or anonymous block).
     fn qual_name(self) -> Option<&'a QualName>;
     /// `Some` for elements (and anonymous blocks).
@@ -100,6 +143,30 @@ pub trait DocumentView {
     /// The document node.
     fn root(&self) -> NodeKey;
     fn base_url(&self) -> &Url;
+    /// Ownership edges used for retention only, never DOM ancestry/isConnected.
+    fn ownership_parent(&self, key: NodeKey) -> Option<NodeKey> {
+        self.node(key)?.parent()
+    }
+    fn owned_fragment(&self, _: NodeKey) -> Option<NodeKey> {
+        None
+    }
+    fn element_state(&self, key: NodeKey) -> input::ElementState {
+        let Some(node) = self.node(key) else {
+            return Default::default();
+        };
+        let control = node.element_name().is_some_and(|n| {
+            matches!(
+                n.local,
+                "input" | "button" | "select" | "textarea" | "option" | "optgroup" | "fieldset"
+            )
+        });
+        input::ElementState {
+            checked: node.attr("checked").is_some() || node.attr("selected").is_some(),
+            disabled: control && node.attr("disabled").is_some(),
+            enabled: control && node.attr("disabled").is_none(),
+            ..Default::default()
+        }
+    }
 }
 
 /// A borrowed document is a document: lets a parser build into a `&mut` the caller already
@@ -120,6 +187,15 @@ impl<D: DocumentView> DocumentView for &mut D {
     }
     fn base_url(&self) -> &Url {
         (**self).base_url()
+    }
+    fn ownership_parent(&self, key: NodeKey) -> Option<NodeKey> {
+        (**self).ownership_parent(key)
+    }
+    fn owned_fragment(&self, key: NodeKey) -> Option<NodeKey> {
+        (**self).owned_fragment(key)
+    }
+    fn element_state(&self, key: NodeKey) -> input::ElementState {
+        (**self).element_state(key)
     }
 }
 
@@ -188,6 +264,44 @@ pub fn subtree<D: DocumentView, K>(
     nodes
 }
 
+/// Pre-order traversal of `root` in document order. Borrows the single owner;
+/// no copied nodes, recursion or concrete storage/traversal type is required.
+pub fn preorder<D: DocumentView>(doc: &D, root: NodeKey) -> impl Iterator<Item = NodeKey> + '_ {
+    let mut pending = vec![root];
+    std::iter::from_fn(move || {
+        while let Some(key) = pending.pop() {
+            if let Some(node) = doc.node(key) {
+                pending.extend(node.children().rev());
+                return Some(key);
+            }
+        }
+        None
+    })
+}
+
+/// Ownership traversal for allocation accounting, cloning and collection. Unlike
+/// DOM traversal this includes template fragments without exposing parent edges.
+pub fn owned_subtree<D: DocumentView>(
+    doc: &D,
+    root: NodeKey,
+) -> impl Iterator<Item = NodeKey> + '_ {
+    let mut pending = vec![root];
+    let mut seen = std::collections::HashSet::new();
+    std::iter::from_fn(move || {
+        while let Some(key) = pending.pop() {
+            if !seen.insert(key) {
+                continue;
+            }
+            if let Some(node) = doc.node(key) {
+                pending.extend(node.children().rev());
+                pending.extend(doc.owned_fragment(key));
+                return Some(key);
+            }
+        }
+        None
+    })
+}
+
 /// The DOM `Node` interface facts for `nodeType`, `nodeName`, `localName`, `namespaceURI`
 /// and `prefix`.
 #[derive(Debug, PartialEq, Eq)]
@@ -201,6 +315,15 @@ pub struct NodeInfo {
 
 pub fn node_info<D: DocumentView>(doc: &D, key: NodeKey) -> Option<NodeInfo> {
     let node = doc.node(key)?;
+    if node.is_fragment() {
+        return Some(NodeInfo {
+            node_type: 11,
+            node_name: "#document-fragment".into(),
+            local_name: None,
+            namespace: None,
+            prefix: None,
+        });
+    }
     Some(match (node.kind(), node.element_name()) {
         (NodeKind::Document, _) => NodeInfo {
             node_type: 9,
@@ -343,6 +466,9 @@ pub trait Mutator {
     fn previous_sibling(&self, key: NodeKey) -> Option<NodeKey>;
 
     // Creation: new nodes are detached.
+    /// A detached document node (DOMImplementation construction). This does not
+    /// replace the browsing context's document or create another authority.
+    fn create_document(&mut self) -> NodeKey;
     fn create_element(
         &mut self,
         name: QualName,
@@ -377,6 +503,9 @@ pub trait Mutator {
 
     // Text and attributes.
     fn set_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError>;
+    /// Replace a comment's data, preserving its key and mutation accounting.
+    /// `NotText` rejects other node kinds just as `set_text` rejects comments.
+    fn set_comment(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError>;
     fn append_text(&mut self, node: NodeKey, text: &str) -> Result<(), MutationError>;
     fn set_attribute(
         &mut self,

@@ -1,0 +1,81 @@
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:324:48
+    |
+324 |     if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+    |                                                ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/pipe.rs:807:52
+    |
+807 |           let async_fd = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+    |                                                    ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1304:50
+     |
+1304 |       if let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd)) {
+     |                                                  ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 |             && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                        ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+   --> vendor/deno/deno_core/uv_compat/stream.rs:883:35
+    |
+883 |         tokio::io::unix::AsyncFd::new(super::pipe::RawFdWrapper(fd))
+    |                                   ^^^
+
+warning: use of deprecated method `tokio::net::TcpStream::set_linger`: `SO_LINGER` causes the socket to block the thread on drop
+   --> vendor/deno/deno_core/uv_compat/tcp.rs:818:17
+    |
+818 |       && stream.set_linger(Some(std::time::Duration::ZERO)).is_err()
+    |                 ^^^^^^^^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:1343:22
+     |
+1343 |       match AsyncFd::new(TtyFd(actual_fd)) {
+     |                      ^^^
+
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/tty.rs:2809:33
+     |
+2809 |   let async_fd = match AsyncFd::new(TtyFd(fake_fd)) {
+     |                                 ^^^
+
+warning: `deno_core` (lib) generated 8 warnings
+warning: use of deprecated associated function `tokio::io::unix::AsyncFd::<T>::new`: unsound due to lack of I/O safety; use `AsyncFd::register` instead (see https://github.com/tokio-rs/tokio/pull/8587)
+    --> vendor/deno/deno_core/uv_compat/pipe.rs:1936:56
+     |
+1936 | ...   && let Ok(afd) = tokio::io::unix::AsyncFd::new(RawFdWrapper(fd))
+     |                                                  ^^^
+
+warning: `deno_core` (lib) generated 8 warnings (7 duplicates)
+   Compiling wega-engine v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/wega)
+    Finished `test` profile [unoptimized] target(s) in 16.89s
+     Running tests/forms.rs (engines/target/debug/deps/forms-b5d3d408aadf4247)
+
+running 1 test
+WEGA_DIAGNOSTIC	{"category":"html","severity":"warning","message":"Unexpected token","url":"http://127.0.0.1:63094/","line":1,"column":null,"truncated":false}
+OWNED_FORM_PROBE {"geometry":[["",0,0,185,24,"","",""],["",0,24,185,24,"","",""],["",0,54,185,24,"","",""],["go",0,84,100,40,"","",""],["",0,124,185,24,"","",""],["nope",0,148,100,40,"","",""],["field",0,188,185,24,"","",""]],"target":"","viewport":[300,300]}
+
+thread 'clicking_submit_posts_an_urlencoded_body_and_shows_the_response' (3669760) panicked at wega/tests/forms.rs:37:5:
+assertion `left == right` failed
+  left: "null"
+ right: "\"go\""
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test clicking_submit_posts_an_urlencoded_body_and_shows_the_response ... FAILED
+
+failures:
+
+failures:
+    clicking_submit_posts_an_urlencoded_body_and_shows_the_response
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.50s
+
+error: test failed, to rerun pass `-p wega-engine --test forms`

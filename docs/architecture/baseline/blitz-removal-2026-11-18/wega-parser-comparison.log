@@ -1,0 +1,35 @@
+   Compiling wega-adapter-blitz v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/adapters/blitz)
+    Finished `test` profile [unoptimized] target(s) in 3.26s
+     Running tests/boundary.rs (engines/target/debug/deps/boundary-6bfc1afdd5f21124)
+
+running 2 tests
+test dependencies_stay_inside_the_boundary ... ok
+test sources_do_not_name_the_engine_or_other_document_engines ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/html_parser.rs (engines/target/debug/deps/html_parser-d4e323cfa3161b36)
+
+running 19 tests
+test fragment_parsing_moves_nodes_in_place_without_copying_them ... ok
+test chunked_input_and_document_write_respect_the_budget ... ok
+test a_document_one_node_over_the_limit_overflows ... ok
+test fragment_scripts_stay_inert_and_do_not_pause ... ok
+test a_document_exactly_at_the_limit_parses_completely ... ok
+test construction_preserves_noscript_mode_and_xhtml_sniffing ... ok
+test scripts_pause_the_parser_and_adjacent_text_merges ... ok
+test floods_of_non_tag_tokens_stop_at_the_budget_too ... ok
+test scripts_stop_running_once_the_budget_is_crossed ... ok
+test generic_xml_construction_matches_the_retained_reference_parser ... ok
+test the_parser_recovers_for_the_next_document ... ok
+test the_original_400_paragraphs_with_a_budget_of_100_no_longer_panic ... ok
+test nested_elements_and_reopened_formatting_stay_bounded ... ok
+test contract_based_parser_builds_the_same_trees_as_blitz_html ... ok
+test a_huge_overflow_stops_early_and_allocates_only_the_budget ... ok
+test tables_and_templates_overflow_without_corrupting_the_tree ... ok
+test every_budget_boundary_of_every_construction_case_is_safe ... ok
+test fragment_parsing_respects_the_node_budget_and_leaves_the_document_valid ... ok
+test generic_fragment_parsing_matches_the_blitz_html_fragment_sink ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+

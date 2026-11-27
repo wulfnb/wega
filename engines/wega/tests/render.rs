@@ -23,6 +23,7 @@ fn page(html: &str) -> View {
         "<!doctype html><style>body{{margin:0}}div{{box-sizing:border-box}}</style>{html}"
     ))
     .unwrap();
+    view.set_transparent(true);
     view.poll();
     view
 }

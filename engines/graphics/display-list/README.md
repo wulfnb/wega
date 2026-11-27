@@ -1,6 +1,6 @@
 # graphics/display-list
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Phase 1 split)** — crate `wega-display-list`
 
 ## Purpose
 
@@ -21,4 +21,10 @@ Backend-neutral display list representation.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Implemented as `wega-display-list`, a member of the `engines` workspace. The code moved here from `wega-native` without behavior changes (CSS engine modularization plan, Phase 1); `wega-native` re-exports it under the old paths.
+
+Modules: `list` (items, the list, hit testing), `boxes` (decorations and contents), `stacking` (stacking contexts and paint order).
+
+Actual dependencies: `wega-layout`, `wega-css-values`, `wega-image`, `wega-dom`, `anyrender`, `anyrender_svg`, `kurbo`, `peniko`.
+
+Deviations from the target: Reads `wega_layout::LayoutBox` directly (ARCH-003: `wega-display-list -> wega-layout`, `-> wega-dom`). See [`css-engine-modularization-plan.md`](../../../docs/architecture/css-engine-modularization-plan.md).

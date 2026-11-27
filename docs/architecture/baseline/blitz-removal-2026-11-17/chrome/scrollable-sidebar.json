@@ -1,0 +1,60 @@
+{
+  "native": [
+    [
+      "row",
+      0,
+      0,
+      600,
+      120
+    ],
+    [
+      "sidebar",
+      0,
+      0,
+      200,
+      120
+    ],
+    [
+      "main",
+      200,
+      0,
+      400,
+      120
+    ]
+  ],
+  "chrome": [
+    [
+      "row",
+      0,
+      0,
+      600,
+      120
+    ],
+    [
+      "sidebar",
+      0,
+      0,
+      200,
+      120
+    ],
+    [
+      "main",
+      200,
+      0,
+      400,
+      120
+    ]
+  ],
+  "diff": {
+    "channel_tolerance": 8,
+    "pixel_threshold_fraction": 0.01,
+    "geometry_tolerance_px": 0.5,
+    "differing_pixels": 0,
+    "total_pixels": 252000,
+    "mismatch_fraction": 0.0,
+    "mean_absolute_channel_error": 0.0,
+    "max_channel_error": 0,
+    "geometry_max_error_px": 0.0,
+    "within_tolerance": true
+  }
+}

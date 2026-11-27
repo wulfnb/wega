@@ -461,7 +461,16 @@ impl Browser {
         let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "Wega web page."));
+        // Browser-owned DevTools state is read before the page is borrowed.
+        let picker = self.devtools_picker_active();
+        let overlay = self.devtools_overlay_plans();
+        let mut picker_events: Vec<PickerEvent> = Vec::new();
+        let entered = picker && self.devtools.geometry.take_entered();
         let Some(page) = self.wega_mut() else { return };
+        if entered {
+            // Inspect Element just started: the page's pointer is gone, no hover or press state.
+            page.pointer("leave", (0.0, 0.0), (0, 0), 0, (0.0, 0.0));
+        }
         let _ = page.resize(width, height, scale * factor, dark);
         let frame = page
             .state
@@ -488,6 +497,10 @@ impl Browser {
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                 egui::Color32::WHITE,
             );
+            // Inspect Element overlay: browser-owned, above the page texture, never in the page.
+            for (plan, strong) in &overlay {
+                crate::devtools_overlay::paint(ui.painter(), rect, page.zoom, plan, *strong);
+            }
         } else {
             // Theme surface while the engine starts, instead of a white flash.
             let colors = crate::theme::palette(ui.ctx());
@@ -527,6 +540,30 @@ impl Browser {
         let mut pressed = false;
         for event in events {
             match event {
+                egui::Event::PointerMoved(position)
+                    if picker && (inside(position) || pressed_buttons != 0) =>
+                {
+                    let (x, y) = local(position);
+                    picker_events.push(if inside(position) {
+                        PickerEvent::Hover(x, y)
+                    } else {
+                        PickerEvent::Left
+                    });
+                }
+                egui::Event::PointerButton {
+                    pos,
+                    button,
+                    pressed: down,
+                    ..
+                } if picker && inside(pos) => {
+                    // Consumed: the page sees neither the press nor the release. A primary
+                    // press selects.
+                    if down && button == egui::PointerButton::Primary {
+                        let (x, y) = local(pos);
+                        picker_events.push(PickerEvent::Click(x, y));
+                    }
+                }
+                egui::Event::PointerGone if picker => picker_events.push(PickerEvent::Left),
                 egui::Event::PointerMoved(position) if inside(position) || pressed_buttons != 0 => {
                     page.pointer("move", local(position), (0, pressed_buttons), 0, (0.0, 0.0));
                 }
@@ -581,6 +618,13 @@ impl Browser {
                 .clone();
             if let Some(cursor) = cursor {
                 context.set_cursor_icon(cursor_icon(&cursor));
+            }
+        }
+        for event in picker_events {
+            match event {
+                PickerEvent::Hover(x, y) => self.devtools.geometry.hover_at(x, y),
+                PickerEvent::Click(x, y) => self.devtools.geometry.click_at(x, y),
+                PickerEvent::Left => self.devtools.geometry.pointer_left(),
             }
         }
         self.wega_dialog(&context);
@@ -644,4 +688,11 @@ impl Browser {
             page.answer_dialog(dialog.context, dialog.id, value);
         }
     }
+}
+
+/// Pointer input consumed by Inspect Element mode instead of being forwarded to the page.
+enum PickerEvent {
+    Hover(f32, f32),
+    Click(f32, f32),
+    Left,
 }

@@ -260,6 +260,12 @@ impl PropertyDeclaration {
     /// accidentally monomorphizing this large function multiple times for
     /// different writers.
     pub fn to_css(&self, dest: &mut CssStringWriter) -> fmt::Result {
+        self.to_css_with_writer(dest)
+    }
+
+    /// Opt-in bounded serialization for inspector callers. Existing rendering
+    /// callers retain the concrete String entry point and its specialization.
+    pub fn to_css_with_writer<W: fmt::Write>(&self, dest: &mut W) -> fmt::Result {
         use self::PropertyDeclaration::*;
 
         let mut dest = CssWriter::new(dest);

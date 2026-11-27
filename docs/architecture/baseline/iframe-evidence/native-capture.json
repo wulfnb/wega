@@ -1,0 +1,10 @@
+{
+  "compatibility": null,
+  "engine": "wega",
+  "jsHeapBytes": 6216128,
+  "loadSeconds": 1.649798417,
+  "nodes": 54,
+  "title": "Iframe Parent Test",
+  "url": "http://127.0.0.1:51846/parent.html",
+  "workerRssBytes": 186974208
+}

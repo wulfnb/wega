@@ -164,6 +164,9 @@ impl FrameTree {
     pub fn get(&self, id: FrameId) -> Option<&BrowsingContext> {
         self.contexts.get(&id)
     }
+    pub fn all_contexts(&self) -> impl Iterator<Item = (&FrameId, &BrowsingContext)> {
+        self.contexts.iter()
+    }
     pub fn validate(&self, key: ContextKey) -> Result<&BrowsingContext, ProtocolError> {
         self.get(key.session.frame)
             .filter(|frame| frame.bound && frame.key == key)

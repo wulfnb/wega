@@ -1,6 +1,7 @@
 //! A small multi-route HTTP/1.1 server for engine integration tests.
 #![allow(dead_code)]
 pub mod harness;
+pub mod inspector_worker;
 use std::{
     io::{Read, Write},
     net::TcpListener,

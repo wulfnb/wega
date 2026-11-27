@@ -8,6 +8,7 @@
 //! borrow the shared document per operation instead of holding one mutator for
 //! the whole parse.
 #![forbid(unsafe_code)]
+mod xml;
 use html5ever::{
     QualName,
     tendril::StrTendril,
@@ -20,6 +21,7 @@ use std::{
     rc::Rc,
 };
 use wega_dom::{DocumentMutation, MutationError, Mutator, NewAttribute, NodeKey, NodeView};
+pub use xml::{DocumentOverflow, parse_xml};
 
 /// One HTML parse warning (tokenizer or tree-construction error, or a parser limit). The
 /// parser owns this value and knows nothing about who consumes it.
@@ -204,6 +206,9 @@ impl<D: DocumentMutation, W: ParseReport> TreeSink for Sink<D, W> {
     ) {
     }
     fn get_template_contents(&self, target: &NodeKey) -> NodeKey {
+        if self.document.borrow().owned_fragment(*target).is_none() {
+            self.count_node();
+        }
         match self.mutate(|m| m.template_contents(*target)) {
             Ok(contents) => contents,
             Err(error) => {
@@ -288,11 +293,22 @@ pub struct Parser<D: DocumentMutation, W: ParseReport> {
 }
 impl<D: DocumentMutation, W: ParseReport> Parser<D, W> {
     pub fn new(document: Rc<RefCell<D>>, html: &str, node_limit: usize, report: W) -> Self {
+        Self::with_scripting(document, html, node_limit, report, true)
+    }
+    /// Initial/realm-free documents parse `<noscript>` with scripting disabled.
+    /// Navigation uses `new`, which retains the existing script-pause behavior.
+    pub fn with_scripting(
+        document: Rc<RefCell<D>>,
+        html: &str,
+        node_limit: usize,
+        report: W,
+        scripting_enabled: bool,
+    ) -> Self {
         let builder = TreeBuilder::new(
             Sink::new(document, node_limit, report),
             TreeBuilderOpts {
                 // Scripts run, so <noscript> content is raw text.
-                scripting_enabled: true,
+                scripting_enabled,
                 drop_doctype: true,
                 ..Default::default()
             },

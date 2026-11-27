@@ -8,7 +8,7 @@ pub(super) enum ScriptState {
 }
 /// A script waiting to run: parser-blocking, deferred, ordered or async.
 pub(super) struct PendingScript {
-    node: Option<NodeId>,
+    node: Option<NodeKey>,
     module: bool,
     name: String,
     external: bool,
@@ -97,9 +97,9 @@ pub(super) struct DocumentHost {
     pub(super) deferred: VecDeque<PendingScript>,
     pub(super) ordered: VecDeque<PendingScript>,
     pub(super) asynchronous: Vec<PendingScript>,
-    pub(super) started_scripts: Rc<RefCell<HashSet<NodeId>>>,
+    pub(super) started_scripts: Rc<RefCell<HashSet<NodeKey>>>,
     pub(super) script_count: usize,
-    pub(super) applied_meta: HashSet<NodeId>,
+    pub(super) applied_meta: HashSet<NodeKey>,
     pub(super) encoding: &'static Encoding,
     pub(super) ready_event_sent: bool,
     pub(super) load_event_sent: bool,
@@ -157,7 +157,7 @@ impl View {
             match parser.step() {
                 Step::Script(node) => {
                     self.apply_meta();
-                    self.prepare_script(node.node_id(), true, false);
+                    self.prepare_script(node, true, false);
                 }
                 Step::Finished => {
                     self.apply_meta();
@@ -194,12 +194,12 @@ impl View {
                     .ok()
                     .into_iter()
                     .flatten()
-                    .filter_map(|id| doc.get_node(id).and_then(|n| n.element_data()))
-                    .find(|e| {
-                        e.attr(LocalName::from("http-equiv"))
+                    .filter_map(|id| doc.node(id))
+                    .find(|node| {
+                        node.attr("http-equiv")
                             .is_some_and(|v| v.eq_ignore_ascii_case("refresh"))
                     })
-                    .and_then(|e| e.attr(LocalName::from("content")).map(str::to_owned))
+                    .and_then(|node| node.attr("content").map(str::to_owned))
             };
             if let Some(value) = value {
                 self.refresh = self.parse_refresh(&value);
@@ -208,7 +208,7 @@ impl View {
     }
     /// Apply `<meta http-equiv=content-security-policy>` seen so far.
     pub(super) fn apply_meta(&mut self) {
-        let found: Vec<(NodeId, String)> = {
+        let found: Vec<(NodeKey, String)> = {
             let doc = self.document.borrow();
             doc.query_selector_all("meta[http-equiv]")
                 .ok()
@@ -216,15 +216,11 @@ impl View {
                 .flatten()
                 .filter(|id| !self.host.applied_meta.contains(id))
                 .filter_map(|id| {
-                    let element = doc.get_node(id)?.element_data()?;
+                    let element = doc.node(id)?;
                     element
-                        .attr(LocalName::from("http-equiv"))
+                        .attr("http-equiv")
                         .is_some_and(|v| v.eq_ignore_ascii_case("content-security-policy"))
-                        .then(|| {
-                            element
-                                .attr(LocalName::from("content"))
-                                .map(|c| (id, c.to_owned()))
-                        })
+                        .then(|| element.attr("content").map(|c| (id, c.to_owned())))
                         .flatten()
                 })
                 .collect()
@@ -246,10 +242,11 @@ impl View {
             script.allow_eval(eval);
         }
     }
-    pub(super) fn read_script(&self, node: NodeId) -> Option<ScriptElement> {
+    pub(super) fn read_script(&self, node: NodeKey) -> Option<ScriptElement> {
         let doc = self.document.borrow();
-        let element = doc.get_node(node)?.element_data()?;
-        let attr = |name: &str| element.attr(LocalName::from(name)).map(str::to_owned);
+        let element = doc.node(node)?;
+        element.element_name()?;
+        let attr = |name: &str| element.attr(name).map(str::to_owned);
         Some(ScriptElement {
             kind: script_kind(
                 &attr("type").unwrap_or_default(),
@@ -260,13 +257,13 @@ impl View {
             defer: attr("defer").is_some(),
             nomodule: attr("nomodule").is_some(),
             nonce: attr("nonce").unwrap_or_default(),
-            text: doc.get_node(node)?.text_content(),
+            text: wega_dom::content::text_content(&*doc, node)?,
         })
     }
     /// Prepare a script element: run it now, fetch it, or queue it.
     /// `parser`: inserted by the parser (else by script). `in_order`: queue
     /// even blocking scripts in document order (XML documents).
-    pub(super) fn prepare_script(&mut self, node: NodeId, parser: bool, in_order: bool) {
+    pub(super) fn prepare_script(&mut self, node: NodeKey, parser: bool, in_order: bool) {
         if !self.host.started_scripts.borrow_mut().insert(node) {
             return;
         }
@@ -356,7 +353,7 @@ impl View {
             self.execute(pending);
         }
     }
-    pub(super) fn script_failed(&mut self, node: NodeId, message: String) {
+    pub(super) fn script_failed(&mut self, node: NodeKey, message: String) {
         self.notice(message);
         self.run(
             &format!(
@@ -463,10 +460,14 @@ impl View {
             self.host.ready_at = Some(Instant::now());
             self.run("document._readyState='interactive';document.dispatchEvent(new Event('readystatechange'));__wega_dispatch('DOMContentLoaded',document._id)", "wega:ready");
         }
+        // The parent's load event waits for its child frames, including iframes the parser
+        // has just inserted (discovered here rather than a poll later).
+        self.reconcile_frames_now();
         let settled = self.host.asynchronous.is_empty()
             && self.host.ordered.is_empty()
             && self.in_flight.load(Ordering::Relaxed) == 0
-            && !modules;
+            && !modules
+            && self.frames_loaded();
         let expired = self
             .host
             .ready_at
@@ -520,24 +521,9 @@ impl View {
         let focus_before =
             (!requests.activate.is_empty()).then(|| self.document.borrow().focused());
         for node in requests.activate {
-            // element.click(): script already saw the event; run the defaults.
-            if self.default_click(node) {
-                continue;
-            }
-            let event = self
-                .document
-                .borrow()
-                .get_node(node)
-                .map(|n| n.synthetic_click_event_data(Modifiers::empty()));
-            if let Some(event) = event {
-                let generated = {
-                    let mut generated = Vec::new();
-                    let mut doc = self.document.borrow_mut();
-                    let mut dom_event = DomEvent::new(node, DomEventData::Click(event));
-                    doc.handle_dom_event(&mut dom_event, |event| generated.push(event));
-                    generated
-                };
-                self.generated_events(generated, serde_json::json!({}), None);
+            // Script already dispatched element.click(); run only native activation.
+            if !self.default_click(node) {
+                self.control_click(node);
             }
         }
         if let Some(before) = focus_before {

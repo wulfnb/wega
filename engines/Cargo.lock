@@ -433,7 +433,7 @@ dependencies = [
  "regex",
  "rustc-hash 2.1.3",
  "shlex 2.0.1",
- "syn 3.0.9",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -492,7 +492,6 @@ dependencies = [
 name = "blitz-dom"
 version = "0.3.0-beta.4"
 dependencies = [
- "accesskit",
  "app_units",
  "atomic_refcell",
  "bitflags 2.13.2",
@@ -516,8 +515,7 @@ dependencies = [
  "parley",
  "percent-encoding",
  "rayon",
- "selectors 0.41.0",
- "serde_json",
+ "selectors",
  "skrifa",
  "slotmap",
  "smallvec",
@@ -533,7 +531,7 @@ dependencies = [
  "url",
  "usvg",
  "web-time",
- "wuff",
+ "wega-image",
 ]
 
 [[package]]
@@ -976,9 +974,9 @@ checksum = "147be55d677052dabc6b22252d5dd0fd4c29c8c27aa4f2fbef0f94aa003b406f"
 
 [[package]]
 name = "cookie"
-version = "0.18.2"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
+checksum = "d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a"
 dependencies = [
  "percent-encoding",
  "time",
@@ -1225,7 +1223,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.9",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2427,9 +2425,9 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -5093,28 +5091,10 @@ dependencies = [
  "new_debug_unreachable",
  "precomputed-hash",
  "rustc-hash 2.1.3",
- "servo_arc 0.5.0",
+ "servo_arc",
  "smallvec",
  "to_shmem",
  "to_shmem_derive",
-]
-
-[[package]]
-name = "selectors"
-version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "284ac2879477575f13b22201f7e98aa33aacc765b790536808cf580fd79339f1"
-dependencies = [
- "bitflags 2.13.2",
- "cssparser 0.38.0",
- "derive_more",
- "hashbrown 0.17.1",
- "log",
- "new_debug_unreachable",
- "precomputed-hash",
- "rustc-hash 2.1.3",
- "servo_arc 0.6.0",
- "smallvec",
 ]
 
 [[package]]
@@ -5238,15 +5218,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4eceb519ec34d8290aaf6e46f435102f2bfa63f22b05a144fb16ab266d3b198"
 dependencies = [
  "serde",
- "stable_deref_trait",
-]
-
-[[package]]
-name = "servo_arc"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f121f129345b5201873a0e253f630413d750b9d799613e2873fb768e592c2a7"
-dependencies = [
  "stable_deref_trait",
 ]
 
@@ -5670,9 +5641,9 @@ dependencies = [
  "rayon",
  "rayon-core",
  "rustc-hash 2.1.3",
- "selectors 0.41.0",
+ "selectors",
  "serde",
- "servo_arc 0.5.0",
+ "servo_arc",
  "smallbitvec",
  "smallvec",
  "static_assertions",
@@ -5738,8 +5709,8 @@ dependencies = [
  "cssparser 0.38.0",
  "euclid",
  "parking_lot",
- "selectors 0.41.0",
- "servo_arc 0.5.0",
+ "selectors",
+ "servo_arc",
  "smallbitvec",
  "smallvec",
  "string_cache",
@@ -5779,9 +5750,9 @@ dependencies = [
  "cssparser 0.38.0",
  "euclid",
  "malloc_size_of_derive",
- "selectors 0.41.0",
+ "selectors",
  "serde",
- "servo_arc 0.5.0",
+ "servo_arc",
  "stylo_atoms",
  "stylo_malloc_size_of",
  "thin-vec",
@@ -6177,7 +6148,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbf077da8dd01cc18453bd7d9bc3a945c262f5f344562e5f6deb3914b4dd6f14"
 dependencies = [
  "cssparser 0.38.0",
- "servo_arc 0.5.0",
+ "servo_arc",
  "smallbitvec",
  "smallvec",
  "string_cache",
@@ -6497,9 +6468,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",
@@ -6820,11 +6791,16 @@ dependencies = [
  "blitz-traits",
  "cssparser 0.38.0",
  "html5ever",
+ "kurbo",
+ "peniko",
  "stylo",
  "stylo_traits",
  "url",
+ "wega-css-parser",
  "wega-dom",
  "wega-html",
+ "wega-image",
+ "wega-layout",
 ]
 
 [[package]]
@@ -6876,6 +6852,66 @@ dependencies = [
 ]
 
 [[package]]
+name = "wega-css-cache"
+version = "0.1.0"
+dependencies = [
+ "wega-css-selectors",
+]
+
+[[package]]
+name = "wega-css-parser"
+version = "0.1.0"
+dependencies = [
+ "cssparser 0.38.0",
+ "wega-css-cache",
+ "wega-css-selectors",
+ "wega-css-specified",
+ "wega-css-values",
+]
+
+[[package]]
+name = "wega-css-selectors"
+version = "0.1.0"
+dependencies = [
+ "cssparser 0.38.0",
+ "wega-dom",
+]
+
+[[package]]
+name = "wega-css-specified"
+version = "0.1.0"
+dependencies = [
+ "cssparser 0.38.0",
+]
+
+[[package]]
+name = "wega-css-values"
+version = "0.1.0"
+dependencies = [
+ "cssparser 0.38.0",
+ "kurbo",
+]
+
+[[package]]
+name = "wega-display-list"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_skia",
+ "anyrender_svg",
+ "html5ever",
+ "kurbo",
+ "peniko",
+ "url",
+ "wega-css-parser",
+ "wega-css-values",
+ "wega-dom",
+ "wega-html",
+ "wega-image",
+ "wega-layout",
+]
+
+[[package]]
 name = "wega-dom"
 version = "0.1.0"
 dependencies = [
@@ -6888,36 +6924,53 @@ name = "wega-engine"
 version = "0.1.0"
 dependencies = [
  "accesskit",
+ "anyrender",
+ "anyrender_skia",
  "base64 0.23.1",
- "blitz-dom",
- "blitz-traits",
+ "cssparser 0.38.0",
  "data-url",
  "deno_core",
  "encoding_rs",
  "html5ever",
  "keyboard-types",
+ "kurbo",
+ "parley",
+ "peniko",
+ "percent-encoding",
  "reqwest",
- "selectors 0.42.0",
+ "selectors",
  "serde",
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.1",
  "skia-safe",
+ "smol_str",
  "stylo",
  "stylo_dom",
+ "stylo_static_prefs",
+ "stylo_traits",
  "tempfile",
  "tokio",
  "url",
+ "usvg",
  "wega-adapter-blitz",
  "wega-adapter-skia",
  "wega-adapter-v8",
+ "wega-css-parser",
+ "wega-css-selectors",
+ "wega-css-values",
+ "wega-display-list",
  "wega-dom",
  "wega-html",
+ "wega-image",
+ "wega-layout",
  "wega-network",
  "wega-permissions",
  "wega-platform",
  "wega-protocol",
  "wega-security",
+ "wega-style",
+ "wuff",
 ]
 
 [[package]]
@@ -6927,6 +6980,114 @@ dependencies = [
  "html5ever",
  "url",
  "wega-dom",
+ "xml5ever",
+]
+
+[[package]]
+name = "wega-image"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_svg",
+ "flate2",
+ "image",
+ "kurbo",
+ "parley",
+ "peniko",
+ "svgtypes",
+ "usvg",
+ "wega-dom",
+]
+
+[[package]]
+name = "wega-layout"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-block",
+ "wega-layout-core",
+ "wega-layout-flex",
+ "wega-layout-grid",
+ "wega-layout-table",
+ "wega-layout-text",
+]
+
+[[package]]
+name = "wega-layout-block"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-core",
+ "wega-layout-inline",
+]
+
+[[package]]
+name = "wega-layout-core"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "kurbo",
+ "parley",
+ "peniko",
+ "wega-css-parser",
+ "wega-css-values",
+ "wega-dom",
+ "wega-image",
+ "wega-style",
+]
+
+[[package]]
+name = "wega-layout-flex"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-block",
+ "wega-layout-core",
+ "wega-layout-inline",
+]
+
+[[package]]
+name = "wega-layout-grid"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-block",
+ "wega-layout-core",
+ "wega-layout-inline",
+]
+
+[[package]]
+name = "wega-layout-inline"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-dom",
+ "wega-layout-core",
+ "wega-layout-text",
+ "wega-style",
+]
+
+[[package]]
+name = "wega-layout-table"
+version = "0.1.0"
+dependencies = [
+ "wega-css-values",
+ "wega-layout-block",
+ "wega-layout-core",
+ "wega-layout-inline",
+]
+
+[[package]]
+name = "wega-layout-text"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "kurbo",
+ "parley",
+ "wega-css-values",
+ "wega-dom",
+ "wega-layout-core",
+ "wega-style",
 ]
 
 [[package]]
@@ -6934,8 +7095,10 @@ name = "wega-network"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bytes",
  "fontdb",
  "getrandom 0.3.4",
+ "http",
  "reqwest",
  "rusqlite",
  "serde",
@@ -6948,6 +7111,7 @@ dependencies = [
  "wega-cookies",
  "wega-platform",
  "wega-protocol",
+ "wega-security",
  "wega-storage",
 ]
 
@@ -6984,6 +7148,8 @@ dependencies = [
 name = "wega-security"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "sha2 0.11.1",
  "url",
 ]
@@ -6998,6 +7164,26 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "url",
+]
+
+[[package]]
+name = "wega-style"
+version = "0.1.0"
+dependencies = [
+ "wega-css-parser",
+ "wega-css-selectors",
+ "wega-css-values",
+ "wega-dom",
+]
+
+[[package]]
+name = "wega-wpt-runner"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "skia-safe",
+ "url",
+ "wega-engine",
 ]
 
 [[package]]

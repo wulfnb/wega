@@ -40,6 +40,7 @@ impl Policy {
             "connect-src" => &["connect-src", "default-src"],
             "script-src" => &["script-src", "default-src"],
             "worker-src" => &["worker-src", "child-src", "script-src", "default-src"],
+            "frame-src" => &["frame-src", "child-src", "default-src"],
             other => return self.get(other),
         };
         chain.iter().find_map(|name| self.get(name))
@@ -165,6 +166,11 @@ fn base64(bytes: &[u8]) -> String {
 }
 
 impl Csp {
+    /// Append-only policy revision for cache invalidation.
+    pub fn generation(&self) -> usize {
+        self.policies.len()
+    }
+
     /// Add one Content-Security-Policy header or meta value (comma-separated
     /// values are separate policies).
     pub fn add(&mut self, value: &str) {
@@ -205,6 +211,27 @@ impl Csp {
             sources
                 .iter()
                 .any(|source| matches_source(source, url, document))
+        })
+    }
+    /// Whether this (embedding) document's policies allow it to frame `url`
+    /// (`frame-src`, falling back to `child-src` then `default-src`).
+    pub fn allows_frame(&self, url: &Url, document: &Url) -> bool {
+        self.allows_url("frame-src", url, document, None)
+    }
+    /// Whether the framed document's `frame-ancestors` policies permit every ancestor in
+    /// `ancestors` (nearest first). Policies without the directive allow. Because the framed
+    /// document is the policy owner, `'self'` is evaluated against `framed`.
+    pub fn allows_ancestors(&self, ancestors: &[&Url], framed: &Url) -> bool {
+        self.policies.iter().all(|policy| {
+            let Some(sources) = policy.get("frame-ancestors") else {
+                return true;
+            };
+            ancestors.iter().all(|ancestor| {
+                sources.iter().any(|source| {
+                    let lower = source.to_ascii_lowercase();
+                    lower != "'none'" && matches_source(&lower, ancestor, framed)
+                })
+            })
         })
     }
     /// Scripts inserted by already-trusted script under 'strict-dynamic'.
@@ -298,11 +325,103 @@ impl Csp {
             .iter()
             .any(|directive| self.allows_url(directive, url, document, None))
     }
+    pub fn report_uri(&self) -> Option<String> {
+        self.policies
+            .iter()
+            .find_map(|p| p.get("report-uri").and_then(|uris| uris.first().cloned()))
+    }
+
+    pub fn build_violation_report(
+        &self,
+        document_uri: &str,
+        referrer: &str,
+        violated_directive: &str,
+        blocked_uri: &str,
+    ) -> Option<CspViolationReport> {
+        let _uri = self.report_uri()?;
+        let original_policy = self
+            .policies
+            .iter()
+            .map(|p| {
+                p.directives
+                    .iter()
+                    .map(|(d, vals)| {
+                        if vals.is_empty() {
+                            d.clone()
+                        } else {
+                            format!("{d} {}", vals.join(" "))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        Some(CspViolationReport {
+            report: CspReportBody {
+                document_uri: document_uri.to_string(),
+                referrer: referrer.to_string(),
+                violated_directive: violated_directive.to_string(),
+                effective_directive: violated_directive.to_string(),
+                original_policy,
+                blocked_uri: blocked_uri.to_string(),
+                status_code: 200,
+            },
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CspViolationReport {
+    #[serde(rename = "csp-report")]
+    pub report: CspReportBody,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CspReportBody {
+    #[serde(rename = "document-uri")]
+    pub document_uri: String,
+    #[serde(rename = "referrer")]
+    pub referrer: String,
+    #[serde(rename = "violated-directive")]
+    pub violated_directive: String,
+    #[serde(rename = "effective-directive")]
+    pub effective_directive: String,
+    #[serde(rename = "original-policy")]
+    pub original_policy: String,
+    #[serde(rename = "blocked-uri")]
+    pub blocked_uri: String,
+    #[serde(rename = "status-code")]
+    pub status_code: u16,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn csp_violation_reporting_and_report_uri() {
+        let mut csp = Csp::default();
+        csp.add("default-src 'self'; report-uri /csp-report");
+        assert_eq!(csp.report_uri(), Some("/csp-report".into()));
+        let report = csp
+            .build_violation_report(
+                "https://app.example/page",
+                "https://app.example/",
+                "script-src",
+                "https://evil.example/malicious.js",
+            )
+            .expect("report generated");
+        assert_eq!(report.report.document_uri, "https://app.example/page");
+        assert_eq!(report.report.violated_directive, "script-src");
+        assert_eq!(
+            report.report.blocked_uri,
+            "https://evil.example/malicious.js"
+        );
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("csp-report"));
+        assert!(json.contains("violated-directive"));
+    }
     fn url(text: &str) -> Url {
         Url::parse(text).unwrap()
     }
@@ -412,5 +531,94 @@ mod tests {
             &doc
         ));
         assert!(!csp.allows_subresource(&url("https://trak.in/images/photo.png"), &doc));
+    }
+}
+
+/// `X-Frame-Options` for a framed document. `DENY` blocks, `SAMEORIGIN` requires every
+/// ancestor to share the framed document's origin, anything else (including the obsolete
+/// `ALLOW-FROM`, and conflicting values) fails closed.
+pub fn x_frame_options_allows(values: &[&str], ancestors: &[&Url], framed: &Url) -> bool {
+    let mut decision: Option<String> = None;
+    for value in values.iter().flat_map(|value| value.split(',')) {
+        let value = value.trim().to_ascii_lowercase();
+        if value.is_empty() {
+            continue;
+        }
+        match &decision {
+            Some(existing) if *existing != value => return false,
+            _ => decision = Some(value),
+        }
+    }
+    match decision.as_deref() {
+        None => true,
+        Some("deny") => false,
+        Some("sameorigin") => {
+            framed.origin().is_tuple()
+                && ancestors
+                    .iter()
+                    .all(|ancestor| ancestor.origin() == framed.origin())
+        }
+        Some(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod frame_policy_tests {
+    use super::*;
+    fn u(s: &str) -> Url {
+        Url::parse(s).unwrap()
+    }
+    #[test]
+    fn frame_src_falls_back_to_child_src_then_default_src() {
+        let mut csp = Csp::default();
+        csp.add("default-src 'self'");
+        assert!(csp.allows_frame(&u("https://a.test/x"), &u("https://a.test/")));
+        assert!(!csp.allows_frame(&u("https://b.test/x"), &u("https://a.test/")));
+        let mut csp = Csp::default();
+        csp.add("default-src 'none'; child-src https://b.test; frame-src https://c.test");
+        assert!(csp.allows_frame(&u("https://c.test/"), &u("https://a.test/")));
+        assert!(!csp.allows_frame(&u("https://b.test/"), &u("https://a.test/")));
+    }
+    #[test]
+    fn frame_ancestors_checks_every_ancestor_and_none_blocks() {
+        let framed = u("https://child.test/");
+        let top = u("https://top.test/");
+        let mid = u("https://child.test/mid");
+        let mut csp = Csp::default();
+        csp.add("frame-ancestors 'self'");
+        assert!(csp.allows_ancestors(&[&mid], &framed));
+        assert!(!csp.allows_ancestors(&[&mid, &top], &framed));
+        let mut csp = Csp::default();
+        csp.add("frame-ancestors https://top.test https://child.test");
+        assert!(csp.allows_ancestors(&[&mid, &top], &framed));
+        let mut csp = Csp::default();
+        csp.add("frame-ancestors 'none'");
+        assert!(!csp.allows_ancestors(&[&top], &framed));
+        assert!(Csp::default().allows_ancestors(&[&top], &framed));
+    }
+    #[test]
+    fn x_frame_options_fail_closed() {
+        let framed = u("https://child.test/");
+        let same = u("https://child.test/p");
+        let other = u("https://top.test/");
+        assert!(x_frame_options_allows(&[], &[&other], &framed));
+        assert!(!x_frame_options_allows(&["DENY"], &[&same], &framed));
+        assert!(x_frame_options_allows(&["sameorigin"], &[&same], &framed));
+        assert!(!x_frame_options_allows(
+            &["SAMEORIGIN"],
+            &[&same, &other],
+            &framed
+        ));
+        assert!(!x_frame_options_allows(
+            &["ALLOW-FROM https://top.test"],
+            &[&other],
+            &framed
+        ));
+        assert!(!x_frame_options_allows(
+            &["DENY, SAMEORIGIN"],
+            &[&same],
+            &framed
+        ));
+        assert!(!x_frame_options_allows(&["nonsense"], &[&same], &framed));
     }
 }

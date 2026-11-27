@@ -1,0 +1,17 @@
+[package]
+name = "wega-layout"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Layout entry point: wires the formatting contexts together and re-exports them"
+
+[dependencies]
+wega-layout-core = { path = "../core" }
+wega-layout-text = { path = "../text" }
+wega-layout-block = { path = "../block" }
+wega-layout-flex = { path = "../flex" }
+wega-layout-grid = { path = "../grid" }
+wega-layout-table = { path = "../table" }
+wega-css-values = { path = "../../css/values" }

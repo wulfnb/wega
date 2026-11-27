@@ -1,0 +1,11 @@
+[package]
+name = "wega-css-cache"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Selector map: candidate rules for an element by id, class and tag"
+
+[dependencies]
+wega-css-selectors = { path = "../selectors" }

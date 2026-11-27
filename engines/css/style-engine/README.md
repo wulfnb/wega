@@ -1,6 +1,6 @@
 # css/style-engine
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Phase 1 split)** — crate `wega-style`
 
 ## Purpose
 
@@ -21,4 +21,10 @@ Cascade, inheritance and computed style resolution.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Implemented as `wega-style`, a member of the `engines` workspace. The code moved here from `wega-native` without behavior changes (CSS engine modularization plan, Phase 1); `wega-native` re-exports it under the old paths.
+
+Modules: `computed_style`, `cascade`, `apply`, `values`, `gradient`, `hints`, `user_agent`, `computed` (serialization for `getComputedStyle`).
+
+Actual dependencies: `wega-css-values`, `wega-css-selectors`, `wega-css-parser`, `wega-dom`.
+
+Deviations from the target: Depends on `wega-dom` for element access and presentational hints. `apply.rs` (687 lines) is over the 600-line limit; it splits per property family in Phase 2. See [`css-engine-modularization-plan.md`](../../../docs/architecture/css-engine-modularization-plan.md).

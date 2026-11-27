@@ -1,0 +1,610 @@
+{
+  "reference": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-dbbcd17563521552/test-integration-test-dom_identity.json",
+  "reason": "integration executable fingerprints have dependency signatures predating the current production parser graph; no running engine/test processes or open files found",
+  "files": [
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/broker_websocket-f83804de75ef5f52",
+      "bytes": 242773920,
+      "mtime_ns": 1794984420755616687,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-f83804de75ef5f52/test-integration-test-broker_websocket.json",
+      "test": "broker_websocket"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/events-42bc56e43c582693",
+      "bytes": 244811872,
+      "mtime_ns": 1794984443339877397,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-42bc56e43c582693/test-integration-test-events.json",
+      "test": "events"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/render-df7a42ced26a4ad5",
+      "bytes": 242599040,
+      "mtime_ns": 1794984447022639660,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-df7a42ced26a4ad5/test-integration-test-render.json",
+      "test": "render"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframe_wpt-500c5fcf80faebfd",
+      "bytes": 243009664,
+      "mtime_ns": 1794985257016023467,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-500c5fcf80faebfd/test-integration-test-iframe_wpt.json",
+      "test": "iframe_wpt"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/console-332bc95d9d8945cc",
+      "bytes": 240805792,
+      "mtime_ns": 1794984499021332904,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-332bc95d9d8945cc/test-integration-test-console.json",
+      "test": "console"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/document_host-09e145c81bd2aafa",
+      "bytes": 242663344,
+      "mtime_ns": 1794984433595183151,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-09e145c81bd2aafa/test-integration-test-document_host.json",
+      "test": "document_host"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/isolate_safety-88598ac57d873ba5",
+      "bytes": 242714336,
+      "mtime_ns": 1794985101491659983,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-88598ac57d873ba5/test-integration-test-isolate_safety.json",
+      "test": "isolate_safety"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/frame_rendering_and_stacking-115ec6a5d59d096a",
+      "bytes": 242575552,
+      "mtime_ns": 1794984443857821806,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-115ec6a5d59d096a/test-integration-test-frame_rendering_and_stacking.json",
+      "test": "frame_rendering_and_stacking"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/css_wpt-0027ba899a21b695",
+      "bytes": 242709696,
+      "mtime_ns": 1794984498754493549,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0027ba899a21b695/test-integration-test-css_wpt.json",
+      "test": "css_wpt"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/hot_path_bench-d83e019b92558f64",
+      "bytes": 243218256,
+      "mtime_ns": 1794984537961289067,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-d83e019b92558f64/test-integration-test-hot_path_bench.json",
+      "test": "hot_path_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/css-5d65361288ff2e31",
+      "bytes": 242624304,
+      "mtime_ns": 1794984510423005942,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-5d65361288ff2e31/test-integration-test-css.json",
+      "test": "css"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_resource_redirects-57142f7acfc7bad3",
+      "bytes": 244490048,
+      "mtime_ns": 1794985100896954969,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-57142f7acfc7bad3/test-integration-test-native_resource_redirects.json",
+      "test": "native_resource_redirects"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_advanced_rendering-918f2f47bf8acec7",
+      "bytes": 106883568,
+      "mtime_ns": 1794984412937793658,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-918f2f47bf8acec7/test-integration-test-native_advanced_rendering.json",
+      "test": "native_advanced_rendering"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/custom_elements-4bf7ff2f0ffbc891",
+      "bytes": 240407872,
+      "mtime_ns": 1794984432873238681,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4bf7ff2f0ffbc891/test-integration-test-custom_elements.json",
+      "test": "custom_elements"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframe_bench-df3cbc1ae112a0d5",
+      "bytes": 244625360,
+      "mtime_ns": 1794984463143656443,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-df3cbc1ae112a0d5/test-integration-test-iframe_bench.json",
+      "test": "iframe_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/console_bench-f0e49b954989f108",
+      "bytes": 240658832,
+      "mtime_ns": 1794984433606038809,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-f0e49b954989f108/test-integration-test-console_bench.json",
+      "test": "console_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_stage_profile-d99fb8f88f8e1327",
+      "bytes": 108134464,
+      "mtime_ns": 1794984428202144591,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-d99fb8f88f8e1327/test-integration-test-native_stage_profile.json",
+      "test": "native_stage_profile"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/forms-32d6820e20364850",
+      "bytes": 244684800,
+      "mtime_ns": 1794984417677088269,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-32d6820e20364850/test-integration-test-forms.json",
+      "test": "forms"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframes-ba6899360256c269",
+      "bytes": 244996784,
+      "mtime_ns": 1794985106030587223,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ba6899360256c269/test-integration-test-iframes.json",
+      "test": "iframes"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_edit_bench-2605bf353cbf0533",
+      "bytes": 245518096,
+      "mtime_ns": 1794984466058933029,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-2605bf353cbf0533/test-integration-test-inspector_edit_bench.json",
+      "test": "inspector_edit_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/cache_api-93e5c38377a8c83c",
+      "bytes": 241043328,
+      "mtime_ns": 1794984483080389001,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-93e5c38377a8c83c/test-integration-test-cache_api.json",
+      "test": "cache_api"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_images-4ec65dca0903a5e8",
+      "bytes": 244430768,
+      "mtime_ns": 1794985100761754675,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4ec65dca0903a5e8/test-integration-test-native_images.json",
+      "test": "native_images"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/wpt-22dcc12e3a055f34",
+      "bytes": 240991968,
+      "mtime_ns": 1794985261863122040,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-22dcc12e3a055f34/test-integration-test-wpt.json",
+      "test": "wpt"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/harness_fixtures-04afae3162576a50",
+      "bytes": 61669904,
+      "mtime_ns": 1794984511366917558,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-04afae3162576a50/test-integration-test-harness_fixtures.json",
+      "test": "harness_fixtures"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/dom_budgets-d98a85c431c4be2e",
+      "bytes": 240670272,
+      "mtime_ns": 1794984537133558584,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-d98a85c431c4be2e/test-integration-test-dom_budgets.json",
+      "test": "dom_budgets"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/security-ef3fa987bf09ccc6",
+      "bytes": 242813008,
+      "mtime_ns": 1794985101445939318,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ef3fa987bf09ccc6/test-integration-test-security.json",
+      "test": "security"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/mutation_epoch_bench-850f336d082449f0",
+      "bytes": 45276304,
+      "mtime_ns": 1794984508181807088,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-850f336d082449f0/test-integration-test-mutation_epoch_bench.json",
+      "test": "mutation_epoch_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/worker-343a7ca09aea0bfa",
+      "bytes": 62003200,
+      "mtime_ns": 1794984484542653565,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-343a7ca09aea0bfa/test-integration-test-worker.json",
+      "test": "worker"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_browser_behavior-dfc2557ed58138e2",
+      "bytes": 244590352,
+      "mtime_ns": 1794985257015912718,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-dfc2557ed58138e2/test-integration-test-native_browser_behavior.json",
+      "test": "native_browser_behavior"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_sandbox-69a7f5e66c277975",
+      "bytes": 29614704,
+      "mtime_ns": 1794985224511067946,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-69a7f5e66c277975/test-integration-test-inspector_sandbox.json",
+      "test": "inspector_sandbox"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_forms_editing-ef70019f8f7d78b3",
+      "bytes": 245385248,
+      "mtime_ns": 1794985253762749186,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ef70019f8f7d78b3/test-integration-test-native_forms_editing.json",
+      "test": "native_forms_editing"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/scripts-99746b7f4a0b32f7",
+      "bytes": 242649152,
+      "mtime_ns": 1794984429996959832,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-99746b7f4a0b32f7/test-integration-test-scripts.json",
+      "test": "scripts"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_css_layout_acceptance-8cd8b845a72f1245",
+      "bytes": 245297872,
+      "mtime_ns": 1794985257317220790,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-8cd8b845a72f1245/test-integration-test-native_css_layout_acceptance.json",
+      "test": "native_css_layout_acceptance"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_styles-4cfc93e3045ce03c",
+      "bytes": 107063168,
+      "mtime_ns": 1794984526129383799,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4cfc93e3045ce03c/test-integration-test-inspector_styles.json",
+      "test": "inspector_styles"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/media-eccbffd2eb0fe208",
+      "bytes": 240924912,
+      "mtime_ns": 1794984416523095412,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-eccbffd2eb0fe208/test-integration-test-media.json",
+      "test": "media"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_styles_bench-7e9ff3aaa334983d",
+      "bytes": 130474928,
+      "mtime_ns": 1794984495753913813,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-7e9ff3aaa334983d/test-integration-test-inspector_styles_bench.json",
+      "test": "inspector_styles_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/worker_bench-b3252c162dc4f481",
+      "bytes": 240685568,
+      "mtime_ns": 1794984483068587472,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b3252c162dc4f481/test-integration-test-worker_bench.json",
+      "test": "worker_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/dom-1d6590efa9f409f6",
+      "bytes": 242776832,
+      "mtime_ns": 1794984483068532556,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-1d6590efa9f409f6/test-integration-test-dom.json",
+      "test": "dom"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/permissions-0f8ca3f436bc7b63",
+      "bytes": 240984064,
+      "mtime_ns": 1794984498359999030,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0f8ca3f436bc7b63/test-integration-test-permissions.json",
+      "test": "permissions"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/canvas2d-18336b4e90966340",
+      "bytes": 240951584,
+      "mtime_ns": 1794984537476559214,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-18336b4e90966340/test-integration-test-canvas2d.json",
+      "test": "canvas2d"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/web_workers-00ec38c3787cb25c",
+      "bytes": 241311712,
+      "mtime_ns": 1794984506098782673,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-00ec38c3787cb25c/test-integration-test-web_workers.json",
+      "test": "web_workers"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_visual_corpus-fdfb8d2df1cbe272",
+      "bytes": 245256528,
+      "mtime_ns": 1794985257648153892,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-fdfb8d2df1cbe272/test-integration-test-native_visual_corpus.json",
+      "test": "native_visual_corpus"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/same_origin_dom-b44542598608d1e3",
+      "bytes": 240644608,
+      "mtime_ns": 1794985097243505779,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b44542598608d1e3/test-integration-test-same_origin_dom.json",
+      "test": "same_origin_dom"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_layout_engine-295c0723d131b4e4",
+      "bytes": 106853552,
+      "mtime_ns": 1794984455233703213,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-295c0723d131b4e4/test-integration-test-native_layout_engine.json",
+      "test": "native_layout_engine"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/history-0b602cae17e76fe6",
+      "bytes": 244548240,
+      "mtime_ns": 1794984417381767377,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0b602cae17e76fe6/test-integration-test-history.json",
+      "test": "history"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/style-c56a142d71717903",
+      "bytes": 242455536,
+      "mtime_ns": 1794984446417375862,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-c56a142d71717903/test-integration-test-style.json",
+      "test": "style"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_stylesheets-2eeb4c9764bf5bba",
+      "bytes": 244542480,
+      "mtime_ns": 1794985105293671989,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-2eeb4c9764bf5bba/test-integration-test-native_stylesheets.json",
+      "test": "native_stylesheets"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/layout-74663beb803a7e10",
+      "bytes": 242569024,
+      "mtime_ns": 1794984466471024841,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-74663beb803a7e10/test-integration-test-layout.json",
+      "test": "layout"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_public_compat-a1c238b1ecd1b735",
+      "bytes": 244422784,
+      "mtime_ns": 1794985356296572735,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-a1c238b1ecd1b735/test-integration-test-native_public_compat.json",
+      "test": "native_public_compat"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_typography-beb25d538dd57544",
+      "bytes": 110771120,
+      "mtime_ns": 1794984412354478259,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-beb25d538dd57544/test-integration-test-native_typography.json",
+      "test": "native_typography"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_edit-a842606899f38bad",
+      "bytes": 61944640,
+      "mtime_ns": 1794984416616568356,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-a842606899f38bad/test-integration-test-inspector_edit.json",
+      "test": "inspector_edit"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/iframe_inspector-d69ccb6ca252e401",
+      "bytes": 244087632,
+      "mtime_ns": 1794984483707365533,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-d69ccb6ca252e401/test-integration-test-iframe_inspector.json",
+      "test": "iframe_inspector"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_dom-8924fadbb0c4b290",
+      "bytes": 105939664,
+      "mtime_ns": 1794984537516440780,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-8924fadbb0c4b290/test-integration-test-inspector_dom.json",
+      "test": "inspector_dom"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector-55d2905fed4885a9",
+      "bytes": 62155760,
+      "mtime_ns": 1794984447667245153,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-55d2905fed4885a9/test-integration-test-inspector.json",
+      "test": "inspector"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/render_bench-ee1f8842e5fdf685",
+      "bytes": 242437792,
+      "mtime_ns": 1794984526738267789,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ee1f8842e5fdf685/test-integration-test-render_bench.json",
+      "test": "render_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/documents-2ba4057ac23e12f5",
+      "bytes": 242812144,
+      "mtime_ns": 1794984503634520594,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-2ba4057ac23e12f5/test-integration-test-documents.json",
+      "test": "documents"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_stability-c6d1041a5ab57eea",
+      "bytes": 107939088,
+      "mtime_ns": 1794984513508464829,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-c6d1041a5ab57eea/test-integration-test-native_stability.json",
+      "test": "native_stability"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/errors-200fc385efdb0ede",
+      "bytes": 240689920,
+      "mtime_ns": 1794984435374387923,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-200fc385efdb0ede/test-integration-test-errors.json",
+      "test": "errors"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/compat-f254d96931dbcbcc",
+      "bytes": 242651680,
+      "mtime_ns": 1794984483447476354,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-f254d96931dbcbcc/test-integration-test-compat.json",
+      "test": "compat"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_dom_bench-269417eb25286019",
+      "bytes": 102359664,
+      "mtime_ns": 1794984507606397819,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-269417eb25286019/test-integration-test-inspector_dom_bench.json",
+      "test": "inspector_dom_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/dom_identity-0d342871dce0034f",
+      "bytes": 240328768,
+      "mtime_ns": 1794984447286945986,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0d342871dce0034f/test-integration-test-dom_identity.json",
+      "test": "dom_identity"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_chrome_compatibility-e88ad287931cd92e",
+      "bytes": 245258976,
+      "mtime_ns": 1794985257317423039,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-e88ad287931cd92e/test-integration-test-native_chrome_compatibility.json",
+      "test": "native_chrome_compatibility"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_vertical_slice-b0c5c2aea0053564",
+      "bytes": 244108432,
+      "mtime_ns": 1794984537879096320,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-b0c5c2aea0053564/test-integration-test-native_vertical_slice.json",
+      "test": "native_vertical_slice"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_paint_correctness-d1dea77b07dd3d31",
+      "bytes": 110379088,
+      "mtime_ns": 1794984479141245043,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-d1dea77b07dd3d31/test-integration-test-native_paint_correctness.json",
+      "test": "native_paint_correctness"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_css_correctness-1893c8806fef15a3",
+      "bytes": 103474912,
+      "mtime_ns": 1794984512029421926,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-1893c8806fef15a3/test-integration-test-native_css_correctness.json",
+      "test": "native_css_correctness"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/epoch-6180714c6a5c3476",
+      "bytes": 240655984,
+      "mtime_ns": 1794984482402773453,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-6180714c6a5c3476/test-integration-test-epoch.json",
+      "test": "epoch"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_console-82d4f9c7871064b0",
+      "bytes": 62508496,
+      "mtime_ns": 1794984462963272689,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-82d4f9c7871064b0/test-integration-test-inspector_console.json",
+      "test": "inspector_console"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_public_layout-41ac444b7946307b",
+      "bytes": 245195056,
+      "mtime_ns": 1794985253604563664,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-41ac444b7946307b/test-integration-test-native_public_layout.json",
+      "test": "native_public_layout"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_graphics_acceptance-c50232e812396959",
+      "bytes": 245374656,
+      "mtime_ns": 1794985257317228623,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-c50232e812396959/test-integration-test-native_graphics_acceptance.json",
+      "test": "native_graphics_acceptance"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_css_at_rules_acceptance-66594ec6e53448b7",
+      "bytes": 244602016,
+      "mtime_ns": 1794985254602502489,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-66594ec6e53448b7/test-integration-test-native_css_at_rules_acceptance.json",
+      "test": "native_css_at_rules_acceptance"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/reliability-4981cca2596915d5",
+      "bytes": 242433712,
+      "mtime_ns": 1794984527434146004,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-4981cca2596915d5/test-integration-test-reliability.json",
+      "test": "reliability"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/storage-dc80d899e8e5a0c1",
+      "bytes": 241190016,
+      "mtime_ns": 1794984537218415610,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-dc80d899e8e5a0c1/test-integration-test-storage.json",
+      "test": "storage"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_benchmark-25893bf81a067b6a",
+      "bytes": 137779328,
+      "mtime_ns": 1794984433454562965,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-25893bf81a067b6a/test-integration-test-native_benchmark.json",
+      "test": "native_benchmark"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_dynamic_integration-670fe6b693d07245",
+      "bytes": 244613808,
+      "mtime_ns": 1794984513439608688,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-670fe6b693d07245/test-integration-test-native_dynamic_integration.json",
+      "test": "native_dynamic_integration"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/image_limits-07f64de573aee585",
+      "bytes": 16633904,
+      "mtime_ns": 1794984487329598658,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-07f64de573aee585/test-integration-test-image_limits.json",
+      "test": "image_limits"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/frames-9baef33ca17f7e0f",
+      "bytes": 242788368,
+      "mtime_ns": 1794984481989931769,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-9baef33ca17f7e0f/test-integration-test-frames.json",
+      "test": "frames"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/web-75bbbf1c986eb16d",
+      "bytes": 241095648,
+      "mtime_ns": 1794984446612457381,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-75bbbf1c986eb16d/test-integration-test-web.json",
+      "test": "web"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_layout_correctness-ded6ed93d2071751",
+      "bytes": 106878816,
+      "mtime_ns": 1794984494178151105,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-ded6ed93d2071751/test-integration-test-native_layout_correctness.json",
+      "test": "native_layout_correctness"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inspector_bench-1b029c12a6de03fb",
+      "bytes": 62334912,
+      "mtime_ns": 1794984463570323854,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-1b029c12a6de03fb/test-integration-test-inspector_bench.json",
+      "test": "inspector_bench"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/layout_depth-0a8a8a855dd353cd",
+      "bytes": 242669408,
+      "mtime_ns": 1794984527434157379,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-0a8a8a855dd353cd/test-integration-test-layout_depth.json",
+      "test": "layout_depth"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/input-8b0792d821914c00",
+      "bytes": 242628368,
+      "mtime_ns": 1794984481892003386,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-8b0792d821914c00/test-integration-test-input.json",
+      "test": "input"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/worker_runtime-75b16df0e6faea3c",
+      "bytes": 240774208,
+      "mtime_ns": 1794984498029595717,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-75b16df0e6faea3c/test-integration-test-worker_runtime.json",
+      "test": "worker_runtime"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/native_accessibility-49dac333aaece9ad",
+      "bytes": 245050976,
+      "mtime_ns": 1794985102661209601,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-49dac333aaece9ad/test-integration-test-native_accessibility.json",
+      "test": "native_accessibility"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/inherited_broker-c8af0aee930689f6",
+      "bytes": 29288608,
+      "mtime_ns": 1794985211039121849,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-c8af0aee930689f6/test-integration-test-inherited_broker.json",
+      "test": "inherited_broker"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/webgl-045d80f5fd7015cf",
+      "bytes": 242724880,
+      "mtime_ns": 1794984512283782756,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-045d80f5fd7015cf/test-integration-test-webgl.json",
+      "test": "webgl"
+    },
+    {
+      "path": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/deps/pages-6b9c8caa0853c89d",
+      "bytes": 242671200,
+      "mtime_ns": 1794984433191636425,
+      "fingerprint": "/Users/noufalbabu/dev/personal/wega/engines/target/debug/.fingerprint/wega-engine-6b9c8caa0853c89d/test-integration-test-pages.json",
+      "test": "pages"
+    }
+  ],
+  "removed_count": 86,
+  "removed_bytes": 17241038848
+}

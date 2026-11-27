@@ -1,0 +1,28 @@
+{
+  "example": {
+    "geometry": 0.417,
+    "sizes": 0.667,
+    "pixels": 0.962
+  },
+  "google": {
+    "geometry": 0.295,
+    "sizes": 0.462,
+    "pixels": 0.821
+  },
+  "hackernews": {
+    "geometry": 0.048,
+    "sizes": 0.462,
+    "pixels": 0.905
+  },
+  "wikipedia": {
+    "geometry": 0.075,
+    "sizes": 0.395,
+    "pixels": 0.896
+  },
+  "edudia": {
+    "geometry": 0.255,
+    "sizes": 0.532,
+    "pixels": 0.953
+  },
+  "environment": "linux-245-abe3f4b2af30bfff"
+}

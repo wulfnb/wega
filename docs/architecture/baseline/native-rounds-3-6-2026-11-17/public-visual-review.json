@@ -1,0 +1,11 @@
+{
+  "tested_head": "7d21f5db9ea520417b0f860b967e5ee351e95776",
+  "method": "Manual inspection of four initial 800x600 native screenshots after bounded broker navigation; no reference browser capture or public interaction.",
+  "pages": {
+    "example": "Readable multilingual text and SVG icon; no full-page parity claim.",
+    "cern": "Readable document, links and sections; no interactions exercised.",
+    "rust": "Severe overlapping hero/footer and navigation crowding; general site rendering fails.",
+    "rust-std": "Only sidebar visible in initial viewport; main content absent there; general site rendering fails."
+  },
+  "status": "PARTIAL"
+}

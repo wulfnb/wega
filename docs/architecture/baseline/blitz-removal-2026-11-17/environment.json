@@ -1,0 +1,56 @@
+{
+  "time_utc": "2026-11-17T23:33:10.406481+00:00",
+  "environment": [
+    {
+      "command": [
+        "sw_vers"
+      ],
+      "exit": 0,
+      "stdout": "ProductName:\t\tmacOS\nProductVersion:\t\t27.2.1\nBuildVersion:\t\t26B131\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "uname",
+        "-m"
+      ],
+      "exit": 0,
+      "stdout": "arm64\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "sysctl",
+        "-n",
+        "machdep.cpu.brand_string",
+        "hw.ncpu",
+        "hw.memsize"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "sysctl: sysctl fmt -1 1024 1: Operation not permitted\n"
+    },
+    {
+      "command": [
+        "rustc",
+        "-Vv"
+      ],
+      "exit": 0,
+      "stdout": "rustc 1.98.0 (88d9e12ae 2026-08-18)\nbinary: rustc\ncommit-hash: 88d9e12ae178fab0fb5cc050a94da85685d449ea\ncommit-date: 2026-08-18\nhost: aarch64-apple-darwin\nrelease: 1.98.0\nLLVM version: 22.1.8\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "sysctl",
+        "-n",
+        "machdep.cpu.brand_string",
+        "hw.ncpu",
+        "hw.memsize"
+      ],
+      "exit": 0,
+      "stdout": "Apple M4\n10\n17179869184\n",
+      "stderr": "",
+      "retry_outside_outer_sandbox": true
+    }
+  ]
+}

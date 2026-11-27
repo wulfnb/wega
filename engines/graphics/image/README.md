@@ -1,6 +1,6 @@
 # graphics/image
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: IMPLEMENTED (Phase 1 split)** — crate `wega-image`
 
 ## Purpose
 
@@ -21,4 +21,10 @@ Image decoding, resizing and caching.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+Implemented as `wega-image`, a member of the `engines` workspace. The code moved here from `wega-native` without behavior changes (CSS engine modularization plan, Phase 1); `wega-native` re-exports it under the old paths.
+
+Modules: raster decoding with shared budgets, `svg` (bounded SVG decoding), `svg_graphic` (inline SVG serialization), `fonts`. Blitz licenses are in `licenses/`.
+
+Actual dependencies: `wega-dom`, `image`, `usvg`, `anyrender_svg`, `flate2`, `parley`, `kurbo`, `peniko`.
+
+Deviations from the target: None from the target list. See [`css-engine-modularization-plan.md`](../../../docs/architecture/css-engine-modularization-plan.md).

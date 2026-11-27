@@ -29,12 +29,20 @@ impl Client {
             Self::Remote(remote) => remote.fetch(request),
         }
     }
+    pub fn detach_frame(&self, frame: u64) {
+        if let Self::Remote(remote) = self {
+            let _ = remote.detach_frame(frame);
+        }
+    }
 }
 
 /// What a request is for; documents are top-level navigations.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Destination {
     Document,
+    /// A nested browsing context's document: a navigation, but never top-level (cookies use
+    /// the cross-site context and mixed content applies).
+    Frame,
     Module,
     Script,
     Style,
@@ -57,6 +65,11 @@ pub(crate) struct FetchContext {
     pub bypass_cache: bool,
     /// Service worker scripts are never served by a service worker.
     pub bypass_service_worker: bool,
+    /// Never send or store cookies and other ambient credentials (opaque-origin documents).
+    pub omit_credentials: bool,
+    pub frame: Option<u64>,
+    pub parent_frame: Option<u64>,
+    pub resource_csp: Option<std::sync::Arc<std::sync::RwLock<crate::csp::Csp>>>,
 }
 impl Default for FetchContext {
     fn default() -> Self {
@@ -69,6 +82,10 @@ impl Default for FetchContext {
             destination: Destination::Other,
             bypass_cache: false,
             bypass_service_worker: false,
+            omit_credentials: false,
+            frame: None,
+            parent_frame: None,
+            resource_csp: None,
         }
     }
 }
@@ -235,9 +252,6 @@ impl Network {
                     .map(Arc::new)
             })
             .transpose()?;
-        if let Some(fonts) = &fonts {
-            blitz_dom::install_broker_fonts(fonts);
-        }
         let (client, cookies) = if let Some(remote) = remote {
             (
                 Client::Remote(remote.clone()),
@@ -293,6 +307,9 @@ impl Network {
             client: detached_client,
             detached: Default::default(),
         })
+    }
+    pub fn detach_frame(&self, frame: u64) {
+        self.client.detach_frame(frame);
     }
     pub fn spawn(&self, task: impl FnOnce(&Client) + Send + 'static) -> Result<(), String> {
         self.jobs
@@ -412,7 +429,9 @@ impl Network {
         request.initiator = context.initiator.clone();
         request.top_level = context.destination == Destination::Document;
         request.destination = match context.destination {
-            Destination::Document => wega_network::ResourceDestination::Document,
+            Destination::Document | Destination::Frame => {
+                wega_network::ResourceDestination::Document
+            }
             Destination::Module => wega_network::ResourceDestination::Module,
             Destination::Script => wega_network::ResourceDestination::Script,
             Destination::Style => wega_network::ResourceDestination::Style,
@@ -541,24 +560,59 @@ impl Network {
         let mut body = context.body.clone();
         let mut content_type = context.content_type.clone();
         for _hop in 0..=8 {
+            if let (Some(csp), Some(document)) = (&context.resource_csp, &context.initiator) {
+                let directive = match context.destination {
+                    Destination::Style => Some("style-src-elem"),
+                    Destination::Font => Some("font-src"),
+                    Destination::Image => Some("img-src"),
+                    _ => None,
+                };
+                if let Some(directive) = directive {
+                    if !csp
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .allows_url(directive, &url, document, None)
+                    {
+                        return Err(format!(
+                            "Content Security Policy blocks resource redirect: {url}"
+                        ));
+                    }
+                }
+            }
             if !self.policy().permits(&url) {
                 return Err("Network request blocked by browsing policy".into());
             }
             if mixed_content(context.initiator.as_ref(), &url, top_level) {
                 return Err(format!("Mixed content blocked: {url}"));
             }
-            let mut request = wega_network::Request::get(&url, limit);
+            let mut request = if context.destination == Destination::Frame {
+                let parent_url = context.initiator.as_ref().unwrap_or(&url);
+                wega_network::Request::iframe(
+                    &url,
+                    parent_url,
+                    context.frame.unwrap_or(2),
+                    context.parent_frame,
+                    limit,
+                )
+            } else {
+                wega_network::Request::get(&url, limit)
+            };
             request.method = method.to_string();
             request.body = body.clone().unwrap_or_default();
             request.initiator = context.initiator.clone();
             request.top_level = top_level;
-            request.origin = context
-                .initiator
-                .as_ref()
-                .map(|url| url.origin().ascii_serialization())
-                .unwrap_or_else(|| "null".into());
+            request.frame = context.frame;
+            request.parent_frame = context.parent_frame;
+            if context.destination != Destination::Frame {
+                request.origin = context
+                    .initiator
+                    .as_ref()
+                    .map(|url| url.origin().ascii_serialization())
+                    .unwrap_or_else(|| "null".into());
+            }
             request.destination = match context.destination {
                 Destination::Document => wega_network::ResourceDestination::Document,
+                Destination::Frame => wega_network::ResourceDestination::Iframe,
                 Destination::Module => wega_network::ResourceDestination::Module,
                 Destination::Script => wega_network::ResourceDestination::Script,
                 Destination::Style => wega_network::ResourceDestination::Style,
@@ -569,8 +623,14 @@ impl Network {
             if matches!(context.destination, Destination::Module | Destination::Font) {
                 request.mode = "cors".into();
                 request.credentials = "same-origin".into();
-            } else if context.destination != Destination::Document {
+            } else if !matches!(
+                context.destination,
+                Destination::Document | Destination::Frame
+            ) {
                 request.mode = "no-cors".into();
+            }
+            if context.omit_credentials {
+                request.credentials = "omit".into();
             }
             request.redirect = "manual".into();
             if let Some(initiator) = &context.initiator

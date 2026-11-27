@@ -1,0 +1,377 @@
+[
+  {
+    "name": "pin-flex",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-grid",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-table",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-responsive-cssom",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-forms",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 1042,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0041349206349206346,
+      "mean_absolute_channel_error": 0.3889285714285714,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-svg",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-canvas",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-scrolling",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 1200,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.004761904761904762,
+      "mean_absolute_channel_error": 0.42314583333333333,
+      "max_channel_error": 119,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-mutations-events",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-iframe",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "pin-webfont",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "graphics",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 275,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0010912698412698413,
+      "mean_absolute_channel_error": 0.01801388888888889,
+      "max_channel_error": 78,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "legacy-boxes",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 12,
+      "total_pixels": 252000,
+      "mismatch_fraction": 4.761904761904762e-05,
+      "mean_absolute_channel_error": 0.0019940476190476192,
+      "max_channel_error": 171,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "legacy-article",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 2407,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.009551587301587302,
+      "mean_absolute_channel_error": 0.6005565476190476,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "legacy-scrolling",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 1004,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.003984126984126984,
+      "mean_absolute_channel_error": 0.20242063492063492,
+      "max_channel_error": 255,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "legacy-overlap",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 1.6552861836771626e-07,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "indefinite-column",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "scrollable-sidebar",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "specified-auto-min",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "root-rem",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "variable-flex",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "inline-block-intrinsic",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 89,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0003531746031746032,
+      "mean_absolute_channel_error": 0.009678571428571429,
+      "max_channel_error": 106,
+      "geometry_max_error_px": 0.0078125,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "padded-flex",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 162,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0006428571428571428,
+      "mean_absolute_channel_error": 0.009601190476190477,
+      "max_channel_error": 95,
+      "geometry_max_error_px": 0.0078125,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "nested-inline-image",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  },
+  {
+    "name": "max-width-auto-margins",
+    "diff": {
+      "channel_tolerance": 8,
+      "pixel_threshold_fraction": 0.01,
+      "geometry_tolerance_px": 0.5,
+      "differing_pixels": 0,
+      "total_pixels": 252000,
+      "mismatch_fraction": 0.0,
+      "mean_absolute_channel_error": 0.0,
+      "max_channel_error": 0,
+      "geometry_max_error_px": 0.0,
+      "within_tolerance": true
+    }
+  }
+]

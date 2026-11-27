@@ -1,6 +1,6 @@
 # tests/compatibility
 
-**Status: PLANNED — NOT IMPLEMENTED**
+**Status: PARTIAL** — `wpt-runner` is implemented.
 
 ## Purpose
 
@@ -21,4 +21,5 @@ Reaching into private internals; production crates depending on test crates.
 
 ## Current status
 
-PLANNED — NOT IMPLEMENTED. This directory is a placeholder created in migration Phase 1. It contains no code, no `Cargo.toml`, and is not part of any Cargo workspace. See `docs/architecture/module-map.md`.
+- [`wpt-runner`](./wpt-runner/README.md) (crate `wega-wpt-runner`, member of the `engines` workspace): runs upstream WPT reftests and testharness tests against the engine and gates on `baseline.json`.
+- Compatibility scoreboard: planned. See `docs/architecture/module-map.md`.

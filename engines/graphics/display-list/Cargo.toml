@@ -1,0 +1,25 @@
+[package]
+name = "wega-display-list"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+publish = false
+description = "Display items, stacking contexts and paint order"
+
+[dependencies]
+wega-css-values = { path = "../../css/values" }
+wega-layout = { path = "../../layout/engine" }
+wega-image = { path = "../../graphics/image" }
+wega-dom = { path = "../../dom/core" }
+anyrender = "=0.14.0"
+anyrender_svg = "=0.15.0"
+kurbo = "=0.13.1"
+peniko = "=0.6.1"
+
+[dev-dependencies]
+wega-css-parser = { path = "../../css/parser" }
+wega-html = { path = "../../html/parser" }
+html5ever = "0.40.1"
+url = "2.5"
+anyrender_skia = "=0.12.0"

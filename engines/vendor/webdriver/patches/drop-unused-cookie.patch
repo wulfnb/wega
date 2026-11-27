@@ -1,0 +1,36 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -8,6 +8,8 @@
+ # If you are reading this file be aware that the original Cargo.toml
+ # will likely look very different (and much more reasonable).
+ # See Cargo.toml.orig for the original contents.
++#
++# Modified by Wega contributors, 2026: removed the unused `cookie` dependency.
+ 
+ [package]
+ edition = "2024"
+@@ -52,10 +54,6 @@
+ [dependencies.bytes]
+ version = "1.0"
+ 
+-[dependencies.cookie]
+-version = "0.16"
+-default-features = false
+-
+ [dependencies.http]
+ version = "1.4"
+ 
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -2,10 +2,10 @@
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++// Modified by Wega contributors, 2026: removed the unused `cookie` crate.
+ #![forbid(unsafe_code)]
+ 
+ extern crate base64;
+-extern crate cookie;
+ extern crate icu_segmenter;
+ #[macro_use]
+ extern crate log;

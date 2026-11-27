@@ -1,0 +1,5 @@
+    Checking wega-dom v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/dom/core)
+    Checking xml5ever v0.40.0
+    Checking wega-html v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/html/parser)
+    Checking wega-native v0.1.0 (/Users/noufalbabu/dev/personal/wega/engines/native)
+    Finished `dev` profile [unoptimized] target(s) in 2.18s

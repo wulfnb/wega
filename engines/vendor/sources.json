@@ -53,7 +53,10 @@
       "blitz/patches/content-image-budgets.patch",
       "blitz/patches/document-id-scope.patch",
       "blitz/patches/detached-style-elements.patch",
-      "blitz/patches/own-scroll-bounding-rect.patch"
+      "blitz/patches/own-scroll-bounding-rect.patch",
+      "blitz/patches/cssom-inspection-generation.patch",
+      "blitz/patches/native-owner-baseline.patch",
+      "blitz/patches/wega-owned-images.patch"
     ]
   },
   "blitz-paint": {
@@ -69,7 +72,8 @@
     "directory": "blitz/stylo",
     "sha256": "7a255e46af2478628c48daab3774090caabd7812b1dd3ca98801c2b9c53491ed",
     "patches": [
-      "blitz/patches/stylo.patch"
+      "blitz/patches/stylo.patch",
+      "blitz/patches/bounded-declaration-writer.patch"
     ]
   },
   "anyrender_skia": {
@@ -131,6 +135,14 @@
     ],
     "extra_licenses": [
       "LICENSE.md"
+    ]
+  },
+  "webdriver": {
+    "version": "0.54.0",
+    "directory": "webdriver/webdriver",
+    "sha256": "799eea1e97dc3b3505b178be76e301138ced2af3b62490d8d932ace71168a948",
+    "patches": [
+      "webdriver/patches/drop-unused-cookie.patch"
     ]
   }
 }

@@ -37,7 +37,10 @@ impl wega_adapter_v8::NativeHost for Dom {
         }
         let document = self.document.borrow().url().clone();
         let document_url = document.clone();
-        request.origin = document.origin().ascii_serialization();
+        request.origin = self.origin();
+        if self.restrictions.opaque {
+            request.credentials = "omit".into();
+        }
         request.initiator = Some(document);
         request.top_level = false;
         request.destination = wega_network::ResourceDestination::Fetch;
@@ -53,7 +56,7 @@ impl wega_adapter_v8::NativeHost for Dom {
         let Ok(url) = url::Url::parse(address) else {
             return String::new();
         };
-        if !include {
+        if !include || self.restrictions.opaque {
             return String::new();
         }
         let document = self.document.borrow().url().clone();
@@ -64,7 +67,7 @@ impl wega_adapter_v8::NativeHost for Dom {
         let Ok(url) = url::Url::parse(address) else {
             return;
         };
-        if !include {
+        if !include || self.restrictions.opaque {
             return;
         }
         let document = self.document.borrow().url().clone();
@@ -72,11 +75,14 @@ impl wega_adapter_v8::NativeHost for Dom {
         self.network.cookies.set(&url, value, false, context);
     }
     fn document_origin(&self) -> String {
-        self.document.borrow().url().origin().ascii_serialization()
+        self.origin()
     }
     fn ws_headers(&self, address: &str) -> Vec<(String, String)> {
         let document = self.document.borrow().url().clone();
-        let mut headers = vec![("origin".to_owned(), document.origin().ascii_serialization())];
+        let mut headers = vec![("origin".to_owned(), self.origin())];
+        if self.restrictions.opaque {
+            return headers;
+        }
         if let Ok(url) = url::Url::parse(address) {
             let context = self.network.cookies.context(&url, Some(&document), false);
             let cookie = self.network.cookies.get(&url, false, context);

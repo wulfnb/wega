@@ -277,6 +277,8 @@ fn test_adversarial_resource_destination_authoritative_enforcement_regardless_of
         origin: "https://example.com".into(),
         initiator: Some(disguised_url.clone()),
         top_level: false,
+        frame: None,
+        parent_frame: None,
         credentials: "omit".into(),
         redirect: "follow".into(),
         cache: "default".into(),
@@ -346,4 +348,96 @@ fn test_adversarial_private_network_access_requires_explicit_controls() {
             .is_ok(),
         "Explicit allowed_hosts must allow access"
     );
+}
+
+#[test]
+fn test_adversarial_iframe_network_authority_and_isolation() {
+    let broker = Broker::new().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let session = broker
+        .open_bound_session(root.path().into(), Policy::default())
+        .unwrap();
+    let top_url = Url::parse("https://top.example/").unwrap();
+    session.begin_navigation(&top_url);
+    session.session.navigation.lock().unwrap().committed = Some(top_url.clone());
+    if let Some(f) = session.session.frames.lock().unwrap().get_mut(&1) {
+        f.committed = Some(top_url.clone());
+    }
+    let (address, token) = session.endpoint();
+    let remote = Remote::bound(&address, token, session.identity()).unwrap();
+
+    // 1. Frame navigation request without valid parent fails
+    let child_url = Url::parse("https://child.example/").unwrap();
+    let req_invalid_parent = Request::iframe(&child_url, &top_url, 2, Some(999), 4096);
+    assert!(
+        remote.fetch(&req_invalid_parent).is_err(),
+        "Must reject non-existent parent"
+    );
+
+    // 2. Frame navigation with spoofed initiator fails
+    let fake_parent = Url::parse("https://fake.example/").unwrap();
+    let req_spoofed_init = Request::iframe(&child_url, &fake_parent, 2, Some(1), 4096);
+    assert!(
+        remote.fetch(&req_spoofed_init).is_err(),
+        "Must reject spoofed parent initiator"
+    );
+
+    // 3. Valid frame navigation registers frame state
+    let req_valid = Request::iframe(&child_url, &top_url, 2, Some(1), 4096);
+    // Even though network fetch to child.example will fail in unit test (no server), validation passed before fetch
+    let _ = remote.fetch(&req_valid);
+    {
+        let frames = session.session.frames.lock().unwrap();
+        assert!(frames.contains_key(&2), "Frame 2 state must be registered");
+        let f2 = frames.get(&2).unwrap();
+        assert_eq!(f2.parent, Some(1));
+        assert_eq!(f2.depth, 1);
+        assert!(!f2.detached);
+    }
+
+    // 4. Stale/detached frame cannot access cookies or resources
+    session.detach_frame(2);
+    {
+        let frames = session.session.frames.lock().unwrap();
+        assert!(
+            frames.get(&2).unwrap().detached,
+            "Frame 2 must be marked detached"
+        );
+    }
+    assert!(
+        remote
+            .cookie_read_frame(
+                &child_url,
+                true,
+                wega_network::SiteContext::SameSite,
+                false,
+                Some(2)
+            )
+            .is_err(),
+        "Detached frame cannot read cookies"
+    );
+    assert!(
+        remote
+            .cookie_write_frame(
+                &child_url,
+                "k=v",
+                true,
+                wega_network::SiteContext::SameSite,
+                Some(2)
+            )
+            .is_err(),
+        "Detached frame cannot write cookies"
+    );
+
+    // 5. Remote detach_frame capability call works
+    let req_frame3 = Request::iframe(&child_url, &top_url, 3, Some(1), 4096);
+    let _ = remote.fetch(&req_frame3);
+    assert!(remote.detach_frame(3).is_ok());
+    {
+        let frames = session.session.frames.lock().unwrap();
+        assert!(
+            frames.get(&3).unwrap().detached,
+            "Frame 3 must be detached via Remote"
+        );
+    }
 }
