@@ -69,3 +69,30 @@ pub fn grid_line(value: &str) -> Specified {
     out.extend(ident);
     Specified::Parsed(Some(out.join(" ")))
 }
+
+/// `grid-auto-flow`: `[ row | column ] || dense`, serialized as Stylo does (`row dense` and
+/// `dense` are `dense`).
+pub fn grid_auto_flow(value: &str) -> Specified {
+    let Some(words) = super::idents(value) else {
+        return Specified::Parsed(None);
+    };
+    let (mut row, mut column, mut dense) = (false, false, false);
+    for w in &words {
+        let flag = match w.as_str() {
+            "row" => &mut row,
+            "column" => &mut column,
+            "dense" => &mut dense,
+            _ => return Specified::Parsed(None),
+        };
+        if *flag {
+            return Specified::Parsed(None);
+        }
+        *flag = true;
+    }
+    Specified::Parsed(match (row, column, dense) {
+        (false, false, false) | (true, true, _) => None,
+        (_, false, true) => Some("dense".into()),
+        (true, false, false) => Some("row".into()),
+        (false, true, d) => Some(if d { "column dense" } else { "column" }.into()),
+    })
+}

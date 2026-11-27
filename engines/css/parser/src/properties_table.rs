@@ -3,7 +3,7 @@
 //!
 //! The data is generated from Stylo's property metadata (`stylo/properties/longhands.toml`,
 //! `shorthands.toml`, MPL-2.0) by `tools/css-properties/generate.py`.
-pub use crate::generated::properties::{ALIASES, LONGHANDS, SHORTHANDS};
+pub use crate::generated::properties::{ALIASES, KEYWORD_TYPES, LONGHANDS, SHORTHANDS};
 
 /// A longhand property.
 #[derive(Debug)]

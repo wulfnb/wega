@@ -17,6 +17,7 @@ mod length;
 mod names;
 mod number;
 mod position;
+mod svg;
 mod text;
 
 pub use align::{Axis, Grammar, alignment};
@@ -24,20 +25,21 @@ pub use background::{
     background_clip, background_repeat, background_size, image, position_component,
 };
 pub use box_values::{aspect_ratio, display, flex_wrap};
-pub use color::{caret_color, color};
+pub use color::{caret_color, color, color_scheme};
 pub use easing::timing_function;
 pub use flags::{
     CONTAIN, CONTAINER_TYPE, Flags, TEXT_DECORATION_LINE, TEXT_TRANSFORM, TEXT_UNDERLINE_POSITION,
     TOUCH_ACTION, flags,
 };
 pub use font::{font_weight, line_height};
-pub use grid::grid_line;
+pub use grid::{grid_auto_flow, grid_line};
 pub use length::{border_spacing, corner_radius, length_percentage};
 pub use names::{animation_name, container_name, will_change};
 pub use number::{
     animation_iteration_count, column_count, length_or_number, number, opacity, svg_opacity, time,
 };
 pub use position::position;
+pub use svg::{dash_array, svg_length, svg_paint};
 pub use text::{text_align, text_overflow};
 
 /// The result of parsing one specified value.
@@ -69,7 +71,22 @@ pub(crate) fn components(value: &str) -> Option<Vec<String>> {
     let mut parts = Vec::new();
     while !parser.is_exhausted() {
         let start = parser.position();
-        parser.next().ok()?;
+        let block = matches!(
+            parser.next().ok()?,
+            cssparser::Token::Function(_)
+                | cssparser::Token::ParenthesisBlock
+                | cssparser::Token::SquareBracketBlock
+                | cssparser::Token::CurlyBracketBlock
+        );
+        if block {
+            // Consume the whole block so the part is the complete function.
+            parser
+                .parse_nested_block(|p| {
+                    while p.next().is_ok() {}
+                    Ok::<_, cssparser::ParseError<()>>(())
+                })
+                .ok()?;
+        }
         parts.push(parser.slice_from(start).trim().to_owned());
     }
     Some(parts)

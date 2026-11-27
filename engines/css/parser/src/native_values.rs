@@ -36,7 +36,10 @@ fn parse_longhand(info: &Longhand, value: &str) -> Specified {
         return Specified::Parsed(keywords(info, value));
     }
     let base = info.value_type.rsplit("::").next().unwrap_or_default();
-    if let Ok(i) = KEYWORD_TYPES.binary_search_by(|(name, _)| (*name).cmp(base)) {
+    // A longhand with its own parse method does not use the type's derived keyword parser.
+    if let Ok(i) = KEYWORD_TYPES.binary_search_by(|(name, _)| (*name).cmp(base))
+        && info.parse_method.is_empty()
+    {
         return Specified::Parsed(keyword_enum(info, KEYWORD_TYPES[i].1, value));
     }
     let each = |item: fn(&str) -> Specified| list(info.list, value, item);
@@ -67,6 +70,12 @@ fn parse_longhand(info: &Longhand, value: &str) -> Specified {
         "ContainerName" => return container_name(value),
         "WillChange" => return will_change(value),
         "TransitionProperty" => return transition_property(value),
+        "SVGLength" => return svg_length(value, true),
+        "SVGWidth" => return svg_length(value, false),
+        "SVGStrokeDashArray" => return dash_array(value),
+        "GridAutoFlow" => return grid_auto_flow(value),
+        "ColorScheme" => return color_scheme(value),
+        "SVGPaint" => return svg_paint(value),
         "TextOverflow" => return text_overflow(value),
         "NonNegativeLengthOrNumber" => return length_or_number(value),
         "SVGOpacity" => return svg_opacity(value),

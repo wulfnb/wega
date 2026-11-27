@@ -111,12 +111,12 @@ def derived_enums(text):
 
 def keyword_enums():
     """Specified and generic value types that are `#[derive(Parse)]` enums of unit variants only:
-    `{type: [(keyword, [aliases])]}`. Enums with preference-gated variants are skipped."""
+    `{type: [(keyword, [aliases])]}`. Variants with a parse condition are left out."""
     found = {}
     # Specified types first: a generic with the same name does not replace one.
     for path in [*sorted(SPECIFIED.rglob("*.rs")), *sorted(GENERICS.rglob("*.rs"))]:
         for derives, attrs, name, body in derived_enums(path.read_text()):
-            if "Parse" not in derives or "condition" in body or name in found:
+            if "Parse" not in derives or name in found:
                 continue
             variants, ok = [], True
             pending = []
@@ -133,12 +133,19 @@ def keyword_enums():
                     break
                 joined = " ".join(pending)
                 pending = []
-                if "css(skip)" in joined:
+                # Variants behind a parse condition (chrome-only rules, or preferences that are
+                # off for author style) are not keywords of the value.
+                if "css(skip)" in joined or "condition" in joined:
                     continue
                 keyword = re.search(r'keyword\s*=\s*"([^"]+)"', joined)
                 aliases = re.search(r'aliases\s*=\s*"([^"]+)"', joined)
+                css_name = keyword.group(1) if keyword else css_identifier(m.group(1))
+                # Gecko-only variants are kept when they are standard CSS (`pointer-events:
+                # visiblePainted`, `word-break: break-word`), not when Gecko-internal (`-moz-`).
+                if 'feature = "gecko"' in joined and css_name.startswith("-moz-"):
+                    continue
                 variants.append((
-                    keyword.group(1) if keyword else css_identifier(m.group(1)),
+                    css_name,
                     aliases.group(1).split("|") if aliases else [],
                 ))
             if ok and variants:

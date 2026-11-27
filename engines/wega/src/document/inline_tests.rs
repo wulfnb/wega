@@ -1,7 +1,10 @@
 //! Native CSSOM values against Stylo: for every longhand, each value in a corpus of edge
 //! cases must serialize exactly as Stylo serializes it, or be left to Stylo (unported).
 use super::*;
-use wega_css_parser::{ValueEngine, properties_table::LONGHANDS};
+use wega_css_parser::{
+    ValueEngine,
+    properties_table::{KEYWORD_TYPES, LONGHANDS},
+};
 
 /// Marks values the native engine does not handle, so only native results are compared.
 struct Unported;
@@ -154,6 +157,24 @@ const WEGA_ONLY: &[(&str, &str)] = &[
     ("flex-wrap", "balance"),
     ("flex-wrap", "wrap balance"),
     ("flex-wrap", "balance wrap-reverse"),
+    // Standard keywords Stylo compiles only into Gecko builds (WPT expects them valid).
+    ("alignment-baseline", "alphabetic"),
+    ("alignment-baseline", "ideographic"),
+    ("alignment-baseline", "central"),
+    ("alignment-baseline", "mathematical"),
+    ("alignment-baseline", "hanging"),
+    ("image-rendering", "smooth"),
+    ("image-rendering", "optimizespeed"),
+    ("image-rendering", "optimizequality"),
+    ("pointer-events", "visiblepainted"),
+    ("pointer-events", "visiblefill"),
+    ("pointer-events", "visiblestroke"),
+    ("pointer-events", "visible"),
+    ("pointer-events", "painted"),
+    ("pointer-events", "fill"),
+    ("pointer-events", "stroke"),
+    ("pointer-events", "all"),
+    ("word-break", "break-word"),
 ];
 
 #[test]
@@ -168,7 +189,17 @@ fn native_values_serialize_as_stylo_does() {
         if stylo.property_id(longhand.name).is_none() {
             continue;
         }
-        for value in CORPUS {
+        // Every keyword the generated table knows for this longhand, with the corpus.
+        let base = longhand.value_type.rsplit("::").next().unwrap_or_default();
+        let keywords = KEYWORD_TYPES
+            .iter()
+            .filter(|(name, _)| *name == base)
+            .flat_map(|(_, variants)| variants.iter())
+            .flat_map(|(keyword, aliases)| std::iter::once(keyword).chain(aliases.iter()))
+            .chain(longhand.keywords.iter())
+            .copied();
+        for value in keywords.chain(CORPUS.iter().copied()) {
+            let value = &value;
             let ours = native.parse(longhand.name, value);
             if ours
                 .as_ref()

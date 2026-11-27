@@ -444,11 +444,13 @@ pub static ALIASES: &[(&str, &str)] = &[
 
 /// Value types that are enums of keywords: (type, [(keyword, aliases)]), by type.
 pub static KEYWORD_TYPES: &[KeywordType] = &[
-    ("AlignmentBaseline", &[("baseline", &[]), ("text-bottom", &[]), ("alphabetic", &[]), ("ideographic", &[]), ("middle", &[]), ("central", &[]), ("mathematical", &[]), ("hanging", &[]), ("text-top", &[]), ("-moz-middle-with-baseline", &[])]),
+    ("AlignmentBaseline", &[("baseline", &[]), ("text-bottom", &[]), ("alphabetic", &[]), ("ideographic", &[]), ("middle", &[]), ("central", &[]), ("mathematical", &[]), ("hanging", &[]), ("text-top", &[])]),
     ("AnimationComposition", &[("replace", &[]), ("add", &[]), ("accumulate", &[])]),
     ("AnimationDirection", &[("normal", &[]), ("reverse", &[]), ("alternate", &[]), ("alternate-reverse", &[])]),
     ("AnimationFillMode", &[("none", &[]), ("forwards", &[]), ("backwards", &[]), ("both", &[])]),
     ("AnimationPlayState", &[("running", &[]), ("paused", &[])]),
+    ("Appearance", &[("none", &[]), ("auto", &[]), ("searchfield", &[]), ("textarea", &[]), ("checkbox", &[]), ("radio", &[]), ("menulist", &[]), ("listbox", &[]), ("meter", &[]), ("progress-bar", &[]), ("button", &[]), ("textfield", &[]), ("menulist-button", &[])]),
+    ("BackgroundClip", &[("border-box", &[]), ("padding-box", &[]), ("content-box", &[]), ("fill-box", &[]), ("stroke-box", &[]), ("view-box", &[]), ("no-clip", &[]), ("text", &[])]),
     ("BaselineSource", &[("auto", &[]), ("first", &[]), ("last", &[])]),
     ("BorderStyle", &[("hidden", &[]), ("none", &[]), ("inset", &[]), ("groove", &[]), ("outset", &[]), ("ridge", &[]), ("dotted", &[]), ("dashed", &[]), ("solid", &[]), ("double", &[])]),
     ("BreakBetween", &[("always", &[]), ("auto", &[]), ("page", &[]), ("avoid", &[]), ("left", &[]), ("right", &[])]),
@@ -483,6 +485,7 @@ pub static KEYWORD_TYPES: &[KeywordType] = &[
     ("TextAlignLast", &[("auto", &[]), ("start", &[]), ("end", &[]), ("left", &[]), ("right", &[]), ("center", &[]), ("justify", &[])]),
     ("TextDecorationSkipInk", &[("auto", &[]), ("none", &[]), ("all", &[])]),
     ("TextJustify", &[("auto", &[]), ("none", &[]), ("inter-word", &[]), ("inter-character", &["distribute"])]),
+    ("TransformBox", &[("border-box", &[]), ("fill-box", &[]), ("view-box", &[])]),
     ("TransformStyle", &[("flat", &[]), ("preserve-3d", &[])]),
     ("TransitionBehavior", &[("normal", &[]), ("allow-discrete", &[])]),
     ("UserFocus", &[("normal", &[]), ("none", &[]), ("ignore", &[])]),
